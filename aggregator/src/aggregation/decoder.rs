@@ -140,13 +140,13 @@ impl TagConfig {
 struct BlockConfig {
     /// The number of bytes in this block.
     block_len: Column<Advice>,
-    /// The index within the zstd block of the current byte.
+    /// The index of this zstd block. The first block has a block_idx = 1.
     block_idx: Column<Advice>,
     /// Whether this block is the last block in the zstd encoded data.
     is_last_block: Column<Advice>,
     /// Helper boolean column to tell us whether we are in the block's contents. This field is not
-    /// set for FrameHeaderDescriptor, FrameContentSize and BlockHeader. For the tags that occur
-    /// while decoding the block's contents, this field is set.
+    /// set for FrameHeaderDescriptor and FrameContentSize. For the tags that occur while decoding
+    /// the block's contents, this field is set.
     is_block: Column<Advice>,
 }
 
@@ -741,6 +741,20 @@ impl DecoderConfig {
             cb.gate(condition)
         });
 
+        meta.create_gate("DecoderConfig: tag FrameContentSize (block_idx)", |meta| {
+            let condition =
+                meta.query_advice(config.tag_config.is_frame_content_size, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "block_idx == 0 to start",
+                meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+            );
+
+            cb.gate(condition)
+        });
+
         debug_assert!(meta.degree() <= 9);
 
         ///////////////////////////////////////////////////////////////////////////////////////////
@@ -786,31 +800,15 @@ impl DecoderConfig {
             // is_last_block is assigned correctly.
             cb.require_equal(
                 "is_last_block assigned correctly",
-                meta.query_advice(
-                    config.block_config.is_last_block,
-                    Rotation(N_BLOCK_HEADER_BYTES as i32),
-                ),
+                meta.query_advice(config.block_config.is_last_block, Rotation::cur()),
                 is_last_block,
             );
 
-            // block_idx initialises at 1.
+            // block_idx increments when we see a new block header.
             cb.require_equal(
-                "block_idx == 1 after Block_Header",
-                meta.query_advice(
-                    config.block_config.block_idx,
-                    Rotation(N_BLOCK_HEADER_BYTES as i32),
-                ),
-                1.expr(),
-            );
-
-            // Check that the last block ended correctly.
-            //
-            // Note: even if this is the first block, the below constraint would be satisfied
-            // because both block_idx and block_len would be 0.
-            cb.require_equal(
-                "block_idx::prev == block_len::prev",
-                meta.query_advice(config.block_config.block_idx, Rotation::prev()),
-                meta.query_advice(config.block_config.block_len, Rotation::prev()),
+                "block_idx::cur == block_idx::prev + 1",
+                meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                meta.query_advice(config.block_config.block_idx, Rotation::prev()) + 1.expr(),
             );
 
             cb.gate(condition)
@@ -828,10 +826,7 @@ impl DecoderConfig {
             let block_header_lc = meta.query_advice(config.byte, Rotation(2)) * 65536.expr()
                 + meta.query_advice(config.byte, Rotation(1)) * 256.expr()
                 + meta.query_advice(config.byte, Rotation(0));
-            let block_size = meta.query_advice(
-                config.block_config.block_len,
-                Rotation(N_BLOCK_HEADER_BYTES as i32),
-            );
+            let block_size = meta.query_advice(config.block_config.block_len, Rotation::cur());
             let diff = block_header_lc - (block_size * 8.expr());
 
             vec![(condition * diff, config.range8.into())]
@@ -856,14 +851,11 @@ impl DecoderConfig {
                 meta.query_advice(config.block_config.block_len, Rotation::prev()),
             );
 
-            // block_idx increments with byte_idx.
-            let block_idx_delta = meta.query_advice(config.byte_idx, Rotation::cur())
-                - meta.query_advice(config.byte_idx, Rotation::prev());
+            // block_idx remains unchanged.
             cb.require_equal(
-                "block_idx::cur - block_idx::prev == byte_idx::cur - byte_idx::prev",
+                "block_idx::cur == block_len::idx",
                 meta.query_advice(config.block_config.block_idx, Rotation::cur()),
-                meta.query_advice(config.block_config.block_idx, Rotation::prev())
-                    + block_idx_delta,
+                meta.query_advice(config.block_config.block_idx, Rotation::prev()),
             );
 
             cb.gate(condition)
