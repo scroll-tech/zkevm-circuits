@@ -807,6 +807,11 @@ pub struct FlatGethCallTrace {
 impl GethCallTrace {
     /// generate the call_is_success vec
     pub fn gen_call_is_success(&self, mut call_is_success: Vec<bool>) -> Vec<bool> {
+        // ignore the call if it is a contract address collision
+        // https://github.com/ethereum/go-ethereum/issues/21438
+        if self.to.is_none() && self.error.as_deref() == Some("contract address collision") {
+            return call_is_success;
+        }
         call_is_success.push(self.error.is_none());
         for call in &self.calls {
             call_is_success = call.gen_call_is_success(call_is_success);
@@ -832,6 +837,11 @@ impl GethCallTrace {
         trace: &mut Vec<FlatGethCallTrace>,
         created: &mut HashSet<Address>,
     ) {
+        // ignore the call if it is a contract address collision
+        // https://github.com/ethereum/go-ethereum/issues/21438
+        if self.to.is_none() && self.error.as_deref() == Some("contract address collision") {
+            return;
+        }
         let call_type = OpcodeId::from_str(&self.call_type).unwrap();
         let is_callee_code_empty = self
             .to

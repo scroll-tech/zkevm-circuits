@@ -413,8 +413,6 @@ mod tests {
         TestContext,
     };
 
-    // TODO: figure out why this fails in the default case.
-    #[cfg(feature = "scroll")]
     #[test]
     fn test_create_address_collision_error() {
         let code = bytecode! {
