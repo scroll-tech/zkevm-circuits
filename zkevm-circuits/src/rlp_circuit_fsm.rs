@@ -2373,7 +2373,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(tag_value_acc, Rotation::cur()),
                 ),
                 0.expr(),
-
+                meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
             ];
             let table_exprs = vec![
                 meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
@@ -2383,6 +2383,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
                 meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
                 meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
+                select::expr(
+                    meta.query_advice(is_stack_depth_three, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
+                ),
             ];
             input_exprs
                 .into_iter()
