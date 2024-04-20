@@ -125,7 +125,7 @@ impl CompilerSettings {
         selection.insert("*".to_string(), vec!["evm.bytecode".to_string()]);
         output_selection.insert("*".to_string(), selection);
         CompilerSettings {
-            evm_version: evm_version.unwrap_or("berlin").to_string(),
+            evm_version: evm_version.unwrap_or("shanghai").to_string(),
             optimizer: Default::default(),
             output_selection,
         }
@@ -163,7 +163,6 @@ struct BytecodeResult {
 #[serde(rename_all = "camelCase")]
 struct CompilationError {
     component: String,
-    error_code: String,
     formatted_message: String,
     message: String,
     severity: Severity,
@@ -269,8 +268,42 @@ impl Compiler {
     }
 
     /// compiles YUL code
-    pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+    pub fn yul2(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        log::error!("yul {evm_version:?}");
         self.solc(Language::Yul, src, evm_version)
+    }
+
+    /// ..
+    pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        if let Some(bytecode) = self
+        .cache
+        .as_ref()
+        .and_then(|c| c.lock().unwrap().get(src).cloned())
+    {
+        return Ok(bytecode);
+    }
+                    if !self.compile {
+                        bail!("No way to compile Yul for '{}'", src)
+                    }
+            
+                    let stdout = Self::exec(
+                        &["run", "-i", "--rm", "solc", "--strict-assembly", "-"],
+                        src,
+                    )?;
+                    let placeholder = "Binary representation:\n";
+                    let from_pos = stdout.find(placeholder);
+            let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
+        let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
+            let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
+            Bytes::from(hex::decode(&hex)?)
+        } else {
+            bail!("Unable to compile: {}", src);
+        };
+        if let Some(ref cache) = self.cache {
+            cache.lock().unwrap().insert(src, bytecode.clone())?;
+        }
+
+        Ok(bytecode)
     }
 
     /// compiles Solidity code
@@ -290,14 +323,14 @@ impl Compiler {
             bail!("No way to compile {:?} for '{}'", language, src)
         }
         let compiler_input = CompilerInput::new_default(language, src, evm_version);
-
+        let compiler_input = serde_json::to_string(&compiler_input).unwrap();
         let stdout = Self::exec(
             &["run", "-i", "--rm", "solc", "--standard-json", "-"],
-            serde_json::to_string(&compiler_input).unwrap().as_str(),
+            compiler_input.as_str(),
         )?;
         let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)
             .map_err(|e| {
-                println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{stdout}\n-----")
+                println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{compiler_input}\n{stdout}\n-----")
             })
             .unwrap();
         let bytecode = compilation_result
