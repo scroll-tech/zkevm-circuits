@@ -809,7 +809,16 @@ impl GethCallTrace {
     pub fn gen_call_is_success(&self, mut call_is_success: Vec<bool>) -> Vec<bool> {
         // ignore the call if it is a contract address collision
         // https://github.com/ethereum/go-ethereum/issues/21438
-        if self.to.is_none() && self.error.as_deref() == Some("contract address collision") {
+        if self.to.is_none() && self.error.as_deref() == Some(GethExecError::ContractAddressCollision.error()) {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::InsufficientBalance.error()) {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::Depth.error()) {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::NonceUintOverflow.error()) {
             return call_is_success;
         }
         call_is_success.push(self.error.is_none());

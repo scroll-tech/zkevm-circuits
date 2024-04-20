@@ -158,7 +158,9 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     let v = st.normalize_sig_v(sig.v);
     let rlp_signed = tx.rlp_signed(&sig).to_vec();
     let tx_hash = keccak256(tx.rlp_signed(&sig));
-    let accounts = st.pre;
+    let accounts: std::collections::BTreeMap<eth_types::H160, geth_types::Account> = st.pre.into_iter().filter(|(k, v)| {
+        !v.balance.is_zero() || !v.nonce.is_zero() || !v.code.is_empty()
+    }).collect();
 
     (
         st.id,
