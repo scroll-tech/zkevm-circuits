@@ -79,6 +79,8 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .into_iter()
                 .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
                 .collect();
+            // Pass the account addresses before transaction as expected for result.
+            let expected_addresses = pre.keys().collect();
 
             // parse transaction
             let yaml_transaction = &yaml_test["transaction"];
@@ -117,7 +119,7 @@ impl<'a> YamlStateTestBuilder<'a> {
             });
 
             let nonce = Self::parse_u256(&yaml_transaction["nonce"]).unwrap();
-            let to = Self::parse_to_address(&yaml_transaction["to"]).unwrap();
+            let to = Self::parse_to_address(&yaml_transaction["to"], Some(&expected_addresses)).unwrap();
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"]).unwrap();
             let from = secret_key_to_address(&SigningKey::from_slice(&secret_key).unwrap());
 
@@ -150,8 +152,6 @@ impl<'a> YamlStateTestBuilder<'a> {
                 let gas_refs = Self::parse_refs(&expect["indexes"]["gas"]).unwrap();
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"]).unwrap();
 
-                // Pass the account addresses before transaction as expected for result.
-                let expected_addresses = pre.keys().collect();
                 let result = self.parse_accounts(&expect["result"], Some(&expected_addresses)).unwrap();
 
                 if MainnetFork::in_network_range(&networks).unwrap() {
@@ -338,17 +338,33 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 
     /// returns the element as a to address
-    fn parse_to_address(yaml: &Yaml) -> Result<Option<Address>> {
-        if let Some(as_str) = yaml.as_str() {
+    fn parse_to_address(yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>) -> Result<Option<Address>> {
+        
+        let r = if let Some(as_str) = yaml.as_str() {
             if as_str.trim().is_empty() {
                 return Ok(None);
             }
             parse::parse_to_address(as_str)
         } else if let Some(as_i64) = yaml.as_i64() {
+            // Try to convert the integer to hex if has expected addresses for
+            // accounts after transaction (result).
+            // e.g. 10 -> 0xa
+            if let Some(expected_addresses) = expected_addresses {
+                let address = Address::from_slice(&hex::decode(format!("{as_i64:040x}"))?);
+                if expected_addresses.contains(&address) {
+                    return Ok(Some(address));
+                }
+            }
+
+            // Format as a hex string directly for accounts before transaction (pre).
+            // e.g. 10 -> 0x10
             Ok(Some(Address::from_slice(&hex::decode(format!("{as_i64:0>40}"))?)))
     }   else {
             bail!("cannot parse to address {:?}", yaml);
-        }
+        };
+        //log::info!("Self::parse_to_address {yaml:?} {r:?}");
+        r
     }
 
     /// returns the element as an array of bytes

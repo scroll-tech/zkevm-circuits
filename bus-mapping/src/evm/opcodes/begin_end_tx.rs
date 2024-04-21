@@ -211,7 +211,8 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     let callee_account = &state.sdb.get_account(&call.address).1.clone();
     let is_precompile = is_precompiled(&call.address);
     let callee_exists = !callee_account.is_empty();
-    if !callee_exists && call.value.is_zero() {
+    //if !callee_exists && call.value.is_zero() {
+    if callee_account.code_hash == CodeDB::empty_code_hash() {
         // The account is empty (codehash and nonce be 0) while storage is non empty.
         // It is an impossible case for any real world scenario.
         // The "clear" helps with testool.

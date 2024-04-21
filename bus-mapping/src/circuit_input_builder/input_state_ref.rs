@@ -1358,7 +1358,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if !found {
                 return Err(Error::AccountNotFound(call.address));
             }
-
+            //callee_account.storage.clear();
             // already updated in return_revert.rs with check_update_sdb_account
             debug_assert_eq!(callee_account.code_hash, code_hash);
             #[cfg(feature = "scroll")]

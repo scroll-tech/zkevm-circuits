@@ -122,6 +122,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     serde::Deserialize::deserialize(deserializer).map_err(Error::SerdeError)
 }
 
+
 /// Creates a l2-trace for the specified config
 #[cfg(feature = "scroll")]
 pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {

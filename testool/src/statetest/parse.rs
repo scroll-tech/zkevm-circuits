@@ -62,7 +62,9 @@ pub fn parse_to_address(as_str: &str) -> Result<Option<Address>> {
     if as_str.trim().is_empty() {
         return Ok(None);
     }
-    parse_address(as_str).map(|x| Ok(Some(x)))?
+    let x = parse_address(as_str).map(|x| Ok(Some(x)))?;
+    //log::error!("parse_to_address {as_str} {x:?}");
+    x
 }
 
 /// returns the element as an array of bytes
