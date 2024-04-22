@@ -44,7 +44,7 @@ use crate::{
         Transaction,
     },
 };
-use bus_mapping::circuit_input_builder::{keccak_inputs_sign_verify};
+use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{
     geth_types::{
         access_list_size, TxType,
@@ -78,9 +78,9 @@ use std::{
 use crate::{util::Challenges, witness::rlp_fsm::get_rlp_len_tag_length};
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
-use halo2_proofs::plonk::{Fixed, Any};
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
+use halo2_proofs::plonk::{Any, Fixed};
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
@@ -217,7 +217,7 @@ impl TxRomTable {
         layouter.assign_region(
             || "Tx ROM table",
             |mut region| {
-                let transition_scenarios: Vec<(TxFieldTag, TxFieldTag, u8, u8, u8)>  = vec![
+                let transition_scenarios: Vec<(TxFieldTag, TxFieldTag, u8, u8, u8)> = vec![
                     // All fixed section tags. tx_id stays the same except the last tx.
                     (Nonce, GasPrice, 1, 1, 0),
                     (GasPrice, Gas, 1, 1, 0),
@@ -246,25 +246,59 @@ impl TxRomTable {
                     (AccessListRLC, MaxFeePerGas, 1, 1, 0),
                     (MaxFeePerGas, MaxPriorityFeePerGas, 1, 1, 0),
                     (MaxPriorityFeePerGas, BlockNumber, 1, 1, 0),
-
                     // Transition into dynamic section of tx_table
                     (BlockNumber, Nonce, 0, 1, 0),
                     (BlockNumber, CallData, 1, 1, 1),
                     (BlockNumber, CallData, 0, 1, 1),
                     (BlockNumber, TxFieldTag::AccessListAddress, 1, 1, 1),
                     (BlockNumber, TxFieldTag::AccessListAddress, 0, 1, 1),
-
                     // Transition between dynamic tags of tx_table
                     (CallData, CallData, 1, 0, 0),
                     (CallData, CallData, 0, 1, 0),
                     (CallData, TxFieldTag::AccessListAddress, 1, 1, 0),
                     (CallData, TxFieldTag::AccessListAddress, 0, 1, 0),
-                    (TxFieldTag::AccessListAddress, TxFieldTag::AccessListAddress, 1, 0, 0),
-                    (TxFieldTag::AccessListAddress, TxFieldTag::AccessListAddress, 0, 1, 0),
-                    (TxFieldTag::AccessListAddress, TxFieldTag::AccessListStorageKey, 1, 0, 0),
-                    (TxFieldTag::AccessListStorageKey, TxFieldTag::AccessListStorageKey, 1, 0, 0),
-                    (TxFieldTag::AccessListStorageKey, TxFieldTag::AccessListAddress, 1, 0, 0),
-                    (TxFieldTag::AccessListStorageKey, TxFieldTag::AccessListAddress, 0, 1, 0),
+                    (
+                        TxFieldTag::AccessListAddress,
+                        TxFieldTag::AccessListAddress,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListAddress,
+                        TxFieldTag::AccessListAddress,
+                        0,
+                        1,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListAddress,
+                        TxFieldTag::AccessListStorageKey,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListStorageKey,
+                        TxFieldTag::AccessListStorageKey,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListStorageKey,
+                        TxFieldTag::AccessListAddress,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListStorageKey,
+                        TxFieldTag::AccessListAddress,
+                        0,
+                        1,
+                        0,
+                    ),
                     (TxFieldTag::AccessListAddress, CallData, 0, 1, 0),
                     (TxFieldTag::AccessListStorageKey, CallData, 0, 1, 0),
                 ];
