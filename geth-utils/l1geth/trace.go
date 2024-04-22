@@ -10,14 +10,20 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 	"github.com/imdario/mergo"
 )
+
+func init() {
+	tracers.DefaultDirectory.Register("structLogTracer", newStructLogTracer, false)
+}
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
 // ExecutionResult groups all structured logs emitted by the EVM
@@ -235,7 +241,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		stateDB.SetNonce(address, uint64(account.Nonce))
 		stateDB.SetCode(address, account.Code)
 		if account.Balance != nil {
-			stateDB.SetBalance(address, toBigInt(account.Balance))
+			stateDB.SetBalance(address, uint256.MustFromBig(toBigInt(account.Balance)), tracing.BalanceChangeUnspecified)
 		}
 		for key, value := range account.Storage {
 			stateDB.SetState(address, key, value)
@@ -243,107 +249,144 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	}
 	stateDB.Finalise(true)
 
+	var (
+		usedGas         uint64
+		resultMap       map[string]json.RawMessage
+		executionResult ExecutionResult
+	)
+
+	loggerConfig, err := json.Marshal(config.LoggerConfig)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to marshal configLoggerConfig, %w", err)
+	}
+
 	// Run the transactions with tracing enabled.
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
 	for i, message := range messages {
 		txContext := core.NewEVMTxContext(&message)
-		prestateTracer, err := tracers.DefaultDirectory.New("prestateTracer", new(tracers.Context), nil)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to create prestateTracer: %w", err)
+		muxTracerConfig := []byte(fmt.Sprintf(`
+		{
+			"structLogTracer": %s,
+			"callTracer": null,
+			"prestateTracer": null
 		}
-		callTracer, err := tracers.DefaultDirectory.New("callTracer", new(tracers.Context), nil)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to create callTracer: %w", err)
+		`, loggerConfig))
+		muxTracer, err := tracers.DefaultDirectory.New("muxTracer", new(tracers.Context), muxTracerConfig); if err != nil {
+			return nil, err
 		}
-		structLogger := logger.NewStructLogger(config.LoggerConfig)
-		tracer := NewMuxTracer(
-			structLogger,
-			prestateTracer,
-			callTracer,
-		)
-		evm := vm.NewEVM(blockCtx, txContext, stateDB, &chainConfig, vm.Config{Tracer: tracer, NoBaseFee: true})
+		evm := vm.NewEVM(blockCtx, txContext, stateDB, &chainConfig, vm.Config{Tracer: muxTracer.Hooks, NoBaseFee: true})
 
-		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
+		tx := types.NewTx(toTxData(message, chainConfig.ChainID))
+		_, err = core.ApplyTransactionWithEVM(&message, &chainConfig,
+			new(core.GasPool).AddGas(message.GasLimit), stateDB,
+			blockCtx.BlockNumber,
+			common.Hash{}, tx, &usedGas, evm)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to apply config.Transactions[%d]: %w", i, err)
 		}
 		stateDB.Finalise(true)
 
-		prestate, err := prestateTracer.GetResult()
+		muxResult, err := muxTracer.GetResult()
 		if err != nil {
-			return nil, fmt.Errorf("Failed to get prestateTracer result: %w", err)
+			return nil, err
 		}
+		if err := json.Unmarshal(muxResult, &resultMap); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(resultMap["structLogTracer"], &executionResult); err != nil {
+			return nil, err
+		}
+		executionResult.Prestate = resultMap["prestateTracer"]
+		executionResult.CallTrace = resultMap["callTracer"]
 
-		callTrace, err := callTracer.GetResult()
-		if err != nil {
-			return nil, fmt.Errorf("Failed to get callTracer result: %w", err)
-		}
-
-		executionResults[i] = &ExecutionResult{
-			Gas:         result.UsedGas,
-			Failed:      result.Failed(),
-			ReturnValue: fmt.Sprintf("%x", result.ReturnData),
-			StructLogs:  FormatLogs(structLogger.StructLogs()),
-			Prestate:    prestate,
-			CallTrace:   callTrace,
-		}
+		executionResults[i] = &executionResult
 	}
 
 	return executionResults, nil
 }
 
-type MuxTracer struct {
-	tracers []vm.EVMLogger
-}
+func toTxData(message core.Message, ChainID *big.Int) types.TxData {
+	var data types.TxData
+	switch {
+	case message.BlobHashes != nil:
+		al := types.AccessList{}
+		if message.AccessList != nil {
+			al = message.AccessList
+		}
+		data = &types.BlobTx{
+			To:         *message.To,
+			ChainID:    uint256.MustFromBig((*big.Int)(ChainID)),
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasFeeCap:  uint256.MustFromBig((*big.Int)(message.GasFeeCap)),
+			GasTipCap:  uint256.MustFromBig((*big.Int)(message.GasTipCap)),
+			Value:      uint256.MustFromBig((*big.Int)(message.Value)),
+			Data:       message.Data,
+			AccessList: al,
+			BlobHashes: message.BlobHashes,
+			BlobFeeCap: uint256.MustFromBig((*big.Int)(message.BlobGasFeeCap)),
+		}
+		// if message.Blobs != nil {
+		// 	data.(*types.BlobTx).Sidecar = &types.BlobTxSidecar{
+		// 		Blobs:       message.Blobs,
+		// 		Commitments: message.Commitments,
+		// 		Proofs:      message.Proofs,
+		// 	}
+		// }
 
-func NewMuxTracer(tracers ...vm.EVMLogger) *MuxTracer {
-	return &MuxTracer{tracers}
-}
+	case message.GasFeeCap != nil:
+		al := types.AccessList{}
+		if message.AccessList != nil {
+			al = message.AccessList
+		}
+		data = &types.DynamicFeeTx{
+			To:         message.To,
+			ChainID:    (*big.Int)(ChainID),
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasFeeCap:  message.GasFeeCap,
+			GasTipCap:  message.GasTipCap,
+			Value:      message.Value,
+			Data:       message.Data,
+			AccessList: al,
+		}
 
-func (t *MuxTracer) CaptureTxStart(gasLimit uint64) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureTxStart(gasLimit)
+	case message.AccessList != nil:
+		data = &types.AccessListTx{
+			To:         message.To,
+			ChainID:    ChainID,
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasPrice:   message.GasPrice,
+			Value:      message.Value,
+			Data:       message.Data,
+			AccessList: message.AccessList,
+		}
+
+	default:
+		data = &types.LegacyTx{
+			To:       message.To,
+			Nonce:    message.Nonce,
+			Gas:      message.GasLimit,
+			GasPrice: message.GasPrice,
+			Value:    message.Value,
+			Data:     message.Data,
+		}
 	}
+	return data
 }
 
-func (t *MuxTracer) CaptureTxEnd(restGas uint64) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureTxEnd(restGas)
+func newStructLogTracer(ctx *tracers.Context, cfg json.RawMessage) (*tracers.Tracer, error) {
+	var config logger.Config
+	if cfg != nil {
+		if err := json.Unmarshal(cfg, &config); err != nil {
+			return nil, err
+		}
 	}
-}
-
-func (t *MuxTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Address, create bool, input []byte, gas uint64, value *big.Int) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureStart(env, from, to, create, input, gas, value)
-	}
-}
-
-func (t *MuxTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureEnd(output, gasUsed, err)
-	}
-}
-
-func (t *MuxTracer) CaptureEnter(typ vm.OpCode, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureEnter(typ, from, to, input, gas, value)
-	}
-}
-
-func (t *MuxTracer) CaptureExit(output []byte, gasUsed uint64, err error) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureExit(output, gasUsed, err)
-	}
-}
-
-func (t *MuxTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureState(pc, op, gas, cost, scope, rData, depth, err)
-	}
-}
-
-func (t *MuxTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
-	for _, tracer := range t.tracers {
-		tracer.CaptureFault(pc, op, gas, cost, scope, depth, err)
-	}
+	structLogger := logger.NewStructLogger(&config)
+	return &tracers.Tracer{
+		Hooks:     structLogger.Hooks(),
+		GetResult: structLogger.GetResult,
+		Stop:      structLogger.Stop,
+	}, nil
 }
