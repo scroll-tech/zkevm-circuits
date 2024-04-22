@@ -512,8 +512,6 @@ impl HuffmanCodesData {
 /// A single row in the FSE table.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FseTableRow {
-    /// Incremental index, starting at 1.
-    pub idx: u64,
     /// The FSE state at this row in the FSE table.
     pub state: u64,
     /// The baseline associated with this state.
@@ -563,7 +561,7 @@ pub struct FseAuxiliaryTableData {
     /// instance, the baseline and the number of bits to read from the FSE bitstream.
     ///
     /// For each symbol, the states are in strictly increasing order.
-    pub sym_to_states: BTreeMap<FseSymbol, Vec<FseTableRow>>,
+    pub sym_to_states: BTreeMap<u64, Vec<FseTableRow>>,
 }
 
 /// Another form of Fse table that has state as key instead of the FseSymbol.
@@ -601,68 +599,92 @@ impl FseAuxiliaryTableData {
         let mut sym_to_states = BTreeMap::new();
         let mut R = table_size;
         let mut state = 0x00;
-        let mut symbol = FseSymbol::S0;
-        let mut idx = 1;
+        let mut symbol = 0;
         while R > 0 {
             // number of bits and value read from the variable bit-packed data.
+            // And update the total number of bits read so far.
             let (n_bits_read, value) = read_variable_bit_packing(&data, offset, R + 1)?;
-
-            let N = value - 1;
-            let states = std::iter::once(state)
-                .chain((1..N).map(|_| {
-                    state += (table_size >> 1) + (table_size >> 3) + 3;
-                    state &= table_size - 1;
-                    state
-                }))
-                .sorted()
-                .collect::<Vec<u64>>();
-            let (smallest_spot_idx, nbs) = smaller_powers_of_two(table_size, N);
-            let baselines = if N == 1 {
-                vec![0x00]
-            } else {
-                let mut rotated_nbs = nbs.clone();
-                rotated_nbs.rotate_left(smallest_spot_idx);
-
-                let mut baselines = std::iter::once(0x00)
-                    .chain(rotated_nbs.iter().scan(0x00, |baseline, nb| {
-                        *baseline += 1 << nb;
-                        Some(*baseline)
-                    }))
-                    .take(N as usize)
-                    .collect::<Vec<u64>>();
-
-                baselines.rotate_right(smallest_spot_idx);
-                baselines
-            };
-            sym_to_states.insert(
-                symbol,
-                states
-                    .iter()
-                    .zip(nbs.iter())
-                    .zip(baselines.iter())
-                    .map(|((&state, &nb), &baseline)| FseTableRow {
-                        idx,
-                        state,
-                        num_bits: nb,
-                        baseline,
-                        symbol: symbol.into(),
-                        num_emitted: 0,
-                        n_acc: 0,
-                    })
-                    .collect(),
-            );
-            idx += 1;
-
-            // update the total number of bits read so far.
+            reader.skip(n_bits_read)?;
             offset += n_bits_read;
             bit_boundaries.push((offset, value));
 
-            // increment symbol.
-            symbol = ((symbol as usize) + 1).into();
+            let N = value - 1;
 
-            // update state.
-            state += (table_size >> 1) + (table_size >> 3) + 3;
-            state &= table_size - 1;
+            // When a symbol has a probability of zero, it is followed by a 2-bits repeat flag. This
+            // repeat flag tells how many probabilities of zeroes follow the current one. It
+            // provides a number ranging from 0 to 3. If it is a 3, another 2-bits repeat flag
+            // follows, and so on.
+            if N == 0 {
+                sym_to_states.insert(symbol, vec![]);
+                symbol += 1;
+
+                loop {
+                    let repeat_bits = reader.read::<u8>(2)?;
+                    offset += 2;
+                    bit_boundaries.push((offset, repeat_bits as u64));
+
+                    for k in 0..repeat_bits {
+                        sym_to_states.insert(symbol + (k as u64), vec![]);
+                    }
+                    symbol += repeat_bits as u64;
+
+                    if repeat_bits < 3 {
+                        break;
+                    }
+                }
+            }
+
+            if N >= 1 {
+                let states = std::iter::once(state)
+                    .chain((1..N).map(|_| {
+                        state += (table_size >> 1) + (table_size >> 3) + 3;
+                        state &= table_size - 1;
+                        state
+                    }))
+                    .sorted()
+                    .collect::<Vec<u64>>();
+                let (smallest_spot_idx, nbs) = smaller_powers_of_two(table_size, N);
+                let baselines = if N == 1 {
+                    vec![0x00]
+                } else {
+                    let mut rotated_nbs = nbs.clone();
+                    rotated_nbs.rotate_left(smallest_spot_idx);
+
+                    let mut baselines = std::iter::once(0x00)
+                        .chain(rotated_nbs.iter().scan(0x00, |baseline, nb| {
+                            *baseline += 1 << nb;
+                            Some(*baseline)
+                        }))
+                        .take(N as usize)
+                        .collect::<Vec<u64>>();
+
+                    baselines.rotate_right(smallest_spot_idx);
+                    baselines
+                };
+                sym_to_states.insert(
+                    symbol,
+                    states
+                        .iter()
+                        .zip(nbs.iter())
+                        .zip(baselines.iter())
+                        .map(|((&state, &nb), &baseline)| FseTableRow {
+                            state,
+                            num_bits: nb,
+                            baseline,
+                            symbol,
+                            num_emitted: 0,
+                            n_acc: 0,
+                        })
+                        .collect(),
+                );
+
+                // increment symbol.
+                symbol += 1;
+
+                // update state.
+                state += (table_size >> 1) + (table_size >> 3) + 3;
+                state &= table_size - 1;
+            }
 
             // remove N slots from a total of R.
             R -= N;
@@ -763,7 +785,7 @@ mod tests {
 
         assert_eq!(n_bytes, 4);
         assert_eq!(
-            table.sym_to_states.get(&FseSymbol::S1).cloned().unwrap(),
+            table.sym_to_states.get(&1).cloned().unwrap(),
             [
                 (0x03, 0x10, 3),
                 (0x0c, 0x18, 3),
@@ -775,7 +797,6 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, &(state, baseline, num_bits))| FseTableRow {
-                idx: (i + 1) as u64,
                 state,
                 symbol: 1,
                 baseline,
@@ -785,6 +806,20 @@ mod tests {
             })
             .collect::<Vec<FseTableRow>>(),
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sequences_fse_reconstruction() -> std::io::Result<()> {
+        let src = vec![
+            0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
+        ];
+
+        let (n_bytes, _bit_boundaries, table) = FseAuxiliaryTableData::reconstruct(&src, 0)?;
+        let parsed_state_map = table.parse_state_table();
+
+        // TODO: assertions
 
         Ok(())
     }

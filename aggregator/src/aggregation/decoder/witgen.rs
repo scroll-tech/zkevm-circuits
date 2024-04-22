@@ -1174,7 +1174,6 @@ fn process_block_zstd_huffman_code<F: Field>(
             },
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow {
-                idx: 0,
                 state: 0,
                 symbol: 0,
                 baseline: 0,
@@ -1382,7 +1381,6 @@ fn process_block_zstd_huffman_code<F: Field>(
                 is_zero_bit_read: (nb == 0),
             },
             fse_data: FseTableRow {
-                idx: fse_table_idx,
                 state: next_state,
                 symbol: fse_row.0,
                 baseline: fse_row.1,
