@@ -301,6 +301,9 @@ impl TxRomTable {
                     ),
                     (TxFieldTag::AccessListAddress, CallData, 0, 1, 0),
                     (TxFieldTag::AccessListStorageKey, CallData, 0, 1, 0),
+
+                    // Continue padding. Padding has the Calldata tag
+                    (CallData, CallData, 1, 1, 0),
                 ];
 
                 for (offset, scenario) in transition_scenarios.into_iter().enumerate() {
@@ -737,7 +740,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.lookup_any("tx table tag transition lookup", |meta| {
             let cond = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                // not::expr(is_end(meta)),
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
             ]);
             vec![
                 meta.query_advice(tx_table.tag, Rotation::cur()),
@@ -751,7 +754,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(is_final, Rotation::cur()),
                     1.expr(),
                 ),
-                meta.query_fixed(q_calldata_first, Rotation::cur()),
+                meta.query_fixed(q_calldata_first, Rotation::next()),
             ]
             .into_iter()
             .zip(tx_rom_table.table_exprs(meta))
