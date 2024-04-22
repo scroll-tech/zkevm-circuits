@@ -1861,7 +1861,11 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use eth_types::H256;
+    use ethers_core::utils::keccak256;
     use halo2_proofs::halo2curves::bn256::Fr;
+
     use std::{
         fs::{self, File},
         io::Write,
@@ -1872,7 +1876,7 @@ mod tests {
     fn compression_ratio() -> Result<(), std::io::Error> {
         use csv::WriterBuilder;
 
-        let get_compression_ratio = |data: &[u8]| -> Result<f64, std::io::Error> {
+        let get_compression_ratio = |data: &[u8]| -> Result<(H256, f64), std::io::Error> {
             let raw_len = data.len();
             let compressed = {
                 let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
@@ -1896,8 +1900,9 @@ mod tests {
                 encoder.write_all(data)?;
                 encoder.finish()?
             };
+            let hash = keccak256(&compressed);
             let compressed_len = compressed.len();
-            Ok(raw_len as f64 / compressed_len as f64)
+            Ok((hash.into(), raw_len as f64 / compressed_len as f64))
         };
 
         let batches = fs::read_dir("./data")
@@ -1917,7 +1922,8 @@ mod tests {
 
         // Test and store results in CSV
         for (i, batch) in batches.iter().enumerate() {
-            let result = get_compression_ratio(batch)?;
+            let (keccak_hash, result) = get_compression_ratio(batch)?;
+            println!("i={:4}, hash={:64x}", i, keccak_hash);
 
             // Write input and result to CSV
             writer.write_record(&[i.to_string(), batch.len().to_string(), result.to_string()])?;
