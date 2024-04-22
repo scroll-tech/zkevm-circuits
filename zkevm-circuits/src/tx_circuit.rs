@@ -301,7 +301,6 @@ impl TxRomTable {
                     ),
                     (TxFieldTag::AccessListAddress, CallData, 0, 1, 0),
                     (TxFieldTag::AccessListStorageKey, CallData, 0, 1, 0),
-
                     // Continue padding. Padding has the Calldata tag
                     (CallData, CallData, 1, 1, 0),
                 ];
