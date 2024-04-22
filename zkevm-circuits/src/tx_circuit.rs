@@ -331,9 +331,9 @@ impl TxRomTable {
 pub struct TxCircuitConfig<F: Field> {
     minimum_rows: usize,
 
-    // This is only true at the first row of calldata part of tx table
-    q_calldata_first: Column<Fixed>,
-    q_calldata_last: Column<Fixed>,
+    // This is only true at the first row of dynamic part of tx table
+    q_dynamic_first: Column<Fixed>,
+    q_dynamic_last: Column<Fixed>,
     // A selector which is enabled at 1st row
     q_first: Column<Fixed>,
     tx_table: TxTable,
@@ -486,8 +486,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let q_enable = tx_table.q_enable;
 
         let q_first = meta.fixed_column();
-        let q_calldata_first = meta.fixed_column();
-        let q_calldata_last = meta.fixed_column();
+        let q_dynamic_first = meta.fixed_column();
+        let q_dynamic_last = meta.fixed_column();
         // Since we allow skipping l1 txs that could cause potential circuit overflow,
         // the num_all_txs (num_l1_msgs + num_l2_txs) in the input to get chunk data hash
         // does not necessarily equal to num_txs (self.txs.len()) in block table.
@@ -754,7 +754,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(is_final, Rotation::cur()),
                     1.expr(),
                 ),
-                meta.query_fixed(q_calldata_first, Rotation::next()),
+                meta.query_fixed(q_dynamic_first, Rotation::next()),
             ]
             .into_iter()
             .zip(tx_rom_table.table_exprs(meta))
@@ -1288,7 +1288,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         Self::configure_lookups(
             meta,
             q_enable,
-            q_calldata_first,
+            q_dynamic_first,
             rlp_tag,
             tx_value_rlc,
             tx_value_length,
@@ -1689,10 +1689,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
 
         meta.create_gate("last row of call data", |meta| {
-            let q_calldata_last = meta.query_fixed(q_calldata_last, Rotation::cur());
+            let q_dynamic_last = meta.query_fixed(q_dynamic_last, Rotation::cur());
             let is_final = meta.query_advice(is_final, Rotation::cur());
 
-            vec![(q_calldata_last * (is_final - true.expr()))]
+            vec![(q_dynamic_last * (is_final - true.expr()))]
         });
         meta.create_gate("calldata_byte == tx_table.value", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1732,7 +1732,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             );
 
             cb.gate(and::expr([
-                meta.query_fixed(q_calldata_first, Rotation::cur()),
+                meta.query_fixed(q_dynamic_first, Rotation::cur()),
                 not::expr(tx_id_is_zero.expr(Rotation::cur())(meta)),
             ]))
         });
@@ -2291,8 +2291,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         Self {
             minimum_rows: meta.minimum_rows(),
             q_first,
-            q_calldata_first,
-            q_calldata_last,
+            q_dynamic_first,
+            q_dynamic_last,
             tx_tag_bits: tag_bits,
             tx_type,
             tx_type_bits,
@@ -2359,7 +2359,7 @@ impl<F: Field> TxCircuitConfig<F> {
     fn configure_lookups(
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
-        q_calldata_first: Column<Fixed>,
+        q_dynamic_first: Column<Fixed>,
         rlp_tag: Column<Advice>,
         tx_value_rlc: Column<Advice>,
         tx_value_length: Column<Advice>,
@@ -2934,7 +2934,7 @@ impl<F: Field> TxCircuitConfig<F> {
             // Isolate the last row in the fixed section, which belongs to the last tx in the chunk
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_fixed(q_calldata_first, Rotation::cur()),
+                meta.query_fixed(q_dynamic_first, Rotation::cur()),
             ]);
 
             vec![
@@ -4304,8 +4304,8 @@ impl<F: Field> TxCircuit<F> {
                 )?;
                 // 3.3. assign first and last indicators
                 for (col_anno, col, row) in [
-                    ("q_calldata_first", config.q_calldata_first, calldata_first_row),
-                    ("q_calldata_last", config.q_calldata_last, calldata_last_row-1),
+                    ("q_dynamic_first", config.q_dynamic_first, calldata_first_row),
+                    ("q_dynamic_last", config.q_dynamic_last, calldata_last_row-1),
                 ] {
                     region.assign_fixed(|| col_anno, col, row, || Value::known(F::one()))?;
                 }
