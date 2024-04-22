@@ -608,6 +608,10 @@ impl FseAuxiliaryTableData {
             offset += n_bits_read;
             bit_boundaries.push((offset, value));
 
+            if value == 0 {
+                unimplemented!("value=0 => prob=-1: scenario unimplemented");
+            }
+
             let N = value - 1;
 
             // When a symbol has a probability of zero, it is followed by a 2-bits repeat flag. This
