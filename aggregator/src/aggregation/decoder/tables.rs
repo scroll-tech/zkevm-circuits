@@ -2,6 +2,7 @@
 /// construct a table to accumulate the binary values of the byte-unaligned bitstrings for decoding
 /// convenience.
 mod bitstring_accumulation;
+pub use bitstring_accumulation::BitstringAccumulationTable;
 
 /// Decode the regenerated size from the literals header.
 mod literals_header;
