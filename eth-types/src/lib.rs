@@ -508,6 +508,17 @@ impl GethExecError {
             GethExecError::InvalidOpcode(_) => "invalid opcode",
         }
     }
+
+    /// Returns if the error is related to precheck fail
+    pub fn is_precheck_failed(&self) -> bool {
+        matches!(
+            self,
+            GethExecError::ContractAddressCollision
+                | GethExecError::InsufficientBalance
+                | GethExecError::Depth
+                | GethExecError::NonceUintOverflow
+        )
+    }
 }
 
 impl Display for GethExecError {
@@ -574,7 +585,10 @@ impl FromStr for GethExecError {
                 .map(|s| OpcodeId::from_str(s).unwrap())
                 .map(GethExecError::InvalidOpcode)
                 .unwrap(),
-            _ => return Err(()),
+            _ => {
+                log::warn!("unknown geth error: {}", v);
+                return Err(());
+            }
         };
         Ok(e)
     }
@@ -814,17 +828,19 @@ pub struct FlatGethCallTrace {
 }
 
 impl GethCallTrace {
+    fn is_precheck_failed(&self) -> bool {
+        self.error
+            .as_ref()
+            .and_then(|e| e.parse::<GethExecError>().ok())
+            .map(|e| e.is_precheck_failed())
+            .unwrap_or(false)
+    }
+
     /// generate the call_is_success vec
     pub fn gen_call_is_success(&self, mut call_is_success: Vec<bool>) -> Vec<bool> {
-        // ignore the call if it is a contract address collision
+        // ignore the call if precheck failed
         // https://github.com/ethereum/go-ethereum/issues/21438
-        if matches!(
-            self.error.as_ref().and_then(|e| e.parse().ok()),
-            Some(GethExecError::ContractAddressCollision)
-                | Some(GethExecError::InsufficientBalance)
-                | Some(GethExecError::Depth)
-                | Some(GethExecError::NonceUintOverflow)
-        ) {
+        if self.is_precheck_failed() {
             return call_is_success;
         }
         call_is_success.push(self.error.is_none());
@@ -852,15 +868,9 @@ impl GethCallTrace {
         trace: &mut Vec<FlatGethCallTrace>,
         created: &mut HashSet<Address>,
     ) {
-        // ignore the call if it is a contract address collision
+        // ignore the call if precheck failed
         // https://github.com/ethereum/go-ethereum/issues/21438
-        if matches!(
-            self.error.as_ref().and_then(|e| e.parse().ok()),
-            Some(GethExecError::ContractAddressCollision)
-                | Some(GethExecError::InsufficientBalance)
-                | Some(GethExecError::Depth)
-                | Some(GethExecError::NonceUintOverflow)
-        ) {
+        if self.is_precheck_failed() {
             return;
         }
         let call_type = OpcodeId::from_str(&self.call_type).unwrap();
