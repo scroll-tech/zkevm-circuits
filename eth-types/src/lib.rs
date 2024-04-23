@@ -819,9 +819,7 @@ impl GethCallTrace {
         // ignore the call if it is a contract address collision
         // https://github.com/ethereum/go-ethereum/issues/21438
         if matches!(
-            self.error
-                .as_ref()
-                .map(|e| e.parse().expect("unknown geth error")),
+            self.error.as_ref().and_then(|e| e.parse().ok()),
             Some(GethExecError::ContractAddressCollision)
                 | Some(GethExecError::InsufficientBalance)
                 | Some(GethExecError::Depth)
@@ -857,9 +855,7 @@ impl GethCallTrace {
         // ignore the call if it is a contract address collision
         // https://github.com/ethereum/go-ethereum/issues/21438
         if matches!(
-            self.error
-                .as_ref()
-                .map(|e| e.parse().expect("unknown geth error")),
+            self.error.as_ref().and_then(|e| e.parse().ok()),
             Some(GethExecError::ContractAddressCollision)
                 | Some(GethExecError::InsufficientBalance)
                 | Some(GethExecError::Depth)
