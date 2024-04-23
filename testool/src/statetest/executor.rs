@@ -203,9 +203,6 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                     || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
                 ..Default::default()
             },
-            #[cfg(feature = "shanghai")]
-            chain_config: Some(external_tracer::ChainConfig::shanghai()),
-            #[cfg(not(feature = "shanghai"))]
             chain_config: None,
             #[cfg(feature = "scroll")]
             l1_queue_index: 0,

@@ -77,9 +77,7 @@ impl LoggerConfig {
 /// Configuration structure for `params.ChainConfig`
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct ChainConfig {
-}
-
+pub struct ChainConfig {}
 
 #[cfg(not(feature = "scroll"))]
 pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {

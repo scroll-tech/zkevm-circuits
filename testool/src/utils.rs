@@ -32,10 +32,7 @@ pub enum MainnetFork {
     Frontier = 1,
 }
 
-#[cfg(feature = "shanghai")]
 pub const TEST_FORK: MainnetFork = MainnetFork::Cancun;
-#[cfg(not(feature = "shanghai"))]
-pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
 
 impl FromStr for MainnetFork {
     type Err = anyhow::Error;

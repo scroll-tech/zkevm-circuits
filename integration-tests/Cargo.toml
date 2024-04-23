@@ -12,7 +12,7 @@ serde_json.workspace = true
 serde.workspace = true
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
 eth-types = { path = "../eth-types" }
-zkevm-circuits = { path = "../zkevm-circuits", default-features = false, features = ["test", "test-circuits","shanghai","debug-annotations"] }
+zkevm-circuits = { path = "../zkevm-circuits", default-features = false, features = ["test", "test-circuits", "debug-annotations"] }
 tokio.workspace = true
 url.workspace = true
 pretty_assertions.workspace = true
