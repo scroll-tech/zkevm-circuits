@@ -67,7 +67,7 @@ struct AccountPre {
 struct Expect {
     indexes: Option<Indexes>,
     network: Vec<String>,
-    result: HashMap<String, AccountPost>,
+    result: BTreeMap<String, AccountPost>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -288,9 +288,9 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// parse a vector of address=>(storage,balance,code,nonce) entry
     fn parse_accounts_post(
         &mut self,
-        accounts_post: &HashMap<String, AccountPost>,
-    ) -> Result<HashMap<Address, AccountMatch>> {
-        let mut accounts = HashMap::new();
+        accounts_post: &BTreeMap<String, AccountPost>,
+    ) -> Result<BTreeMap<Address, AccountMatch>> {
+        let mut accounts = BTreeMap::new();
         for (address, acc) in accounts_post {
             let address = parse::parse_address(address)?;
             let mut storage: HashMap<U256, U256> = HashMap::new();
@@ -489,7 +489,7 @@ mod test {
                     storage: HashMap::new(),
                 },
             )]),
-            result: HashMap::from([(
+            result: BTreeMap::from([(
                 acc095e,
                 AccountMatch {
                     address: acc095e,

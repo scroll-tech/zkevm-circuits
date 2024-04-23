@@ -239,6 +239,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             // handle keccak_table_lookup
             let keccak_input = if IS_CREATE2 {
                 let salt = stack_inputs[3];
+                log::trace!("create2 initcode {}", hex::encode(&initialization_code));
+                log::trace!("create2 caller {:?}", caller.address);
                 assert_eq!(
                     address,
                     get_create2_address(

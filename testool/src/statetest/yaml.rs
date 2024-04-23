@@ -255,8 +255,8 @@ impl<'a> YamlStateTestBuilder<'a> {
         &mut self,
         yaml: &Yaml,
         expected_addresses: Option<&HashSet<&Address>>,
-    ) -> Result<HashMap<Address, AccountMatch>> {
-        let mut accounts = HashMap::new();
+    ) -> Result<BTreeMap<Address, AccountMatch>> {
+        let mut accounts = BTreeMap::new();
         for (address, account) in yaml.as_hash().context("parse_hash").unwrap().iter() {
             let acc_storage = &account["storage"];
             let acc_balance = &account["balance"];
@@ -798,7 +798,7 @@ arith:
                     },
                 ),
             ]),
-            result: HashMap::from([(
+            result: BTreeMap::from([(
                 ccccc,
                 AccountMatch {
                     address: ccccc,
