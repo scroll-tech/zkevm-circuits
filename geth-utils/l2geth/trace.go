@@ -165,7 +165,13 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
 		ShanghaiBlock:       big.NewInt(0),
-		BernoulliBlock:      big.NewInt(0),
+
+		TerminalTotalDifficulty: big.NewInt(0),
+
+		// Scroll configs
+		ArchimedesBlock: big.NewInt(0),
+		BernoulliBlock:  big.NewInt(0),
+		CurieBlock:      big.NewInt(0),
 		Scroll: params.ScrollConfig{
 			FeeVaultAddress: &config.Block.Coinbase,
 		},

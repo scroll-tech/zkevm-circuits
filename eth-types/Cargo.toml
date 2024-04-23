@@ -29,7 +29,6 @@ base64.workspace = true
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []
-shanghai = []
 scroll = []
 
 # trace heap allocation related feature switches

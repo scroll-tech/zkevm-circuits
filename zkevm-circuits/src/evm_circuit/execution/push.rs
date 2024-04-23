@@ -113,7 +113,6 @@ mod test {
 
     #[test]
     fn push_gadget_simple() {
-        #[cfg(feature = "shanghai")]
         test_ok(OpcodeId::PUSH0, &[]);
         test_ok(OpcodeId::PUSH1, &[1]);
         test_ok(OpcodeId::PUSH2, &[1, 2]);

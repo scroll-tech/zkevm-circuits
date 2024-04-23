@@ -287,9 +287,6 @@ pub fn gen_trace_config(
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
-        #[cfg(feature = "shanghai")]
-        chain_config: Some(external_tracer::ChainConfig::shanghai()),
-        #[cfg(not(feature = "shanghai"))]
         chain_config: None,
         #[cfg(feature = "scroll")]
         l1_queue_index: 0,
