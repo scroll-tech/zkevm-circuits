@@ -20,3 +20,6 @@ pub const N_BITS_SYMBOL: usize = 3;
 
 /// Number of bits used to represent the tag in binary form.
 pub const N_BITS_ZSTD_TAG: usize = 4;
+
+/// Number of bits in the repeat bits that follow value=1 in reconstructing FSE table.
+pub const N_BITS_REPEAT_FLAG: usize = 2;

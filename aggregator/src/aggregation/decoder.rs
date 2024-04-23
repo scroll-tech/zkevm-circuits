@@ -3,6 +3,7 @@ mod witgen;
 
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    comparator::{ComparatorChip, ComparatorConfig},
     is_equal::{IsEqualChip, IsEqualConfig},
     less_than::{LtChip, LtConfig},
     util::{and, not, select, Expr},
@@ -28,7 +29,7 @@ use self::{
         BitstringAccumulationTable, LiteralLengthCodes, LiteralsHeaderTable, MatchLengthCodes,
         MatchOffsetCodes, RomSequenceCodes, RomTagTable,
     },
-    witgen::N_BLOCK_HEADER_BYTES,
+    witgen::{N_BITS_REPEAT_FLAG, N_BLOCK_HEADER_BYTES},
 };
 
 #[derive(Clone, Debug)]
@@ -61,6 +62,8 @@ pub struct DecoderConfig {
     block_config: BlockConfig,
     /// Decoding helpers for the sequences section header.
     sequences_header_decoder: SequencesHeaderDecoder,
+    /// Config for reading and decoding bitstreams.
+    bitstream_decoder: BitstreamDecoder,
     /// Range Table for [0, 8).
     range8: RangeTable<8>,
     /// Range Table for [0, 16).
@@ -333,6 +336,164 @@ impl SequencesHeaderDecoder {
     }
 }
 
+/// Fields used while decoding from bitstream while not being byte-aligned, i.e. the bitstring
+/// could span over multiple bytes.
+#[derive(Clone, Debug)]
+pub struct BitstreamDecoder {
+    /// The bit-index where the bittsring begins. 0 <= bit_index_start < 8.
+    bit_index_start: Column<Advice>,
+    /// The bit-index where the bitstring ends. 0 <= bit_index_end < 24.
+    bit_index_end: Column<Advice>,
+    /// Helper gadget to know if the bitstring was spanned over a single byte.
+    bit_index_end_cmp_7: ComparatorConfig<Fr, 1>,
+    /// Helper gadget to know if the bitstring was spanned over 2 bytes.
+    bit_index_end_cmp_15: ComparatorConfig<Fr, 1>,
+    /// Helper gadget to know if the bitstring was spanned over 3 bytes.
+    bit_index_end_cmp_23: ComparatorConfig<Fr, 1>,
+    /// The value of the binary bitstring.
+    bitstring_value: Column<Advice>,
+    /// Helper gadget to know when the bitstring value is 1 or 3. This is useful in the case
+    /// of decoding/reconstruction of FSE table, where a value=1 implies a special case of
+    /// prob=0, where the symbol is instead followed by a 2-bit repeat flag. The repeat flag
+    /// bits themselves could be followed by another 2-bit repeat flag if the repeat flag's
+    /// value is 3.
+    bitstring_value_eq_1: IsEqualConfig<Fr>,
+    /// Helper config as per the above doc.
+    bitstring_value_eq_3: IsEqualConfig<Fr>,
+    /// Boolean that is set for the special case that we don't read from the bitstream, i.e. we
+    /// read 0 number of bits. We can witness such a case while applying an FSE table to bitstream,
+    /// where the number of bits to be read from the bitstream is 0.
+    is_nil: Column<Advice>,
+    /// The symbol that this bitstring decodes to. While applying an FSE table, this translates to
+    /// the symbol emitted from the FSE state before reading NB bits from bitstream.
+    decoded_symbol: Column<Advice>,
+}
+
+impl BitstreamDecoder {
+    fn configure(
+        meta: &mut ConstraintSystem<Fr>,
+        is_padding: Column<Advice>,
+        u8_table: U8Table,
+    ) -> Self {
+        let bit_index_end = meta.advice_column();
+        let bitstring_value = meta.advice_column();
+        Self {
+            bit_index_start: meta.advice_column(),
+            bit_index_end,
+            bit_index_end_cmp_7: ComparatorChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(bit_index_end, Rotation::cur()),
+                |_| 7.expr(),
+                u8_table.into(),
+            ),
+            bit_index_end_cmp_15: ComparatorChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(bit_index_end, Rotation::cur()),
+                |_| 15.expr(),
+                u8_table.into(),
+            ),
+            bit_index_end_cmp_23: ComparatorChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(bit_index_end, Rotation::cur()),
+                |_| 23.expr(),
+                u8_table.into(),
+            ),
+            bitstring_value,
+            bitstring_value_eq_1: IsEqualChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(bitstring_value, Rotation::cur()),
+                |_| 1.expr(),
+            ),
+            bitstring_value_eq_3: IsEqualChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(bitstring_value, Rotation::cur()),
+                |_| 3.expr(),
+            ),
+            is_nil: meta.advice_column(),
+            decoded_symbol: meta.advice_column(),
+        }
+    }
+}
+
+impl BitstreamDecoder {
+    fn is_nil(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        meta.query_advice(self.is_nil, rotation)
+    }
+
+    fn is_prob0(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        let bitstring_value = meta.query_advice(self.bitstring_value, rotation);
+        self.bitstring_value_eq_1
+            .expr_at(meta, rotation, bitstring_value, 1.expr())
+    }
+
+    fn is_rb_flag3(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        let bitstream_value = meta.query_advice(self.bitstring_value, rotation);
+        self.bitstring_value_eq_3
+            .expr_at(meta, rotation, bitstream_value, 3.expr())
+    }
+
+    fn strictly_spans_one_byte(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let (lt, _eq) = self.bit_index_end_cmp_7.expr(meta, rotation);
+        lt
+    }
+
+    fn spans_one_byte(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let (lt, eq) = self.bit_index_end_cmp_7.expr(meta, rotation);
+        lt + eq
+    }
+
+    fn strictly_spans_two_bytes(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let spans_one_byte = self.spans_one_byte(meta, rotation);
+        let (lt2, _eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
+        not::expr(spans_one_byte) * lt2
+    }
+
+    fn spans_two_bytes(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let spans_one_byte = self.spans_one_byte(meta, rotation);
+        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
+        not::expr(spans_one_byte) * (lt2 + eq2)
+    }
+
+    fn strictly_spans_three_bytes(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let spans_two_bytes = self.spans_two_bytes(meta, rotation);
+        let (lt3, _eq3) = self.bit_index_end_cmp_23.expr(meta, rotation);
+        not::expr(spans_two_bytes) * lt3
+    }
+
+    fn spans_three_bytes(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        not::expr(self.spans_two_bytes(meta, rotation))
+    }
+}
+
 pub struct AssignedDecoderConfigExports {
     /// The RLC of the zstd encoded bytes, i.e. blob bytes.
     pub encoded_rlc: AssignedCell<Fr, Fr>,
@@ -365,6 +526,7 @@ impl DecoderConfig {
         let (byte, is_padding) = (meta.advice_column(), meta.advice_column());
         let sequences_header_decoder =
             SequencesHeaderDecoder::configure(meta, byte, is_padding, u8_table);
+        let bitstream_decoder = BitstreamDecoder::configure(meta, is_padding, u8_table);
 
         // Main config
         let config = Self {
@@ -385,6 +547,7 @@ impl DecoderConfig {
             tag_config,
             block_config,
             sequences_header_decoder,
+            bitstream_decoder,
             range8,
             range16,
             literals_header_table,
