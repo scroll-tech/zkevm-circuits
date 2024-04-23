@@ -4,21 +4,23 @@ use eth_types::{Bytes, U256};
 /// encodes an abi call (e.g. "f(uint) 1")
 pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     use ethers_core::abi::{Function, Param, ParamType, StateMutability, Token};
-    //log::error!("spec {spec}");
+
     // split parts into `func_name` ([`func_params`]) `args`
 
     let tokens: Vec<_> = spec.split(' ').collect();
     let func = tokens[0];
     let args = &tokens[1..];
 
-    let func_name_params: Vec<_> = func.split([',', '(', ')']).filter(|s| !s.is_empty()).collect();
+    let func_name_params: Vec<_> = func
+        .split([',', '(', ')'])
+        .filter(|s| !s.is_empty())
+        .collect();
     let func_name = func_name_params[0];
     let func_params = if func_name_params.len() == 1 {
         vec![]
     } else {
         func_name_params[1..func_name_params.len()].to_vec()
     };
-    //log::error!("func_name_params {func_name_params:?}");
     // transform func_params and args into the appropiate types
 
     let map_type = |t| match t {
@@ -28,17 +30,11 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         _ => panic!("unimplemented abi type {t:?}"),
     };
 
-    let encode_type = |t, v: &str| {
-        //log::error!("encode_type {t:?} {v:?}");
-    match t {
-        
+    let encode_type = |t, v: &str| match t {
         ParamType::Uint(256) => {
             if let Some(hex) = v.strip_prefix("0x") {
-                //log::error!("from_str_radix hex");
                 let split_idx = if hex.len() > 64 { hex.len() - 64 } else { 0 };
-                let r = U256::from_str_radix(&hex[split_idx..], 16);
-                //log::error!("r {r:?}");
-                r.map(Token::Uint)
+                U256::from_str_radix(&hex[split_idx..], 16).map(Token::Uint)
             } else {
                 U256::from_str_radix(v, 10).map(Token::Uint)
             }
@@ -49,10 +45,8 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
             _ => panic!("unexpected boolean '{v}'"),
         },
         _ => unimplemented!(),
-    }
-};
+    };
 
-    //log::error!("func_params {func_params:?}");
     let func_params: Vec<_> = func_params
         .iter()
         .enumerate()
@@ -69,7 +63,6 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         .map(|(typ, val)| encode_type(typ.kind.clone(), val))
         .collect::<std::result::Result<_, _>>()?;
 
-        //log::error!("args {args:?}");
     // generate and return calldata
 
     #[allow(deprecated)]
@@ -80,7 +73,6 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         state_mutability: StateMutability::Payable,
         constant: Some(false),
     };
-    //log::error!("func {:?}", func);
 
     Ok(Bytes::from(func.encode_input(&args)?))
 }

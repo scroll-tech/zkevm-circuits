@@ -267,48 +267,50 @@ impl Compiler {
         Ok(bytecode)
     }
 
-    /// compiles YUL code
+    /// compiles YUL code. Sometimes this method cannot emit bytecode successfully.
+    /// For example, for selfdestruct, it can only output warning without bytecode.
+    #[deprecated]
+    #[allow(dead_code)]
     pub fn yul2(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
         log::error!("yul {evm_version:?}");
         self.solc(Language::Yul, src, evm_version)
     }
 
-    /// ..
+    /// compiles YUL code, this is the exact script used in retesteth
     pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
-        
         if let Some(bytecode) = self
-        .cache
-        .as_ref()
-        .and_then(|c| c.lock().unwrap().get(src).cloned())
-    {
-        return Ok(bytecode);
-    }
-    
-                    if !self.compile {
-                        bail!("No way to compile Yul for '{}'", src)
-                    }
-                    
-                    let stdout = match evm_version {
-                        Some(evm_version) => Self::exec(
-                        &["run", "-i", "--rm", "solc", 
-                        "--evm-version", evm_version,
-                        "--strict-assembly", 
-                        "--optimize", "--yul-optimizations=:",
-                        "-"],
-                        src,
-                    )?,
-                    None => Self::exec(
-                        &["run", "-i", "--rm", "solc", "--strict-assembly", 
-                        "--optimize", "--yul-optimizations=:",
-                        "-"],
-                        src,
-                    )?};
-                    let placeholder = "Binary representation:\n";
-                    let from_pos = stdout.find(placeholder);
-            let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
+            .cache
+            .as_ref()
+            .and_then(|c| c.lock().unwrap().get(src).cloned())
+        {
+            return Ok(bytecode);
+        }
+
+        if !self.compile {
+            bail!("No way to compile Yul for '{}'", src)
+        }
+        let mut cmd = vec![
+            "run",
+            "-i",
+            "--rm",
+            "solc",
+            "--strict-assembly",
+            "--optimize",
+            "--yul-optimizations=:",
+        ];
+        if let Some(evm_version) = evm_version {
+            cmd.push("--evm-version");
+            cmd.push(evm_version);
+        }
+        cmd.push("-");
+
+        let stdout = Self::exec(&cmd, src)?;
+        let placeholder = "Binary representation:\n";
+        let from_pos = stdout.find(placeholder);
+        let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
         let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
             let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
-            Bytes::from(hex::decode(&hex)?)
+            Bytes::from(hex::decode(hex)?)
         } else {
             bail!("Unable to compile: {}", src);
         };
@@ -336,15 +338,16 @@ impl Compiler {
             bail!("No way to compile {:?} for '{}'", language, src)
         }
         let compiler_input = CompilerInput::new_default(language, src, evm_version);
-        let compiler_input = serde_json::to_string(&compiler_input).unwrap();
+        let stdin = serde_json::to_string(&compiler_input).unwrap();
         let stdout = Self::exec(
             &["run", "-i", "--rm", "solc", "--standard-json", "-"],
-            compiler_input.as_str(),
+            stdin.as_str(),
         )?;
-        log::error!("stdout {stdout}");
         let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)
             .map_err(|e| {
-                println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{compiler_input}\n{stdout}\n-----")
+                println!(
+                    "---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{stdin}\n{stdout}\n-----"
+                )
             })
             .unwrap();
         let bytecode = compilation_result
@@ -386,7 +389,7 @@ mod test {
     #[test]
     #[cfg(not(feature = "ignore-test-docker"))]
     fn test_docker_yul() -> anyhow::Result<()> {
-        let out = super::Compiler::new(true, None)?.yul2(
+        let out = super::Compiler::new(true, None)?.yul(
             r#"
 {
     function power(base, exponent) -> result
@@ -398,8 +401,12 @@ mod test {
         }
     }
 }
-            "#, None
+            "#,
+            None,
         )?;
+        // This test will fail, since recent solc will completely ignore the used `power` function
+        // and emit `STOP`
+        // FIXME
         assert_eq!(
             hex::encode(out),
             "6020565b8381101560195782820291506001810190506003565b5092915050565b"
@@ -410,6 +417,7 @@ mod test {
     #[cfg(not(feature = "ignore-test-docker"))]
     fn test_docker_solidity() -> anyhow::Result<()> {
         let out = super::Compiler::new(true, None)?.solidity("contract A{}", None)?;
+        // Recent solc emit different codes. FIXME
         assert_eq!(
             hex::encode(out),
             "6080604052348015600f57600080fd5b50603c80601d6000396000f3fe6080604052600080fdfea164736f6c637828302e382e31332d646576656c6f702e323032322e352e31312b636f6d6d69742e61626161356330650030"

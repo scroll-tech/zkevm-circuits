@@ -136,11 +136,13 @@ impl<'a> JsonStateTestBuilder<'a> {
             let max_priority_fee_per_gas = test
                 .transaction
                 .max_priority_fee_per_gas
-                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some)).unwrap();
+                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))
+                .unwrap();
             let max_fee_per_gas = test
                 .transaction
                 .max_fee_per_gas
-                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some)).unwrap();
+                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))
+                .unwrap();
 
             // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
             // EIP-1559 transaction.
@@ -158,21 +160,24 @@ impl<'a> JsonStateTestBuilder<'a> {
                 .data
                 .iter()
                 .map(|item| parse::parse_calldata(self.compiler, item, access_list))
-                .collect::<Result<_>>().unwrap();
+                .collect::<Result<_>>()
+                .unwrap();
 
             let gas_limit_s: Vec<_> = test
                 .transaction
                 .gas_limit
                 .iter()
                 .map(|item| parse::parse_u64(item))
-                .collect::<Result<_>>().unwrap();
+                .collect::<Result<_>>()
+                .unwrap();
 
             let value_s: Vec<_> = test
                 .transaction
                 .value
                 .iter()
                 .map(|item| parse::parse_u256(item))
-                .collect::<Result<_>>().unwrap();
+                .collect::<Result<_>>()
+                .unwrap();
 
             let mut expects = Vec::new();
             for expect in test.expect {
@@ -327,7 +332,7 @@ impl<'a> JsonStateTestBuilder<'a> {
     fn parse_refs(value: &serde_json::Value) -> Result<Refs> {
         let mut refs = Vec::new();
         if value.is_null() {
-            return Ok(Refs(vec![Ref::Any]))
+            return Ok(Refs(vec![Ref::Any]));
         }
         if let Some(index) = value.as_i64() {
             if index == -1 {

@@ -55,7 +55,6 @@ pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
 };
 
-
 /// Setup parameters for ECC-related precompile calls.
 #[derive(Debug, Clone, Copy)]
 pub struct PrecompileEcParams {
@@ -620,7 +619,6 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call_ctx()?.memory.len(),
                 geth_step.refund.0,
                 {
-                    //#[cfg(feature = "enable-stack")]
                     let stack = &state_ref.call_ctx()?.stack;
                     if geth_step.op.is_push_with_data() {
                         #[cfg(feature = "enable-stack")]

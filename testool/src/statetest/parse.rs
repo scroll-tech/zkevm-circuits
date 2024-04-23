@@ -46,8 +46,9 @@ impl Calldata {
     }
 }
 
-static YUL_FRAGMENT_PARSER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<version2>\w+)*\s*(?P<code>\{[\S\s]*)"#).unwrap());
+static YUL_FRAGMENT_PARSER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<version2>\w+)*\s*(?P<code>\{[\S\s]*)"#).unwrap()
+});
 
 /// returns the element as an address
 pub fn parse_address(as_str: &str) -> Result<Address> {
@@ -62,9 +63,7 @@ pub fn parse_to_address(as_str: &str) -> Result<Option<Address>> {
     if as_str.trim().is_empty() {
         return Ok(None);
     }
-    let x = parse_address(as_str).map(|x| Ok(Some(x)))?;
-    //log::error!("parse_to_address {as_str} {x:?}");
-    x
+    parse_address(as_str).map(|x| Ok(Some(x)))?
 }
 
 /// returns the element as an array of bytes
@@ -142,26 +141,20 @@ pub fn parse_code(compiler: &Compiler, as_str: &str) -> Result<Bytes> {
             bail!("do not know what to do with code(3) '{:?}'", as_str);
         }
     } else if let Some(yul) = tags.get(":yul") {
-        let (src, evm_version) = if yul.starts_with("{") {
+        let (src, evm_version) = if yul.starts_with('{') {
             (yul.to_string(), None)
         } else {
             let re = Regex::new(r"\s").unwrap();
-    let mut parts = re.splitn(&yul, 2);
+            let mut parts = re.splitn(yul, 2);
 
-    let version = parts.next().unwrap();
-    let src = parts.next().unwrap();
+            let version = parts.next().unwrap();
+            let src = parts.next().unwrap();
 
-            //let (version, src) = yul.split_once(" ").unwrap();
+            // TODO: what is this "optimise" mean?
             let src = src.strip_prefix("optimise").unwrap_or(src).to_string();
             (src, Some(version.to_string()))
         };
-        //let caps = YUL_FRAGMENT_PARSER
-        //    .captures(yul)
-        //    .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", as_str))?;
-        compiler.yul(
-            &src, //caps.name("code").unwrap().as_str(),
-            evm_version.as_ref().map(|s| &**s), //caps.name("version").map(|m| m.as_str()),
-        )?
+        compiler.yul(&src, evm_version.as_deref())?
     } else if let Some(solidity) = tags.get(":solidity") {
         debug!(target: "testool", "SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
         compiler.solidity(solidity, None)?
@@ -178,7 +171,7 @@ pub fn parse_code(compiler: &Compiler, as_str: &str) -> Result<Bytes> {
 pub fn parse_hash(value: &str) -> Result<H256> {
     let hex = value.strip_prefix("0x").unwrap_or(value);
     if hex.is_empty() {
-        return Ok(H256::zero())
+        return Ok(H256::zero());
     }
     Ok(H256::from_slice(&hex::decode(hex).context("parse_hash")?))
 }
@@ -222,7 +215,7 @@ fn parse_call_bytes(compiler: &Compiler, tags: HashMap<String, String>) -> Resul
         }
     } else if let Some(raw) = tags.get(":raw") {
         if let Some(hex) = raw.strip_prefix("0x") {
-            Ok(Bytes::from(hex::decode(hex.replace(" ", "")).unwrap()))
+            Ok(Bytes::from(hex::decode(hex.replace(' ', "")).unwrap()))
         } else {
             bail!("bad encoded calldata (3) {:?}", tags)
         }

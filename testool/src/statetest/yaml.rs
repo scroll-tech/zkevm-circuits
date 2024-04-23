@@ -50,20 +50,24 @@ impl<'a> YamlStateTestBuilder<'a> {
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
     pub fn load_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
-        log::debug!("load_yaml {path}");
+        //log::trace!("load_yaml {path}");
         // get the yaml root element
-        let doc = yaml_rust::YamlLoader::load_from_str(source).unwrap()
+        let doc = yaml_rust::YamlLoader::load_from_str(source)
+            .unwrap()
             .into_iter()
             .next()
-            .context("get yaml doc").unwrap();
+            .context("get yaml doc")
+            .unwrap();
 
         // collect test names, that are the top-level items in the yaml doc
         let test_names: Vec<_> = doc
             .as_hash()
-            .context("parse_hash").unwrap()
+            .context("parse_hash")
+            .unwrap()
             .keys()
             .map(|v| v.as_str().context("test_names_as_str"))
-            .collect::<Result<_>>().unwrap();
+            .collect::<Result<_>>()
+            .unwrap();
 
         // for each test defined in the yaml, create the according defined tests
         let mut tests = Vec::new();
@@ -75,7 +79,8 @@ impl<'a> YamlStateTestBuilder<'a> {
 
             // parse pre (account states before executing the transaction)
             let pre: BTreeMap<Address, Account> = self
-                .parse_accounts(&yaml_test["pre"], None).unwrap()
+                .parse_accounts(&yaml_test["pre"], None)
+                .unwrap()
                 .into_iter()
                 .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
                 .collect();
@@ -86,24 +91,30 @@ impl<'a> YamlStateTestBuilder<'a> {
             let yaml_transaction = &yaml_test["transaction"];
             let data_s: Vec<_> = yaml_transaction["data"]
                 .as_vec()
-                .context("as_vec").unwrap()
+                .context("as_vec")
+                .unwrap()
                 .iter()
                 .map(|item| self.parse_calldata(item))
-                .collect::<Result<_>>().unwrap();
+                .collect::<Result<_>>()
+                .unwrap();
 
             let gas_limit_s: Vec<_> = yaml_transaction["gasLimit"]
                 .as_vec()
-                .context("as_vec").unwrap()
+                .context("as_vec")
+                .unwrap()
                 .iter()
                 .map(Self::parse_u64)
-                .collect::<Result<_>>().unwrap();
+                .collect::<Result<_>>()
+                .unwrap();
 
             let value_s: Vec<_> = yaml_transaction["value"]
                 .as_vec()
-                .context("as_vec").unwrap()
+                .context("as_vec")
+                .unwrap()
                 .iter()
                 .map(Self::parse_u256)
-                .collect::<Result<_>>().unwrap();
+                .collect::<Result<_>>()
+                .unwrap();
 
             let max_priority_fee_per_gas =
                 Self::parse_u256(&yaml_transaction["maxPriorityFeePerGas"]).ok();
@@ -119,13 +130,19 @@ impl<'a> YamlStateTestBuilder<'a> {
             });
 
             let nonce = Self::parse_u256(&yaml_transaction["nonce"]).unwrap();
-            let to = Self::parse_to_address(&yaml_transaction["to"], Some(&expected_addresses)).unwrap();
+            let to =
+                Self::parse_to_address(&yaml_transaction["to"], Some(&expected_addresses)).unwrap();
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"]).unwrap();
             let from = secret_key_to_address(&SigningKey::from_slice(&secret_key).unwrap());
 
             // parse expects (account states before executing the transaction)
             let mut expects = Vec::new();
-            for expect in yaml_test["expect"].as_vec().context("as_vec").unwrap().iter() {
+            for expect in yaml_test["expect"]
+                .as_vec()
+                .context("as_vec")
+                .unwrap()
+                .iter()
+            {
                 let networks: Vec<_> = expect["network"]
                     .as_vec()
                     .expect("cannot convert network into vec<string>")
@@ -152,7 +169,9 @@ impl<'a> YamlStateTestBuilder<'a> {
                 let gas_refs = Self::parse_refs(&expect["indexes"]["gas"]).unwrap();
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"]).unwrap();
 
-                let result = self.parse_accounts(&expect["result"], Some(&expected_addresses)).unwrap();
+                let result = self
+                    .parse_accounts(&expect["result"], Some(&expected_addresses))
+                    .unwrap();
 
                 if MainnetFork::in_network_range(&networks).unwrap() {
                     expects.push((exception, data_refs, gas_refs, value_refs, result));
@@ -246,13 +265,21 @@ impl<'a> YamlStateTestBuilder<'a> {
 
             let mut storage = HashMap::new();
             if !acc_storage.is_badvalue() {
-                for (slot, value) in account["storage"].as_hash().context("parse_hash").unwrap().iter() {
+                for (slot, value) in account["storage"]
+                    .as_hash()
+                    .context("parse_hash")
+                    .unwrap()
+                    .iter()
+                {
                     if let Some(as_str) = value.as_str() {
                         if as_str.eq("ANY") {
                             continue;
                         }
                     }
-                    storage.insert(Self::parse_u256(slot).unwrap(), Self::parse_u256(value).unwrap());
+                    storage.insert(
+                        Self::parse_u256(slot).unwrap(),
+                        Self::parse_u256(value).unwrap(),
+                    );
                 }
             }
 
@@ -338,10 +365,11 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 
     /// returns the element as a to address
-    fn parse_to_address(yaml: &Yaml,
-        expected_addresses: Option<&HashSet<&Address>>) -> Result<Option<Address>> {
-        
-        let r = if let Some(as_str) = yaml.as_str() {
+    fn parse_to_address(
+        yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>,
+    ) -> Result<Option<Address>> {
+        if let Some(as_str) = yaml.as_str() {
             if as_str.trim().is_empty() {
                 return Ok(None);
             }
@@ -359,12 +387,12 @@ impl<'a> YamlStateTestBuilder<'a> {
 
             // Format as a hex string directly for accounts before transaction (pre).
             // e.g. 10 -> 0x10
-            Ok(Some(Address::from_slice(&hex::decode(format!("{as_i64:0>40}"))?)))
-    }   else {
+            Ok(Some(Address::from_slice(&hex::decode(format!(
+                "{as_i64:0>40}"
+            ))?)))
+        } else {
             bail!("cannot parse to address {:?}", yaml);
-        };
-        //log::info!("Self::parse_to_address {yaml:?} {r:?}");
-        r
+        }
     }
 
     /// returns the element as an array of bytes
@@ -414,13 +442,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         if let Some(as_int) = yaml.as_i64() {
             Ok(U256::from(as_int))
         } else if let Some(as_str) = yaml.as_str() {
-            match parse::parse_u256(as_str) {
-                Ok(v) => Ok(v),
-                Err(e) => {
-                    log::error!("parse_u256 {as_str} {e:#?}");
-                    Err(e)
-                }
-            }
+            parse::parse_u256(as_str)
         } else if yaml.as_f64().is_some() {
             if let Yaml::Real(value) = yaml {
                 Ok(U256::from_str_radix(value, 10)?)
