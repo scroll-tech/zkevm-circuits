@@ -219,6 +219,7 @@ impl TxRomTable {
             |mut region| {
                 let transition_scenarios: Vec<(TxFieldTag, TxFieldTag, u8, u8, u8)> = vec![
                     // All fixed section tags. tx_id stays the same except the last tx.
+                    (TxFieldTag::Null, Nonce, 0, 1, 0),
                     (Nonce, GasPrice, 1, 1, 0),
                     (GasPrice, Gas, 1, 1, 0),
                     (Gas, CallerAddress, 1, 1, 0),
@@ -739,7 +740,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.lookup_any("tx table tag transition lookup", |meta| {
             let cond = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                not::expr(meta.query_fixed(q_first, Rotation::next())),
             ]);
             vec![
                 meta.query_advice(tx_table.tag, Rotation::cur()),
