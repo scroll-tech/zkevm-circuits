@@ -11,10 +11,16 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     let func = tokens[0];
     let args = &tokens[1..];
 
-    let func_name_params: Vec<_> = func.split([',', '(', ')']).collect();
+    let func_name_params: Vec<_> = func
+        .split([',', '(', ')'])
+        .filter(|s| !s.is_empty())
+        .collect();
     let func_name = func_name_params[0];
-    let func_params = &func_name_params[1..func_name_params.len() - 1];
-
+    let func_params = if func_name_params.len() == 1 {
+        vec![]
+    } else {
+        func_name_params[1..func_name_params.len()].to_vec()
+    };
     // transform func_params and args into the appropiate types
 
     let map_type = |t| match t {
@@ -27,7 +33,8 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     let encode_type = |t, v: &str| match t {
         ParamType::Uint(256) => {
             if let Some(hex) = v.strip_prefix("0x") {
-                U256::from_str_radix(hex, 16).map(Token::Uint)
+                let split_idx = if hex.len() > 64 { hex.len() - 64 } else { 0 };
+                U256::from_str_radix(&hex[split_idx..], 16).map(Token::Uint)
             } else {
                 U256::from_str_radix(v, 10).map(Token::Uint)
             }
@@ -85,6 +92,7 @@ mod test {
             hex::encode(encode_funccall("f(uint) 0x04")?),
             "b3de648b0000000000000000000000000000000000000000000000000000000000000004"
         );
+        encode_funccall("doReenter()")?;
         Ok(())
     }
 }

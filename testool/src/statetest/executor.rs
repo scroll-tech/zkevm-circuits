@@ -10,7 +10,7 @@ use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
 use itertools::Itertools;
-use std::{collections::HashMap, env, str::FromStr, sync::LazyLock};
+use std::{collections::BTreeMap, env, str::FromStr, sync::LazyLock};
 use thiserror::Error;
 use zkevm_circuits::{
     bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
@@ -87,7 +87,7 @@ pub struct CircuitsConfig {
 
 fn check_post(
     builder: &CircuitInputBuilder,
-    post: &HashMap<Address, AccountMatch>,
+    post: &BTreeMap<Address, AccountMatch>,
     st: &StateTest,
 ) -> Result<(), StateTestError> {
     log::trace!("check post");
@@ -123,6 +123,10 @@ fn check_post(
                 std::borrow::Cow::Borrowed(&builder.code_db.0[&actual.code_hash])
             };
             if &actual_code as &[u8] != expected_code.0 {
+                log::error!(
+                    "code mismatch, address {address:?} actual.code_hash {:?}",
+                    actual.code_hash
+                );
                 return Err(StateTestError::CodeMismatch {
                     expected: expected_code.clone(),
                     found: Bytes::from(actual_code.to_vec()),
@@ -203,9 +207,6 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                     || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
                 ..Default::default()
             },
-            #[cfg(feature = "shanghai")]
-            chain_config: Some(external_tracer::ChainConfig::shanghai()),
-            #[cfg(not(feature = "shanghai"))]
             chain_config: None,
             #[cfg(feature = "scroll")]
             l1_queue_index: 0,
@@ -399,7 +400,7 @@ fn trace_config_to_witness_block_l1(
     let wallet: LocalWallet = ethers_core::k256::ecdsa::SigningKey::from_slice(&st.secret_key)
         .unwrap()
         .into();
-    let mut wallets = HashMap::new();
+    let mut wallets = std::collections::HashMap::new();
     wallets.insert(
         wallet.address(),
         wallet.with_chain_id(trace_config.chain_id),

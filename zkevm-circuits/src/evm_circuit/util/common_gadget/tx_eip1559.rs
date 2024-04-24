@@ -30,7 +30,7 @@ pub(crate) struct TxEip1559Gadget<F> {
     gas_tip_cap: Word<F>,
     // condition for min(
     // gas_tip_cap, gas_fee_cap - base_fee_per_gas)
-    lt_gas_tip_cap_vs_gas_fee_cap_sub_base_fee: LtWordGadget<F>,
+    gas_tip_cap_lt_gas_fee_cap_minus_base_fee: LtWordGadget<F>,
     // gas_fee_cap - base_fee_per_gas
     gas_sub_base_fee: AddWordsGadget<F, 2, true>,
     // check tx_gas_price = effective_gas_price = priority_fee_per_gas +
@@ -77,7 +77,7 @@ impl<F: Field> TxEip1559Gadget<F> {
             gas_fee_cap_lt_gas_tip_cap,
             base_fee,
             gas_fee_cap_lt_base_fee,
-            lt_gas_tip_gas_fee_sub_base_fee,
+            gas_tip_cap_lt_gas_fee_cap_minus_base_fee,
             gas_sub_base_fee,
             effective_gas_price_check,
         ) = cb.condition(is_eip1559_tx.expr(), |cb| {
@@ -109,15 +109,15 @@ impl<F: Field> TxEip1559Gadget<F> {
             //     gas_tip_cap
             //     gas_fee_cap - base_fee_per_gas,
             // );
-            let diff_gas_base_fee = cb.query_word_rlc();
-            let gas_sub_base_fee = AddWordsGadget::construct(cb, [base_fee.clone(), diff_gas_base_fee.clone()], gas_fee_cap.clone());
-            let lt_gas_tip_gas_fee_sub_base_fee = LtWordGadget::construct(cb, &gas_tip_cap, &diff_gas_base_fee);
+            let gas_fee_cap_minus_base_fee_per_gas = cb.query_word_rlc();
+            let gas_fee_cap_minus_base_fee_per_gas_check = AddWordsGadget::construct(cb, [base_fee.clone(), gas_fee_cap_minus_base_fee_per_gas.clone()], gas_fee_cap.clone());
+            let tip_comparator = LtWordGadget::construct(cb, &gas_tip_cap, &gas_fee_cap_minus_base_fee_per_gas);
             // let effective_gas_price = priority_fee_per_gas + base_fee_per_gas;
             let priority_fee_per_gas = cb.query_word_rlc();
             cb.require_equal("constrain priority_fee_per_gas = min(gas_tip_cap, gas_fee_cap - base_fee_per_gas)", priority_fee_per_gas.expr(), select::expr(
-                lt_gas_tip_gas_fee_sub_base_fee.expr(),
+                tip_comparator.expr(),
                 gas_tip_cap.expr(),
-                diff_gas_base_fee.expr()));
+                gas_fee_cap_minus_base_fee_per_gas.expr()));
             // constrain tx_gas_price = effective_gas_price within below `AddWordsGadget`.
             let effective_gas_price_check = AddWordsGadget::construct(cb, [base_fee.clone(), priority_fee_per_gas], tx_gas_price.clone());
 
@@ -137,8 +137,8 @@ impl<F: Field> TxEip1559Gadget<F> {
                 gas_fee_cap_lt_gas_tip_cap,
                 base_fee,
                 gas_fee_cap_lt_base_fee,
-                lt_gas_tip_gas_fee_sub_base_fee,
-                gas_sub_base_fee,
+                tip_comparator,
+                gas_fee_cap_minus_base_fee_per_gas_check,
                 effective_gas_price_check,
             )
         });
@@ -147,7 +147,7 @@ impl<F: Field> TxEip1559Gadget<F> {
             is_eip1559_tx,
             gas_fee_cap,
             gas_tip_cap,
-            lt_gas_tip_cap_vs_gas_fee_cap_sub_base_fee: lt_gas_tip_gas_fee_sub_base_fee,
+            gas_tip_cap_lt_gas_fee_cap_minus_base_fee,
             gas_sub_base_fee,
             effective_gas_price_check,
             mul_gas_fee_cap_by_gas,
@@ -181,16 +181,15 @@ impl<F: Field> TxEip1559Gadget<F> {
             offset,
             Some(tx.max_priority_fee_per_gas.to_le_bytes()),
         )?;
-
         let diff_gas_base_fee = tx.max_fee_per_gas - base_fee;
-        let effective_gas_price = base_fee + tx.max_priority_fee_per_gas.min(diff_gas_base_fee);
+        let priority_fee_per_gas = tx.max_priority_fee_per_gas.min(diff_gas_base_fee);
         self.gas_sub_base_fee.assign(
             region,
             offset,
             [base_fee, diff_gas_base_fee],
             tx.max_fee_per_gas,
         )?;
-        self.lt_gas_tip_cap_vs_gas_fee_cap_sub_base_fee.assign(
+        self.gas_tip_cap_lt_gas_fee_cap_minus_base_fee.assign(
             region,
             offset,
             tx.max_priority_fee_per_gas,
@@ -200,7 +199,7 @@ impl<F: Field> TxEip1559Gadget<F> {
         self.effective_gas_price_check.assign(
             region,
             offset,
-            [base_fee, effective_gas_price],
+            [base_fee, priority_fee_per_gas],
             tx.gas_price,
         )?;
 

@@ -14,8 +14,9 @@ pub const ETH_CHAIN_ID: u64 = 1;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
+    Cancun = 16,
     Shanghai = 15,
-    Merge = 14,
+    Paris = 14,
     GrayGlacier = 13,
     ArrowGlacier = 12,
     Altair = 11,
@@ -31,18 +32,16 @@ pub enum MainnetFork {
     Frontier = 1,
 }
 
-#[cfg(feature = "shanghai")]
-pub const TEST_FORK: MainnetFork = MainnetFork::Shanghai;
-#[cfg(not(feature = "shanghai"))]
-pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
+pub const TEST_FORK: MainnetFork = MainnetFork::Cancun;
 
 impl FromStr for MainnetFork {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "Cancun" => Self::Cancun,
             "Shanghai" => Self::Shanghai,
-            "Merge" => Self::Merge,
+            "Paris" => Self::Paris,
             "Gray Glacier" => Self::GrayGlacier,
             "Arrow Glacier" => Self::ArrowGlacier,
             "Altair" => Self::Altair,
@@ -55,6 +54,7 @@ impl FromStr for MainnetFork {
             "Byzantium" => Self::Byzantium,
             "Spurious Dragon" => Self::SpuriousDragon,
             "TangeringWhistle" => Self::TangerineWhistle,
+            "EIP150" => Self::TangerineWhistle,
             "EIP158" => Self::TangerineWhistle,
             "Homestead" => Self::Homestead,
             "Frontier" => Self::Frontier,
