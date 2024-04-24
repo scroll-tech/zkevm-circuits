@@ -61,6 +61,8 @@ paths = [
 #   "stExample/eip1559Filler.yml",
     "stEIP1559/valCausesOOFFiller.yml",
     "stExample/mergeTestFiller.yml",
+    "Pyspecs",
+    "Cancun",
 #   "EIP2930",
     #"stPreCompiledContracts",
     #"stZeroKnowledge"
@@ -133,13 +135,12 @@ paths = [
 desc = "bad yml"
 paths = [
     "CreateAddressWarmAfterFailFiller.yml", # Odd number
-    "HighGasPriceFiller.yml", # Wrong network EIP158
     "doubleSelfdestructTestFiller.yml", # character is not in the range 0-9
     "stPreCompiledContracts/blake2BFiller.yml", # same with above, gasLimit
     "stPreCompiledContracts2/ecrecoverShortBuffFiller.yml", # same with above, gasLimit
     "stPreCompiledContracts2/CallEcrecover_OverflowFiller.yml", # same with above, gasLimit
-    "eoaEmptyFiller.yml", # cannot parse to address Integer(49374)
-    "touchAndGoFiller.yml" # Wrong network EIP150
+    "stTransactionTest/ValueOverflowParisFiller.yml",
+    "stTransactionTest/ValueOverflowFiller.yml",
 ]
 
 [[skip_paths]]

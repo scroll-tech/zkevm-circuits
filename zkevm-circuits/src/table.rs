@@ -209,7 +209,7 @@ pub struct TxTable {
     /// Tx ID
     pub tx_id: Column<Advice>,
     /// Tag (TxContextFieldTag)
-    pub tag: Column<Fixed>,
+    pub tag: Column<Advice>,
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
@@ -224,11 +224,10 @@ impl TxTable {
     /// Construct a new TxTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.fixed_column();
-        let tag = meta.fixed_column();
         Self {
             q_enable,
             tx_id: meta.advice_column(),
-            tag,
+            tag: meta.advice_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
             access_list_address: meta.advice_column(),
@@ -268,7 +267,7 @@ impl TxTable {
             offset: usize,
             q_enable: Column<Fixed>,
             advice_columns: &[Column<Advice>],
-            tag: &Column<Fixed>,
+            tag: &Column<Advice>,
             row: &[Value<F>; 5],
             msg: &str,
         ) -> Result<AssignedCell<F, F>, Error> {
@@ -291,7 +290,7 @@ impl TxTable {
                 offset,
                 || Value::known(F::one()),
             )?;
-            region.assign_fixed(
+            region.assign_advice(
                 || format!("tx table {msg} row {offset}"),
                 *tag,
                 offset,
@@ -444,7 +443,7 @@ impl<F: Field> LookupTable<F> for TxTable {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.tx_id, Rotation::cur()),
-            meta.query_fixed(self.tag, Rotation::cur()),
+            meta.query_advice(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
             meta.query_advice(self.value, Rotation::cur()),
             meta.query_advice(self.access_list_address, Rotation::cur()),

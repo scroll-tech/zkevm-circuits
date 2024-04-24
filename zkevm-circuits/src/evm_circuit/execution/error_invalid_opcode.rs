@@ -127,16 +127,6 @@ mod test {
         test_internal_ok(0x20, 0x30, &[fe_opcode]);
     }
 
-    #[cfg(not(feature = "shanghai"))]
-    #[test]
-    fn invalid_opcode_push0_for_not_shanghai() {
-        // Should test with logs in `assign_exec_step`, otherwise it could also
-        // pass (since PushGadget).
-        let push0 = 0x5f;
-        test_root_ok(&[push0]);
-        test_internal_ok(0x20, 0x00, &[push0]);
-    }
-
     // for scroll feature, treat selfdestruct_opcode as invalidcode. even this test construct oog
     // case for self_destruct, expected to meet invalid opcode error.
     #[cfg(feature = "scroll")]

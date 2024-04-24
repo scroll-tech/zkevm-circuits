@@ -83,7 +83,6 @@ poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "main
 bls12_381 = { git = "https://github.com/scroll-tech/bls12_381", branch = "feat/impl_scalar_field" }
 
 
-
 # Definition of benchmarks profile to use.
 [profile.bench]
 opt-level = 3
