@@ -150,20 +150,24 @@ func toBigInt(value *hexutil.Big) *big.Int {
 
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
-		ChainID:             new(big.Int).SetUint64(config.ChainID),
-		HomesteadBlock:      big.NewInt(0),
-		DAOForkBlock:        big.NewInt(0),
-		DAOForkSupport:      true,
-		EIP150Block:         big.NewInt(0),
-		EIP155Block:         big.NewInt(0),
-		EIP158Block:         big.NewInt(0),
-		ByzantiumBlock:      big.NewInt(0),
-		ConstantinopleBlock: big.NewInt(0),
-		PetersburgBlock:     big.NewInt(0),
-		IstanbulBlock:       big.NewInt(0),
-		MuirGlacierBlock:    big.NewInt(0),
-		BerlinBlock:         big.NewInt(0),
-		LondonBlock:         big.NewInt(0),
+		ChainID:                       new(big.Int).SetUint64(config.ChainID),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  big.NewInt(0),
+		DAOForkSupport:                true,
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              big.NewInt(0),
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		ShanghaiTime:                  newUint64(0),
+		CancunTime:                    newUint64(0),
+		TerminalTotalDifficulty:       big.NewInt(0),
+		TerminalTotalDifficultyPassed: true,
 	}
 
 	if config.ChainConfig != nil {
@@ -271,7 +275,8 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			"prestateTracer": null
 		}
 		`, loggerConfig))
-		muxTracer, err := tracers.DefaultDirectory.New("muxTracer", new(tracers.Context), muxTracerConfig); if err != nil {
+		muxTracer, err := tracers.DefaultDirectory.New("muxTracer", new(tracers.Context), muxTracerConfig)
+		if err != nil {
 			return nil, err
 		}
 		evm := vm.NewEVM(blockCtx, txContext, stateDB, &chainConfig, vm.Config{Tracer: muxTracer.Hooks, NoBaseFee: true})

@@ -43,8 +43,6 @@ rayon.workspace = true
 default = ["test"]
 test = ["mock", "rand"]
 scroll = ["eth-types/scroll", "mock?/scroll"]
-# Enable shanghai feature of mock only if mock is enabled (by test).
-shanghai = ["eth-types/shanghai", "mock?/shanghai"]
 strict-ccc = []
 tracer-tests = ["enable-memory"]
 enable-stack = ["eth-types/enable-stack", "mock?/enable-stack"]

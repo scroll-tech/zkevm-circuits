@@ -1160,7 +1160,7 @@ impl<'a> CircuitInputStateRef<'a> {
             .tx_ctx
             .call_is_success
             .get(self.tx.calls().len() - self.tx_ctx.call_is_success_offset)
-            .unwrap();
+            .expect("fail to get call_is_success");
         let mut call = self.parse_call_partial(step)?;
         call.is_success = is_success;
         call.is_persistent = self.call()?.is_persistent && is_success;
@@ -1352,13 +1352,15 @@ impl<'a> CircuitInputStateRef<'a> {
 
             #[cfg(feature = "scroll")]
             let keccak_code_hash = H256(ethers_core::utils::keccak256(&code));
+            let code_len = code.len();
             let code_hash = self.code_db.insert(code);
+            log::debug!("call_success_create with code len {code_len} codehash {code_hash:?}");
 
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {
                 return Err(Error::AccountNotFound(call.address));
             }
-
+            //callee_account.storage.clear();
             // already updated in return_revert.rs with check_update_sdb_account
             debug_assert_eq!(callee_account.code_hash, code_hash);
             #[cfg(feature = "scroll")]

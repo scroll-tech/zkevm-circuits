@@ -147,11 +147,6 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
     }
 }
 
-// TODO:
-// This gadget is used for `BASEFEE` opcode. With current `scroll` feature, it's
-// disabled by l2geth and converted to an invalid opcode.
-// <https://github.com/scroll-tech/zkevm-circuits/blob/develop/eth-types/src/evm_types/opcode_ids.rs#L1062>
-// So need to test it after `BASEFEE` opcode is enabled in scroll l2geth.
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxU256Gadget<F> {
     value_u256: BlockCtxGadget<F, N_BYTES_WORD>,
@@ -177,9 +172,6 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        if cfg!(feature = "scroll") {
-            panic!("BASEFEE is disabled by scroll for now");
-        }
         log::debug!("BlockCtxU256Gadget assign for {:?}", step.opcode);
 
         self.value_u256

@@ -129,7 +129,7 @@ impl WitnessGenerator {
                 trace.state_key = Some(key);
                 return trace;
             }
-            panic!("");
+            panic!("invalid trace_storage_update addr {address:?} key {key:?} new_value {new_value:?} old_value {old_value:?}");
         };
 
         let store_after = {
