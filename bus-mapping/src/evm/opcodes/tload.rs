@@ -48,7 +48,7 @@ impl Opcode for Tload {
         assert_eq!(
             value,
             geth_steps[1].stack.last()?,
-            "inconsistent tload: step proof {value_from_statedb:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?,
+            "inconsistent tload: step proof {value:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?,
         );
 
         state.push_op(
