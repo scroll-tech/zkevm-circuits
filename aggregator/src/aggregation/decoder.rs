@@ -169,6 +169,8 @@ struct BlockConfig {
     /// set for FrameHeaderDescriptor and FrameContentSize. For the tags that occur while decoding
     /// the block's contents, this field is set.
     is_block: Column<Advice>,
+    /// Number of sequences decoded from the sequences section header in the block.
+    num_sequences: Column<Advice>,
 }
 
 impl BlockConfig {
@@ -178,6 +180,7 @@ impl BlockConfig {
             block_idx: meta.advice_column(),
             is_last_block: meta.advice_column(),
             is_block: meta.advice_column(),
+            num_sequences: meta.advice_column(),
         }
     }
 }
@@ -421,22 +424,29 @@ impl BitstreamDecoder {
 }
 
 impl BitstreamDecoder {
+    /// Whether the number of bits to be read from bitstream is 0, i.e. no bits to be read.
     fn is_nil(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         meta.query_advice(self.is_nil, rotation)
     }
 
+    /// While reconstructing the FSE table, indicates whether a value=1 was found, i.e. prob=0. In
+    /// this case, the symbol is followed by 2-bits repeat flag instead.
     fn is_prob0(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         let bitstring_value = meta.query_advice(self.bitstring_value, rotation);
         self.bitstring_value_eq_1
             .expr_at(meta, rotation, bitstring_value, 1.expr())
     }
 
+    /// Whether the 2-bits repeat flag was [1, 1]. In this case, the repeat flag is followed by
+    /// another repeat flag.
     fn is_rb_flag3(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         let bitstream_value = meta.query_advice(self.bitstring_value, rotation);
         self.bitstring_value_eq_3
             .expr_at(meta, rotation, bitstream_value, 3.expr())
     }
 
+    /// A bitstring strictly spans 1 byte if the bit_index at which it ends is such that:
+    /// - 0 <= bit_index_end < 7.
     fn strictly_spans_one_byte(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -446,6 +456,8 @@ impl BitstreamDecoder {
         lt
     }
 
+    /// A bitstring spans 1 byte if the bit_index at which it ends is such that:
+    /// - 0 <= bit_index_end <= 7.
     fn spans_one_byte(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -455,6 +467,8 @@ impl BitstreamDecoder {
         lt + eq
     }
 
+    /// A bitstring strictly spans 2 bytes if the bit_index at which it ends is such that:
+    /// - 8 <= bit_index_end < 15.
     fn strictly_spans_two_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -465,6 +479,8 @@ impl BitstreamDecoder {
         not::expr(spans_one_byte) * lt2
     }
 
+    /// A bitstring spans 2 bytes if the bit_index at which it ends is such that:
+    /// - 8 <= bit_index_end <= 15.
     fn spans_two_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -475,6 +491,8 @@ impl BitstreamDecoder {
         not::expr(spans_one_byte) * (lt2 + eq2)
     }
 
+    /// A bitstring strictly spans 3 bytes if the bit_index at which it ends is such that:
+    /// - 16 <= bit_index_end < 23.
     fn strictly_spans_three_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -485,6 +503,8 @@ impl BitstreamDecoder {
         not::expr(spans_two_bytes) * lt3
     }
 
+    /// A bitstring spans 3 bytes if the bit_index at which it ends is such that:
+    /// - 16 <= bit_index_end <= 23.
     fn spans_three_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -1254,6 +1274,13 @@ impl DecoderConfig {
                 meta.query_advice(config.block_config.block_idx, Rotation::prev()),
             );
 
+            // the number of sequences in the block remains the same.
+            cb.require_equal(
+                "num_sequences::cur == num_sequences::prev",
+                meta.query_advice(config.block_config.num_sequences, Rotation::cur()),
+                meta.query_advice(config.block_config.num_sequences, Rotation::prev()),
+            );
+
             cb.gate(condition)
         });
 
@@ -1402,6 +1429,12 @@ impl DecoderConfig {
                 "sequences header tag_len check",
                 meta.query_advice(config.tag_config.tag_len, Rotation::cur()),
                 decoded_sequences_header.tag_len,
+            );
+
+            cb.require_equal(
+                "number of sequences in block decoded from the sequences section header",
+                meta.query_advice(config.block_config.num_sequences, Rotation::cur()),
+                decoded_sequences_header.num_sequences,
             );
 
             // The compression modes for literals length, match length and offsets are expected to
