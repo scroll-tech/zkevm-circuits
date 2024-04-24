@@ -288,6 +288,10 @@ pub enum OpcodeId {
     SSTORE,
     /// `GAS`
     GAS,
+    /// `TLOAD`
+    TLOAD,
+    /// `TSTORE`
+    TSTORE,
 
     // LOGn
     /// `LOG0`
@@ -518,6 +522,8 @@ impl OpcodeId {
             OpcodeId::SLOAD => 0x54u8,
             OpcodeId::SSTORE => 0x55u8,
             OpcodeId::GAS => 0x5au8,
+            OpcodeId::TLOAD => 0x5cu8,
+            OpcodeId::TSTORE => 0x5du8,
             OpcodeId::LOG0 => 0xa0u8,
             OpcodeId::LOG1 => 0xa1u8,
             OpcodeId::LOG2 => 0xa2u8,
@@ -605,6 +611,8 @@ impl OpcodeId {
             OpcodeId::MSIZE => GasCost::QUICK,
             OpcodeId::GAS => GasCost::QUICK,
             OpcodeId::JUMPDEST => GasCost::ONE,
+            OpcodeId::TLOAD => GasCost::WARM_ACCESS,
+            OpcodeId::TSTORE => GasCost::WARM_ACCESS,
             OpcodeId::PUSH0 => GasCost::QUICK,
             OpcodeId::PUSH1 => GasCost::FASTEST,
             OpcodeId::PUSH2 => GasCost::FASTEST,
@@ -769,6 +777,8 @@ impl OpcodeId {
             OpcodeId::MSIZE => (1, 1024),
             OpcodeId::GAS => (1, 1024),
             OpcodeId::JUMPDEST => (0, 1024),
+            OpcodeId::TLOAD => (0, 1023),
+            OpcodeId::TSTORE => (0, 1022),
             OpcodeId::PUSH0 => (1, 1024),
             OpcodeId::PUSH1 => (1, 1024),
             OpcodeId::PUSH2 => (1, 1024),
@@ -970,6 +980,8 @@ impl From<u8> for OpcodeId {
             0x58u8 => OpcodeId::PC,
             0x59u8 => OpcodeId::MSIZE,
             0x5bu8 => OpcodeId::JUMPDEST,
+            0x5cu8 => OpcodeId::TLOAD,
+            0x5du8 => OpcodeId::TSTORE,
             #[cfg(feature = "shanghai")]
             0x5fu8 => OpcodeId::PUSH0,
             0x60u8 => OpcodeId::PUSH1,
@@ -1240,8 +1252,8 @@ impl FromStr for OpcodeId {
             "BASEFEE" => OpcodeId::BASEFEE,
             #[cfg(feature = "scroll")]
             "BASEFEE" => OpcodeId::INVALID(0x48),
-            "TLOAD" => OpcodeId::INVALID(0xb3),
-            "TSTORE" => OpcodeId::INVALID(0xb4),
+            "TLOAD" => OpcodeId::TLOAD,
+            "TSTORE" => OpcodeId::TSTORE,
             _ => {
                 // Parse an invalid opcode value as reported by geth
                 static RE: LazyLock<Regex> = LazyLock::new(|| {

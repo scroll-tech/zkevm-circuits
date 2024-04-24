@@ -272,6 +272,16 @@ pub enum Rw {
         tx_id: usize,
         committed_value: Word,
     },
+    /// AccountTransientStorage
+    AccountTransientStorage {
+        rw_counter: usize,
+        is_write: bool,
+        account_address: Address,
+        storage_key: Word,
+        value: Word,
+        value_prev: Word,
+        tx_id: usize,
+    },
     /// CallContext
     CallContext {
         rw_counter: usize,
@@ -549,6 +559,7 @@ impl Rw {
             | Self::Memory { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
+            | Self::AccountTransientStorage { rw_counter, .. }
             | Self::TxAccessListAccount { rw_counter, .. }
             | Self::TxAccessListAccountStorage { rw_counter, .. }
             | Self::TxRefund { rw_counter, .. }
@@ -565,6 +576,7 @@ impl Rw {
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
+            | Self::AccountTransientStorage { is_write, .. }
             | Self::TxAccessListAccount { is_write, .. }
             | Self::TxAccessListAccountStorage { is_write, .. }
             | Self::TxRefund { is_write, .. }
@@ -581,6 +593,8 @@ impl Rw {
             Self::Memory { .. } => RwTableTag::Memory,
             Self::Stack { .. } => RwTableTag::Stack,
             Self::AccountStorage { .. } => RwTableTag::AccountStorage,
+            // TODO: pick one!
+            Self::AccountTransientStorage { .. } => RwTableTag::TransientStorage,
             Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
             Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
             Self::TxRefund { .. } => RwTableTag::TxRefund,
@@ -595,6 +609,7 @@ impl Rw {
     pub fn id(&self) -> Option<usize> {
         match self {
             Self::AccountStorage { tx_id, .. }
+            | Self::AccountTransientStorage { tx_id, .. }
             | Self::TxAccessListAccount { tx_id, .. }
             | Self::TxAccessListAccountStorage { tx_id, .. }
             | Self::TxRefund { tx_id, .. }
@@ -620,6 +635,9 @@ impl Rw {
                 account_address, ..
             }
             | Self::AccountStorage {
+                account_address, ..
+            }
+            | Self::AccountTransientStorage {
                 account_address, ..
             } => Some(*account_address),
             Self::Memory { memory_address, .. } => Some(Address::from_low_u64_be(*memory_address)),
@@ -650,6 +668,7 @@ impl Rw {
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             // See comment above configure for is_non_exist in state_circuit.rs for the explanation
             // for why the field tag for AccountStorage is CodeHash instead of None.
+            // TODO: mason how to interpret this?????
             Self::AccountStorage { .. } => Some(AccountFieldTag::CodeHash as u64),
             Self::Start { .. }
             | Self::Memory { .. }
@@ -657,7 +676,8 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
-            | Self::TxLog { .. } => None,
+            | Self::TxLog { .. }
+            | Self::AccountTransientStorage { .. } => None,
         }
     }
 
@@ -665,6 +685,7 @@ impl Rw {
     pub fn storage_key(&self) -> Option<Word> {
         match self {
             Self::AccountStorage { storage_key, .. }
+            | Self::AccountTransientStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
             Self::Start { .. }
             | Self::CallContext { .. }
@@ -715,10 +736,11 @@ impl Rw {
                 | AccountFieldTag::NonExisting
                 | AccountFieldTag::CodeSize => value.to_scalar().unwrap(),
             },
-            Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
+            Self::AccountStorage { value, .. }
+            | Self::Stack { value, .. }
+            | Self::AccountTransientStorage { value, .. } => {
                 rlc::value(&value.to_le_bytes(), randomness)
             }
-
             Self::TxLog {
                 field_tag, value, ..
             } => match field_tag {
@@ -740,6 +762,7 @@ impl Rw {
             Self::CallContext { value, .. } => *value,
             Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
+            | Self::AccountTransientStorage { value, .. }
             | Self::Stack { value, .. }
             | Self::Memory { value, .. }
             | Self::TxLog { value, .. } => *value,
@@ -771,6 +794,9 @@ impl Rw {
                 | AccountFieldTag::CodeSize => value_prev.to_scalar().unwrap(),
             }),
             Self::AccountStorage { value_prev, .. } => {
+                Some(rlc::value(&value_prev.to_le_bytes(), randomness))
+            }
+            Self::AccountTransientStorage { value_prev, .. } => {
                 Some(rlc::value(&value_prev.to_le_bytes(), randomness))
             }
             Self::Memory { value_prev, .. } => {

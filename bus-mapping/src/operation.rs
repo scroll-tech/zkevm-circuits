@@ -92,6 +92,8 @@ pub enum Target {
     Stack,
     /// Means the target of the operation is the Storage.
     Storage,
+    /// Means the target of the operation is the TransientStorage.
+    TransientStorage,
     /// Means the target of the operation is the TxAccessListAccount.
     TxAccessListAccount,
     /// Means the target of the operation is the TxAccessListAccountStorage.
@@ -292,7 +294,7 @@ impl Ord for StackOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
-/// implied by an specific
+/// implied by a specific
 /// [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
@@ -387,6 +389,103 @@ impl PartialOrd for StorageOp {
 }
 
 impl Ord for StorageOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.address, &self.key).cmp(&(&other.address, &other.key))
+    }
+}
+
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the transient storage
+/// implied by a specific
+/// [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
+/// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
+#[derive(Clone, PartialEq, Eq)]
+pub struct TransientStorageOp {
+    /// Account Address
+    pub address: Address,
+    /// Transient Storage Key
+    pub key: Word,
+    /// Transient Storage Value after the operation
+    pub value: Word,
+    /// Transient Storage Value before the operation
+    pub value_prev: Word,
+    /// Transaction ID: Transaction index in the block starting at 1.
+    pub tx_id: usize,
+}
+
+impl fmt::Debug for TransientStorageOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TransientStorageOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, addr: {:?}, key: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
+            self.tx_id, self.address, self.key, self.value_prev, self.value
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl TransientStorageOp {
+    /// Create a new instance of a `TransientStorageOp` from its components.
+    pub const fn new(
+        address: Address,
+        key: Word,
+        value: Word,
+        value_prev: Word,
+        tx_id: usize,
+    ) -> TransientStorageOp {
+        TransientStorageOp {
+            address,
+            key,
+            value,
+            value_prev,
+            tx_id,
+        }
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::TransientStorage
+    }
+
+    /// Returns the [`Address`] corresponding to this transient storage operation.
+    pub const fn address(&self) -> &Address {
+        &self.address
+    }
+
+    /// Returns the [`Word`] used as key for this operation.
+    pub const fn key(&self) -> &Word {
+        &self.key
+    }
+
+    /// Returns the [`Word`] read or written by this operation.
+    pub const fn value(&self) -> &Word {
+        &self.value
+    }
+
+    /// Returns the [`Word`] at key found previous to this operation.
+    pub const fn value_prev(&self) -> &Word {
+        &self.value_prev
+    }
+}
+
+impl Op for TransientStorageOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TransientStorage(self)
+    }
+
+    fn reverse(&self) -> Self {
+        let mut rev = self.clone();
+        swap(&mut rev.value, &mut rev.value_prev);
+        rev
+    }
+}
+
+impl PartialOrd for TransientStorageOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TransientStorageOp {
     fn cmp(&self, other: &Self) -> Ordering {
         (&self.address, &self.key).cmp(&(&other.address, &other.key))
     }
@@ -933,6 +1032,8 @@ pub enum OpEnum {
     Memory(MemoryOp),
     /// Storage
     Storage(StorageOp),
+    /// TransientStorage
+    TransientStorage(TransientStorageOp),
     /// TxAccessListAccount
     TxAccessListAccount(TxAccessListAccountOp),
     /// TxAccessListAccountStorage

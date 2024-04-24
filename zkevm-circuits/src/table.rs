@@ -471,6 +471,8 @@ pub enum RwTableTag {
     Account,
     /// Account Storage operation
     AccountStorage,
+    /// Account Transient Storage operation
+    TransientStorage,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -490,6 +492,7 @@ impl RwTableTag {
                 | RwTableTag::TxRefund
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
+                | RwTableTag::TransientStorage
         )
     }
 }

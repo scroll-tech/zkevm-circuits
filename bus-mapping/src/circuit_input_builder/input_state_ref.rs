@@ -1221,6 +1221,10 @@ impl<'a> CircuitInputStateRef<'a> {
             OpEnum::Storage(op) => {
                 self.sdb.set_storage(&op.address, &op.key, &op.value);
             }
+            OpEnum::TransientStorage(op) => {
+                self.sdb
+                    .set_transient_storage(&op.address, &op.key, &op.value)
+            }
             OpEnum::TxAccessListAccount(op) => {
                 if !op.is_warm_prev && op.is_warm {
                     self.sdb.add_account_to_access_list(op.address);
