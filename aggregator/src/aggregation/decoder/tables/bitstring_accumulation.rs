@@ -414,6 +414,7 @@ impl LookupTable<Fr> for BitstringAccumulationTable {
             self.from_start.into(),
             self.until_end.into(),
             self.is_reverse.into(),
+            self.is_padding.into(),
         ]
     }
 
@@ -431,6 +432,7 @@ impl LookupTable<Fr> for BitstringAccumulationTable {
             String::from("from_start"),
             String::from("until_end"),
             String::from("is_reverse"),
+            String::from("is_padding"),
         ]
     }
 }

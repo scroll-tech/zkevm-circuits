@@ -12,7 +12,7 @@ use snark_verifier::{
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
-    table::{KeccakTable, PowOfRandTable, RangeTable, U8Table},
+    table::{KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
     util::{Challenges, SubCircuitConfig},
 };
 
@@ -126,12 +126,14 @@ impl AggregationConfig {
 
         // Zstd decoder.
         let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+        let pow2_table = Pow2Table::construct(meta);
         let range8 = RangeTable::construct(meta);
         let range16 = RangeTable::construct(meta);
         let decoder_config = DecoderConfig::configure(
             meta,
             &challenges_expr,
             pow_rand_table,
+            pow2_table,
             u8_table,
             range8,
             range16,
