@@ -507,6 +507,7 @@ impl BitstreamDecoder {
 
     /// A bitstring spans 2 bytes if the bit_index at which it ends is such that:
     /// - 8 <= bit_index_end <= 15.
+    #[allow(dead_code)]
     fn spans_two_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -604,11 +605,17 @@ pub struct AssignedDecoderConfigExports {
 }
 
 pub struct DecoderConfigArgs {
+    /// Power of randomness table.
     pub pow_rand_table: PowOfRandTable,
+    /// Power of 2 lookup table, up to exponent=20.
     pub pow2_table: Pow2Table<20>,
+    /// Range table for lookup: [0, 256).
     pub u8_table: U8Table,
+    /// Range table for lookup: [0, 8).
     pub range8: RangeTable<8>,
+    /// Range table for lookup: [0, 16).
     pub range16: RangeTable<16>,
+    /// Bitwise operation lookup table.
     pub bitwise_op_table: BitwiseOpTable,
 }
 
