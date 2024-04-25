@@ -12,6 +12,10 @@ pub use types::{ZstdTag::*, *};
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
 
+pub mod fse;
+
+pub mod sequence;
+
 const TAG_MAX_LEN: [(ZstdTag, u64); 13] = [
     (FrameHeaderDescriptor, 1),
     (FrameContentSize, 8),
@@ -559,7 +563,7 @@ fn process_block_raw<F: Field>(
 
     let fse_aux_table = FseAuxiliaryTableData {
         byte_offset: 0,
-        table_size: 0,
+        accuracy_log: 0,
         sym_to_states: BTreeMap::default(),
     };
     let huffman_weights = HuffmanCodesData {
@@ -604,7 +608,7 @@ fn process_block_rle<F: Field>(
 
     let fse_aux_table = FseAuxiliaryTableData {
         byte_offset: 0,
-        table_size: 0,
+        accuracy_log: 0,
         sym_to_states: BTreeMap::default(),
     };
     let huffman_weights = HuffmanCodesData {
@@ -661,7 +665,7 @@ fn process_block_zstd<F: Field>(
     witness_rows.extend_from_slice(&rows);
     let mut fse_aux_table = FseAuxiliaryTableData {
         byte_offset: 0,
-        table_size: 0,
+        accuracy_log: 0,
         sym_to_states: BTreeMap::default(),
     };
     let mut huffman_weights = HuffmanCodesData {

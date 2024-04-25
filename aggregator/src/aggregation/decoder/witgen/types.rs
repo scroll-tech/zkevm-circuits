@@ -555,8 +555,8 @@ pub struct FseTableData {
 pub struct FseAuxiliaryTableData {
     /// The byte offset in the frame at which the FSE table is described.
     pub byte_offset: u64,
-    /// The FSE table's size, i.e. 1 << AL (accuracy log).
-    pub table_size: u64,
+    /// The FSE's accuracy log, 
+    pub accuracy_log: u8,
     /// A map from FseSymbol (weight) to states, also including fields for that state, for
     /// instance, the baseline and the number of bits to read from the FSE bitstream.
     ///
@@ -572,6 +572,10 @@ type FseStateMapping = BTreeMap<u64, (u64, u64, u64)>;
 type ReconstructedFse = (usize, Vec<(u32, u64)>, FseAuxiliaryTableData);
 
 impl FseAuxiliaryTableData {
+
+    /// calc the table size, i.e. 1 << AL (accuracy log).
+    pub fn table_size(&self) -> u64 {1 << self.accuracy_log}
+
     #[allow(non_snake_case)]
     /// While we reconstruct an FSE table from a bitstream, we do not know before reconstruction
     /// how many exact bytes we would finally be reading.
@@ -711,7 +715,7 @@ impl FseAuxiliaryTableData {
             bit_boundaries,
             Self {
                 byte_offset: byte_offset as u64,
-                table_size,
+                accuracy_log,
                 sym_to_states,
             },
         ))

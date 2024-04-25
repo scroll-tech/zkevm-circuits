@@ -2,30 +2,22 @@ use bitstream_io::{
     read::{BitRead, BitReader},
     LittleEndian,
 };
-use std::io::{Cursor, Result};
+use std::io::{Cursor, Result, Read};
 
 use super::N_BITS_PER_BYTE;
 
-/// Given a bitstream and a range 0..=r for the value to be read from an offset, this function reads
-/// a variable number of bits from the bitstream as per "FSE Table Description" in [RFC
-/// 8478][doclink].
-///
-/// It returns the tuple (n, v) for:
-/// - n: number of bits read from bitstream
-/// - v: the read value that is in the range 0..=r
-///
-/// [doclink]: https://www.rfc-editor.org/rfc/rfc8478.txt
-pub fn read_variable_bit_packing(src: &[u8], offset: u32, r: u64) -> Result<(u32, u64)> {
-    // construct a bit-reader.
-    let mut reader = BitReader::endian(Cursor::new(&src), LittleEndian);
-
+/// The underlying entry of `read_variable_bit_packing`, using an BitReader object
+pub fn reader_read_variable_bit_packing<R: Read>(
+    reader: &mut BitReader<R, LittleEndian>, 
+    r: u64
+) -> Result<(u32, u64)> 
+{
     // number of bits required to fit a value in the range 0..=r.
     let size = bit_length(r) as u32;
     let max = 1 << size;
 
     // if there is no need for variable bit-packing, i.e. if the range is 0..=(2^k - 1)
     if r + 1 == max {
-        reader.skip(offset)?;
         let value = reader.read::<u64>(size)?;
         return Ok((size, value));
     }
@@ -52,7 +44,6 @@ pub fn read_variable_bit_packing(src: &[u8], offset: u32, r: u64) -> Result<(u32
     //
     // - value    : the value denoted by size-bits.
     // - lo_value : the value denoted by the low (size-1)-bits.
-    reader.skip(offset)?;
     let value = reader.read::<u64>(size)?;
     let lo_value = value & ((1 << (size - 1)) - 1);
 
@@ -66,6 +57,23 @@ pub fn read_variable_bit_packing(src: &[u8], offset: u32, r: u64) -> Result<(u32
         assert!((hi_pin_2..(1 << size)).contains(&value));
         (size, value - lo_pin)
     })
+}
+
+/// Given a bitstream and a range 0..=r for the value to be read from an offset, this function reads
+/// a variable number of bits from the bitstream as per "FSE Table Description" in [RFC
+/// 8478][doclink].
+///
+/// It returns the tuple (n, v) for:
+/// - n: number of bits read from bitstream
+/// - v: the read value that is in the range 0..=r
+///
+/// [doclink]: https://www.rfc-editor.org/rfc/rfc8478.txt
+pub fn read_variable_bit_packing(src: &[u8], offset: u32, r: u64) -> Result<(u32, u64)> {
+    // construct a bit-reader.
+    let mut reader = BitReader::endian(Cursor::new(&src), LittleEndian);
+    reader.skip(offset)?;
+
+    reader_read_variable_bit_packing(&mut reader, r)
 }
 
 /// Given the sum of even powers of two, return the exponents such that they are as even as
