@@ -26,7 +26,7 @@ use zkevm_circuits::{
 use self::{
     tables::{
         BitstringAccumulationTable, LiteralLengthCodes, LiteralsHeaderTable, MatchLengthCodes,
-        MatchOffsetCodes, RomSequenceCodes, RomTagTable,
+        MatchOffsetCodes, RomFseOrderTable, RomSequenceCodes, RomTagTable,
     },
     witgen::{ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES},
 };
@@ -75,6 +75,8 @@ pub struct DecoderConfig {
     bitstring_accumulation_table: BitstringAccumulationTable,
     /// ROM table for validating tag transition.
     rom_tag_table: RomTagTable,
+    /// ROM table for the correct order in which FSE tables are described in the sequences section.
+    rom_fse_order_table: RomFseOrderTable,
     /// ROM table for Literal Length Codes.
     rom_llc_table: RomSequenceCodes<LiteralLengthCodes>,
     /// ROM table for Match Length Codes.
@@ -558,6 +560,9 @@ impl BitstreamDecoder {
 pub struct FseDecoder {
     /// The byte_idx at which the FSE table is described at.
     byte_offset: Column<Advice>,
+    /// The FSE table that is being decoded in this tag. Possible values are:
+    /// - LLT = 0, MOT = 1, MLT = 2
+    table_kind: Column<Advice>,
     /// The number of states in the FSE table. table_size == 1 << AL, where AL is the accuracy log
     /// of the FSE table.
     table_size: Column<Advice>,
@@ -574,6 +579,7 @@ impl FseDecoder {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
         Self {
             byte_offset: meta.advice_column(),
+            table_kind: meta.advice_column(),
             table_size: meta.advice_column(),
             symbol: meta.advice_column(),
             probability_acc: meta.advice_column(),
@@ -601,6 +607,7 @@ impl DecoderConfig {
     ) -> Self {
         // Fixed tables
         let rom_tag_table = RomTagTable::construct(meta);
+        let rom_fse_order_table = RomFseOrderTable::construct(meta);
         let rom_llc_table = RomSequenceCodes::<LiteralLengthCodes>::construct(meta);
         let rom_mlc_table = RomSequenceCodes::<MatchLengthCodes>::construct(meta);
         let rom_moc_table = RomSequenceCodes::<MatchOffsetCodes>::construct(meta);
@@ -644,6 +651,7 @@ impl DecoderConfig {
             literals_header_table,
             bitstring_accumulation_table,
             rom_tag_table,
+            rom_fse_order_table,
             rom_llc_table,
             rom_mlc_table,
             rom_moc_table,
@@ -1539,8 +1547,9 @@ impl DecoderConfig {
         /////////////////////////// ZstdTag::ZstdBlockSequenceFseCode /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
         meta.create_gate(
-            "DecoderConfig: tag ZstdBlockSequenceFseCode (first row) (TODO: LLT/MLT/MOT)",
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (first row)",
             |meta| {
+                // The first row of a ZstdBlockSequenceFseCode tag.
                 let condition = and::expr([
                     is_zb_sequence_fse(meta),
                     meta.query_advice(config.tag_config.is_change, Rotation::cur()),
@@ -1584,6 +1593,27 @@ impl DecoderConfig {
         );
 
         meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (table kind)",
+            |meta| {
+                let condition = and::expr([
+                    is_zb_sequence_fse(meta),
+                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                ]);
+
+                [
+                    meta.query_advice(config.tag_config.tag, Rotation::prev()), // tag_prev
+                    meta.query_advice(config.tag_config.tag, Rotation::cur()),  // tag_cur
+                    meta.query_advice(config.tag_config.tag_next, Rotation::cur()), // tag_next
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()), // table_kind
+                ]
+                .into_iter()
+                .zip_eq(config.rom_fse_order_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+
+        meta.lookup_any(
             "DecoderConfig: tag ZstdBlockSequenceFseCode (table size)",
             |meta| {
                 let condition = and::expr([
@@ -1616,9 +1646,10 @@ impl DecoderConfig {
 
                 let mut cb = BaseConstraintBuilder::default();
 
-                // FseDecoder columns remain unchanged.
+                // FseDecoder columns that remain unchanged.
                 for column in [
                     config.fse_decoder.byte_offset,
+                    config.fse_decoder.table_kind,
                     config.fse_decoder.table_size,
                 ] {
                     cb.require_equal(

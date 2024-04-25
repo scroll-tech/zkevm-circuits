@@ -17,3 +17,7 @@ pub use rom_sequence_codes::{
 /// Validate the following tag given the tag currently being processed.
 mod rom_tag;
 pub use rom_tag::RomTagTable;
+
+/// Validate the assignment of FSE table kind while decoding FSE tables in the sequences section.
+mod rom_fse_order;
+pub use rom_fse_order::RomFseOrderTable;
