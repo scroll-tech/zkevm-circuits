@@ -19,14 +19,14 @@ use halo2_proofs::{
 use itertools::Itertools;
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
+    table::{BitwiseOpTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
     util::Challenges,
 };
 
 use self::{
     tables::{
-        BitstringAccumulationTable, LiteralLengthCodes, LiteralsHeaderTable, MatchLengthCodes,
-        MatchOffsetCodes, RomFseOrderTable, RomSequenceCodes, RomTagTable,
+        BitstringAccumulationTable, FseTable, LiteralLengthCodes, LiteralsHeaderTable,
+        MatchLengthCodes, MatchOffsetCodes, RomFseOrderTable, RomSequenceCodes, RomTagTable,
     },
     witgen::{ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES},
 };
@@ -73,6 +73,8 @@ pub struct DecoderConfig {
     literals_header_table: LiteralsHeaderTable,
     /// Helper table for decoding bitstreams.
     bitstring_accumulation_table: BitstringAccumulationTable,
+    /// Helper table for decoding FSE tables.
+    fse_table: FseTable,
     /// ROM table for validating tag transition.
     rom_tag_table: RomTagTable,
     /// ROM table for the correct order in which FSE tables are described in the sequences section.
@@ -604,6 +606,7 @@ impl DecoderConfig {
         u8_table: U8Table,
         range8: RangeTable<8>,
         range16: RangeTable<16>,
+        bitwise_op_table: BitwiseOpTable,
     ) -> Self {
         // Fixed tables
         let rom_tag_table = RomTagTable::construct(meta);
@@ -615,6 +618,7 @@ impl DecoderConfig {
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, range8, range16);
         let bitstring_accumulation_table = BitstringAccumulationTable::configure(meta);
+        let fse_table = FseTable::configure(meta, u8_table, range8, pow2_table, bitwise_op_table);
 
         // Peripheral configs
         let tag_config = TagConfig::configure(meta);
@@ -650,6 +654,7 @@ impl DecoderConfig {
             range16,
             literals_header_table,
             bitstring_accumulation_table,
+            fse_table,
             rom_tag_table,
             rom_fse_order_table,
             rom_llc_table,
@@ -1582,10 +1587,16 @@ impl DecoderConfig {
                     meta.query_advice(config.fse_decoder.probability_acc, Rotation::cur()),
                 );
 
-                // The symbol=0 is handled immediately after the AL 4bits.
+                // The symbol=0 is handled immediately after the AL 4-bits.
                 cb.require_zero(
                     "fse(init): symbol=0",
                     meta.query_advice(config.fse_decoder.symbol, Rotation::next()),
+                );
+
+                // The is_repeat_bits_loop inits at 0 after the AL 4-bits.
+                cb.require_zero(
+                    "fse(init): is_repeat_bits_loop=0",
+                    meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::next()),
                 );
 
                 cb.gate(condition)
@@ -1829,6 +1840,46 @@ impl DecoderConfig {
                 });
 
                 cb.gate(condition)
+            },
+        );
+
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (normalised probability of symbol)",
+            |meta| {
+                // At every row where a non-nil bitstring is read:
+                // - except the AL bits
+                // - except when the value=1, i.e. prob=0
+                // - except when we are in repeat-bits loop
+                let condition = and::expr([
+                    is_zb_sequence_fse(meta),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_prob0(meta, Rotation::cur())),
+                    not::expr(
+                        meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur()),
+                    ),
+                ]);
+
+                let (fse_byte_offset, fse_table_size, fse_symbol, bitstring_value) = (
+                    meta.query_advice(config.fse_decoder.byte_offset, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.symbol, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let norm_prob = bitstring_value - 1.expr();
+
+                [
+                    fse_byte_offset,
+                    fse_table_size,
+                    fse_symbol,
+                    norm_prob.expr(),
+                    norm_prob.expr(),
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.fse_table.table_exprs_by_symbol(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
             },
         );
 

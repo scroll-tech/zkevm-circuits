@@ -4,9 +4,17 @@
 mod bitstring_accumulation;
 pub use bitstring_accumulation::BitstringAccumulationTable;
 
+/// FSE table.
+mod fse;
+pub use fse::FseTable;
+
 /// Decode the regenerated size from the literals header.
 mod literals_header;
 pub use literals_header::LiteralsHeaderTable;
+
+/// Validate the assignment of FSE table kind while decoding FSE tables in the sequences section.
+mod rom_fse_order;
+pub use rom_fse_order::RomFseOrderTable;
 
 /// The fixed code to Baseline/NumBits for Literal Length.
 mod rom_sequence_codes;
@@ -17,7 +25,3 @@ pub use rom_sequence_codes::{
 /// Validate the following tag given the tag currently being processed.
 mod rom_tag;
 pub use rom_tag::RomTagTable;
-
-/// Validate the assignment of FSE table kind while decoding FSE tables in the sequences section.
-mod rom_fse_order;
-pub use rom_fse_order::RomFseOrderTable;
