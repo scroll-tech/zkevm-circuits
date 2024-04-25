@@ -89,7 +89,7 @@ pub struct FseTable {
     /// Denotes the baseline field.
     baseline: Column<Advice>,
     /// Helper gadget to compute whether baseline==0x00.
-    baseline_eq_0x00: IsEqualConfig<Fr>,
+    baseline_0x00: IsEqualConfig<Fr>,
     /// Helper column to mark the baseline observed at the last state allocated to a symbol.
     last_baseline: Column<Advice>,
     /// The number of bits to be read from bitstream at this state.
@@ -140,7 +140,7 @@ impl FseTable {
             symbol_count_acc: meta.advice_column(),
             state: meta.advice_column(),
             baseline,
-            baseline_eq_0x00: IsEqualChip::configure(
+            baseline_0x00: IsEqualChip::configure(
                 meta,
                 |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
                 |meta| meta.query_advice(baseline, Rotation::cur()),
@@ -310,7 +310,7 @@ impl FseTable {
             // symbol continues). If it is not, the baseline_mark should stay turned off until we
             // encounter baseline==0x00.
             let is_baseline_mark = meta.query_advice(config.baseline_mark, Rotation::cur());
-            let is_baseline_0x00 = config.baseline_eq_0x00.expr();
+            let is_baseline_0x00 = config.baseline_0x00.expr();
             cb.condition(is_baseline_0x00.expr(), |cb| {
                 cb.require_equal(
                     "baseline_mark set at baseline==0x00",

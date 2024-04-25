@@ -365,6 +365,19 @@ impl BitstringTable {
             },
         );
 
+        meta.create_gate("BitstringTable: first row", |meta| {
+            let condition = meta.query_fixed(config.q_first, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "cannot start with padding",
+                meta.query_advice(config.is_padding, Rotation::cur()),
+            );
+
+            cb.gate(condition)
+        });
+
         meta.create_gate("BitstringAccumulationTable: padding", |meta| {
             let condition = not::expr(meta.query_fixed(config.q_first, Rotation::cur()));
 
