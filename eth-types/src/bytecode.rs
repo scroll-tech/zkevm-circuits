@@ -595,7 +595,6 @@ mod tests {
         assert_eq!(code.code, code2.code);
     }
 
-    #[cfg(feature = "shanghai")]
     #[test]
     fn test_asm_disasm_for_shanghai() {
         let code = bytecode! {

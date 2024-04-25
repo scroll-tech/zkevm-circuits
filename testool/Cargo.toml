@@ -40,15 +40,14 @@ urlencoding = "2.1.2"
 ctor.workspace = true
 
 [features]
-default = ["ignore-test-docker", "skip-self-destruct", "shanghai", "bus-mapping/strict-ccc"]
+default = ["ignore-test-docker", "skip-self-destruct", "bus-mapping/strict-ccc"]
 onephase = ["zkevm-circuits/onephase"]
 ignore-test-docker = []
 skip-self-destruct = []
-shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai", "prover?/shanghai"]
 scroll = ["bus-mapping/scroll", "eth-types/scroll", "external-tracer/scroll", "mock/scroll", "zkevm-circuits/scroll", "prover?/scroll"]
 parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn", "prover?/parallel_syn"]
-inner-prove = ["prover/test", "parallel_syn", "scroll", "shanghai"]
-chunk-prove = ["prover/test", "parallel_syn", "scroll", "shanghai"]
+inner-prove = ["prover/test", "parallel_syn", "scroll"]
+chunk-prove = ["prover/test", "parallel_syn", "scroll"]
 
 enable-stack = ["zkevm-circuits/enable-stack"]
 enable-memory = ["zkevm-circuits/enable-memory"]

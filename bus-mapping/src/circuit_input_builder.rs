@@ -27,9 +27,8 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
     self,
-    evm_types::GasCost,
-    geth_types,
-    geth_types::TxType,
+    evm_types::{GasCost, OpcodeId},
+    geth_types::{self, TxType},
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Address, GethExecTrace, ToBigEndian, ToWord, Word, H256,
 };
@@ -55,9 +54,6 @@ use std::{
 pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
 };
-
-#[cfg(feature = "enable-stack")]
-use eth_types::evm_types::OpcodeId;
 
 /// Setup parameters for ECC-related precompile calls.
 #[derive(Debug, Clone, Copy)]
@@ -623,38 +619,45 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call_ctx()?.memory.len(),
                 geth_step.refund.0,
                 {
-                    #[cfg(feature = "enable-stack")]
+                    let stack = &state_ref.call_ctx()?.stack;
                     if geth_step.op.is_push_with_data() {
-                        format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
+                        #[cfg(feature = "enable-stack")]
+                        {
+                            format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
+                        }
+                        #[cfg(not(feature = "enable-stack"))]
+                        {
+                            "N/A".to_string()
+                        }
                     } else if geth_step.op.is_call_without_value() {
                         format!(
                             "{:?} {:40x} {:?} {:?} {:?} {:?}",
-                            geth_step.stack.last(),
-                            geth_step.stack.nth_last(1).unwrap_or_default(),
-                            geth_step.stack.nth_last(2),
-                            geth_step.stack.nth_last(3),
-                            geth_step.stack.nth_last(4),
-                            geth_step.stack.nth_last(5)
+                            stack.last(),
+                            stack.nth_last(1).unwrap_or_default(),
+                            stack.nth_last(2),
+                            stack.nth_last(3),
+                            stack.nth_last(4),
+                            stack.nth_last(5)
                         )
                     } else if geth_step.op.is_call_with_value() {
                         format!(
                             "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
-                            geth_step.stack.last(),
-                            geth_step.stack.nth_last(1).unwrap_or_default(),
-                            geth_step.stack.nth_last(2),
-                            geth_step.stack.nth_last(3),
-                            geth_step.stack.nth_last(4),
-                            geth_step.stack.nth_last(5),
-                            geth_step.stack.nth_last(6),
+                            stack.last(),
+                            stack.nth_last(1).unwrap_or_default(),
+                            stack.nth_last(2),
+                            stack.nth_last(3),
+                            stack.nth_last(4),
+                            stack.nth_last(5),
+                            stack.nth_last(6),
                         )
                     } else if geth_step.op.is_create() {
                         format!(
                             "value {:?} offset {:?} size {:?} {}",
-                            geth_step.stack.last(),
-                            geth_step.stack.nth_last(1),
-                            geth_step.stack.nth_last(2),
+                            stack.last(),
+                            stack.nth_last(1),
+                            stack.nth_last(2),
                             if geth_step.op == OpcodeId::CREATE2 {
-                                format!("salt {:?}", geth_step.stack.nth_last(3))
+                                format!("salt {:?}", stack.nth_last(3))
                             } else {
                                 "".to_string()
                             }
@@ -663,17 +666,15 @@ impl<'a> CircuitInputBuilder {
                         format!(
                             "{:?} {:?} {:?}",
                             state_ref.call().map(|c| c.address),
-                            geth_step.stack.last(),
-                            geth_step.stack.nth_last(1),
+                            stack.last(),
+                            stack.nth_last(1),
                         )
                     } else {
                         let stack_input_num = 1024 - geth_step.op.valid_stack_ptr_range().1 as usize;
                         (0..stack_input_num).map(|i|
-                            format!("{:?}",  geth_step.stack.nth_last(i))
+                            format!("{:?}",  stack.nth_last(i))
                         ).collect_vec().join(" ")
                     }
-                    #[cfg(not(feature = "enable-stack"))]
-                    "N/A".to_string()
                 }
             );
             debug_assert_eq!(
@@ -696,6 +697,11 @@ impl<'a> CircuitInputBuilder {
         let end_tx_steps =
             gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
         tx.steps_mut().extend(end_tx_steps);
+
+        debug_assert_eq!(
+            tx.calls.len(),
+            tx_ctx.call_is_success_offset + tx_ctx.call_is_success.len()
+        );
 
         self.sdb.commit_tx();
         self.block.txs.push(tx);

@@ -508,6 +508,17 @@ impl GethExecError {
             GethExecError::InvalidOpcode(_) => "invalid opcode",
         }
     }
+
+    /// Returns if the error is related to precheck fail
+    pub fn is_precheck_failed(&self) -> bool {
+        matches!(
+            self,
+            GethExecError::ContractAddressCollision
+                | GethExecError::InsufficientBalance
+                | GethExecError::Depth
+                | GethExecError::NonceUintOverflow
+        )
+    }
 }
 
 impl Display for GethExecError {
@@ -530,6 +541,59 @@ impl Display for GethExecError {
     }
 }
 
+impl FromStr for GethExecError {
+    type Err = ();
+
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        static STACK_UNDERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
+        static STACK_OVERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
+
+        let e = match v {
+            "out of gas" => GethExecError::OutOfGas,
+            "contract creation code storage out of gas" => GethExecError::CodeStoreOutOfGas,
+            "max call depth exceeded" => GethExecError::Depth,
+            "insufficient balance for transfer" => GethExecError::InsufficientBalance,
+            "contract address collision" => GethExecError::ContractAddressCollision,
+            "execution reverted" => GethExecError::ExecutionReverted,
+            "max initcode size exceeded" => GethExecError::MaxInitCodeSizeExceeded,
+            "max code size exceeded" => GethExecError::MaxCodeSizeExceeded,
+            "invalid jump destination" => GethExecError::InvalidJump,
+            "write protection" => GethExecError::WriteProtection,
+            "return data out of bounds" => GethExecError::ReturnDataOutOfBounds,
+            "gas uint64 overflow" => GethExecError::GasUintOverflow,
+            "invalid code: must not begin with 0xef" => GethExecError::InvalidCode,
+            "nonce uint64 overflow" => GethExecError::NonceUintOverflow,
+            _ if v.starts_with("stack underflow") => {
+                let caps = STACK_UNDERFLOW_RE.captures(v).unwrap();
+                let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
+                let required = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
+                GethExecError::StackUnderflow {
+                    stack_len,
+                    required,
+                }
+            }
+            _ if v.starts_with("stack limit reached") => {
+                let caps = STACK_OVERFLOW_RE.captures(v).unwrap();
+                let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
+                let limit = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
+                GethExecError::StackOverflow { stack_len, limit }
+            }
+            _ if v.starts_with("invalid opcode") => v
+                .strip_prefix("invalid opcode: ")
+                .map(|s| OpcodeId::from_str(s).unwrap())
+                .map(GethExecError::InvalidOpcode)
+                .unwrap(),
+            _ => {
+                log::warn!("unknown geth error: {}", v);
+                return Err(());
+            }
+        };
+        Ok(e)
+    }
+}
+
 impl Serialize for GethExecError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -547,11 +611,6 @@ impl<'de> Deserialize<'de> for GethExecError {
     {
         struct GethExecErrorVisitor;
 
-        static STACK_UNDERFLOW_RE: LazyLock<regex::Regex> =
-            LazyLock::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
-        static STACK_OVERFLOW_RE: LazyLock<regex::Regex> =
-            LazyLock::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
-
         impl<'de> de::Visitor<'de> for GethExecErrorVisitor {
             type Value = GethExecError;
 
@@ -563,44 +622,8 @@ impl<'de> Deserialize<'de> for GethExecError {
             where
                 E: de::Error,
             {
-                let e = match v {
-                    "out of gas" => GethExecError::OutOfGas,
-                    "contract creation code storage out of gas" => GethExecError::CodeStoreOutOfGas,
-                    "max call depth exceeded" => GethExecError::Depth,
-                    "insufficient balance for transfer" => GethExecError::InsufficientBalance,
-                    "contract address collision" => GethExecError::ContractAddressCollision,
-                    "execution reverted" => GethExecError::ExecutionReverted,
-                    "max initcode size exceeded" => GethExecError::MaxInitCodeSizeExceeded,
-                    "max code size exceeded" => GethExecError::MaxCodeSizeExceeded,
-                    "invalid jump destination" => GethExecError::InvalidJump,
-                    "write protection" => GethExecError::WriteProtection,
-                    "return data out of bounds" => GethExecError::ReturnDataOutOfBounds,
-                    "gas uint64 overflow" => GethExecError::GasUintOverflow,
-                    "invalid code: must not begin with 0xef" => GethExecError::InvalidCode,
-                    "nonce uint64 overflow" => GethExecError::NonceUintOverflow,
-                    _ if v.starts_with("stack underflow") => {
-                        let caps = STACK_UNDERFLOW_RE.captures(v).unwrap();
-                        let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
-                        let required = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
-                        GethExecError::StackUnderflow {
-                            stack_len,
-                            required,
-                        }
-                    }
-                    _ if v.starts_with("stack limit reached") => {
-                        let caps = STACK_OVERFLOW_RE.captures(v).unwrap();
-                        let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
-                        let limit = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
-                        GethExecError::StackOverflow { stack_len, limit }
-                    }
-                    _ if v.starts_with("invalid opcode") => v
-                        .strip_prefix("invalid opcode: ")
-                        .map(|s| OpcodeId::from_str(s).unwrap())
-                        .map(GethExecError::InvalidOpcode)
-                        .unwrap(),
-                    _ => return Err(E::invalid_value(de::Unexpected::Str(v), &self)),
-                };
-                Ok(e)
+                v.parse()
+                    .map_err(|_| E::invalid_value(de::Unexpected::Str(v), &self))
             }
         }
 
@@ -805,11 +828,28 @@ pub struct FlatGethCallTrace {
 }
 
 impl GethCallTrace {
+    fn is_precheck_failed(&self) -> bool {
+        self.error
+            .as_ref()
+            .and_then(|e| e.parse::<GethExecError>().ok())
+            .map(|e| e.is_precheck_failed())
+            .unwrap_or(false)
+    }
+
     /// generate the call_is_success vec
     pub fn gen_call_is_success(&self, mut call_is_success: Vec<bool>) -> Vec<bool> {
-        // ignore the call if it is a contract address collision
+        // ignore the call if precheck failed
         // https://github.com/ethereum/go-ethereum/issues/21438
-        if self.to.is_none() && self.error.as_deref() == Some("contract address collision") {
+        if self.is_precheck_failed() {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::InsufficientBalance.error()) {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::Depth.error()) {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::NonceUintOverflow.error()) {
             return call_is_success;
         }
         call_is_success.push(self.error.is_none());
@@ -837,9 +877,9 @@ impl GethCallTrace {
         trace: &mut Vec<FlatGethCallTrace>,
         created: &mut HashSet<Address>,
     ) {
-        // ignore the call if it is a contract address collision
+        // ignore the call if precheck failed
         // https://github.com/ethereum/go-ethereum/issues/21438
-        if self.to.is_none() && self.error.as_deref() == Some("contract address collision") {
+        if self.is_precheck_failed() {
             return;
         }
         let call_type = OpcodeId::from_str(&self.call_type).unwrap();

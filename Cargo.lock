@@ -1655,6 +1655,7 @@ dependencies = [
  "halo2_proofs",
  "hex",
  "itertools 0.11.0",
+ "log",
  "num",
  "num-bigint",
  "poseidon-circuit",

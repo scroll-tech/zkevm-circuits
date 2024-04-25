@@ -27,17 +27,22 @@ struct TestEnv {
     #[serde(default = "default_block_base_fee")]
     current_base_fee: String,
     current_coinbase: String,
+    #[serde(default)]
     current_difficulty: String,
     current_gas_limit: String,
     current_number: String,
     current_timestamp: String,
+    #[serde(default)]
     previous_hash: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct Indexes {
+    #[serde(default)]
     data: serde_json::value::Value,
+    #[serde(default)]
     gas: serde_json::value::Value,
+    #[serde(default)]
     value: serde_json::value::Value,
 }
 
@@ -62,7 +67,7 @@ struct AccountPre {
 struct Expect {
     indexes: Option<Indexes>,
     network: Vec<String>,
-    result: HashMap<String, AccountPost>,
+    result: BTreeMap<String, AccountPost>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -117,25 +122,27 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// generates `StateTest` vectors from a ethereum josn test specification
     pub fn load_json(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         let mut state_tests = Vec::new();
-        let tests: HashMap<String, JsonStateTest> = serde_json::from_str(source)?;
+        let tests: HashMap<String, JsonStateTest> = serde_json::from_str(source).unwrap();
 
         for (test_name, test) in tests {
-            let env = Self::parse_env(&test.env)?;
-            let pre = self.parse_accounts_pre(&test.pre)?;
+            let env = Self::parse_env(&test.env).unwrap();
+            let pre = self.parse_accounts_pre(&test.pre).unwrap();
 
-            let to = parse::parse_to_address(&test.transaction.to)?;
-            let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
-            let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
-            let nonce = parse::parse_u256(&test.transaction.nonce)?;
+            let to = parse::parse_to_address(&test.transaction.to).unwrap();
+            let secret_key = parse::parse_bytes(&test.transaction.secret_key).unwrap();
+            let from = secret_key_to_address(&SigningKey::from_slice(&secret_key).unwrap());
+            let nonce = parse::parse_u256(&test.transaction.nonce).unwrap();
 
             let max_priority_fee_per_gas = test
                 .transaction
                 .max_priority_fee_per_gas
-                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))?;
+                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))
+                .unwrap();
             let max_fee_per_gas = test
                 .transaction
                 .max_fee_per_gas
-                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))?;
+                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))
+                .unwrap();
 
             // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
             // EIP-1559 transaction.
@@ -153,30 +160,33 @@ impl<'a> JsonStateTestBuilder<'a> {
                 .data
                 .iter()
                 .map(|item| parse::parse_calldata(self.compiler, item, access_list))
-                .collect::<Result<_>>()?;
+                .collect::<Result<_>>()
+                .unwrap();
 
             let gas_limit_s: Vec<_> = test
                 .transaction
                 .gas_limit
                 .iter()
                 .map(|item| parse::parse_u64(item))
-                .collect::<Result<_>>()?;
+                .collect::<Result<_>>()
+                .unwrap();
 
             let value_s: Vec<_> = test
                 .transaction
                 .value
                 .iter()
                 .map(|item| parse::parse_u256(item))
-                .collect::<Result<_>>()?;
+                .collect::<Result<_>>()
+                .unwrap();
 
             let mut expects = Vec::new();
             for expect in test.expect {
                 // Considered as Anys if missing `indexes`.
                 let (data_refs, gas_refs, value_refs) = if let Some(indexes) = expect.indexes {
                     (
-                        Self::parse_refs(&indexes.data)?,
-                        Self::parse_refs(&indexes.gas)?,
-                        Self::parse_refs(&indexes.value)?,
+                        Self::parse_refs(&indexes.data).unwrap(),
+                        Self::parse_refs(&indexes.gas).unwrap(),
+                        Self::parse_refs(&indexes.value).unwrap(),
                     )
                 } else {
                     (
@@ -186,9 +196,9 @@ impl<'a> JsonStateTestBuilder<'a> {
                     )
                 };
 
-                let result = self.parse_accounts_post(&expect.result)?;
+                let result = self.parse_accounts_post(&expect.result).unwrap();
 
-                if MainnetFork::in_network_range(&expect.network)? {
+                if MainnetFork::in_network_range(&expect.network).unwrap() {
                     expects.push((data_refs, gas_refs, value_refs, result));
                 }
             }
@@ -243,11 +253,11 @@ impl<'a> JsonStateTestBuilder<'a> {
             current_base_fee: parse::parse_u256(&env.current_base_fee)
                 .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
             current_coinbase: parse::parse_address(&env.current_coinbase)?,
-            current_difficulty: parse::parse_u256(&env.current_difficulty)?,
+            current_difficulty: parse::parse_u256(&env.current_difficulty).unwrap_or_default(),
             current_gas_limit: parse::parse_u64(&env.current_gas_limit)?,
             current_number: parse::parse_u64(&env.current_number)?,
             current_timestamp: parse::parse_u64(&env.current_timestamp)?,
-            previous_hash: parse::parse_hash(&env.previous_hash)?,
+            previous_hash: parse::parse_hash(&env.previous_hash).unwrap_or_default(),
         })
     }
 
@@ -278,9 +288,9 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// parse a vector of address=>(storage,balance,code,nonce) entry
     fn parse_accounts_post(
         &mut self,
-        accounts_post: &HashMap<String, AccountPost>,
-    ) -> Result<HashMap<Address, AccountMatch>> {
-        let mut accounts = HashMap::new();
+        accounts_post: &BTreeMap<String, AccountPost>,
+    ) -> Result<BTreeMap<Address, AccountMatch>> {
+        let mut accounts = BTreeMap::new();
         for (address, acc) in accounts_post {
             let address = parse::parse_address(address)?;
             let mut storage: HashMap<U256, U256> = HashMap::new();
@@ -321,6 +331,9 @@ impl<'a> JsonStateTestBuilder<'a> {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn parse_refs(value: &serde_json::Value) -> Result<Refs> {
         let mut refs = Vec::new();
+        if value.is_null() {
+            return Ok(Refs(vec![Ref::Any]));
+        }
         if let Some(index) = value.as_i64() {
             if index == -1 {
                 refs.push(Ref::Any);
@@ -476,7 +489,7 @@ mod test {
                     storage: HashMap::new(),
                 },
             )]),
-            result: HashMap::from([(
+            result: BTreeMap::from([(
                 acc095e,
                 AccountMatch {
                     address: acc095e,
