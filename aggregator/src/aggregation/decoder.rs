@@ -25,8 +25,8 @@ use zkevm_circuits::{
 
 use self::{
     tables::{
-        BitstringAccumulationTable, FseTable, LiteralLengthCodes, LiteralsHeaderTable,
-        MatchLengthCodes, MatchOffsetCodes, RomFseOrderTable, RomSequenceCodes, RomTagTable,
+        BitstringTable, FseTable, LiteralLengthCodes, LiteralsHeaderTable, MatchLengthCodes,
+        MatchOffsetCodes, RomFseOrderTable, RomSequenceCodes, RomTagTable,
     },
     witgen::{ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES},
 };
@@ -72,7 +72,7 @@ pub struct DecoderConfig {
     /// Helper table for decoding the regenerated size from LiteralsHeader.
     literals_header_table: LiteralsHeaderTable,
     /// Helper table for decoding bitstreams.
-    bitstring_accumulation_table: BitstringAccumulationTable,
+    bitstring_table: BitstringTable,
     /// Helper table for decoding FSE tables.
     fse_table: FseTable,
     /// ROM table for validating tag transition.
@@ -641,7 +641,7 @@ impl DecoderConfig {
 
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, range8, range16);
-        let bitstring_accumulation_table = BitstringAccumulationTable::configure(meta);
+        let bitstring_table = BitstringTable::configure(meta);
         let fse_table = FseTable::configure(meta, u8_table, range8, pow2_table, bitwise_op_table);
 
         // Peripheral configs
@@ -677,7 +677,7 @@ impl DecoderConfig {
             range8,
             range16,
             literals_header_table,
-            bitstring_accumulation_table,
+            bitstring_table,
             fse_table,
             rom_tag_table,
             rom_fse_order_table,
@@ -2220,7 +2220,7 @@ impl DecoderConfig {
                     0.expr(), // is_padding
                 ]
                 .into_iter()
-                .zip_eq(config.bitstring_accumulation_table.table_exprs(meta))
+                .zip_eq(config.bitstring_table.table_exprs(meta))
                 .map(|(arg, table)| (condition.expr() * arg, table))
                 .collect()
             },
@@ -2265,7 +2265,7 @@ impl DecoderConfig {
                 0.expr(), // is_padding
             ]
             .into_iter()
-            .zip_eq(config.bitstring_accumulation_table.table_exprs(meta))
+            .zip_eq(config.bitstring_table.table_exprs(meta))
             .map(|(arg, table)| (condition.expr() * arg, table))
             .collect()
         });

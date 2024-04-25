@@ -58,7 +58,7 @@ use crate::aggregation::decoder::witgen::ZstdWitnessRow;
 /// the bits of interest where "from_start == until_end == 1". Over these rows, we accumulate the
 /// binary value and the bitstring's length.
 #[derive(Clone, Debug)]
-pub struct BitstringAccumulationTable {
+pub struct BitstringTable {
     /// Fixed column that is enabled only for the first row.
     pub q_first: Column<Fixed>,
     /// The byte offset of byte_1.
@@ -102,7 +102,7 @@ pub struct BitstringAccumulationTable {
     pub is_padding: Column<Advice>,
 }
 
-impl BitstringAccumulationTable {
+impl BitstringTable {
     /// Construct the bitstring accumulation table.
     pub fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
         let config = Self {
@@ -399,7 +399,7 @@ impl BitstringAccumulationTable {
     }
 }
 
-impl LookupTable<Fr> for BitstringAccumulationTable {
+impl LookupTable<Fr> for BitstringTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.byte_idx_1.into(),

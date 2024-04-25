@@ -1,8 +1,8 @@
 /// Since bitstrings to decode can be spanned over more than one byte from the encoded bytes, we
 /// construct a table to accumulate the binary values of the byte-unaligned bitstrings for decoding
 /// convenience.
-mod bitstring_accumulation;
-pub use bitstring_accumulation::BitstringAccumulationTable;
+mod bitstring;
+pub use bitstring::BitstringTable;
 
 /// FSE table.
 mod fse;
