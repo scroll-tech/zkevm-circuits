@@ -199,6 +199,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
+                    OpcodeId::TLOAD => ExecutionState::TLOAD,
+                    OpcodeId::TSTORE => ExecutionState::TSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
                     OpcodeId::CHAINID => ExecutionState::CHAINID,

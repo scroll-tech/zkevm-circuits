@@ -1240,8 +1240,8 @@ impl FromStr for OpcodeId {
             "BASEFEE" => OpcodeId::BASEFEE,
             "BLOBHASH" => OpcodeId::INVALID(0x49),
             "BLOBBASEFEE" => OpcodeId::INVALID(0x4a),
-            "TLOAD" => OpcodeId::INVALID(0x5c),
-            "TSTORE" => OpcodeId::INVALID(0x5d),
+            "TLOAD" => OpcodeId::TLOAD,
+            "TSTORE" => OpcodeId::TSTORE,
             "MCOPY" => OpcodeId::INVALID(0x5e),
             _ => {
                 // Parse an invalid opcode value as reported by geth

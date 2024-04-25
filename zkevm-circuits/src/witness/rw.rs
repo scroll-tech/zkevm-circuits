@@ -934,6 +934,22 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
+            RwTableTag::TransientStorage,
+            container
+                .transient_storage
+                .iter()
+                .map(|op| Rw::AccountTransientStorage {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    account_address: op.op().address,
+                    storage_key: op.op().key,
+                    value: op.op().value,
+                    value_prev: op.op().value_prev,
+                    tx_id: op.op().tx_id,
+                })
+                .collect(),
+        );
+        rws.insert(
             RwTableTag::CallContext,
             container
                 .call_context
