@@ -93,18 +93,21 @@ pub fn smaller_powers_of_two(sum: u64, n: u64) -> (usize, Vec<u64>) {
     }
 
     let next_pow2 = 1 << bit_length(n);
-    let diff = next_pow2 - n;
+    let mut diff = (next_pow2 - n) as usize;
     let smallest_spot = sum / next_pow2;
     let smallest_exponent = (smallest_spot as f64).log2() as u64;
 
-    (
-        diff as usize,
-        std::iter::repeat(smallest_exponent + 1)
-            .take(diff as usize)
-            .chain(std::iter::repeat(smallest_exponent))
-            .take(n as usize)
-            .collect(),
-    )
+    let pows: Vec<u64> = std::iter::repeat(smallest_exponent + 1)
+        .take(diff as usize)
+        .chain(std::iter::repeat(smallest_exponent))
+        .take(n as usize)
+        .collect();
+
+    if diff >= pows.len() {
+        diff = 0;
+    }
+
+    (diff, pows)
 }
 
 // Returns the number of bits needed to represent a u32 value in binary form.

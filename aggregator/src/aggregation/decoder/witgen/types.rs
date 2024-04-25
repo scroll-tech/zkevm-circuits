@@ -3,7 +3,7 @@ use std::{
     io::Cursor,
 };
 
-use bitstream_io::{BitRead, BitReader, LittleEndian};
+use bitstream_io::{write, BitRead, BitReader, LittleEndian};
 use eth_types::Field;
 use gadgets::impl_expr;
 use halo2_proofs::{circuit::Value, plonk::Expression};
@@ -14,6 +14,9 @@ use super::{
     params::N_BITS_PER_BYTE,
     util::{bit_length, read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
 };
+
+// witgen_debug
+use std::{io, io::Write};
 
 /// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
 /// fields are assigned correctly.
@@ -73,21 +76,21 @@ impl RomTagTableRow {
 /// The symbol emitted by FSE table. This is also the weight in the canonical Huffman code.
 #[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FseSymbol {
-    /// Weight == 0.
+    ///
     S0 = 0,
-    /// Weight == 1.
+    ///
     S1,
-    /// Weight == 2.
+    ///
     S2,
-    /// Weight == 3.
+    ///
     S3,
-    /// Weight == 4.
+    ///
     S4,
-    /// Weight == 5.
+    ///
     S5,
-    /// Weight == 6.
+    ///
     S6,
-    /// Weight == 7.
+    ///
     S7,
 }
 
@@ -204,6 +207,8 @@ pub enum ZstdTag {
     ZstdBlockLstream,
     /// Beginning of sequence section.
     ZstdBlockSequenceHeader,
+    /// sequence bitstream for recovering instructions
+    ZstdBlockSequenceData,
 }
 
 impl ZstdTag {
@@ -224,7 +229,7 @@ impl ZstdTag {
             Self::ZstdBlockJumpTable => false,
             Self::ZstdBlockLstream => false,
             Self::ZstdBlockSequenceHeader => false,
-            // TODO: more tags
+            Self::ZstdBlockSequenceData => true,
         }
     }
 
@@ -245,7 +250,7 @@ impl ZstdTag {
             Self::ZstdBlockJumpTable => true,
             Self::ZstdBlockLstream => true,
             Self::ZstdBlockSequenceHeader => true,
-            // TODO: more tags
+            Self::ZstdBlockSequenceData => true,
         }
     }
 
@@ -266,7 +271,7 @@ impl ZstdTag {
             Self::ZstdBlockJumpTable => false,
             Self::ZstdBlockLstream => true,
             Self::ZstdBlockSequenceHeader => false,
-            // TODO: more tags
+            Self::ZstdBlockSequenceData => true,
         }
     }
 }
@@ -296,6 +301,7 @@ impl ToString for ZstdTag {
             Self::ZstdBlockJumpTable => "ZstdBlockJumpTable",
             Self::ZstdBlockLstream => "ZstdBlockLstream",
             Self::ZstdBlockSequenceHeader => "ZstdBlockSequenceHeader",
+            Self::ZstdBlockSequenceData => "ZstdBlockSequenceData",
         })
     }
 }
@@ -539,6 +545,140 @@ pub struct BitstreamReadRow {
     pub is_zero_bit_read: bool,
 }
 
+/// Sequence data is interleaved with 6 bitstreams. Each producing a different type of value.
+#[derive(Clone, Copy, Debug)]
+pub enum SequenceDataTag {
+    NULL = 0,
+    LiteralLength_FSE,
+    MatchLength_FSE,
+    CookedMatchOffset_FSE,
+    LiteralLength_Value,
+    MatchLength_Value,
+    CookedMatchOffset_Value,
+}
+
+/// A single row in the Address table.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AddressTableRow {
+    /// Whether this row is padding for positional alignment with input
+    pub s_padding: u64,
+    /// Instruction Index
+    pub instruction_idx: u64,
+    /// Literal Length (directly decoded from sequence bitstream)
+    pub literal_length: u64,
+    /// Cooked Match Offset (directly decoded from sequence bitstream)
+    pub cooked_match_offset: u64,
+    /// Match Length (directly decoded from sequence bitstream)
+    pub match_length: u64,
+    /// Accumulation of literal length
+    pub literal_length_acc: u64,
+    /// Repeated offset 1
+    pub repeated_offset1: u64,
+    /// Repeated offset 2
+    pub repeated_offset2: u64,
+    /// Repeated offset 3
+    pub repeated_offset3: u64,
+    /// The actual match offset derived from cooked match offset
+    pub actual_offset: u64,
+}
+
+/// Data for BL and Number of Bits for a state in LLT, CMOT and MLT
+#[derive(Clone, Debug)]
+pub struct SequenceFixedStateActionTable {
+    /// Represent the state, BL and NB
+    pub states_to_actions: Vec<(u64, (u64, u64))>,
+}
+
+impl SequenceFixedStateActionTable {
+    /// Reconstruct action state table for literal length recovery
+    pub fn reconstruct_lltv() -> Self {
+        let mut states_to_actions = vec![];
+
+        for idx in 0..=15 {
+            states_to_actions.push((idx as u64, (idx as u64, 0u64)))
+        }
+
+        let rows: Vec<(u64, u64, u64)> = vec![
+            (16, 16, 1),
+            (17, 18, 1),
+            (18, 20, 1),
+            (19, 22, 1),
+            (20, 24, 2),
+            (21, 28, 2),
+            (22, 32, 3),
+            (23, 40, 3),
+            (24, 48, 4),
+            (25, 64, 6),
+            (26, 128, 7),
+            (27, 256, 8),
+            (28, 512, 9),
+            (29, 1024, 10),
+            (30, 2048, 11),
+            (31, 4096, 12),
+            (32, 8192, 13),
+            (33, 16384, 14),
+            (34, 32768, 15),
+            (35, 65536, 16),
+        ];
+
+        for row in rows {
+            states_to_actions.push((row.0, (row.1, row.2)));
+        }
+
+        Self { states_to_actions }
+    }
+
+    /// Reconstruct action state table for match length recovery
+    pub fn reconstruct_mltv() -> Self {
+        let mut states_to_actions = vec![];
+
+        for idx in 0..=31 {
+            states_to_actions.push((idx as u64, (idx as u64 + 3, 0u64)))
+        }
+
+        let rows: Vec<(u64, u64, u64)> = vec![
+            (32, 35, 1),
+            (33, 37, 1),
+            (34, 39, 1),
+            (35, 41, 1),
+            (36, 43, 2),
+            (37, 47, 2),
+            (38, 51, 3),
+            (39, 59, 3),
+            (40, 67, 4),
+            (41, 83, 4),
+            (42, 99, 5),
+            (43, 131, 7),
+            (44, 259, 8),
+            (45, 515, 9),
+            (46, 1027, 10),
+            (47, 2051, 11),
+            (48, 4099, 12),
+            (49, 8195, 13),
+            (50, 16387, 14),
+            (51, 32771, 15),
+            (52, 65539, 16),
+        ];
+
+        for row in rows {
+            states_to_actions.push((row.0, (row.1, row.2)));
+        }
+
+        Self { states_to_actions }
+    }
+
+    /// Reconstruct action state table for offset recovery
+    pub fn reconstruct_cmotv(N: u64) -> Self {
+        let mut states_to_actions = vec![];
+
+        for idx in 0..=N {
+            states_to_actions.push((idx, ((1 << idx) as u64, idx)))
+        }
+
+        Self { states_to_actions }
+    }
+}
+
 /// Data for the FSE table's witness values.
 #[derive(Clone, Debug)]
 pub struct FseTableData {
@@ -585,6 +725,10 @@ impl FseAuxiliaryTableData {
     /// FSE table, if the read bitstream was not byte aligned, then we discard the 1..8 bits from
     /// the last byte that we read from.
     pub fn reconstruct(src: &[u8], byte_offset: usize) -> std::io::Result<ReconstructedFse> {
+        // witgen_debug
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+
         // construct little-endian bit-reader.
         let data = src.iter().skip(byte_offset).cloned().collect::<Vec<u8>>();
         let mut reader = BitReader::endian(Cursor::new(&data), LittleEndian);
@@ -748,8 +892,6 @@ pub struct ZstdWitnessRow<F> {
     pub encoded_data: EncodedData<F>,
     /// Data on decompressed data
     pub decoded_data: DecodedData<F>,
-    /// Huffman code bitstring marker that devides bitstream into symbol segments
-    pub huffman_data: HuffmanData,
     /// Fse decoding state transition data
     pub fse_data: FseTableRow,
     /// Bitstream reader
@@ -766,7 +908,6 @@ impl<F: Field> ZstdWitnessRow<F> {
                 ..Default::default()
             },
             decoded_data: DecodedData::default(),
-            huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),
             bitstream_read_data: BitstreamReadRow::default(),
         }
