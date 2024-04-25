@@ -127,6 +127,8 @@ struct TagConfig {
     is_frame_content_size: Column<Advice>,
     /// Degree reduction: BlockHeader
     is_block_header: Column<Advice>,
+    /// Degree reduction: SequenceFseCode
+    is_fse_code: Column<Advice>,
 }
 
 impl TagConfig {
@@ -158,6 +160,7 @@ impl TagConfig {
             // degree reduction.
             is_frame_content_size: meta.advice_column(),
             is_block_header: meta.advice_column(),
+            is_fse_code: meta.advice_column(),
         }
     }
 }
@@ -368,9 +371,14 @@ pub struct BitstreamDecoder {
     bitstring_value_eq_1: IsEqualConfig<Fr>,
     /// Helper config as per the above doc.
     bitstring_value_eq_3: IsEqualConfig<Fr>,
-    /// Boolean that is set for the special case that we don't read from the bitstream, i.e. we
-    /// read 0 number of bits. We can witness such a case while applying an FSE table to bitstream,
-    /// where the number of bits to be read from the bitstream is 0.
+    /// Boolean that is set for two special cases:
+    ///
+    /// 1. We don't read from the bitstream, i.e. we read 0 number of bits. We can witness such a
+    ///    case while applying an FSE table to bitstream, where the number of bits to be read from
+    ///    the bitstream is 0. This can happen when we decode sequences
+    /// 2. The bitstring that we have read in the current row is byte-aligned up to the next or the
+    ///    next-to-next byte. In this case, the next or the next-to-next following row(s) should
+    ///    have the is_nil field set.
     is_nil: Column<Advice>,
 }
 
@@ -527,10 +535,9 @@ impl BitstreamDecoder {
         meta: &mut VirtualCells<Fr>,
         rotation: Option<Rotation>,
     ) -> Expression<Fr> {
-        let spans_one_byte = self.spans_one_byte(meta, rotation);
-        let spans_two_bytes = self.spans_two_bytes(meta, rotation);
+        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
         let (lt3, _eq3) = self.bit_index_end_cmp_23.expr(meta, rotation);
-        not::expr(spans_one_byte) * not::expr(spans_two_bytes) * lt3
+        not::expr(lt2 + eq2) * lt3
     }
 
     /// A bitstring spans 3 bytes if the bit_index at which it ends is such that:
@@ -541,9 +548,8 @@ impl BitstreamDecoder {
         meta: &mut VirtualCells<Fr>,
         rotation: Option<Rotation>,
     ) -> Expression<Fr> {
-        let spans_one_byte = self.spans_one_byte(meta, rotation);
-        let spans_two_bytes = self.spans_two_bytes(meta, rotation);
-        not::expr(spans_one_byte) * not::expr(spans_two_bytes)
+        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
+        not::expr(lt2 + eq2)
     }
 
     /// A bitstring spans 3 bytes and is byte-aligned:
@@ -597,16 +603,27 @@ pub struct AssignedDecoderConfigExports {
     pub decoded_rlc: AssignedCell<Fr, Fr>,
 }
 
+pub struct DecoderConfigArgs {
+    pub pow_rand_table: PowOfRandTable,
+    pub pow2_table: Pow2Table<20>,
+    pub u8_table: U8Table,
+    pub range8: RangeTable<8>,
+    pub range16: RangeTable<16>,
+    pub bitwise_op_table: BitwiseOpTable,
+}
+
 impl DecoderConfig {
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         challenges: &Challenges<Expression<Fr>>,
-        pow_rand_table: PowOfRandTable,
-        pow2_table: Pow2Table<20>,
-        u8_table: U8Table,
-        range8: RangeTable<8>,
-        range16: RangeTable<16>,
-        bitwise_op_table: BitwiseOpTable,
+        DecoderConfigArgs {
+            pow_rand_table,
+            pow2_table,
+            u8_table,
+            range8,
+            range16,
+            bitwise_op_table,
+        }: DecoderConfigArgs,
     ) -> Self {
         // Fixed tables
         let rom_tag_table = RomTagTable::construct(meta);
@@ -826,6 +843,7 @@ impl DecoderConfig {
                 is_frame_content_size(meta)
             );
             degree_reduction_check!(config.tag_config.is_block_header, is_block_header(meta));
+            degree_reduction_check!(config.tag_config.is_fse_code, is_zb_sequence_fse(meta));
 
             cb.gate(condition)
         });
@@ -1556,7 +1574,7 @@ impl DecoderConfig {
             |meta| {
                 // The first row of a ZstdBlockSequenceFseCode tag.
                 let condition = and::expr([
-                    is_zb_sequence_fse(meta),
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_change, Rotation::cur()),
                 ]);
 
@@ -1599,6 +1617,12 @@ impl DecoderConfig {
                     meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::next()),
                 );
 
+                // We will always start reading bits from the bitstream for the first symbol.
+                cb.require_zero(
+                    "fse(init): is_nil=0",
+                    config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                );
+
                 cb.gate(condition)
             },
         );
@@ -1607,7 +1631,7 @@ impl DecoderConfig {
             "DecoderConfig: tag ZstdBlockSequenceFseCode (table kind)",
             |meta| {
                 let condition = and::expr([
-                    is_zb_sequence_fse(meta),
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_change, Rotation::cur()),
                 ]);
 
@@ -1628,7 +1652,7 @@ impl DecoderConfig {
             "DecoderConfig: tag ZstdBlockSequenceFseCode (table size)",
             |meta| {
                 let condition = and::expr([
-                    is_zb_sequence_fse(meta),
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_change, Rotation::cur()),
                 ]);
 
@@ -1651,7 +1675,7 @@ impl DecoderConfig {
             "DecoderConfig: tag ZstdBlockSequenceFseCode (other rows)",
             |meta| {
                 let condition = and::expr([
-                    is_zb_sequence_fse(meta),
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
                 ]);
 
@@ -1851,7 +1875,7 @@ impl DecoderConfig {
                 // - except when the value=1, i.e. prob=0
                 // - except when we are in repeat-bits loop
                 let condition = and::expr([
-                    is_zb_sequence_fse(meta),
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
                     not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
                     not::expr(config.bitstream_decoder.is_prob0(meta, Rotation::cur())),
@@ -1892,7 +1916,7 @@ impl DecoderConfig {
             // Bitstream decoder when the bitstring to be read is nil.
             let condition = and::expr([
                 config.bitstream_decoder.is_nil(meta, Rotation::cur()),
-                sum::expr([is_zb_sequence_fse(meta)]),
+                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -1922,7 +1946,7 @@ impl DecoderConfig {
             // Bitstream decoder when the bitstring to be read is not nil.
             let condition = and::expr([
                 not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
-                sum::expr([is_zb_sequence_fse(meta)]),
+                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -2153,7 +2177,7 @@ impl DecoderConfig {
             |meta| {
                 let condition = and::expr([
                     not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
-                    sum::expr([is_zb_sequence_fse(meta)]),
+                    sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
                 ]);
 
                 let (byte_idx0, byte_idx1, byte_idx2) = (
@@ -2198,7 +2222,7 @@ impl DecoderConfig {
         meta.lookup_any("DecoderConfig: Bitstream Decoder (bitstring end)", |meta| {
             let condition = and::expr([
                 not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
-                sum::expr([is_zb_sequence_fse(meta)]),
+                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
             ]);
 
             let (byte_idx0, byte_idx1, byte_idx2) = (

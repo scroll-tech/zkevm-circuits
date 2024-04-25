@@ -19,7 +19,8 @@ use zkevm_circuits::{
 use crate::{
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, RlcConfig,
+    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs,
+    RlcConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -133,12 +134,14 @@ impl AggregationConfig {
         let decoder_config = DecoderConfig::configure(
             meta,
             &challenges_expr,
-            pow_rand_table,
-            pow2_table,
-            u8_table,
-            range8,
-            range16,
-            bitwise_op_table,
+            DecoderConfigArgs {
+                pow_rand_table,
+                pow2_table,
+                u8_table,
+                range8,
+                range16,
+                bitwise_op_table,
+            },
         );
 
         // Instance column stores public input column
