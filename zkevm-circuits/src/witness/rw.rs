@@ -462,6 +462,12 @@ impl Rw {
                 committed_value,
                 ..
             } => (*value, *value_prev, *tx_id, *committed_value),
+            Self::AccountTransientStorage {
+                value,
+                value_prev,
+                tx_id,
+                ..
+            } => (*value, *value_prev, *tx_id, Word::zero()),
             _ => unreachable!("{:?}", self),
         }
     }
