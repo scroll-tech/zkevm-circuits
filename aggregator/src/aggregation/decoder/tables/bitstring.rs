@@ -397,6 +397,8 @@ impl BitstringTable {
             cb.gate(condition)
         });
 
+        debug_assert!(meta.degree() <= 9);
+
         config
     }
 

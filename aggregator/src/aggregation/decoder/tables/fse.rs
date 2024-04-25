@@ -457,6 +457,8 @@ impl FseTable {
             .collect()
         });
 
+        debug_assert!(meta.degree() <= 9);
+
         config
     }
 }

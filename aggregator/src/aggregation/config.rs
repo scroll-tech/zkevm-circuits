@@ -152,6 +152,7 @@ impl AggregationConfig {
         meta.enable_equality(instance);
 
         println!("meta degree = {:?}", meta.degree());
+        debug_assert!(meta.degree() <= 9);
 
         Self {
             base_field_config,
