@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn default_blob_data() {
-        let mut default_metadata = [0u8; 62];
+        let mut default_metadata = [0u8; N_ROWS_METADATA];
         default_metadata[1] = 1;
         let default_metadata_digest = keccak256(default_metadata);
         let default_chunk_digests = [keccak256([]); MAX_AGG_SNARKS];
