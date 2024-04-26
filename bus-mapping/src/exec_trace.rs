@@ -17,6 +17,7 @@ impl fmt::Debug for OperationRef {
                 Target::Memory => "Memory",
                 Target::Stack => "Stack",
                 Target::Storage => "Storage",
+                Target::TransientStorage => "TransientStorage",
                 Target::TxAccessListAccount => "TxAccessListAccount",
                 Target::TxAccessListAccountStorage => "TxAccessListAccountStorage",
                 Target::TxRefund => "TxRefund",

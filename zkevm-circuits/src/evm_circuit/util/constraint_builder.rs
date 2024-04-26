@@ -1108,6 +1108,58 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // Account Transient Storage
+    pub(crate) fn account_transient_storage_read(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        tx_id: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account_transient_storage_read",
+            false.expr(),
+            RwTableTag::TransientStorage,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                key,
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn account_transient_storage_write(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        tx_id: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.reversible_write(
+            "account_transient_storage_write",
+            RwTableTag::TransientStorage,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                key,
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ),
+            reversion_info,
+        );
+    }
+
     // Call context
 
     pub(crate) fn call_context(

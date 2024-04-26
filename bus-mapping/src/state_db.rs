@@ -135,6 +135,8 @@ pub struct StateDB {
     // state before current transaction, to calculate gas cost for some opcodes like sstore.
     // So both dirty storage and committed storage are needed.
     dirty_storage: HashMap<(Address, Word), Word>,
+    // Transient storage, which is cleared after the transaction.
+    transient_storage: HashMap<(Address, Word), Word>,
     // Accounts that have been through `SELFDESTRUCT` under the situation that `is_persistent` is
     // `true`. These accounts will be reset once `commit_tx` is called.
     destructed_account: HashSet<Address>,
@@ -213,6 +215,17 @@ impl StateDB {
         }
     }
 
+    /// Get a reference to the transient storage value from [`Account`] at `addr`, at
+    /// `key`.  Returns false and a zero [`Word`] when the [`Account`] or `key`
+    /// wasn't found in the state.
+    /// Returns transient storage value, which is cleared after current tx
+    pub fn get_transient_storage(&self, addr: &Address, key: &Word) -> (bool, &Word) {
+        match self.transient_storage.get(&(*addr, *key)) {
+            Some(v) => (true, v),
+            None => (false, &VALUE_ZERO),
+        }
+    }
+
     /// Get a reference to the storage value from [`Account`] at `addr`, at
     /// `key`.  Returns false and a zero [`Word`] when the [`Account`] or `key`
     /// wasn't found in the state.
@@ -254,6 +267,12 @@ impl StateDB {
     pub fn get_balance(&self, addr: &Address) -> Word {
         let (_, account) = self.get_account(addr);
         account.balance
+    }
+
+    /// Set transient storage value at `addr` and `key`.
+    /// Transient storage is cleared after transaction execution.
+    pub fn set_transient_storage(&mut self, addr: &Address, key: &Word, value: &Word) {
+        self.transient_storage.insert((*addr, *key), *value);
     }
 
     /// Get nonce of account with `addr`.
@@ -340,6 +359,11 @@ impl StateDB {
             *account = ACCOUNT_ZERO.clone();
         }
         self.refund = 0;
+    }
+
+    /// Clear transient storage.
+    pub fn clear_transient_storage(&mut self) {
+        self.transient_storage = HashMap::new();
     }
 }
 

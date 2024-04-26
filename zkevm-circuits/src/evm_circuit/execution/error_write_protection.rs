@@ -44,11 +44,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         // max_degree. otherwise need to do fixed lookup for these opcodes
         // checking.
         cb.require_in_set(
-            "ErrorWriteProtection only happens in [CALL, SSTORE, CREATE, CREATE2, SELFDESTRUCT, LOG0..4 ]",
+            "ErrorWriteProtection only happens in [CALL, SSTORE, TSTORE, CREATE, CREATE2, SELFDESTRUCT, LOG0..4 ]",
             opcode.expr(),
             vec![
                 OpcodeId::CALL.expr(),
                 OpcodeId::SSTORE.expr(),
+                OpcodeId::TSTORE.expr(),
                 OpcodeId::CREATE.expr(),
                 OpcodeId::CREATE2.expr(),
                 OpcodeId::SELFDESTRUCT.expr(),
