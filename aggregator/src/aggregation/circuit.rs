@@ -449,7 +449,7 @@ impl Circuit<Fr> for AggregationCircuit {
                             .iter()
                             .zip_eq(expected_chunk_data_digest.iter())
                         {
-                            println!("blob chunk tx: {:?} {:?}", c.value(), ec.value());
+                            log::trace!("blob chunk tx: {:?} {:?}", c.value(), ec.value());
                             region.constrain_equal(c.cell(), ec.cell())?;
                         }
                     }
