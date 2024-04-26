@@ -115,8 +115,11 @@ impl OperationContainer {
                 OperationRef::from((Target::Storage, self.storage.len() - 1))
             }
             OpEnum::TransientStorage(op) => {
-                // removed rwc_inner_chunk here... does that matter?
-                self.transient_storage.push(Operation::new(rwc, rw, op));
+                self.transient_storage.push(if reversible {
+                    Operation::new_reversible(rwc, rw, op)
+                } else {
+                    Operation::new(rwc, rw, op)
+                });
                 OperationRef::from((Target::TransientStorage, self.transient_storage.len() - 1))
             }
             OpEnum::TxAccessListAccount(op) => {

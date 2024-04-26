@@ -1179,6 +1179,14 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
+            OperationRef(Target::TransientStorage, idx) => {
+                let operation = &self.block.container.transient_storage[*idx];
+                if operation.rw().is_write() && operation.reversible() {
+                    Some(OpEnum::TransientStorage(operation.op().reverse()))
+                } else {
+                    None
+                }
+            }
             OperationRef(Target::TxAccessListAccount, idx) => {
                 let operation = &self.block.container.tx_access_list_account[*idx];
                 if operation.rw().is_write() && operation.reversible() {
@@ -1698,6 +1706,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     OpcodeId::RETURNDATACOPY => Some(ExecError::ReturnDataOutOfBounds),
                     // Break write protection (CALL with value will be handled below)
                     OpcodeId::SSTORE
+                    | OpcodeId::TSTORE
                     | OpcodeId::CREATE
                     | OpcodeId::CREATE2
                     | OpcodeId::SELFDESTRUCT
