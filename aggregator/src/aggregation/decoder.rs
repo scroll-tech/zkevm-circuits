@@ -6,7 +6,7 @@ use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig},
     is_equal::{IsEqualChip, IsEqualConfig},
     less_than::{LtChip, LtConfig},
-    util::{and, not, select, Expr},
+    util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
@@ -17,19 +17,18 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use witgen::{ZstdTag, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG};
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, PowOfRandTable, RangeTable, U8Table},
+    table::{BitwiseOpTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
     util::Challenges,
 };
 
 use self::{
     tables::{
-        BitstringAccumulationTable, LiteralLengthCodes, LiteralsHeaderTable, MatchLengthCodes,
-        MatchOffsetCodes, RomSequenceCodes, RomTagTable,
+        BitstringTable, FseTable, LiteralLengthCodes, LiteralsHeaderTable, MatchLengthCodes,
+        MatchOffsetCodes, RomFseOrderTable, RomSequenceCodes, RomTagTable,
     },
-    witgen::{N_BITS_REPEAT_FLAG, N_BLOCK_HEADER_BYTES},
+    witgen::{ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES},
 };
 
 #[derive(Clone, Debug)]
@@ -64,6 +63,8 @@ pub struct DecoderConfig {
     sequences_header_decoder: SequencesHeaderDecoder,
     /// Config for reading and decoding bitstreams.
     bitstream_decoder: BitstreamDecoder,
+    /// Config established while recovering the FSE table.
+    fse_decoder: FseDecoder,
     /// Range Table for [0, 8).
     range8: RangeTable<8>,
     /// Range Table for [0, 16).
@@ -71,9 +72,13 @@ pub struct DecoderConfig {
     /// Helper table for decoding the regenerated size from LiteralsHeader.
     literals_header_table: LiteralsHeaderTable,
     /// Helper table for decoding bitstreams.
-    bitstring_accumulation_table: BitstringAccumulationTable,
+    bitstring_table: BitstringTable,
+    /// Helper table for decoding FSE tables.
+    fse_table: FseTable,
     /// ROM table for validating tag transition.
     rom_tag_table: RomTagTable,
+    /// ROM table for the correct order in which FSE tables are described in the sequences section.
+    rom_fse_order_table: RomFseOrderTable,
     /// ROM table for Literal Length Codes.
     rom_llc_table: RomSequenceCodes<LiteralLengthCodes>,
     /// ROM table for Match Length Codes.
@@ -122,6 +127,8 @@ struct TagConfig {
     is_frame_content_size: Column<Advice>,
     /// Degree reduction: BlockHeader
     is_block_header: Column<Advice>,
+    /// Degree reduction: SequenceFseCode
+    is_fse_code: Column<Advice>,
 }
 
 impl TagConfig {
@@ -153,6 +160,7 @@ impl TagConfig {
             // degree reduction.
             is_frame_content_size: meta.advice_column(),
             is_block_header: meta.advice_column(),
+            is_fse_code: meta.advice_column(),
         }
     }
 }
@@ -363,13 +371,15 @@ pub struct BitstreamDecoder {
     bitstring_value_eq_1: IsEqualConfig<Fr>,
     /// Helper config as per the above doc.
     bitstring_value_eq_3: IsEqualConfig<Fr>,
-    /// Boolean that is set for the special case that we don't read from the bitstream, i.e. we
-    /// read 0 number of bits. We can witness such a case while applying an FSE table to bitstream,
-    /// where the number of bits to be read from the bitstream is 0.
+    /// Boolean that is set for two special cases:
+    ///
+    /// 1. We don't read from the bitstream, i.e. we read 0 number of bits. We can witness such a
+    ///    case while applying an FSE table to bitstream, where the number of bits to be read from
+    ///    the bitstream is 0. This can happen when we decode sequences
+    /// 2. The bitstring that we have read in the current row is byte-aligned up to the next or the
+    ///    next-to-next byte. In this case, the next or the next-to-next following row(s) should
+    ///    have the is_nil field set.
     is_nil: Column<Advice>,
-    /// The symbol that this bitstring decodes to. While applying an FSE table, this translates to
-    /// the symbol emitted from the FSE state before reading NB bits from bitstream.
-    decoded_symbol: Column<Advice>,
 }
 
 impl BitstreamDecoder {
@@ -418,15 +428,20 @@ impl BitstreamDecoder {
                 |_| 3.expr(),
             ),
             is_nil: meta.advice_column(),
-            decoded_symbol: meta.advice_column(),
         }
     }
 }
 
 impl BitstreamDecoder {
-    /// Whether the number of bits to be read from bitstream is 0, i.e. no bits to be read.
+    /// Whether the number of bits to be read from bitstream (at this row) is 0, i.e. no bits to be
+    /// read.
     fn is_nil(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         meta.query_advice(self.is_nil, rotation)
+    }
+
+    /// True when a bitstream is read from the current row.
+    fn is_not_nil(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        not::expr(self.is_nil(meta, rotation))
     }
 
     /// While reconstructing the FSE table, indicates whether a value=1 was found, i.e. prob=0. In
@@ -467,6 +482,17 @@ impl BitstreamDecoder {
         lt + eq
     }
 
+    /// A bitstring spans 1 byte and is byte-aligned:
+    /// - bit_index_end == 7.
+    fn aligned_one_byte(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let (_lt, eq) = self.bit_index_end_cmp_7.expr(meta, rotation);
+        eq
+    }
+
     /// A bitstring strictly spans 2 bytes if the bit_index at which it ends is such that:
     /// - 8 <= bit_index_end < 15.
     fn strictly_spans_two_bytes(
@@ -481,6 +507,7 @@ impl BitstreamDecoder {
 
     /// A bitstring spans 2 bytes if the bit_index at which it ends is such that:
     /// - 8 <= bit_index_end <= 15.
+    #[allow(dead_code)]
     fn spans_two_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -491,6 +518,17 @@ impl BitstreamDecoder {
         not::expr(spans_one_byte) * (lt2 + eq2)
     }
 
+    /// A bitstring spans 2 bytes and is byte-aligned:
+    /// - bit_index_end == 15.
+    fn aligned_two_bytes(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let (_lt, eq) = self.bit_index_end_cmp_15.expr(meta, rotation);
+        eq
+    }
+
     /// A bitstring strictly spans 3 bytes if the bit_index at which it ends is such that:
     /// - 16 <= bit_index_end < 23.
     fn strictly_spans_three_bytes(
@@ -498,19 +536,64 @@ impl BitstreamDecoder {
         meta: &mut VirtualCells<Fr>,
         rotation: Option<Rotation>,
     ) -> Expression<Fr> {
-        let spans_two_bytes = self.spans_two_bytes(meta, rotation);
+        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
         let (lt3, _eq3) = self.bit_index_end_cmp_23.expr(meta, rotation);
-        not::expr(spans_two_bytes) * lt3
+        not::expr(lt2 + eq2) * lt3
     }
 
     /// A bitstring spans 3 bytes if the bit_index at which it ends is such that:
     /// - 16 <= bit_index_end <= 23.
+    #[allow(dead_code)]
     fn spans_three_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
         rotation: Option<Rotation>,
     ) -> Expression<Fr> {
-        not::expr(self.spans_two_bytes(meta, rotation))
+        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
+        not::expr(lt2 + eq2)
+    }
+
+    /// A bitstring spans 3 bytes and is byte-aligned:
+    /// - bit_index_end == 23.
+    fn aligned_three_bytes(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Option<Rotation>,
+    ) -> Expression<Fr> {
+        let (_lt, eq) = self.bit_index_end_cmp_23.expr(meta, rotation);
+        eq
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FseDecoder {
+    /// The byte_idx at which the FSE table is described at.
+    byte_offset: Column<Advice>,
+    /// The FSE table that is being decoded in this tag. Possible values are:
+    /// - LLT = 0, MOT = 1, MLT = 2
+    table_kind: Column<Advice>,
+    /// The number of states in the FSE table. table_size == 1 << AL, where AL is the accuracy log
+    /// of the FSE table.
+    table_size: Column<Advice>,
+    /// The incremental symbol for which probability is decoded.
+    symbol: Column<Advice>,
+    /// An accumulator of the number of states allocated to each symbol as we decode the FSE table.
+    /// This is the normalised probability for the symbol.
+    probability_acc: Column<Advice>,
+    /// Whether we are in the repeat bits loop.
+    is_repeat_bits_loop: Column<Advice>,
+}
+
+impl FseDecoder {
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
+        Self {
+            byte_offset: meta.advice_column(),
+            table_kind: meta.advice_column(),
+            table_size: meta.advice_column(),
+            symbol: meta.advice_column(),
+            probability_acc: meta.advice_column(),
+            is_repeat_bits_loop: meta.advice_column(),
+        }
     }
 }
 
@@ -521,24 +604,45 @@ pub struct AssignedDecoderConfigExports {
     pub decoded_rlc: AssignedCell<Fr, Fr>,
 }
 
+pub struct DecoderConfigArgs {
+    /// Power of randomness table.
+    pub pow_rand_table: PowOfRandTable,
+    /// Power of 2 lookup table, up to exponent=20.
+    pub pow2_table: Pow2Table<20>,
+    /// Range table for lookup: [0, 256).
+    pub u8_table: U8Table,
+    /// Range table for lookup: [0, 8).
+    pub range8: RangeTable<8>,
+    /// Range table for lookup: [0, 16).
+    pub range16: RangeTable<16>,
+    /// Bitwise operation lookup table.
+    pub bitwise_op_table: BitwiseOpTable,
+}
+
 impl DecoderConfig {
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         challenges: &Challenges<Expression<Fr>>,
-        pow_rand_table: PowOfRandTable,
-        u8_table: U8Table,
-        range8: RangeTable<8>,
-        range16: RangeTable<16>,
+        DecoderConfigArgs {
+            pow_rand_table,
+            pow2_table,
+            u8_table,
+            range8,
+            range16,
+            bitwise_op_table,
+        }: DecoderConfigArgs,
     ) -> Self {
         // Fixed tables
         let rom_tag_table = RomTagTable::construct(meta);
+        let rom_fse_order_table = RomFseOrderTable::construct(meta);
         let rom_llc_table = RomSequenceCodes::<LiteralLengthCodes>::construct(meta);
         let rom_mlc_table = RomSequenceCodes::<MatchLengthCodes>::construct(meta);
         let rom_moc_table = RomSequenceCodes::<MatchOffsetCodes>::construct(meta);
 
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, range8, range16);
-        let bitstring_accumulation_table = BitstringAccumulationTable::configure(meta);
+        let bitstring_table = BitstringTable::configure(meta);
+        let fse_table = FseTable::configure(meta, u8_table, range8, pow2_table, bitwise_op_table);
 
         // Peripheral configs
         let tag_config = TagConfig::configure(meta);
@@ -547,6 +651,7 @@ impl DecoderConfig {
         let sequences_header_decoder =
             SequencesHeaderDecoder::configure(meta, byte, is_padding, u8_table);
         let bitstream_decoder = BitstreamDecoder::configure(meta, is_padding, u8_table);
+        let fse_decoder = FseDecoder::configure(meta);
 
         // Main config
         let config = Self {
@@ -568,11 +673,14 @@ impl DecoderConfig {
             block_config,
             sequences_header_decoder,
             bitstream_decoder,
+            fse_decoder,
             range8,
             range16,
             literals_header_table,
-            bitstring_accumulation_table,
+            bitstring_table,
+            fse_table,
             rom_tag_table,
+            rom_fse_order_table,
             rom_llc_table,
             rom_mlc_table,
             rom_moc_table,
@@ -596,6 +704,7 @@ impl DecoderConfig {
         is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
         is_tag!(is_zb_raw_block, ZstdBlockLiteralsRawBytes);
         is_tag!(is_zb_sequence_header, ZstdBlockSequenceHeader);
+        is_tag!(is_zb_sequence_fse, ZstdBlockFseCode);
 
         meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
             vec![(
@@ -741,6 +850,7 @@ impl DecoderConfig {
                 is_frame_content_size(meta)
             );
             degree_reduction_check!(config.tag_config.is_block_header, is_block_header(meta));
+            degree_reduction_check!(config.tag_config.is_fse_code, is_zb_sequence_fse(meta));
 
             cb.gate(condition)
         });
@@ -1459,6 +1569,705 @@ impl DecoderConfig {
             );
 
             cb.gate(condition)
+        });
+
+        debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////// ZstdTag::ZstdBlockSequenceFseCode /////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        meta.create_gate(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (first row)",
+            |meta| {
+                // The first row of a ZstdBlockSequenceFseCode tag.
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                ]);
+
+                let mut cb = BaseConstraintBuilder::default();
+
+                // At this tag=ZstdBlockSequenceFseCode we are not processing bits instead of
+                // bytes. The first bitstring is the 4-bits bitstring that encodes the accuracy log
+                // of the FSE table.
+                cb.require_zero(
+                    "fse(al): bit_index_start == 0",
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                );
+
+                cb.require_equal(
+                    "fse(al): bit_index_end == 3",
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    3.expr(),
+                );
+
+                cb.require_equal(
+                    "fse: byte_offset",
+                    meta.query_advice(config.byte_idx, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.byte_offset, Rotation::cur()),
+                );
+
+                cb.require_zero(
+                    "fse(init): probability_acc=0",
+                    meta.query_advice(config.fse_decoder.probability_acc, Rotation::cur()),
+                );
+
+                // The symbol=0 is handled immediately after the AL 4-bits.
+                cb.require_zero(
+                    "fse(init): symbol=0",
+                    meta.query_advice(config.fse_decoder.symbol, Rotation::next()),
+                );
+
+                // The is_repeat_bits_loop inits at 0 after the AL 4-bits.
+                cb.require_zero(
+                    "fse(init): is_repeat_bits_loop=0",
+                    meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::next()),
+                );
+
+                // We will always start reading bits from the bitstream for the first symbol.
+                cb.require_zero(
+                    "fse(init): is_nil=0",
+                    config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                );
+
+                cb.gate(condition)
+            },
+        );
+
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (table kind)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                ]);
+
+                [
+                    meta.query_advice(config.tag_config.tag, Rotation::prev()), // tag_prev
+                    meta.query_advice(config.tag_config.tag, Rotation::cur()),  // tag_cur
+                    meta.query_advice(config.tag_config.tag_next, Rotation::cur()), // tag_next
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()), // table_kind
+                ]
+                .into_iter()
+                .zip_eq(config.rom_fse_order_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (table size)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                ]);
+
+                // accuracy_log == 4bits + 5
+                let al = meta
+                    .query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur())
+                    + 5.expr();
+                let table_size = meta.query_advice(config.fse_decoder.table_size, Rotation::cur());
+
+                // table_size == 1 << al
+                [al, table_size]
+                    .into_iter()
+                    .zip_eq(pow2_table.table_exprs(meta))
+                    .map(|(arg, table)| (condition.expr() * arg, table))
+                    .collect()
+            },
+        );
+
+        meta.create_gate(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (other rows)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                ]);
+
+                let mut cb = BaseConstraintBuilder::default();
+
+                // FseDecoder columns that remain unchanged.
+                for column in [
+                    config.fse_decoder.byte_offset,
+                    config.fse_decoder.table_kind,
+                    config.fse_decoder.table_size,
+                ] {
+                    cb.require_equal(
+                        "fse_decoder column unchanged",
+                        meta.query_advice(column, Rotation::cur()),
+                        meta.query_advice(column, Rotation::prev()),
+                    );
+                }
+
+                // FSE tables are decoded for Literal Length (LLT), Match Offset (MOT) and Match
+                // Length (MLT).
+                //
+                // The maximum permissible accuracy log for the above are:
+                // - LLT: 9
+                // - MOT: 8
+                // - MLT: 9
+                //
+                // Which means, at the most we would be reading a bitstring up to length=9. Note
+                // that an FSE table would exist only if there are more than one symbols and in
+                // that case, we wouldn't actually reserve ALL possibly states for a single symbol,
+                // indirectly meaning that we would be reading bitstrings of at the most length=9.
+                //
+                // The only scenario in which we would skip reading bits from a byte altogether is
+                // if the bitstring is ``aligned_two_bytes``.
+                cb.require_zero(
+                    "fse: bitstrings cannot span 3 bytes",
+                    config
+                        .bitstream_decoder
+                        .spans_three_bytes(meta, Some(Rotation::cur())),
+                );
+
+                // If the bitstring read at the current row is ``aligned_two_bytes`` then the one
+                // on the next row is nil (not read).
+                cb.condition(
+                    config
+                        .bitstream_decoder
+                        .aligned_two_bytes(meta, Some(Rotation::cur())),
+                    |cb| {
+                        cb.require_equal(
+                            "fse: aligned_two_bytes is followed by is_nil",
+                            config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                            1.expr(),
+                        );
+                    },
+                );
+
+                // We now tackle the scenario of observing value=1 (prob=0) which is then followed
+                // by 2-bits repeat bits.
+                //
+                // If we are not in a repeat-bits loop and encounter a value=1 (prob=0) bitstring,
+                // then we enter a repeat bits loop.
+                let is_repeat_bits_loop =
+                    meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur());
+                cb.condition(
+                    and::expr([
+                        not::expr(is_repeat_bits_loop.expr()),
+                        config.bitstream_decoder.is_prob0(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        cb.require_equal(
+                            "fse: enter repeat-bits loop",
+                            meta.query_advice(
+                                config.fse_decoder.is_repeat_bits_loop,
+                                Rotation::next(),
+                            ),
+                            1.expr(),
+                        );
+                    },
+                );
+
+                // If we are in a repeat-bits loop and the repeat-bits are [1, 1], then continue
+                // the repeat-bits loop.
+                let is_rb_flag3 = config.bitstream_decoder.is_rb_flag3(meta, Rotation::cur());
+                cb.condition(
+                    and::expr([is_repeat_bits_loop.expr(), is_rb_flag3.expr()]),
+                    |cb| {
+                        cb.require_equal(
+                            "fse: continue repeat-bits loop",
+                            meta.query_advice(
+                                config.fse_decoder.is_repeat_bits_loop,
+                                Rotation::next(),
+                            ),
+                            1.expr(),
+                        );
+                    },
+                );
+
+                // If we are in a repeat-bits loop and the repeat-bits are not [1, 1] then break
+                // out of the repeat-bits loop.
+                cb.condition(
+                    and::expr([is_repeat_bits_loop.expr(), not::expr(is_rb_flag3)]),
+                    |cb| {
+                        cb.require_zero(
+                            "fse: break out of repeat-bits loop",
+                            meta.query_advice(
+                                config.fse_decoder.is_repeat_bits_loop,
+                                Rotation::next(),
+                            ),
+                        );
+                    },
+                );
+
+                // We not tackle the normalised probability of symbols in the FSE table, their
+                // updating and the FSE symbol itself.
+                //
+                // If no bitstring was read, even the symbol value is carried forward.
+                let (prob_acc_cur, prob_acc_prev, fse_symbol_cur, fse_symbol_prev, value) = (
+                    meta.query_advice(config.fse_decoder.probability_acc, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.probability_acc, Rotation::prev()),
+                    meta.query_advice(config.fse_decoder.symbol, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.symbol, Rotation::prev()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                cb.condition(
+                    config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+                    |cb| {
+                        cb.require_equal(
+                            "fse: probability_acc continues",
+                            prob_acc_cur.expr(),
+                            prob_acc_prev.expr(),
+                        );
+                        cb.require_equal(
+                            "fse: symbol continues",
+                            fse_symbol_cur.expr(),
+                            fse_symbol_prev.expr(),
+                        );
+                    },
+                );
+
+                // As we decode the normalised probability for each symbol in the FSE table, we
+                // update the probability accumulator. It should be updated as long as we are
+                // reading a bitstring and we are not in the repeat-bits loop.
+                cb.condition(
+                    and::expr([
+                        config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                        not::expr(is_repeat_bits_loop.expr()),
+                    ]),
+                    |cb| {
+                        // prob_acc_cur == prob_acc_prev + (value - 1)
+                        cb.require_equal(
+                            "fse: probability_acc is updated correctly",
+                            prob_acc_cur.expr() + 1.expr(),
+                            prob_acc_prev.expr() + value.expr(),
+                        );
+                        cb.require_equal(
+                            "fse: symbol increments",
+                            fse_symbol_cur.expr(),
+                            fse_symbol_prev.expr() + 1.expr(),
+                        );
+                    },
+                );
+
+                // If we are in the repeat-bits loop, then the normalised probability accumulator
+                // does not change, as the repeat-bits loop is for symbols that are not emitted
+                // through the FSE table. However, the symbol value itself increments by the value
+                // in the 2 repeat bits.
+                cb.condition(is_repeat_bits_loop.expr(), |cb| {
+                    let bit_index_start = meta
+                        .query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur());
+                    let bit_index_end =
+                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur());
+                    cb.require_equal(
+                        "fse: repeat-bits read N_BITS_REPEAT_FLAG=2 bits",
+                        bit_index_end - bit_index_start + 1.expr(),
+                        N_BITS_REPEAT_FLAG.expr(),
+                    );
+                    cb.require_equal(
+                        "fse: repeat-bits do not change probability_acc",
+                        prob_acc_cur,
+                        prob_acc_prev,
+                    );
+                    cb.require_equal(
+                        "fse: repeat-bits increases by the 2-bit value",
+                        fse_symbol_cur,
+                        fse_symbol_prev + value,
+                    );
+                });
+
+                cb.gate(condition)
+            },
+        );
+
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (normalised probability of symbol)",
+            |meta| {
+                // At every row where a non-nil bitstring is read:
+                // - except the AL bits
+                // - except when the value=1, i.e. prob=0
+                // - except when we are in repeat-bits loop
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_prob0(meta, Rotation::cur())),
+                    not::expr(
+                        meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur()),
+                    ),
+                ]);
+
+                let (fse_byte_offset, fse_table_size, fse_symbol, bitstring_value) = (
+                    meta.query_advice(config.fse_decoder.byte_offset, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.symbol, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let norm_prob = bitstring_value - 1.expr();
+
+                [
+                    fse_byte_offset,
+                    fse_table_size,
+                    fse_symbol,
+                    norm_prob.expr(),
+                    norm_prob.expr(),
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.fse_table.table_exprs_by_symbol(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+
+        debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// Bitstream Decoding /////////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        meta.create_gate("DecoderConfig: Bitstream Decoder (nil)", |meta| {
+            // Bitstream decoder when the bitstring to be read is nil.
+            let condition = and::expr([
+                config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
+            ]);
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "bit_index_start == bit_index_end",
+                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "bit_index_start' == bit_index_start",
+                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::next()),
+                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "byte_idx' == byte_idx",
+                meta.query_advice(config.byte_idx, Rotation::next()),
+                meta.query_advice(config.byte_idx, Rotation::cur()),
+            );
+
+            cb.gate(condition)
+        });
+
+        meta.create_gate("DecoderConfig: Bitstream Decoder (not nil)", |meta| {
+            // Bitstream decoder when the bitstring to be read is not nil.
+            let condition = and::expr([
+                not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
+            ]);
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            // We process bits instead of bytes for a few tags, namely, ZstdBlockSequenceFseCode
+            // and ZstdBlockSequenceData. In these tags, over adjacent rows we may experience:
+            // - byte_idx' == byte_idx
+            // - byte_idx' == byte_idx + 1
+            // depending on whether or not the bitstring read was byte-aligned.
+            //
+            // The maximum length of bitstring we expect at the moment is N=17, which means the
+            // bitstring accumulation table supports bitstring accumulation up to 3 contiguous
+            // bytes.
+            //
+            // We have the following scenarios:
+            // - bitstring strictly spans over 1 byte: 0 <= bit_index_end < 7.
+            // - bitstring is byte aligned: bit_index_end == 7.
+            // - bitstring strictly spans over 2 bytes: 8 <= bit_index_end < 15.
+            // - bitstring is byte aligned: bit_index_end == 15.
+            // - bitstring strictly spans over 3 bytes: 16 <= bit_index_end < 23.
+            // - bitstring is byte aligned: bit_index_end == 23.
+            //
+            // Every row is reserved for a bitstring read from the bitstream. That is, we have:
+            // - bitstring_len == bit_index_end - bit_index_start + 1
+            //
+            // On some rows we may not be reading a bitstring. This can occur when:
+            // - The number of bits to be read is 0, i.e. NB_fse == 0.
+            // - The previous row read a bitstring that spanned over 2 bytes and was byte-aligned.
+            //      - No bitstring is read on the current row.
+            // - The previous row read a bitstring that spanned over 3 bytes.
+            //      - No bitstring is read on the current row.
+            // - The previous row read a bitstring that spanned over 3 bytes and was byte-aligned.
+            //      - No bitstring is read on the current and next row.
+
+            // 1. bitstring strictly spans over 1 byte: 0 <= bit_index_end < 7.
+            cb.condition(
+                config
+                    .bitstream_decoder
+                    .strictly_spans_one_byte(meta, Some(Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "(case1): byte_idx' == byte_idx",
+                        meta.query_advice(config.byte_idx, Rotation::next()),
+                        meta.query_advice(config.byte_idx, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "(case1): bit_index_start' == bit_index_end + 1",
+                        meta.query_advice(
+                            config.bitstream_decoder.bit_index_start,
+                            Rotation::next(),
+                        ),
+                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur())
+                            + 1.expr(),
+                    );
+                },
+            );
+
+            // 2. bitstring is byte-aligned: bit_index_end == 7.
+            cb.condition(
+                config
+                    .bitstream_decoder
+                    .aligned_one_byte(meta, Some(Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "(case2): byte_idx' == byte_idx + 1",
+                        meta.query_advice(config.byte_idx, Rotation::next()),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                    );
+                    cb.require_zero(
+                        "(case2): bit_index_start' == 0",
+                        meta.query_advice(
+                            config.bitstream_decoder.bit_index_start,
+                            Rotation::next(),
+                        ),
+                    );
+                },
+            );
+
+            // 3. bitstring strictly spans over 2 bytes: 8 <= bit_index_end < 15.
+            cb.condition(
+                config
+                    .bitstream_decoder
+                    .strictly_spans_two_bytes(meta, Some(Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "(case3): byte_idx' == byte_idx + 1",
+                        meta.query_advice(config.byte_idx, Rotation::next()),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                    );
+                    cb.require_equal(
+                        "(case3): bit_index_start' == bit_index_end - 7",
+                        meta.query_advice(
+                            config.bitstream_decoder.bit_index_start,
+                            Rotation::next(),
+                        ) + 7.expr(),
+                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    );
+                },
+            );
+
+            // 4. bitstring is byte-aligned: bit_index_end == 15.
+            cb.condition(
+                config
+                    .bitstream_decoder
+                    .aligned_two_bytes(meta, Some(Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "(case4): byte_idx' == byte_idx + 1",
+                        meta.query_advice(config.byte_idx, Rotation::next()),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                    );
+                    cb.require_equal(
+                        "(case4): byte_idx'' == byte_idx + 2",
+                        meta.query_advice(config.byte_idx, Rotation(2)),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
+                    );
+                    cb.require_equal(
+                        "(case4): bitstring decoder skipped next row",
+                        config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                        1.expr(),
+                    );
+                    cb.require_zero(
+                        "(case4): bit_index_start' == 0",
+                        meta.query_advice(
+                            config.bitstream_decoder.bit_index_start,
+                            Rotation::next(),
+                        ),
+                    );
+                    cb.require_zero(
+                        "(case4): bit_index_start'' == 0",
+                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2)),
+                    );
+                },
+            );
+
+            // 5. bitstring strictly spans over 3 bytes: 16 <= bit_index_end < 23.
+            cb.condition(
+                config
+                    .bitstream_decoder
+                    .strictly_spans_three_bytes(meta, Some(Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "(case5): byte_idx' == byte_idx + 1",
+                        meta.query_advice(config.byte_idx, Rotation::next()),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                    );
+                    cb.require_equal(
+                        "(case5): byte_idx'' == byte_idx + 2",
+                        meta.query_advice(config.byte_idx, Rotation(2)),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
+                    );
+                    cb.require_equal(
+                        "(case5): bitstring decoder skipped next row",
+                        config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                        1.expr(),
+                    );
+                    cb.require_equal(
+                        "(case5): bit_index_start' == bit_index_start''",
+                        meta.query_advice(
+                            config.bitstream_decoder.bit_index_start,
+                            Rotation::next(),
+                        ),
+                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2)),
+                    );
+                    cb.require_equal(
+                        "(case5): bit_index_start'' == bit_index_end - 15",
+                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2))
+                            + 15.expr(),
+                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    );
+                },
+            );
+
+            // 6. bitstring is byte-aligned: bit_index_end == 23.
+            cb.condition(
+                config
+                    .bitstream_decoder
+                    .aligned_three_bytes(meta, Some(Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "(case6): byte_idx' == byte_idx + 1",
+                        meta.query_advice(config.byte_idx, Rotation::next()),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                    );
+                    cb.require_equal(
+                        "(case6): byte_idx'' == byte_idx + 2",
+                        meta.query_advice(config.byte_idx, Rotation(2)),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
+                    );
+                    cb.require_equal(
+                        "(case6): byte_idx''' == byte_idx + 3",
+                        meta.query_advice(config.byte_idx, Rotation(3)),
+                        meta.query_advice(config.byte_idx, Rotation::cur()) + 3.expr(),
+                    );
+                    cb.require_equal(
+                        "(case6): bitstring decoder skipped next row",
+                        config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                        1.expr(),
+                    );
+                    cb.require_equal(
+                        "(case6): bitstring decoder skipped next-to-next row",
+                        config.bitstream_decoder.is_nil(meta, Rotation(2)),
+                        1.expr(),
+                    );
+                    cb.require_zero(
+                        "(case6): bit_index_start' == 0",
+                        meta.query_advice(
+                            config.bitstream_decoder.bit_index_start,
+                            Rotation::next(),
+                        ),
+                    );
+                    cb.require_zero(
+                        "(case6): bit_index_start'' == 0",
+                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2)),
+                    );
+                    cb.require_zero(
+                        "(case6): bit_index_start''' == 0",
+                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(3)),
+                    );
+                },
+            );
+
+            cb.gate(condition)
+        });
+
+        meta.lookup_any(
+            "DecoderConfig: Bitstream Decoder (bitstring start)",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
+                ]);
+
+                let (byte_idx0, byte_idx1, byte_idx2) = (
+                    meta.query_advice(config.byte_idx, Rotation(0)),
+                    meta.query_advice(config.byte_idx, Rotation(1)),
+                    meta.query_advice(config.byte_idx, Rotation(2)),
+                );
+                let (byte0, byte1, byte2) = (
+                    meta.query_advice(config.byte, Rotation(0)),
+                    meta.query_advice(config.byte, Rotation(1)),
+                    meta.query_advice(config.byte, Rotation(2)),
+                );
+                let (bit_index_start, _bit_index_end, bitstring_value) = (
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+
+                [
+                    byte_idx0,
+                    byte_idx1,
+                    byte_idx2,
+                    byte0,
+                    byte1,
+                    byte2,
+                    bitstring_value,
+                    1.expr(), // bitstring_len at start
+                    bit_index_start,
+                    1.expr(), // from_start
+                    1.expr(), // until_end
+                    is_reverse,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.bitstring_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+
+        meta.lookup_any("DecoderConfig: Bitstream Decoder (bitstring end)", |meta| {
+            let condition = and::expr([
+                not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
+            ]);
+
+            let (byte_idx0, byte_idx1, byte_idx2) = (
+                meta.query_advice(config.byte_idx, Rotation(0)),
+                meta.query_advice(config.byte_idx, Rotation(1)),
+                meta.query_advice(config.byte_idx, Rotation(2)),
+            );
+            let (byte0, byte1, byte2) = (
+                meta.query_advice(config.byte, Rotation(0)),
+                meta.query_advice(config.byte, Rotation(1)),
+                meta.query_advice(config.byte, Rotation(2)),
+            );
+            let (bit_index_start, bit_index_end, bitstring_value) = (
+                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+            );
+            let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+
+            [
+                byte_idx0,
+                byte_idx1,
+                byte_idx2,
+                byte0,
+                byte1,
+                byte2,
+                bitstring_value,
+                bit_index_end.expr() - bit_index_start + 1.expr(), // bitstring_len at end
+                bit_index_end,
+                1.expr(), // from_start
+                1.expr(), // until_end
+                is_reverse,
+                0.expr(), // is_padding
+            ]
+            .into_iter()
+            .zip_eq(config.bitstring_table.table_exprs(meta))
+            .map(|(arg, table)| (condition.expr() * arg, table))
+            .collect()
         });
 
         debug_assert!(meta.degree() <= 9);

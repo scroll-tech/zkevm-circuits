@@ -12,14 +12,15 @@ use snark_verifier::{
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
-    table::{KeccakTable, PowOfRandTable, RangeTable, U8Table},
+    table::{BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
     util::{Challenges, SubCircuitConfig},
 };
 
 use crate::{
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, RlcConfig,
+    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs,
+    RlcConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -126,15 +127,21 @@ impl AggregationConfig {
 
         // Zstd decoder.
         let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+        let pow2_table = Pow2Table::construct(meta);
         let range8 = RangeTable::construct(meta);
         let range16 = RangeTable::construct(meta);
+        let bitwise_op_table = BitwiseOpTable::construct(meta);
         let decoder_config = DecoderConfig::configure(
             meta,
             &challenges_expr,
-            pow_rand_table,
-            u8_table,
-            range8,
-            range16,
+            DecoderConfigArgs {
+                pow_rand_table,
+                pow2_table,
+                u8_table,
+                range8,
+                range16,
+                bitwise_op_table,
+            },
         );
 
         // Instance column stores public input column
@@ -145,6 +152,7 @@ impl AggregationConfig {
         meta.enable_equality(instance);
 
         println!("meta degree = {:?}", meta.degree());
+        debug_assert!(meta.degree() <= 9);
 
         Self {
             base_field_config,

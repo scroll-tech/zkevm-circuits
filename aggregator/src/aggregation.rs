@@ -18,7 +18,7 @@ pub(crate) use barycentric::{
 };
 pub(crate) use batch_data::BatchDataConfig;
 pub(crate) use blob_data::BlobDataConfig;
-pub(crate) use decoder::DecoderConfig;
+pub(crate) use decoder::{DecoderConfig, DecoderConfigArgs};
 pub(crate) use rlc::RlcConfig;
 
 pub use circuit::AggregationCircuit;

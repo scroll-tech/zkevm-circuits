@@ -111,6 +111,8 @@ impl LiteralsHeaderTable {
             vec![(condition * range_value, range16.into())]
         });
 
+        debug_assert!(meta.degree() <= 9);
+
         config
     }
 }
