@@ -10,6 +10,13 @@ ignore_tests = [
 ]
 
 [[suite]]
+id="EIP1153"
+path = "tests/src/GeneralStateTestsFiller/Cancun/stEIP1153-transientStorage/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
 id="EIP2930"
 path="tests/src/GeneralStateTestsFiller/stEIP2930/*"
 max_gas = 500000
@@ -62,7 +69,8 @@ paths = [
     "stEIP1559/valCausesOOFFiller.yml",
     "stExample/mergeTestFiller.yml",
     "Pyspecs",
-    "Cancun",
+    "stEIP4844-blobtransactions",
+    "stEIP5656-MCOPY",
 #   "EIP2930",
     #"stPreCompiledContracts",
     #"stZeroKnowledge"

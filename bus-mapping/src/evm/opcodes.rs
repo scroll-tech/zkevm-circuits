@@ -59,6 +59,8 @@ mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
+mod tload;
+mod tstore;
 
 mod error_codestore;
 mod error_contract_address_collision;
@@ -113,6 +115,7 @@ use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
 use gasprice::GasPrice;
+// use invalid_tx::InvalidTx;
 use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
@@ -127,6 +130,8 @@ use sstore::Sstore;
 use stackonlyop::StackPopOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
+use tload::Tload;
+use tstore::Tstore;
 
 pub use sstore::calc_expected_tx_refund;
 
@@ -242,6 +247,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::MSIZE => Msize::gen_associated_ops,
         OpcodeId::GAS => Gas::gen_associated_ops,
         OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
+        OpcodeId::TLOAD => Tload::gen_associated_ops,
+        OpcodeId::TSTORE => Tstore::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,

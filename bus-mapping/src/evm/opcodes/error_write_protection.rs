@@ -31,6 +31,7 @@ impl Opcode for ErrorWriteProtection {
         // assert op code can only be following codes
         assert!([
             OpcodeId::SSTORE,
+            OpcodeId::TSTORE,
             OpcodeId::CREATE,
             OpcodeId::CREATE2,
             OpcodeId::CALL,

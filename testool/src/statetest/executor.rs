@@ -292,10 +292,18 @@ fn trace_config_to_witness_block_l2(
         .into_iter()
         .map(From::from)
         .collect::<Vec<_>>();
+
     // if the trace exceed max steps, we cannot fit it into circuit
-    // but we still want to make it go through bus-mapping generation
+    // but sometimes we still want to make it go through bus-mapping generation
+    let always_run_bus_mapping = false;
     let exceed_max_steps = match check_geth_traces(&geth_traces, &suite, verbose) {
-        Err(StateTestError::SkipTestMaxSteps(steps)) => steps,
+        Err(StateTestError::SkipTestMaxSteps(steps)) => {
+            if always_run_bus_mapping {
+                steps
+            } else {
+                return Err(StateTestError::SkipTestMaxSteps(steps));
+            }
+        }
         Err(e) => return Err(e),
         Ok(_) => 0,
     };
