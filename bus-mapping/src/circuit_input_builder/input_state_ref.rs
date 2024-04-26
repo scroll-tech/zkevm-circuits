@@ -19,8 +19,7 @@ use crate::{
         StackOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogField, TxLogOp,
         TxReceiptField, TxReceiptOp, RW,
     },
-    precompile::{is_precompiled, PrecompileCalls},
-    state_db::{CodeDB, StateDB},
+    precompile::PrecompileCalls,
     Error,
 };
 use eth_types::{
@@ -30,6 +29,8 @@ use eth_types::{
         memory::{MemoryRange, MemoryWordRange},
         Gas, GasCost, Memory, MemoryAddress, MemoryRef, OpcodeId, StackAddress, MAX_CODE_SIZE,
     },
+    state_db::{CodeDB, StateDB},
+    utils::is_precompiled,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};

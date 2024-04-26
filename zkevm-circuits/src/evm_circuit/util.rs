@@ -10,8 +10,7 @@ use crate::{
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use bus_mapping::state_db::CodeDB;
-use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
+use eth_types::{state_db::CodeDB, Address, Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     halo2curves::group::ff::BatchInvert,

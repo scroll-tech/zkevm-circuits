@@ -8,6 +8,8 @@ use std::error::Error as StdError;
 pub enum Error {
     /// Serde de/serialization error.
     SerdeError(serde_json::error::Error),
+    /// hex parsing error
+    HexError(hex::FromHexError),
     /// Error while generating a trace.
     TracingError(String),
     /// Block is missing information about number or base_fee

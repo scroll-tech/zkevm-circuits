@@ -1,7 +1,8 @@
 //! utils for build state trie
 
 use eth_types::{
-    Address, Bytes, Word, H256, KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY, U256, U64,
+    state_db, Address, Bytes, Word, H256, KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY, U256,
+    U64,
 };
 use std::{
     convert::TryFrom,
@@ -101,6 +102,23 @@ impl From<zktrie::AccountData> for AccountData {
             poseidon_code_hash,
             code_size: code_size.as_u64(),
             storage_root,
+        }
+    }
+}
+
+impl From<&AccountData> for state_db::Account {
+    fn from(acc_data: &AccountData) -> Self {
+        if acc_data.keccak_code_hash.is_zero() {
+            state_db::Account::zero()
+        } else {
+            Self {
+                nonce: acc_data.nonce.into(),
+                balance: acc_data.balance,
+                code_hash: acc_data.poseidon_code_hash,
+                keccak_code_hash: acc_data.keccak_code_hash,
+                code_size: acc_data.code_size.into(),
+                storage: Default::default(),
+            }
         }
     }
 }

@@ -234,7 +234,6 @@ pub mod mock;
 pub mod operation;
 pub mod precompile;
 pub mod rpc;
-pub mod state_db;
 pub mod util;
 
 pub use error::Error;

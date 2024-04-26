@@ -6,12 +6,12 @@ use crate::{
     },
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField},
-    state_db::CodeDB,
     Error,
 };
 use eth_types::{
     bytecode::BytecodeElement,
     evm_types::{memory::MemoryWordRange, OpcodeId},
+    state_db::CodeDB,
     Bytecode, GethExecStep, ToWord, Word, H256,
 };
 use ethers_core::utils::keccak256;

@@ -1026,7 +1026,7 @@ impl PoseidonTable {
         use crate::bytecode_circuit::bytecode_unroller::{
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
-        use bus_mapping::state_db::CodeDB;
+        use eth_types::state_db::CodeDB;
         use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(

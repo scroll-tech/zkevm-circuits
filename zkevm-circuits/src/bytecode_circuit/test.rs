@@ -4,8 +4,8 @@ use crate::{
     table::BytecodeFieldTag,
     util::{is_push_with_data, keccak, unusable_rows, Challenges, SubCircuit},
 };
-use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
-use eth_types::{Bytecode, Field, ToWord, Word};
+use bus_mapping::evm::OpcodeId;
+use eth_types::{state_db::CodeDB, Bytecode, Field, ToWord, Word};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 
