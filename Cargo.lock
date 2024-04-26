@@ -4122,13 +4122,13 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 version = "6.0.0"
-source = "git+https://github.com/scroll-tech/revm?rev=b57e7d9#b57e7d9fb0763db8708428a4ea9e4158ca35ec41"
+source = "git+https://github.com/scroll-tech/revm?rev=9ecb479#9ecb479179b90d008f205ff21cb6787a2eab0de6"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
  "k256",
  "once_cell",
- "revm-primitives 3.1.1 (git+https://github.com/scroll-tech/revm?rev=b57e7d9)",
+ "revm-primitives 3.1.1 (git+https://github.com/scroll-tech/revm?rev=9ecb479)",
  "ripemd",
  "secp256k1 0.28.2",
  "sha2",
@@ -4159,7 +4159,7 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 version = "3.1.1"
-source = "git+https://github.com/scroll-tech/revm?rev=b57e7d9#b57e7d9fb0763db8708428a4ea9e4158ca35ec41"
+source = "git+https://github.com/scroll-tech/revm?rev=9ecb479#9ecb479179b90d008f205ff21cb6787a2eab0de6"
 dependencies = [
  "alloy-primitives",
  "auto_impl",
