@@ -17,3 +17,7 @@ pub use rom_sequence_codes::{
 /// Validate the following tag given the tag currently being processed.
 mod rom_tag;
 pub use rom_tag::RomTagTable;
+
+mod seqinst_table;
+/// Input for validating the sequence instruction comes from the parsed value  
+pub use seqinst_table::SeqValueTable;
