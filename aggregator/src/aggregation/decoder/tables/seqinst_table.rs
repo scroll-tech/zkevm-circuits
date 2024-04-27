@@ -8,8 +8,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use zkevm_circuits::{
-    evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::LookupTable,
+    evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon}, table::LookupTable,
 };
 use crate::aggregation::decoder::witgen;
 use witgen::AddressTableRow;
@@ -55,23 +54,8 @@ pub struct SeqValueTable {
     pub value: Column<Advice>,
 }
 
-
 /// Table used carry the raw sequence instructions parsed from sequence section
 /// and would be later transformed as the back-reference instructions
-///
-/// | Blk index |  Seq ind. |   Tag  |  Value | 
-/// |-----------|-----------|--------|--------|
-/// |     1     |    0      |  COUNT |   30   |
-/// |     1     |    0      | LITERAL|   4    |
-/// |     1     |    0      | OFFSET |   2    |
-/// |     1     |    0      |  MATCH |   4    |
-/// |     1     |    1      | LITERAL|   2    |
-/// |     1     |    1      | OFFSET |   10   |
-/// |     1     |    1      |  MATCH |   5    |
-/// |    ...    |   ...     |   ...  |  ...   |
-/// |     1     |    30     |  MATCH |   6    |
-/// 
-
 pub struct SeqInstTable {
 
     q_enabled: Column<Fixed>,
@@ -100,8 +84,85 @@ pub struct SeqInstTable {
     repeat_corrupt_flag: Column<Advice>,
 }
 
+impl<F: Field> LookupTable<F> for SeqInstTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enabled.into(),
+            self.n_seq.into(),
+            self.s_beginning.into(),
+            self.seq_index.into(),
+            self.literal_len.into(),
+            self.match_offset.into(),
+            self.match_len.into(),
+            self.block_index.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enabled"),
+            String::from("n_seq"),
+            String::from("s_beginning"),
+            String::from("seq_index"),
+            String::from("literal_len"),
+            String::from("match_offset"),
+            String::from("match_len"),
+            String::from("block_index"),
+        ]
+    }    
+}
 
 impl SeqInstTable {
+
+    /// The sequence count should be lookuped by parsed bitstream,
+    /// used the block index and value for sequnce count tag to 
+    /// lookup (`true`, `block_index`, 1, `value`) 
+    /// The table would be padded by increased block index to
+    /// fill all rows being enabled
+    /// 
+    /// | enabled |block_index| flag  | n_seq | 
+    /// |---------|-----------|-------|-------|
+    /// |     1   |    0      |   1   |   30  |
+    /// |     1   |   ...     |  ...  |   30  |
+    /// |     1   |    1      |   1   |   20  |
+    /// |     1   |   ...     |  ...  |   20  |
+    /// |     1   |    2      |   1   |   4   |
+    /// |    ...  |   ...     |   ... |  ...  |
+    /// |     1   |   999     |   1   |   0   |
+    pub fn seq_count_lookup(&self) -> [Column<Any>;4]{
+        [
+            self.q_enabled.into(),
+            self.block_index.into(),
+            self.s_beginning.into(),
+            self.n_seq.into(),
+        ]
+    }
+
+    /// The sequence values should be lookuped by parsed bitstream,
+    /// used the block index and value with each sequence tag for
+    /// multiple lookup (`true`, `block_index`, `seq_index`, `value`) on
+    /// corresponding value column (literal len, offset, match len) 
+    /// , or a lookup with suitable rotations
+    /// | enabled |block_index|seq_index| literal | offset | match | 
+    /// |---------|-----------|---------|---------|--------|-------|
+    /// |     1   |    0      |    1    |   4     |   2    |   4   |
+    /// |     1   |    0      |    2    |   1     |   5    |   2   |
+    /// |     1   |    0      |    3    |   0     |   2    |   3   |
+    /// |     1   |   ...     |   ...   |  ...    |  ...   |  ...  |
+    /// |     1   |    0      |   30    |   1     |  50    |  11   |
+    /// |     1   |    1      |    1    |   3     |  52    |  13   |
+    /// |     1   |   ...     |   ...   |  ...    |  ...   |  ...  |
+    /// 
+    pub fn seq_values_lookup(&self) -> [Column<Any>;6]{
+        [
+            self.q_enabled.into(),
+            self.block_index.into(),
+            self.seq_index.into(),
+            self.literal_len.into(),
+            self.match_offset.into(),
+            self.match_len.into(),
+        ]
+    }
 
     /// Obtian the instruction table cols
     pub fn instructions(&self) -> [Column<Advice>;5]{
@@ -375,6 +436,20 @@ impl SeqInstTable {
             )
         });
 
+        // meta.lookup_any("seq table lookup", |meta|{
+        //     vec![
+        //         (1.expr(), meta.query_fixed(config.q_enabled, Rotation::cur())),
+        //         (
+        //             meta.query_advice(config.block_index, Rotation::cur()),
+        //             meta.query_advice(seq_table.block_index, Rotation::cur()),
+        //         ),
+        //         (
+        //             meta.query_advice(config.block_index, Rotation::cur()),
+        //             meta.query_advice(seq_table.block_index, Rotation::cur()),
+        //         ),                
+        //     ]
+        // });
+
         config
     }
 
@@ -386,5 +461,18 @@ impl SeqInstTable {
         unimplemented!();
 
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use hex::FromHex;
+
+    #[test]
+    fn seqinst_table_gates(){
+
     }
 }
