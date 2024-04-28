@@ -16,7 +16,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TestSuite {
     pub id: String,
-    pub path: String,
+    pub paths: Vec<String>,
     pub max_gas: u64,
     pub max_steps: u64,
 
@@ -28,7 +28,7 @@ impl Default for TestSuite {
     fn default() -> Self {
         Self {
             id: "default".to_string(),
-            path: String::default(),
+            paths: vec![],
             max_gas: u64::MAX,
             max_steps: u64::MAX,
             ignore_tests: Some(Filter::any()),
