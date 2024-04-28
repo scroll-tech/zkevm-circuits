@@ -10,7 +10,6 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     str::FromStr,
-    sync::atomic::Ordering,
 };
 use yaml_rust::Yaml;
 
@@ -52,9 +51,9 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// generates `StateTest` vectors from a ethereum yaml test specification
     pub fn load_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         if path.contains("stEIP1153-transientStorage") {
-            abi::ENABLE_NORMALIZE.store(true, Ordering::SeqCst);
+            abi::ENABLE_NORMALIZE.with_borrow_mut(|b| *b = false)
         } else {
-            abi::ENABLE_NORMALIZE.store(false, Ordering::SeqCst);
+            abi::ENABLE_NORMALIZE.with_borrow_mut(|b| *b = true)
         }
         //log::trace!("load_yaml {path}");
         // get the yaml root element
