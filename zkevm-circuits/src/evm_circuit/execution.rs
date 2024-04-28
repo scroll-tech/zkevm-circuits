@@ -137,6 +137,8 @@ mod sload;
 mod sstore;
 mod stop;
 mod swap;
+mod tload;
+mod tstore;
 
 use self::{logs::LogGadget, precompiles::BasePrecompileGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
@@ -224,6 +226,8 @@ use sload::SloadGadget;
 use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
+use tload::TloadGadget;
+use tstore::TstoreGadget;
 
 pub(crate) trait ExecutionGadget<F: Field> {
     const NAME: &'static str;
@@ -324,6 +328,8 @@ pub(crate) struct ExecutionConfig<F> {
     signextend_gadget: Box<SignextendGadget<F>>,
     sload_gadget: Box<SloadGadget<F>>,
     sstore_gadget: Box<SstoreGadget<F>>,
+    tload_gadget: Box<TloadGadget<F>>,
+    tstore_gadget: Box<TstoreGadget<F>>,
     stop_gadget: Box<StopGadget<F>>,
     swap_gadget: Box<SwapGadget<F>>,
     blockhash_gadget: Box<BlockHashGadget<F>>,
@@ -617,6 +623,8 @@ impl<F: Field> ExecutionConfig<F> {
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
             sstore_gadget: configure_gadget!(),
+            tload_gadget: configure_gadget!(),
+            tstore_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             block_ctx_u64_gadget: configure_gadget!(),
@@ -1620,6 +1628,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
+            ExecutionState::TLOAD => assign_exec_step!(self.tload_gadget),
+            ExecutionState::TSTORE => assign_exec_step!(self.tstore_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
             // dummy errors

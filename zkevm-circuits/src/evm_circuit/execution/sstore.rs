@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
 
-        // constrain not in static call
+        // Constrain we're not in a STATICCALL context.
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
         cb.require_zero("is_static is false", is_static.expr());
 

@@ -94,6 +94,8 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
+    TLOAD,
+    TSTORE,
     PUSH, // PUSH0, PUSH1, PUSH2, ..., PUSH32
     DUP,  // DUP1, DUP2, ..., DUP16
     SWAP, // SWAP1, SWAP2, ..., SWAP16
@@ -294,6 +296,8 @@ impl ExecutionState {
             Self::MSIZE => vec![OpcodeId::MSIZE],
             Self::GAS => vec![OpcodeId::GAS],
             Self::JUMPDEST => vec![OpcodeId::JUMPDEST],
+            Self::TLOAD => vec![OpcodeId::TLOAD],
+            Self::TSTORE => vec![OpcodeId::TSTORE],
             Self::PUSH => vec![
                 OpcodeId::PUSH0,
                 OpcodeId::PUSH1,

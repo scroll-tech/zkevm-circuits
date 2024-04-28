@@ -1,7 +1,7 @@
 use super::{
     AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, StartOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp, TxReceiptOp,
-    TxRefundOp, RW,
+    StorageOp, Target, TransientStorageOp, TxAccessListAccountOp, TxAccessListAccountStorageOp,
+    TxLogOp, TxReceiptOp, TxRefundOp, RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -28,6 +28,8 @@ pub struct OperationContainer {
     pub stack: Vec<Operation<StackOp>>,
     /// Operations of StorageOp
     pub storage: Vec<Operation<StorageOp>>,
+    /// Operations of TransientStorageOp
+    pub transient_storage: Vec<Operation<TransientStorageOp>>,
     /// Operations of TxAccessListAccountOp
     pub tx_access_list_account: Vec<Operation<TxAccessListAccountOp>>,
     /// Operations of TxAccessListAccountStorageOp
@@ -60,6 +62,7 @@ impl OperationContainer {
             memory: Vec::new(),
             stack: Vec::new(),
             storage: Vec::new(),
+            transient_storage: Vec::new(),
             tx_access_list_account: Vec::new(),
             tx_access_list_account_storage: Vec::new(),
             tx_refund: Vec::new(),
@@ -110,6 +113,14 @@ impl OperationContainer {
                     Operation::new(rwc, rw, op)
                 });
                 OperationRef::from((Target::Storage, self.storage.len() - 1))
+            }
+            OpEnum::TransientStorage(op) => {
+                self.transient_storage.push(if reversible {
+                    Operation::new_reversible(rwc, rw, op)
+                } else {
+                    Operation::new(rwc, rw, op)
+                });
+                OperationRef::from((Target::TransientStorage, self.transient_storage.len() - 1))
             }
             OpEnum::TxAccessListAccount(op) => {
                 self.tx_access_list_account.push(if reversible {

@@ -696,6 +696,7 @@ impl<'a> CircuitInputBuilder {
         log::trace!("gen_end_tx_ops");
         let end_tx_steps =
             gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
+        self.sdb.clear_transient_storage();
         tx.steps_mut().extend(end_tx_steps);
 
         debug_assert_eq!(

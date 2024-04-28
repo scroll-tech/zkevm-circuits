@@ -199,6 +199,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
+                    OpcodeId::TLOAD => ExecutionState::TLOAD,
+                    OpcodeId::TSTORE => ExecutionState::TSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
                     OpcodeId::CHAINID => ExecutionState::CHAINID,
@@ -251,6 +253,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
                     operation::Target::Memory => RwTableTag::Memory,
                     operation::Target::Stack => RwTableTag::Stack,
                     operation::Target::Storage => RwTableTag::AccountStorage,
+                    operation::Target::TransientStorage => RwTableTag::TransientStorage,
                     operation::Target::TxAccessListAccount => RwTableTag::TxAccessListAccount,
                     operation::Target::TxAccessListAccountStorage => {
                         RwTableTag::TxAccessListAccountStorage
