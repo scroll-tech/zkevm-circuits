@@ -2,8 +2,7 @@
 use eth_types::Field;
 use gadgets::util::{and, or, not, select, Expr};
 use halo2_proofs::{
-    circuit::Layouter,
-    halo2curves::bn256::Fr,
+    circuit::{Value, Layouter},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
@@ -56,45 +55,121 @@ pub struct SeqValueTable {
 
 /// Table used carry the raw sequence instructions parsed from sequence section
 /// and would be later transformed as the back-reference instructions
+/// 
+/// For every block, one row in the table represent a single sequence instruction 
+/// in the sequence section, and handle all data parsed from the same sequence.
+/// The 'block_index' is a 1-index for each block with n sequences in its 
+/// sequence section, the parsed value from bitstream for current sequence is put
+/// in the 'input cols' section (`literal_len`, `match_offset` and `match_len`)
+/// The transformed sequence instructions is put in 'output cols' section (
+/// `acc_literal_len`, `offset` and `match_len`),
+/// notice we can use `match_len` without transformation.
+/// 
+/// | enabled |block_index| n_seq |seq_index|s_beginning|<input cols>|<output cols>| 
+/// |---------|-----------|-------|---------|-----------|------------|-------------|
+/// |     1   |    1      |   30  |    0    |     1     |            |             |
+/// |     1   |    1      |   30  |    1    |     0     |  (4,2,4)   |  (4,4,4)    |
+/// |     1   |    1      |   30  |    2    |     0     |  (1,5,2)   |  (5,5,2)    |
+/// |     1   |    1      |   30  |    3    |     0     |  (0,2,1)   |  (5,1,1)    |
+/// |     1   |   ...     |   30  |   ...   |     0     |    ...     |             |
+/// |     1   |    1      |   30  |   30    |     0     | (1,50,11)  |             |
+/// |     1   |    2      |   20  |    0    |     1     |            |             |
+/// |     1   |    2      |   20  |    1    |     0     | (3,52,13)  |             |
+/// |     1   |   ...     |   20  |   ...   |     0     |            |             |
+/// |     1   |    2      |   20  |   20    |     0     |            |             |
+/// |     1   |    3      |   4   |    0    |     1     |            |             |
+/// |    ...  |   ...     |  ...  |   ...   |    ...    |            |             |
+/// |     1   |   998     |   0   |    0    |     1     |            |             |
+/// |     1   |   999     |   0   |    0    |     1     |            |             |
+/// 
+/// When all sequences from compressed data has been handled, the rest rows being enabled
+/// (q_enabled is true) has to be padded with increased block index, with `n_seq` is 0 
+/// and `s_beginning` is true
+/// 
+/// The transform from 'input cols' to 'output cols' according to zstd's spec
+/// include following steps:
+/// 1. accumulate the copied literal bytes in one section
+/// 2. for match offset > 3, set the actual offset val is -=3, else we refer it 
+/// from the reference tables represented by 'repeated_offset_1/2/3' cols
+/// 3. After each sequence, the reference tables is updated according to the
+/// value of cooked offset and whether `literal_len` is zero
+///  
+/// |literal_len|match_offset|acc_lit_len| offset |match_len|rep_offset_1|rep_offset_2|rep_offset_3|s_beginning|
+/// |-----------|------------|-----------|--------|---------|------------|------------|------------|-----------|
+/// |           |            |           |        |         |     1      |     4      |      8     |     1     |
+/// |    4      |     2      |    4      |   4    |    4    |     4      |     1      |      8     |     0     |
+/// |    1      |     5      |    5      |   5    |    2    |     5      |     4      |      1     |     0     |
+/// |    0      |     2      |    5      |   1    |    1    |     1      |     5      |      4     |     0     |
+/// |           |            |           |        |         |            |            |            |     0     |
+/// 
 pub struct SeqInstTable {
 
+    // active flag, one active row parse
     q_enabled: Column<Fixed>,
 
+    // 1-index for each block, keep the same for each row
+    // until all sequenced has been handled
     block_index: Column<Advice>,
+    // the count of sequences in one block, keey the same
+    // for each row when block index is not changed
     n_seq: Column<Advice>,
-    // the value directly decoded from bitstream
+    // the 1-indexed seq number (1..=n_seq) for each 
+    // sequence. We have extra row at the beginning of
+    // each block with seq_index is 0
+    seq_index: Column<Advice>,
+    // the flag for the first row in each block (i.e. seq_index is 0)
+    s_beginning: Column<Advice>,
+
+    // the value directly decoded from bitstream, one row 
+    // for one sequence
     literal_len: Column<Advice>,
     match_offset: Column<Advice>,
     match_len: Column<Advice>,
 
-    // exported, note the match_len would be exported as-is
+    // exported instructions for one sequence, 
+    // note the match_len would be exported as-is
     // updated offset
     offset: Column<Advice>,
     // updated (acc) literal len
     acc_literal_len: Column<Advice>,
-    // the indexed seq number (1..=n_seq)
-    seq_index: Column<Advice>,
 
-    // helper cols
-    repeated_offset: [Column<Advice>;3],
-    offset_helper: [Column<Advice>;3],
+    // the reference table for repeated offset
+    rep_offset_1: Column<Advice>,
+    rep_offset_2: Column<Advice>,
+    rep_offset_3: Column<Advice>,
+
+    // helper cols for "zero testing". i.e for a cell with
+    // value v, the value in corresponding helper h is 1/v
+    // (if v is not zero) or 0 (if v is zero), and we constraint
+    // v * (1- v * h) == 0. We would have a boolean flag 
+    // from h * v
+
+    // helper to detect if literal_len is zero
     literal_helper: Column<Advice>,
-    s_beginning: Column<Advice>,
+    // helper to detect if seq_index in current row equal
+    // to n_seq (i.e. n_seq - seq_index is zero)
     seq_helper: Column<Advice>,
-    repeat_corrupt_flag: Column<Advice>,
+    // helper to detect if current match_offset is 1, 2 or 3
+    offset_helper_1:Column<Advice>,
+    offset_helper_2:Column<Advice>,
+    offset_helper_3:Column<Advice>,
+     
+    // helper to detect if rep_offset_1 is 0 (indicate the data
+    // is corrupt)
+    repeat_corrupt_flag_helper: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for SeqInstTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enabled.into(),
+            self.block_index.into(),
             self.n_seq.into(),
             self.s_beginning.into(),
             self.seq_index.into(),
             self.literal_len.into(),
             self.match_offset.into(),
             self.match_len.into(),
-            self.block_index.into(),
         ]
     }
 
@@ -102,12 +177,12 @@ impl<F: Field> LookupTable<F> for SeqInstTable {
         vec![
             String::from("q_enabled"),
             String::from("n_seq"),
+            String::from("block_index"),
             String::from("s_beginning"),
             String::from("seq_index"),
             String::from("literal_len"),
             String::from("match_offset"),
             String::from("match_len"),
-            String::from("block_index"),
         ]
     }    
 }
@@ -122,11 +197,11 @@ impl SeqInstTable {
     /// 
     /// | enabled |block_index| flag  | n_seq | 
     /// |---------|-----------|-------|-------|
-    /// |     1   |    0      |   1   |   30  |
+    /// |     1   |    1      |   1   |   30  |
     /// |     1   |   ...     |  ...  |   30  |
-    /// |     1   |    1      |   1   |   20  |
+    /// |     1   |    2      |   1   |   20  |
     /// |     1   |   ...     |  ...  |   20  |
-    /// |     1   |    2      |   1   |   4   |
+    /// |     1   |    3      |   1   |   4   |
     /// |    ...  |   ...     |   ... |  ...  |
     /// |     1   |   999     |   1   |   0   |
     pub fn seq_count_lookup(&self) -> [Column<Any>;4]{
@@ -140,23 +215,24 @@ impl SeqInstTable {
 
     /// The sequence values should be lookuped by parsed bitstream,
     /// used the block index and value with each sequence tag for
-    /// multiple lookup (`true`, `block_index`, `seq_index`, `value`) on
+    /// multiple lookup (`true`, `block_index`, 0, `seq_index`, `value`) on
     /// corresponding value column (literal len, offset, match len) 
     /// , or a lookup with suitable rotations
-    /// | enabled |block_index|seq_index| literal | offset | match | 
-    /// |---------|-----------|---------|---------|--------|-------|
-    /// |     1   |    0      |    1    |   4     |   2    |   4   |
-    /// |     1   |    0      |    2    |   1     |   5    |   2   |
-    /// |     1   |    0      |    3    |   0     |   2    |   3   |
-    /// |     1   |   ...     |   ...   |  ...    |  ...   |  ...  |
-    /// |     1   |    0      |   30    |   1     |  50    |  11   |
-    /// |     1   |    1      |    1    |   3     |  52    |  13   |
-    /// |     1   |   ...     |   ...   |  ...    |  ...   |  ...  |
+    /// | enabled |block_index|s_beginning|seq_index| literal | offset | match | 
+    /// |---------|-----------|-----------|---------|---------|--------|-------|
+    /// |     1   |    1      |     0     |    1    |   4     |   2    |   4   |
+    /// |     1   |    1      |     0     |    2    |   1     |   5    |   2   |
+    /// |     1   |    1      |     0     |    3    |   0     |   2    |   3   |
+    /// |     1   |   ...     |     0     |   ...   |  ...    |  ...   |  ...  |
+    /// |     1   |    1      |     0     |   30    |   1     |  50    |  11   |
+    /// |     1   |    2      |     0     |    1    |   3     |  52    |  13   |
+    /// |     1   |   ...     |     0     |   ...   |  ...    |  ...   |  ...  |
     /// 
-    pub fn seq_values_lookup(&self) -> [Column<Any>;6]{
+    pub fn seq_values_lookup(&self) -> [Column<Any>;7]{
         [
             self.q_enabled.into(),
             self.block_index.into(),
+            self.s_beginning.into(),
             self.seq_index.into(),
             self.literal_len.into(),
             self.match_offset.into(),
@@ -194,9 +270,13 @@ impl SeqInstTable {
             seq_index: meta.advice_column(),
             seq_helper: meta.advice_column(),
             literal_helper: meta.advice_column(),
-            repeated_offset: [0;3].map(|_|meta.advice_column()),
-            offset_helper: [0;3].map(|_|meta.advice_column()),
-            repeat_corrupt_flag: meta.advice_column(),
+            rep_offset_1: meta.advice_column(),
+            rep_offset_2: meta.advice_column(),
+            rep_offset_3: meta.advice_column(),
+            offset_helper_1: meta.advice_column(),
+            offset_helper_2: meta.advice_column(),
+            offset_helper_3: meta.advice_column(),
+            repeat_corrupt_flag_helper: meta.advice_column(),
         };
 
         // seq_index must increment and compare with n_seq for seq border
@@ -273,7 +353,11 @@ impl SeqInstTable {
             let mut cb = BaseConstraintBuilder::default();
             let s_beginning = meta.query_advice(config.s_beginning, Rotation::cur());
 
-            let repeated_offset_pairs = config.repeated_offset.map(|col|
+            let repeated_offset_pairs = [
+                config.rep_offset_1,
+                config.rep_offset_2,
+                config.rep_offset_3,
+            ].map(|col|
                 (meta.query_advice(col, Rotation::cur()), 
                 meta.query_advice(col, Rotation::prev()))
             );
@@ -305,8 +389,11 @@ impl SeqInstTable {
             let mut cb = BaseConstraintBuilder::default();
 
             let offset = meta.query_advice(config.match_offset, Rotation::cur());
-            let offset_helpers = config.offset_helper
-                .map(|col|meta.query_advice(col, Rotation::cur()));
+            let offset_helpers = [
+                config.offset_helper_1,
+                config.offset_helper_2,
+                config.offset_helper_3,
+            ].map(|col|meta.query_advice(col, Rotation::cur()));
 
             for (helper, coef) in offset_helpers
                 .iter().zip([1,2,3]){
@@ -335,7 +422,11 @@ impl SeqInstTable {
                 .map(|c|c.expr()).into_iter()
                 .reduce(|sum, e| sum + e).expect("has items");
 
-            let repeated_offset_pairs = config.repeated_offset.map(|col|
+            let repeated_offset_pairs = [
+                config.rep_offset_1,
+                config.rep_offset_2,
+                config.rep_offset_3,
+            ].map(|col|
                 (meta.query_advice(col, Rotation::cur()), 
                 meta.query_advice(col, Rotation::prev()))
             );
@@ -422,7 +513,7 @@ impl SeqInstTable {
                 });
             });
 
-            let corrupt_flag = meta.query_advice(config.repeat_corrupt_flag, Rotation::cur());
+            let corrupt_flag = meta.query_advice(config.repeat_corrupt_flag_helper, Rotation::cur());
             cb.condition(s_literal_zero.expr(), |cb|{
                 cb.require_equal("data must not corrupt", 
                     corrupt_flag.expr()*repeated_offset_pairs[0].0.expr(),
@@ -432,7 +523,7 @@ impl SeqInstTable {
 
             cb.gate(
                 meta.query_fixed(config.q_enabled, Rotation::cur())*
-                meta.query_advice(config.s_beginning, Rotation::cur()),
+                not::expr(meta.query_advice(config.s_beginning, Rotation::cur())),
             )
         });
 
@@ -453,14 +544,93 @@ impl SeqInstTable {
         config
     }
 
-    pub fn assign<F: Field>(
+    pub fn assign<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        table_row: &AddressTableRow,
+        table_rows: impl Iterator<Item=&'a AddressTableRow> + Clone,
+        enabled_rows: usize,
     ) -> Result<(), Error>{
-        unimplemented!();
+        layouter.assign_region(
+            || "addr table",
+            |mut region|{
 
-        Ok(())
+                let mut offset = 0;
+                let mut header_offset = 0;
+                let mut block_ind = 0u64;
+                let mut n_seq = 0u64;
+
+                // sanity check, also calculate the reference
+                let mut ref_offset = [0u64;3];
+
+                let fill_header_padding = |
+                    offset,
+                    block_ind: u64,
+                    n_seq: u64,
+                |->Result<(), Error>{
+                    //region.assign_advice(||"", column, offset, to)
+                    for col in [
+                        self.offset_helper_1,
+                        self.offset_helper_2,
+                        self.offset_helper_3,
+                        self.rep_offset_1,
+                        self.rep_offset_2,
+                        self.rep_offset_3,
+                        self.match_len,
+                        self.match_offset,
+                        self.literal_len,
+                        self.acc_literal_len,
+                        self.offset,
+                        self.seq_index,
+                        self.literal_helper,
+                        self.repeat_corrupt_flag_helper,
+                    ] {
+                        region.assign_advice(
+                            ||"padding values", 
+                            col, offset, ||Value::known(F::zero())
+                        )?;
+                    }
+                    region.assign_advice(
+                        ||"header block ind", 
+                        self.block_index, offset, 
+                        ||Value::known(F::from(block_ind))
+                    )?;
+                    region.assign_advice(
+                        ||"header n_seq", 
+                        self.n_seq, offset,
+                        ||Value::known(F::from(n_seq))
+                    )?;
+                    region.assign_advice(
+                        ||"header seq helper", 
+                        self.seq_helper, offset, 
+                        ||Value::known(
+                            if n_seq == 0 {F::zero()}
+                            else {
+                                F::from(n_seq).invert().expect("not zero")
+                            }                                                        
+                        )
+                    )?;                             
+                    Ok(())
+                };
+
+                for row in table_rows.clone() {
+                    region.assign_fixed(
+                        ||"enable row",
+                        self.q_enabled, offset,
+                        || Value::known(F::one()),
+                    )?;
+
+                    // now AddressTableRow has no block index
+                    // so we just suppose it is 1
+                    const cur_block : u64 = 1;
+                    if block_ind != cur_block {
+                        // left one row for header
+                        block_ind = cur_block;
+                    }
+                }
+
+                Ok(())
+            }
+        )
     }
 }
 
