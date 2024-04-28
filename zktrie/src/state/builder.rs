@@ -123,6 +123,29 @@ impl From<&AccountData> for state_db::Account {
     }
 }
 
+impl From<AccountData> for zktrie::AccountData {
+    fn from(acc: AccountData) -> Self {
+        let mut nonce_codesize = [0u8; 32];
+        let u64factor = U256::from(0x10000000000000000u128);
+        (U256::from(acc.code_size) * u64factor + U256::from(acc.nonce))
+            .to_big_endian(nonce_codesize.as_mut_slice());
+        let mut balance = [0u8; 32];
+        acc.balance.to_big_endian(balance.as_mut_slice());
+        let mut poseidon_code_hash = [0u8; 32];
+        U256::from(acc.poseidon_code_hash.0).to_big_endian(poseidon_code_hash.as_mut_slice());
+        let mut code_hash = [0u8; 32];
+        U256::from(acc.keccak_code_hash.0).to_big_endian(code_hash.as_mut_slice());
+
+        [
+            nonce_codesize,
+            balance,
+            acc.storage_root.0,
+            code_hash,
+            poseidon_code_hash,
+        ]
+    }
+}
+
 pub(crate) fn extend_address_to_h256(src: &Address) -> [u8; 32] {
     let mut bts: Vec<u8> = src.as_bytes().into();
     bts.resize(32, 0);

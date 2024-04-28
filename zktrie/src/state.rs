@@ -170,6 +170,11 @@ impl ZktrieState {
 
         Ok(state)
     }
+
+    /// get the inner zk memory db
+    pub fn into_inner(self) -> Rc<ZkMemoryDb> {
+        self.zk_db.into_inner()
+    }
 }
 
 #[cfg(any(feature = "test", test))]
