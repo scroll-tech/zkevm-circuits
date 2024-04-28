@@ -1,6 +1,10 @@
 use anyhow::Result;
 use eth_types::{Bytes, U256};
 use sha3::Digest;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// dirty hack to enable normalization
+pub static ENABLE_NORMALIZE: AtomicBool = AtomicBool::new(false);
 
 /// encodes an abi call (e.g. "f(uint) 1")
 pub fn encode_funccall(spec: &str) -> Result<Bytes> {
@@ -76,8 +80,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     };
     // Shoule be false for stEIP1153-transientStorage,
     // due to this bughttps://github.com/ethereum/tests/issues/1369
-    let enable_normalize = true;
-    let bytes: Vec<u8> = if !enable_normalize {
+    let bytes: Vec<u8> = if !ENABLE_NORMALIZE.load(Ordering::SeqCst) {
         let encoded_params = ethers_core::abi::encode(&args);
         let short_signature: Vec<u8> = sha3::Keccak256::digest(tokens[0])[0..4].to_vec();
         let bytes: Vec<u8> = short_signature.into_iter().chain(encoded_params).collect();

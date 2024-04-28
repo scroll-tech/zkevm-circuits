@@ -2,7 +2,7 @@ use super::{
     parse,
     spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
-use crate::{utils::MainnetFork, Compiler};
+use crate::{abi, utils::MainnetFork, Compiler};
 use anyhow::{anyhow, bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
@@ -10,6 +10,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     str::FromStr,
+    sync::atomic::Ordering,
 };
 use yaml_rust::Yaml;
 
@@ -50,6 +51,11 @@ impl<'a> YamlStateTestBuilder<'a> {
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
     pub fn load_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
+        if path.contains("stEIP1153-transientStorage") {
+            abi::ENABLE_NORMALIZE.store(true, Ordering::SeqCst);
+        } else {
+            abi::ENABLE_NORMALIZE.store(false, Ordering::SeqCst);
+        }
         //log::trace!("load_yaml {path}");
         // get the yaml root element
         let doc = yaml_rust::YamlLoader::load_from_str(source)
