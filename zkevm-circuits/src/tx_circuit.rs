@@ -304,7 +304,9 @@ impl TxRomTable {
                     (TxFieldTag::AccessListStorageKey, CallData, 0, 1, 0),
                     // Continue padding. Padding has the Calldata tag
                     (CallData, CallData, 1, 1, 0),
+                    // Precompile call transition scenarios
                     (CallData, TxFieldTag::Null, 1, 1, 0),
+                    (CallData, TxFieldTag::Null, 0, 1, 0),
                 ];
 
                 for (offset, scenario) in transition_scenarios.into_iter().enumerate() {
