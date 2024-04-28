@@ -3,7 +3,7 @@
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     Block, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
-    Transaction, Word, H256,
+    ToBigEndian, Transaction, Word, H256,
 };
 use ethers_core::types::{
     transaction::eip2930::{AccessList, AccessListItem},
@@ -83,6 +83,30 @@ impl From<&BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             ..b.header.clone()
+        }
+    }
+}
+
+impl From<&BlockTrace> for revm_primitives::BlockEnv {
+    fn from(block: &BlockTrace) -> Self {
+        revm_primitives::BlockEnv {
+            number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
+            coinbase: block.coinbase.address.unwrap().0.into(),
+            timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
+            gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
+            basefee: revm_primitives::U256::from_be_bytes(
+                block
+                    .header
+                    .base_fee_per_gas
+                    .unwrap_or_default()
+                    .to_be_bytes(),
+            ),
+            difficulty: revm_primitives::U256::from_be_bytes(block.header.difficulty.to_be_bytes()),
+            prevrandao: block
+                .header
+                .mix_hash
+                .map(|h| revm_primitives::B256::from(h.to_fixed_bytes())),
+            blob_excess_gas_and_price: None,
         }
     }
 }
@@ -175,6 +199,50 @@ impl TransactionTrace {
             max_fee_per_gas: self.gas_fee_cap,
             chain_id: Some(self.chain_id),
             other: Default::default(),
+        }
+    }
+}
+
+impl From<&TransactionTrace> for revm_primitives::TxEnv {
+    fn from(tx: &TransactionTrace) -> Self {
+        revm_primitives::TxEnv {
+            caller: tx.from.0.into(),
+            gas_limit: tx.gas,
+            gas_price: revm_primitives::U256::from_be_bytes(tx.gas_price.to_be_bytes()),
+            transact_to: match tx.to {
+                Some(to) => revm_primitives::TransactTo::Call(to.0.into()),
+                None => revm_primitives::TransactTo::Create(revm_primitives::CreateScheme::Create),
+            },
+            value: revm_primitives::U256::from_be_bytes(tx.value.to_be_bytes()),
+            data: revm_primitives::Bytes::copy_from_slice(tx.data.as_ref()),
+            nonce: Some(tx.nonce),
+            chain_id: Some(tx.chain_id.as_u64()),
+            access_list: tx
+                .access_list
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .map(|e| {
+                            (
+                                e.address.0.into(),
+                                e.storage_keys
+                                    .iter()
+                                    .map(|s| {
+                                        revm_primitives::U256::from_be_bytes(s.to_fixed_bytes())
+                                    })
+                                    .collect(),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            gas_priority_fee: tx
+                .gas_tip_cap
+                .map(|g| revm_primitives::U256::from_be_bytes(g.to_be_bytes())),
+            blob_hashes: vec![],
+            max_fee_per_blob_gas: None,
+            #[cfg(feature = "scroll")]
+            scroll: revm_primitives::ScrollFields::default(),
         }
     }
 }
