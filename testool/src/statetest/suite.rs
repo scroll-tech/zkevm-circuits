@@ -22,8 +22,14 @@ pub fn load_statetests_suite(
     let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
-    let tcs = glob::glob(&suite.path)
+    let tcs = suite
+        .paths
+        .iter()
+        .map(|p| glob::glob(p))
+        .collect::<Result<Vec<glob::Paths>, glob::PatternError>>()
         .context("failed to read glob")?
+        .into_iter()
+        .flatten()
         .filter_map(|v| v.ok())
         .filter(|f| {
             !skip_paths

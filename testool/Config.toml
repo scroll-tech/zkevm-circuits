@@ -1,6 +1,8 @@
 [[suite]]
 id="default"
-path="tests/src/GeneralStateTestsFiller/**/*"
+paths = [
+    "tests/src/GeneralStateTestsFiller/**/*"
+]
 max_gas = 500000
 max_steps = 1000
 ignore_tests = [
@@ -11,21 +13,27 @@ ignore_tests = [
 
 [[suite]]
 id="EIP1153"
-path = "tests/src/GeneralStateTestsFiller/Cancun/stEIP1153-transientStorage/*"
+paths = [
+    "tests/src/GeneralStateTestsFiller/Cancun/stEIP1153-transientStorage/*"
+]
 max_gas = 500000
 max_steps = 1000
 ignore_tests = []
 
 [[suite]]
 id="EIP2930"
-path="tests/src/GeneralStateTestsFiller/stEIP2930/*"
+paths = [
+    "tests/src/GeneralStateTestsFiller/stEIP2930/*"
+]
 max_gas = 500000
 max_steps = 1000
 ignore_tests = []
 
 [[suite]]
 id="EIP1559"
-path="tests/src/GeneralStateTestsFiller/stEIP1559/**/*"
+paths = [
+    "tests/src/GeneralStateTestsFiller/stEIP1559/**/*"
+]
 max_gas = 500000
 max_steps = 1000
 ignore_tests = []
@@ -33,24 +41,42 @@ ignore_tests = []
 
 [[suite]]
 id="precompile"
-path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts/*"
+paths = [
+    "tests/src/GeneralStateTestsFiller/stPreCompiledContracts/*"
+]
 max_gas = 500000
 max_steps = 1000
 ignore_tests = []
 
 [[suite]]
 id="precompile2"
-path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts2/*"
+paths = [
+    "tests/src/GeneralStateTestsFiller/stPreCompiledContracts2/*"
+]
 max_gas = 500000
 max_steps = 1000
 ignore_tests = []
 
 [[suite]]
 id="nightly"
-path="tests/src/GeneralStateTestsFiller/**/*"
+paths = [
+    "tests/src/GeneralStateTestsFiller/**/*"
+]
 max_gas = 0
 max_steps = 100000
 ignore_tests=[]
+
+[[suite]]
+id="curie"
+paths = [
+    "tests/src/GeneralStateTestsFiller/stEIP1559/*",
+    "tests/src/GeneralStateTestsFiller/stEIP2930/*",
+    "tests/src/GeneralStateTestsFiller/Cancun/stEIP1153-transientStorage/*",
+    "tests/src/GeneralStateTestsFiller/Cancun/stEIP5656-MCOPY/*"
+]
+max_gas = 0
+max_steps = 100000
+ignore_tests = []
 
 [[set]]
 id = "sigkill"

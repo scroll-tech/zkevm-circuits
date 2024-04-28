@@ -173,7 +173,11 @@ fn go() -> Result<()> {
     let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
     let suite = config.suite(&args.suite)?.clone();
     let mut state_tests = load_statetests_suite(&suite, config, compiler)?;
-    log::info!("{} tests collected in {}", state_tests.len(), suite.path);
+    log::info!(
+        "{} tests collected in {}",
+        state_tests.len(),
+        suite.paths.join(", ")
+    );
 
     if args.ls {
         let mut list: Vec<_> = state_tests.into_iter().map(|t| t.id).collect();
