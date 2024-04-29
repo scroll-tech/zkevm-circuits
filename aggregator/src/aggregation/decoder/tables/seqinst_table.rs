@@ -540,6 +540,11 @@ impl<F: Field> SeqInstTable<F> {
                     n_seq: u64,
                     offset_table: [u64;3],
                 |->Result<(), Error>{
+                    region.assign_fixed(
+                        ||"enable row",
+                        self.q_enabled, offset,
+                        || Value::known(F::one()),
+                    )?;                    
                     //region.assign_advice(||"", column, offset, to)
                     for col in [
                         self.rep_offset_1,
@@ -604,11 +609,6 @@ impl<F: Field> SeqInstTable<F> {
                 let mut acc_literal_len = 0u64;
 
                 for table_row in table_rows.clone() {
-                    region.assign_fixed(
-                        ||"enable row",
-                        self.q_enabled, offset,
-                        || Value::known(F::one()),
-                    )?;
 
                     // now AddressTableRow has no block index
                     // so we just suppose it is 1
@@ -635,6 +635,12 @@ impl<F: Field> SeqInstTable<F> {
                         );
                         offset += 1;
                     }
+
+                    region.assign_fixed(
+                        ||"enable row",
+                        self.q_enabled, offset,
+                        || Value::known(F::one()),
+                    )?;
 
                     let offset_val = match table_row.cooked_match_offset {
                         0 => panic!("invalid cooked offset"),
@@ -699,6 +705,8 @@ impl<F: Field> SeqInstTable<F> {
                 }
                 // final call for last post-poned head filling func
                 block_head_fill_f(&mut region, n_seq)?;
+
+                // TODO: pad rest row
 
                 Ok(())
             }
