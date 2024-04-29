@@ -3,54 +3,66 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Any, Column, ConstraintSystem, Error, Fixed},
 };
-use std::marker::PhantomData;
 use zkevm_circuits::table::LookupTable;
 
+use super::rom_fse_order::FseTableKind;
+
 pub struct CodeFseRow {
+    pub table_kind: FseTableKind,
     pub code: u64,
     pub baseline: u64,
     pub nb: u64,
 }
 
-impl From<(u64, u64, u64)> for CodeFseRow {
-    fn from(v: (u64, u64, u64)) -> Self {
+impl From<(FseTableKind, u64, u64, u64)> for CodeFseRow {
+    fn from(v: (FseTableKind, u64, u64, u64)) -> Self {
         Self {
-            code: v.0,
-            baseline: v.1,
-            nb: v.2,
+            table_kind: v.0,
+            code: v.1,
+            baseline: v.2,
+            nb: v.3,
         }
     }
 }
 
 pub trait SequenceCodeTable {
-    const NAME: &'static str;
-
     fn code_table() -> Vec<CodeFseRow>;
 }
 
 #[derive(Clone, Debug)]
-pub struct RomSequenceCodes<T> {
+pub struct RomSequenceCodes {
+    table_kind: Column<Fixed>,
     code: Column<Fixed>,
     baseline: Column<Fixed>,
     nb: Column<Fixed>,
-    _marker: PhantomData<T>,
 }
 
-impl<T: SequenceCodeTable> RomSequenceCodes<T> {
+impl RomSequenceCodes {
     pub fn construct(meta: &mut ConstraintSystem<Fr>) -> Self {
         Self {
+            table_kind: meta.fixed_column(),
             code: meta.fixed_column(),
             baseline: meta.fixed_column(),
             nb: meta.fixed_column(),
-            _marker: PhantomData,
         }
     }
 
     pub fn load(&self, layouter: &mut impl Layouter<Fr>) -> Result<(), Error> {
         layouter.assign_region(
-            || format!("(ROM): Sequence Code: {}", T::NAME),
+            || "(ROM): Sequence Codes (code to value)",
             |mut region| {
-                for (offset, row) in T::code_table().iter().enumerate() {
+                for (offset, row) in std::iter::empty()
+                    .chain(LiteralLengthCodes::code_table())
+                    .chain(MatchLengthCodes::code_table())
+                    .chain(MatchOffsetCodes::code_table())
+                    .enumerate()
+                {
+                    region.assign_fixed(
+                        || "table_kind",
+                        self.table_kind,
+                        offset,
+                        || Value::known(Fr::from(row.table_kind as u64)),
+                    )?;
                     region.assign_fixed(
                         || "code",
                         self.code,
@@ -77,13 +89,19 @@ impl<T: SequenceCodeTable> RomSequenceCodes<T> {
     }
 }
 
-impl<T> LookupTable<Fr> for RomSequenceCodes<T> {
+impl LookupTable<Fr> for RomSequenceCodes {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![self.code.into(), self.baseline.into(), self.nb.into()]
+        vec![
+            self.table_kind.into(),
+            self.code.into(),
+            self.baseline.into(),
+            self.nb.into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("table_kind"),
             String::from("code"),
             String::from("baseline"),
             String::from("nb"),
@@ -99,8 +117,6 @@ pub struct MatchLengthCodes;
 pub struct MatchOffsetCodes;
 
 impl SequenceCodeTable for LiteralLengthCodes {
-    const NAME: &'static str = "Literal Length Codes";
-
     fn code_table() -> Vec<CodeFseRow> {
         (0..16)
             .map(|i| (i, i, 0))
@@ -126,14 +142,12 @@ impl SequenceCodeTable for LiteralLengthCodes {
                 (34, 32768, 15),
                 (35, 65536, 16),
             ])
-            .map(|tuple| tuple.into())
+            .map(|tuple| (FseTableKind::LLT, tuple.0, tuple.1, tuple.2).into())
             .collect()
     }
 }
 
 impl SequenceCodeTable for MatchLengthCodes {
-    const NAME: &'static str = "Match Length Codes";
-
     fn code_table() -> Vec<CodeFseRow> {
         (0..32)
             .map(|i| (i, i + 3, 0))
@@ -160,16 +174,16 @@ impl SequenceCodeTable for MatchLengthCodes {
                 (51, 32771, 15),
                 (52, 65539, 16),
             ])
-            .map(|tuple| tuple.into())
+            .map(|tuple| (FseTableKind::MLT, tuple.0, tuple.1, tuple.2).into())
             .collect()
     }
 }
 
 impl SequenceCodeTable for MatchOffsetCodes {
-    const NAME: &'static str = "Match Offset Codes";
-
     // N <- 31 for Match Offset Codes.
     fn code_table() -> Vec<CodeFseRow> {
-        (0..32).map(|i| (i, 1 << i, i).into()).collect()
+        (0..32)
+            .map(|i| (FseTableKind::MOT, i, 1 << i, i).into())
+            .collect()
     }
 }

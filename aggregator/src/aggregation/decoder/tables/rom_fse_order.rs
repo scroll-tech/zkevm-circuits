@@ -248,3 +248,121 @@ impl LookupTable<Fr> for RomFseTableTransition {
         ]
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct RomSequencesDataInterleavedOrder {
+    /// FSE table used in the previous bitstring.
+    table_kind_prev: Column<Fixed>,
+    /// FSE table used in the current bitstring.
+    table_kind_curr: Column<Fixed>,
+    /// Boolean flag to indicate whether we are initialising the FSE state.
+    is_init_state: Column<Fixed>,
+    /// Boolean flag to indicate whether we are updating the FSE state.
+    is_update_state: Column<Fixed>,
+}
+
+impl RomSequencesDataInterleavedOrder {
+    pub fn construct(meta: &mut ConstraintSystem<Fr>) -> Self {
+        Self {
+            table_kind_prev: meta.fixed_column(),
+            table_kind_curr: meta.fixed_column(),
+            is_init_state: meta.fixed_column(),
+            is_update_state: meta.fixed_column(),
+        }
+    }
+
+    pub fn load(&self, layouter: &mut impl Layouter<Fr>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "(ROM): sequences data interleaved order",
+            |mut region| {
+                // handle the first row, i.e. (None, LLT, init_state=true, update_state=false).
+                region.assign_fixed(
+                    || "table_kind_prev",
+                    self.table_kind_prev,
+                    0,
+                    || Value::known(Fr::zero()),
+                )?;
+                region.assign_fixed(
+                    || "table_kind_curr",
+                    self.table_kind_curr,
+                    0,
+                    || Value::known(Fr::from(FseTableKind::LLT as u64)),
+                )?;
+                region.assign_fixed(
+                    || "is_init_state",
+                    self.is_init_state,
+                    0,
+                    || Value::known(Fr::one()),
+                )?;
+                region.assign_fixed(
+                    || "is_update_state",
+                    self.is_update_state,
+                    0,
+                    || Value::known(Fr::zero()),
+                )?;
+
+                for (i, &(table_kind_prev, table_kind_curr, is_init_state, is_update_state)) in [
+                    (FseTableKind::LLT, FseTableKind::MOT, true, false), // init state (MOT)
+                    (FseTableKind::MOT, FseTableKind::MLT, true, false), // init state (MLT)
+                    (FseTableKind::MLT, FseTableKind::MOT, false, false),
+                    (FseTableKind::MOT, FseTableKind::MLT, false, false),
+                    (FseTableKind::MLT, FseTableKind::LLT, false, false),
+                    (FseTableKind::LLT, FseTableKind::LLT, false, true),
+                    (FseTableKind::LLT, FseTableKind::MLT, false, true),
+                    (FseTableKind::MLT, FseTableKind::MOT, false, true),
+                    (FseTableKind::MOT, FseTableKind::MOT, false, false),
+                ]
+                .iter()
+                .enumerate()
+                {
+                    region.assign_fixed(
+                        || "table_kind_prev",
+                        self.table_kind_prev,
+                        i + 1,
+                        || Value::known(Fr::from(table_kind_prev as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "table_kind_curr",
+                        self.table_kind_curr,
+                        i + 1,
+                        || Value::known(Fr::from(table_kind_curr as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "is_init_state",
+                        self.is_init_state,
+                        i + 1,
+                        || Value::known(Fr::from(is_init_state as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "is_update_state",
+                        self.is_update_state,
+                        i + 1,
+                        || Value::known(Fr::from(is_update_state as u64)),
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl LookupTable<Fr> for RomSequencesDataInterleavedOrder {
+    fn columns(&self) -> Vec<Column<halo2_proofs::plonk::Any>> {
+        vec![
+            self.table_kind_prev.into(),
+            self.table_kind_curr.into(),
+            self.is_init_state.into(),
+            self.is_update_state.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("table_kind_prev"),
+            String::from("table_kind_curr"),
+            String::from("is_init_state"),
+            String::from("is_update_state"),
+        ]
+    }
+}
