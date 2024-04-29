@@ -16,10 +16,6 @@ pub use types::{ZstdTag::*, *};
 pub mod util;
 use util::{le_bits_to_value, value_bits_le};
 
-pub mod fse;
-
-pub mod sequence;
-
 use crate::aggregation::decoder::witgen::util::{be_bits_to_value, increment_idx};
 
 const CMOT_N: u64 = 31;
