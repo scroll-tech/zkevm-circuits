@@ -2,8 +2,8 @@
 
 use anyhow::{bail, Context, Result};
 use eth_types::{bytecode, Bytecode, Bytes, H256};
-use keccak256::plain::Keccak;
 use serde::{Deserialize, Serialize};
+use sha3::Digest;
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -61,9 +61,7 @@ impl Cache {
     }
 
     fn hash(src: &str) -> H256 {
-        let mut hash = Keccak::default();
-        hash.update(src.as_bytes());
-        H256::from_slice(&hash.digest())
+        H256::from_slice(&sha3::Keccak256::digest(src))
     }
 }
 

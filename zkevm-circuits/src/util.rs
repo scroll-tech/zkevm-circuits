@@ -6,12 +6,12 @@ use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
 };
-use keccak256::plain::Keccak;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
+use sha3::Digest;
 
 use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
 use eth_types::{Field, ToAddress, Word};
@@ -254,9 +254,7 @@ pub fn log2_ceil(n: usize) -> u32 {
 }
 
 pub(crate) fn keccak(msg: &[u8]) -> Word {
-    let mut keccak = Keccak::default();
-    keccak.update(msg);
-    Word::from_big_endian(keccak.digest().as_slice())
+    Word::from_big_endian(sha3::Keccak256::digest(msg).as_slice())
 }
 
 pub(crate) fn is_push_with_data(byte: u8) -> bool {

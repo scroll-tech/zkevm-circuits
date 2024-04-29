@@ -3,7 +3,6 @@ members = [
     "zkevm-circuits",
     "bus-mapping",
     "geth-utils",
-    "keccak256",
     "zktrie",
     "gadgets",
     "integration-tests",

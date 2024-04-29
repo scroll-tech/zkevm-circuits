@@ -34,6 +34,7 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use sha3::Digest;
 use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
 use std::iter::repeat;
@@ -45,7 +46,6 @@ use halo2_proofs::plonk::SecondPhase;
 
 use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -1487,9 +1487,7 @@ impl KeccakTable {
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
-        let mut keccak = Keccak::default();
-        keccak.update(input);
-        let output = keccak.digest();
+        let output = sha3::Keccak256::digest(input);
         let output_rlc = challenges.evm_word().map(|challenge| {
             rlc::value(
                 &Word::from_big_endian(output.as_slice()).to_le_bytes(),
