@@ -2,10 +2,10 @@
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push_with_data, keccak, unusable_rows, Challenges, SubCircuit},
+    util::{is_push_with_data, keccak, unusable_rows, Challenges, Field, SubCircuit},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{state_db::CodeDB, Bytecode, Field, ToWord, Word};
+use eth_types::{state_db::CodeDB, Bytecode, ToWord, Word};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 

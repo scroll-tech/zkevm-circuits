@@ -2,9 +2,9 @@ pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
+    util::Field,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
-use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;

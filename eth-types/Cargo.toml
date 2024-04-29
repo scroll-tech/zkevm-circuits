@@ -9,7 +9,6 @@ ethers-core.workspace = true
 ethers-signers.workspace = true
 hex.workspace = true
 halo2_proofs.workspace = true
-halo2-base.workspace = true
 log.workspace = true
 regex.workspace = true
 serde.workspace = true

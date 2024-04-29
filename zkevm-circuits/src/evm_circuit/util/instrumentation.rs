@@ -1,9 +1,11 @@
-use crate::evm_circuit::{
-    step::ExecutionState,
-    table::Table,
-    util::{constraint_builder::EVMConstraintBuilder, CellType},
+use crate::{
+    evm_circuit::{
+        step::ExecutionState,
+        table::Table,
+        util::{constraint_builder::EVMConstraintBuilder, CellType},
+    },
+    util::Field,
 };
-use eth_types::Field;
 use itertools::Itertools;
 
 type StepSize = Vec<(CellType, ColumnSize)>;

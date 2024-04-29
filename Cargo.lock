@@ -1392,7 +1392,6 @@ dependencies = [
  "base64 0.13.1",
  "ethers-core",
  "ethers-signers",
- "halo2-base",
  "halo2_proofs",
  "hex",
  "itertools 0.11.0",

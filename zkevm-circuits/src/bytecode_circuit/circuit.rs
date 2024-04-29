@@ -5,11 +5,11 @@ use crate::{
         not, or, rlc, select,
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
-    util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{get_push_size, Challenges, Expr, Field, SubCircuit, SubCircuitConfig},
     witness,
 };
 use eth_types::{
-    state_db::EMPTY_CODE_HASH_LE, Field, ToLittleEndian, ToScalar, ToWord, POSEIDON_CODE_HASH_EMPTY,
+    state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToScalar, ToWord, POSEIDON_CODE_HASH_EMPTY,
 };
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{

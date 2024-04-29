@@ -1,5 +1,4 @@
-use crate::table::CallContextFieldTag;
-use eth_types::Field;
+use crate::{table::CallContextFieldTag, util::Field};
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},

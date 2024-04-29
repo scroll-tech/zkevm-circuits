@@ -1,5 +1,6 @@
+use crate::util::Field;
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
 use gadgets::util::{not, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 

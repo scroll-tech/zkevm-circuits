@@ -1,10 +1,9 @@
 use crate::{
     rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
     table::{RlpFsmRlpTable, U8Table},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness::Transaction,
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},

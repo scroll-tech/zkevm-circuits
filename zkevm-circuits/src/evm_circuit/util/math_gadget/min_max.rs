@@ -1,8 +1,10 @@
-use crate::evm_circuit::util::{
-    constraint_builder::EVMConstraintBuilder, math_gadget::*, select, transpose_val_ret,
-    CachedRegion,
+use crate::{
+    evm_circuit::util::{
+        constraint_builder::EVMConstraintBuilder, math_gadget::*, select, transpose_val_ret,
+        CachedRegion,
+    },
+    util::Field,
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

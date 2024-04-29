@@ -1,6 +1,6 @@
 use super::{lookups, param::*};
-use crate::util::Expr;
-use eth_types::{Address, Field};
+use crate::util::{Expr, Field};
+use eth_types::Address;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},

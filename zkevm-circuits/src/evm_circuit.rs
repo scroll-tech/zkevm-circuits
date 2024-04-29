@@ -25,10 +25,9 @@ use crate::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
         ModExpTable, PowOfRandTable, RwTable, SHA256Table, SigTable, TxTable,
     },
-    util::{SubCircuit, SubCircuitConfig},
+    util::{Field, SubCircuit, SubCircuitConfig},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
 use strum::IntoEnumIterator;

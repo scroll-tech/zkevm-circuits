@@ -1,11 +1,13 @@
-use crate::evm_circuit::{
-    param::MAX_N_BYTES_INTEGER,
-    util::{
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        from_bytes, CachedRegion, Cell,
+use crate::{
+    evm_circuit::{
+        param::MAX_N_BYTES_INTEGER,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            from_bytes, CachedRegion, Cell,
+        },
     },
+    util::Field,
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -51,6 +53,7 @@ impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
+    use crate::util::Field;
     use eth_types::*;
     use gadgets::util::Expr;
     use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr, plonk::Error};

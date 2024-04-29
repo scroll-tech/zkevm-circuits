@@ -11,9 +11,9 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget that implements the ExecutionGadget trait to handle the Opcodes SLT

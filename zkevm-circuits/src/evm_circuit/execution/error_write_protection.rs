@@ -11,9 +11,9 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

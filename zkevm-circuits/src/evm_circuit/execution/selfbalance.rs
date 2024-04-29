@@ -10,10 +10,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToScalar};
+use eth_types::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

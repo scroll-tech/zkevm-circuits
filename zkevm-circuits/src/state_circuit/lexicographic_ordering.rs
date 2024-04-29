@@ -1,6 +1,11 @@
 use super::{lookups, param::*, SortKeysConfig};
-use crate::{evm_circuit::param::N_BYTES_WORD, impl_expr, util::Expr, witness::Rw};
-use eth_types::{Field, ToBigEndian};
+use crate::{
+    evm_circuit::param::N_BYTES_WORD,
+    impl_expr,
+    util::{Expr, Field},
+    witness::Rw,
+};
+use eth_types::ToBigEndian;
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Region, Value},

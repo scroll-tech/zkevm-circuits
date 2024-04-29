@@ -92,11 +92,12 @@ use crate::{
 #[cfg(feature = "zktrie")]
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
 
+use crate::util::Field;
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
 };
-use eth_types::{geth_types::GethData, Field};
+use eth_types::geth_types::GethData;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,

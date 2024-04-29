@@ -2,7 +2,7 @@
 pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{unusable_rows, SubCircuit},
+    util::{unusable_rows, Field, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -11,7 +11,7 @@ use bus_mapping::operation::{
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
-    Address, Field, ToAddress, Word, U256,
+    Address, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
 use halo2_proofs::{

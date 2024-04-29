@@ -4,9 +4,9 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         from_bytes, pow_of_two_expr, split_u256, CachedRegion,
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

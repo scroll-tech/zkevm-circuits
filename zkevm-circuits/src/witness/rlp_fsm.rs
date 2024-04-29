@@ -1,4 +1,5 @@
-use eth_types::{Address, Field, H160, U256};
+use crate::util::Field;
+use eth_types::{Address, H160, U256};
 use gadgets::{impl_expr, util::Expr};
 use halo2_proofs::{circuit::Value, halo2curves::ff::PrimeField, plonk::Expression};
 use strum_macros::EnumIter;

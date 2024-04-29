@@ -3,10 +3,11 @@ use std::{
     ops::{Add, Mul, Neg},
 };
 
+use crate::util::Field;
 use bus_mapping::circuit_input_builder::{
     EcAddOp, EcMulOp, EcPairingOp, EcPairingPair, PrecompileEcParams,
 };
-use eth_types::{Field, U256};
+use eth_types::U256;
 use halo2_proofs::{
     arithmetic::Field as ArithmeticField,
     dev::MockProver,

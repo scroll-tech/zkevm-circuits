@@ -10,10 +10,9 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,

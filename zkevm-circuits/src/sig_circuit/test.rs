@@ -1,7 +1,5 @@
-use eth_types::{
-    sign_types::{sign, SignData},
-    Field,
-};
+use crate::{sig_circuit::SigCircuit, util::Field};
+use eth_types::sign_types::{sign, SignData};
 use halo2_proofs::{
     arithmetic::Field as HaloField,
     dev::MockProver,
@@ -12,8 +10,6 @@ use halo2_proofs::{
 };
 use rand::{Rng, RngCore};
 use std::marker::PhantomData;
-
-use crate::sig_circuit::SigCircuit;
 
 #[test]
 fn test_edge_cases() {

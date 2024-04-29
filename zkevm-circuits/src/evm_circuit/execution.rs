@@ -22,10 +22,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{LookupTable, RwTableTag, TxReceiptFieldTag},
-    util::{query_expression, Challenges, Expr},
+    util::{query_expression, Challenges, Expr, Field},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::ToLittleEndian;
 use gadgets::util::not;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},

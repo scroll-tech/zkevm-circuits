@@ -7,13 +7,13 @@ use crate::{
             from_bytes, U64Word, Word,
         },
     },
-    util::Expr,
+    util::{Expr, Field},
 };
 use bus_mapping::{
     circuit_input_builder::{TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION},
     l2_predeployed::l1_gas_price_oracle,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{ToLittleEndian, ToScalar, U256};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Transaction L1 fee gadget for L1GasPriceOracle contract

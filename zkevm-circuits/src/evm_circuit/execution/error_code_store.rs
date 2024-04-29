@@ -12,14 +12,9 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-
-use eth_types::{
-    evm_types::{GasCost, OpcodeId},
-    Field,
-};
-
+use eth_types::evm_types::{GasCost, OpcodeId};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 const MAXCODESIZE: u64 = 0x6000u64;

@@ -1,5 +1,4 @@
-use crate::util::Expr;
-use eth_types::Field;
+use crate::util::{Expr, Field};
 use halo2_proofs::plonk::Expression;
 
 mod abs_word;

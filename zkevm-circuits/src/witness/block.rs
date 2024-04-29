@@ -7,7 +7,7 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 use crate::{
     evm_circuit::util::rlc,
     table::{BlockContextFieldTag, RwTableTag},
-    util::SubCircuit,
+    util::{Field, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{
@@ -16,7 +16,7 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{sign_types::SignData, Address, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 

@@ -3,9 +3,8 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         transpose_val_ret, CachedRegion, Cell, CellType,
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -87,6 +86,7 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
+    use crate::util::Field;
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 

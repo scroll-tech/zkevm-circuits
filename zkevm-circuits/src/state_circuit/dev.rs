@@ -3,9 +3,8 @@ pub use super::StateCircuit;
 use crate::{
     state_circuit::{StateCircuitConfig, StateCircuitConfigArgs},
     table::{MptTable, RwTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error},

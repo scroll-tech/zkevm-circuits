@@ -17,12 +17,12 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
-    util::Expr,
+    util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{
     evm_types::block_utils::{is_valid_block_number, NUM_PREV_BLOCK_ALLOWED},
-    Field, ToScalar,
+    ToScalar,
 };
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};

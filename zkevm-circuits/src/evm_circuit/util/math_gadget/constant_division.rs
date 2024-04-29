@@ -7,9 +7,8 @@ use crate::{
             transpose_val_ret, CachedRegion, Cell, CellType,
         },
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -104,6 +103,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
+    use crate::util::Field;
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
