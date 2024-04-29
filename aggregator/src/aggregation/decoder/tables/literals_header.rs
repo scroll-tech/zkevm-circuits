@@ -1,7 +1,7 @@
 use gadgets::util::{not, select, Expr};
 use halo2_proofs::{
     halo2curves::bn256::Fr,
-    plonk::{Advice, Any, Column, ConstraintSystem},
+    plonk::{Advice, Any, Column, ConstraintSystem, Fixed},
     poly::Rotation,
 };
 use zkevm_circuits::{
@@ -12,8 +12,12 @@ use zkevm_circuits::{
 /// Helper table to decode the regenerated size from the Literals Header.
 #[derive(Clone, Debug)]
 pub struct LiteralsHeaderTable {
-    /// The byte_idx at which this literals header is located.
-    pub byte_offset: Column<Advice>,
+    /// Fixed column to mark the first row of the table.
+    q_first: Column<Fixed>,
+    /// The block index in which we find this literals header. Since every block will have a
+    /// literals header, and block_idx in 1..=n, we know that on the first row block_idx=1 and on
+    /// subsequent rows, block_idx increments by 1.
+    pub block_idx: Column<Advice>,
     /// The first byte of the literals header.
     pub byte0: Column<Advice>,
     /// The second byte.
@@ -42,7 +46,8 @@ impl LiteralsHeaderTable {
         range16: RangeTable<16>,
     ) -> Self {
         let config = Self {
-            byte_offset: meta.advice_column(),
+            q_first: meta.fixed_column(),
+            block_idx: meta.advice_column(),
             byte0: meta.advice_column(),
             byte1: meta.advice_column(),
             byte2: meta.advice_column(),
@@ -53,6 +58,25 @@ impl LiteralsHeaderTable {
             regen_size: meta.advice_column(),
             is_padding: meta.advice_column(),
         };
+
+        meta.create_gate("LiteralsHeaderTable: first row", |meta| {
+            let condition = meta.query_fixed(config.q_first, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "is_padding=0 on first row",
+                meta.query_advice(config.is_padding, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "block_idx=1 on first row",
+                meta.query_advice(config.block_idx, Rotation::cur()),
+                1.expr(),
+            );
+
+            cb.gate(condition)
+        });
 
         meta.create_gate("LiteralsHeaderTable: main gate", |meta| {
             let condition = not::expr(meta.query_advice(config.is_padding, Rotation::cur()));
@@ -93,6 +117,31 @@ impl LiteralsHeaderTable {
             cb.gate(condition)
         });
 
+        meta.create_gate("LiteralsHeaderTable: padding check", |meta| {
+            let condition = not::expr(meta.query_fixed(config.q_first, Rotation::cur()));
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            // padding transitions from 0 -> 1 only once.
+            let is_padding_cur = meta.query_advice(config.is_padding, Rotation::cur());
+            let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
+            let is_padding_delta = is_padding_cur.expr() - is_padding_prev;
+
+            cb.require_boolean("is_padding is boolean", is_padding_cur.expr());
+            cb.require_boolean("is_padding delta is boolean", is_padding_delta);
+
+            // if this is not a padding row, then block_idx has incremented.
+            cb.condition(not::expr(is_padding_cur), |cb| {
+                cb.require_equal(
+                    "block_idx increments by 1",
+                    meta.query_advice(config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.block_idx, Rotation::prev()) + 1.expr(),
+                );
+            });
+
+            cb.gate(condition)
+        });
+
         meta.lookup("LiteralsHeaderTable: byte0 >> 3", |meta| {
             let condition = 1.expr();
 
@@ -120,7 +169,7 @@ impl LiteralsHeaderTable {
 impl LookupTable<Fr> for LiteralsHeaderTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.byte_offset.into(),
+            self.block_idx.into(),
             self.byte0.into(),
             self.byte1.into(),
             self.byte2.into(),
@@ -133,6 +182,7 @@ impl LookupTable<Fr> for LiteralsHeaderTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("block_idx"),
             String::from("byte_offset"),
             String::from("byte0"),
             String::from("byte1"),

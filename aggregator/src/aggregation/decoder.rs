@@ -1485,8 +1485,9 @@ impl DecoderConfig {
                     ),
                 );
 
+                let block_idx = meta.query_advice(config.block_config.block_idx, Rotation::cur());
                 [
-                    meta.query_advice(config.byte_idx, Rotation::cur()),
+                    block_idx,
                     byte0,
                     byte1,
                     byte2,
