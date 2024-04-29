@@ -7,9 +7,9 @@ use crate::{
         select,
     },
     table::AccountFieldTag,
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{geth_types::TxType, Field, U256};
+use eth_types::{geth_types::TxType, U256};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// L1 Msg Transaction gadget for some extra handling

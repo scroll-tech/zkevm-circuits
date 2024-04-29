@@ -1,5 +1,8 @@
-use crate::{table::BytecodeFieldTag, util::get_push_size};
-use eth_types::{state_db::CodeDB, Field, ToWord, Word, U256};
+use crate::{
+    table::BytecodeFieldTag,
+    util::{get_push_size, Field},
+};
+use eth_types::{state_db::CodeDB, ToWord, Word, U256};
 use std::vec;
 
 /// Public data for the bytecode

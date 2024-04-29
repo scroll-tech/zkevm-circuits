@@ -1,11 +1,12 @@
 #![allow(missing_docs)]
 use std::collections::HashMap;
 
+use crate::util::Field;
 use bus_mapping::{
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, ToLittleEndian, ToScalar, Word, U256};
 
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;

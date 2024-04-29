@@ -1,4 +1,4 @@
-use eth_types::Field;
+use crate::util::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Challenge, Circuit, ConstraintSystem, Error},

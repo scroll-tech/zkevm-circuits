@@ -1,4 +1,5 @@
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use crate::util::Field;
+use eth_types::{Address, ToLittleEndian, ToScalar, Word};
 use gadgets::util::{and, expr_from_bytes, not, select, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -422,7 +423,8 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
 #[cfg(test)]
 mod test {
     use super::{super::test_util::*, ContractCreateGadget};
-    use eth_types::{state_db::CodeDB, Field, ToAddress, ToLittleEndian, ToWord, Word};
+    use crate::util::Field;
+    use eth_types::{state_db::CodeDB, ToAddress, ToLittleEndian, ToWord, Word};
     use ethers_core::utils::keccak256;
     use gadgets::util::{not, Expr};
     use halo2_proofs::halo2curves::bn256::Fr;

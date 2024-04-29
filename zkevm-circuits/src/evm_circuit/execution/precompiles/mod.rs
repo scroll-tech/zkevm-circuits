@@ -9,10 +9,11 @@ use crate::{
         },
     },
     table::CallContextFieldTag,
+    util::Field,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{Field, ToScalar};
+use eth_types::ToScalar;
 use gadgets::util::{select, Expr};
 use halo2_proofs::{
     circuit::Value,

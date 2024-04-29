@@ -15,8 +15,9 @@ use crate::{
         witness::Transaction,
     },
     table::{BlockContextFieldTag, TxFieldTag},
+    util::Field,
 };
-use eth_types::{geth_types::TxType, Field, ToLittleEndian, U256};
+use eth_types::{geth_types::TxType, ToLittleEndian, U256};
 use gadgets::util::select;
 use halo2_proofs::plonk::{Error, Expression};
 

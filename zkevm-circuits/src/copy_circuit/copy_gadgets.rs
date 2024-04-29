@@ -1,6 +1,6 @@
 use super::{CURRENT, NEXT_ROW, NEXT_STEP};
+use crate::util::Field;
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::Field;
 use gadgets::{
     binary_number::BinaryNumberConfig,
     is_equal::IsEqualConfig,

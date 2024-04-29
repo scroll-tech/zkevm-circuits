@@ -3,11 +3,12 @@
 
 use std::{iter, marker::PhantomData};
 
+use crate::util::Field;
 use bus_mapping::{
     circuit_input_builder::{EcAddOp, EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
     precompile::PrecompileCalls,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{ToLittleEndian, ToScalar, U256};
 use halo2_base::{
     gates::{GateInstructions, RangeInstructions},
     utils::{decompose_bigint_option, fe_to_biguint, modulus},

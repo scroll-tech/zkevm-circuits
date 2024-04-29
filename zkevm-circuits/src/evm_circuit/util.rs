@@ -7,10 +7,10 @@ use crate::{
         table::Table,
     },
     table::RwTableTag,
-    util::{query_expression, Challenges, Expr},
+    util::{query_expression, Challenges, Expr, Field},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use eth_types::{state_db::CodeDB, Address, Field, ToLittleEndian, ToWord, U256};
+use eth_types::{state_db::CodeDB, Address, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     halo2curves::group::ff::BatchInvert,
@@ -565,8 +565,10 @@ pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADD
 
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
-    use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use eth_types::Field;
+    use crate::{
+        evm_circuit::param::MAX_N_BYTES_INTEGER,
+        util::{Expr, Field},
+    };
     use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
@@ -600,8 +602,10 @@ pub(crate) mod from_bytes {
 
 /// Decodes a field element from its binary representation
 pub(crate) mod from_bits {
-    use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use eth_types::Field;
+    use crate::{
+        evm_circuit::param::MAX_N_BYTES_INTEGER,
+        util::{Expr, Field},
+    };
     use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field, E: Expr<F>>(bits: &[E]) -> Expression<F> {
@@ -638,8 +642,7 @@ pub(crate) mod from_bits {
 pub(crate) mod rlc {
     use std::ops::{Add, Mul};
 
-    use crate::util::Expr;
-    use eth_types::Field;
+    use crate::util::{Expr, Field};
     use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {

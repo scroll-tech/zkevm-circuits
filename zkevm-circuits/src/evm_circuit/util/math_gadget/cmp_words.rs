@@ -3,9 +3,9 @@ use crate::{
         self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select,
         CachedRegion,
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::plonk::{Error, Expression};
 
 #[derive(Clone, Debug)]

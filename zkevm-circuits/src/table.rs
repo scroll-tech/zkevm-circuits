@@ -8,7 +8,7 @@ use crate::{
     },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, rlc_be_bytes, Challenges},
+    util::{build_tx_log_address, rlc_be_bytes, Challenges, Field},
     witness::{
         Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen, Rw, RwMap,
         RwRow, Transaction,
@@ -22,7 +22,7 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use core::iter::once;
-use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
+use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},

@@ -2,14 +2,14 @@
 use crate::{
     evm_circuit::witness::{block_convert, Block},
     exp_circuit::ExpCircuit,
-    util::{unusable_rows, SubCircuit},
+    util::{unusable_rows, Field, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     evm::OpcodeId,
     mock::BlockData,
 };
-use eth_types::{bytecode, geth_types::GethData, Bytecode, Field, Word};
+use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
 };

@@ -22,10 +22,10 @@ use crate::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxReceiptFieldTag,
     },
-    util::Expr,
+    util::{Expr, Field},
 };
 use eth_types::{
-    evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, Field, ToLittleEndian, ToScalar,
+    evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, ToLittleEndian, ToScalar,
 };
 use gadgets::util::{not, select};
 use halo2_proofs::{circuit::Value, plonk::Error};

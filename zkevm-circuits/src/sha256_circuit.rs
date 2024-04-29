@@ -16,11 +16,10 @@ pub use halo2_gadgets::sha256::BLOCK_SIZE;
 
 use crate::{
     table::{LookupTable, SHA256Table},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness,
 };
 use bus_mapping::circuit_input_builder::SHA256;
-use eth_types::Field;
 
 impl TableTrait for SHA256Table {
     fn cols(&self) -> [Column<Any>; 5] {

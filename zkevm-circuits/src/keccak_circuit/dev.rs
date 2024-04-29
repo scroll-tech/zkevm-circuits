@@ -3,9 +3,8 @@ pub use super::KeccakCircuit;
 use crate::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
     table::KeccakTable,
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},

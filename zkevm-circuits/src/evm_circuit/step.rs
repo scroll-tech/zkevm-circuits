@@ -5,11 +5,11 @@ use crate::{
         util::Cell,
         witness::{Block, Call, ExecStep},
     },
-    util::Expr,
+    util::{Expr, Field},
     witness::Transaction,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::evm_types::GasCost;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},

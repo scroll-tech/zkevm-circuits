@@ -31,7 +31,8 @@ use halo2_proofs::plonk::SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::ThirdPhase;
 
-use eth_types::{Field, Word, U256};
+use crate::util::Field;
+use eth_types::{Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,

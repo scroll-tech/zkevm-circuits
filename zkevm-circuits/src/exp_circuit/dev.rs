@@ -3,9 +3,8 @@ pub use super::ExpCircuit;
 use crate::{
     exp_circuit::{ExpCircuitArgs, ExpCircuitConfig},
     table::{ExpTable, U16Table},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},

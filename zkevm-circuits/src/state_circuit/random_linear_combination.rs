@@ -1,5 +1,5 @@
-use crate::evm_circuit::util::rlc;
-use eth_types::{Field, ToLittleEndian, U256};
+use crate::{evm_circuit::util::rlc, util::Field};
+use eth_types::{ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},

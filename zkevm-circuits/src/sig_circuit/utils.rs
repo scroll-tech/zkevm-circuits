@@ -1,4 +1,4 @@
-use eth_types::Field;
+use crate::util::Field;
 use halo2_base::{AssignedValue, QuantumCell};
 use halo2_ecc::{
     bigint::CRTInteger,

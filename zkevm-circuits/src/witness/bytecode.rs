@@ -1,5 +1,6 @@
+use crate::util::Field;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::circuit::Value;
 
 use crate::{evm_circuit::util::rlc, table::BytecodeFieldTag, util::Challenges};
