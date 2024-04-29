@@ -884,8 +884,15 @@ impl DecoderConfig {
 
                 // If the previous tag was done processing, verify that the is_change boolean was
                 // set.
-                let tag_idx_eq_tag_len = config.tag_config.tag_idx_eq_tag_len.expr();
-                cb.condition(and::expr([byte_idx_delta, tag_idx_eq_tag_len]), |cb| {
+                let tag_idx_prev = meta.query_advice(config.tag_config.tag_idx, Rotation::prev());
+                let tag_len_prev = meta.query_advice(config.tag_config.tag_len, Rotation::prev());
+                let tag_idx_eq_tag_len_prev = config.tag_config.tag_idx_eq_tag_len.expr_at(
+                    meta,
+                    Rotation::prev(),
+                    tag_idx_prev,
+                    tag_len_prev,
+                );
+                cb.condition(and::expr([byte_idx_delta, tag_idx_eq_tag_len_prev]), |cb| {
                     cb.require_equal(
                         "is_change is set",
                         meta.query_advice(config.tag_config.is_change, Rotation::cur()),
