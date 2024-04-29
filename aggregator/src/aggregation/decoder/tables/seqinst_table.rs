@@ -1,13 +1,18 @@
 
 use eth_types::Field;
-use gadgets::util::{and, or, not, select, Expr};
+use gadgets::{
+    is_equal::*,
+    is_zero::*,
+    util::{and, or, not, select, Expr},
+};
 use halo2_proofs::{
-    circuit::{Value, Layouter},
+    circuit::{Value, Region, Layouter},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 use zkevm_circuits::{
-    evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon}, table::LookupTable,
+    evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon}, 
+    table::LookupTable,
 };
 use crate::aggregation::decoder::witgen;
 use witgen::AddressTableRow;
@@ -61,7 +66,7 @@ use witgen::AddressTableRow;
 /// |    0      |     2      |    5      |   1    |    1    |     1      |     5      |      4     |     0     |
 /// |           |            |           |        |         |            |            |            |     0     |
 /// 
-pub struct SeqInstTable {
+pub struct SeqInstTable<F: Field> {
 
     // active flag, one active row parse
     q_enabled: Column<Fixed>,
@@ -103,22 +108,22 @@ pub struct SeqInstTable {
     // v * (1- v * h) == 0. We would have a boolean flag 
     // from h * v
 
-    // helper to detect if literal_len is zero
-    literal_helper: Column<Advice>,
-    // helper to detect if seq_index in current row equal
+    // detect if literal_len is zero
+    literal_is_zero: IsZeroConfig<F>,
+    // detect if seq_index in current row equal
     // to n_seq (i.e. n_seq - seq_index is zero)
-    seq_helper: Column<Advice>,
-    // helper to detect if current match_offset is 1, 2 or 3
-    offset_helper_1:Column<Advice>,
-    offset_helper_2:Column<Advice>,
-    offset_helper_3:Column<Advice>,
+    seq_index_is_n_seq: IsEqualConfig<F>,
+    // detect if current match_offset is 1, 2 or 3
+    offset_is_1: IsEqualConfig<F>,
+    offset_is_2: IsEqualConfig<F>,
+    offset_is_3: IsEqualConfig<F>,
      
-    // helper to detect if rep_offset_1 is 0 (indicate the data
+    // detect if rep_offset_1 is 0 (indicate the data
     // is corrupt)
-    repeat_corrupt_flag_helper: Column<Advice>,
+    ref_offset_1_is_zero: IsZeroConfig<F>,
 }
 
-impl<F: Field> LookupTable<F> for SeqInstTable {
+impl<F: Field> LookupTable<F> for SeqInstTable<F> {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enabled.into(),
@@ -146,7 +151,7 @@ impl<F: Field> LookupTable<F> for SeqInstTable {
     }    
 }
 
-impl SeqInstTable {
+impl<F: Field> SeqInstTable<F> {
 
     /// The sequence count should be lookuped by parsed bitstream,
     /// used the block index and value for sequnce count tag to 
@@ -212,47 +217,62 @@ impl SeqInstTable {
 
     /// Construct the sequence instruction table
     /// the maxium rotation is prev(2), next(1)
-    pub fn configure<F: Field>(
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
     ) -> Self {
-        let config = Self {
-            q_enabled: meta.fixed_column(),
-            block_index: meta.advice_column(),
-            n_seq: meta.advice_column(),
-            literal_len: meta.advice_column(),
-            match_offset: meta.advice_column(),
-            match_len: meta.advice_column(),
-            offset: meta.advice_column(),
-            acc_literal_len: meta.advice_column(),
-            s_beginning: meta.advice_column(),
-            seq_index: meta.advice_column(),
-            seq_helper: meta.advice_column(),
-            literal_helper: meta.advice_column(),
-            rep_offset_1: meta.advice_column(),
-            rep_offset_2: meta.advice_column(),
-            rep_offset_3: meta.advice_column(),
-            offset_helper_1: meta.advice_column(),
-            offset_helper_2: meta.advice_column(),
-            offset_helper_3: meta.advice_column(),
-            repeat_corrupt_flag_helper: meta.advice_column(),
-        };
+        let q_enabled = meta.fixed_column();
+        let block_index = meta.advice_column();
+        let n_seq = meta.advice_column();
+        let literal_len = meta.advice_column();
+        let match_offset = meta.advice_column();
+        let match_len = meta.advice_column();
+        let offset = meta.advice_column();
+        let acc_literal_len = meta.advice_column();
+        let s_beginning = meta.advice_column();
+        let seq_index = meta.advice_column();
+        let rep_offset_1 = meta.advice_column();
+        let rep_offset_2 = meta.advice_column();
+        let rep_offset_3 = meta.advice_column();
+
+        let [literal_is_zero, ref_offset_1_is_zero] = 
+        [literal_len, rep_offset_1].map(|col|{
+            let inv_col = meta.advice_column();
+            IsZeroChip::configure(
+                meta, 
+                |meta|meta.query_fixed(q_enabled, Rotation::cur()),
+                |meta|meta.query_advice(col, Rotation::cur()),
+                inv_col
+            )
+        });
+        let [offset_is_1, offset_is_2, offset_is_3] = 
+        [
+            (rep_offset_1, 1),
+            (rep_offset_2, 2),
+            (rep_offset_3, 3)
+        ].map(|(col, val)|{
+            IsEqualChip::configure(
+                meta, 
+                |meta|meta.query_fixed(q_enabled, Rotation::cur()),
+                |meta|meta.query_advice(col, Rotation::cur()), 
+                |_|val.expr()
+            )
+        });
+        let seq_index_is_n_seq = IsEqualChip::configure(
+            meta, 
+            |meta|meta.query_fixed(q_enabled, Rotation::cur()),
+            |meta|meta.query_advice(seq_index, Rotation::cur()), 
+            |meta|meta.query_advice(n_seq, Rotation::cur()),
+        );
 
         // seq_index must increment and compare with n_seq for seq border
         meta.create_gate("seq index and section borders", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
-            let n_seq = meta.query_advice(config.n_seq, Rotation::cur());
+            let n_seq = meta.query_advice(n_seq, Rotation::cur());
 
-            let seq_index = meta.query_advice(config.seq_index, Rotation::cur());
-            let seq_index_next = meta.query_advice(config.seq_index, Rotation::next());
-
-            let seq_border_helper = meta.query_advice(config.seq_helper, Rotation::cur());
-
-            let is_seq_border = seq_border_helper.expr() * (n_seq.expr() - seq_index.expr());
-
-            cb.require_zero("boolean for seq border", 
-                (1.expr() - is_seq_border.expr()) * (n_seq.expr() - seq_index.expr()),
-            );
+            let seq_index_next = meta.query_advice(seq_index, Rotation::next());
+            let seq_index = meta.query_advice(seq_index, Rotation::cur());
+            let is_seq_border = &seq_index_is_n_seq;
 
             cb.require_equal("seq index must increment or 0 in s_beginning", 
                 select::expr(
@@ -263,19 +283,19 @@ impl SeqInstTable {
             );
 
             cb.require_boolean("s_beginning is boolean", 
-                meta.query_advice(config.s_beginning, Rotation::cur())
+                meta.query_advice(s_beginning, Rotation::cur())
             );
 
             cb.condition(not::expr(is_seq_border.expr()),
                 |cb|{
                     cb.require_zero("s_beginning on enabled after seq border", 
-                        meta.query_advice(config.s_beginning, Rotation::next())
+                        meta.query_advice(s_beginning, Rotation::next())
                     )
                 }
             );
 
             cb.gate(
-                meta.query_fixed(config.q_enabled, Rotation::next())
+                meta.query_fixed(q_enabled, Rotation::next())
             )
         });
 
@@ -286,35 +306,33 @@ impl SeqInstTable {
         meta.create_gate("block index", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
-            let block_index = meta.query_advice(config.block_index, Rotation::cur());
-            let block_index_next = meta.query_advice(config.block_index, Rotation::next());
+            let block_index_next = meta.query_advice(block_index, Rotation::next());
+            let block_index = meta.query_advice(block_index, Rotation::cur());
 
-            let n_seq = meta.query_advice(config.n_seq, Rotation::cur());
-            let seq_index = meta.query_advice(config.seq_index, Rotation::cur());
-            let seq_border_helper = meta.query_advice(config.seq_helper, Rotation::cur());
-
-            let is_seq_border = seq_border_helper.expr() * (n_seq.expr() - seq_index.expr());
+            let n_seq = meta.query_advice(n_seq, Rotation::cur());
+            let seq_index = meta.query_advice(seq_index, Rotation::cur());
+            let is_seq_border = &seq_index_is_n_seq;
 
             cb.require_equal("block is increment only in border", 
                 select::expr(
-                    is_seq_border,
+                    is_seq_border.expr(),
                     block_index.expr() + 1.expr(),
                     block_index.expr(),
                 ), 
                 block_index_next,
             );
-            cb.gate(meta.query_fixed(config.q_enabled, Rotation::next()))
+            cb.gate(meta.query_fixed(q_enabled, Rotation::next()))
         });
 
         // so, we enforce s_beginning enabled for valid block index
         meta.create_gate("border constaints", |meta|{
             let mut cb = BaseConstraintBuilder::default();
-            let s_beginning = meta.query_advice(config.s_beginning, Rotation::cur());
+            let s_beginning = meta.query_advice(s_beginning, Rotation::cur());
 
             let repeated_offset_pairs = [
-                config.rep_offset_1,
-                config.rep_offset_2,
-                config.rep_offset_3,
+                rep_offset_1,
+                rep_offset_2,
+                rep_offset_3,
             ].map(|col|
                 (meta.query_advice(col, Rotation::cur()), 
                 meta.query_advice(col, Rotation::prev()))
@@ -330,78 +348,61 @@ impl SeqInstTable {
                 });
             }
 
-            let literal_len = meta.query_advice(config.literal_len, Rotation::cur());
+            let literal_len = meta.query_advice(literal_len, Rotation::cur());
             cb.require_equal("literal len accumulation", 
                 select::expr(s_beginning.expr(), 
                     literal_len.expr(), 
-                    literal_len.expr() + meta.query_advice(config.acc_literal_len, Rotation::prev()),
+                    literal_len.expr() + meta.query_advice(acc_literal_len, Rotation::prev()),
                 ), 
-                meta.query_advice(config.acc_literal_len, Rotation::cur()),
+                meta.query_advice(acc_literal_len, Rotation::cur()),
             );
 
-            cb.gate(meta.query_fixed(config.q_enabled, Rotation::cur()))
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
         // offset is in-section (not s_beginning)
         meta.create_gate("offset reference", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
-            let offset = meta.query_advice(config.match_offset, Rotation::cur());
-            let offset_helpers = [
-                config.offset_helper_1,
-                config.offset_helper_2,
-                config.offset_helper_3,
+            let offset_val = meta.query_advice(offset, Rotation::cur());
+            let offset = meta.query_advice(match_offset, Rotation::cur());
+
+            let literal_len = meta.query_advice(literal_len, Rotation::cur());
+
+            let s_is_offset_ref = or::expr([
+                offset_is_1.expr(),
+                offset_is_2.expr(),
+                offset_is_3.expr(),
+            ]);
+
+            let [rep_offset_1_prev, rep_offset_2_prev, rep_offset_3_prev]
+             = [
+                rep_offset_1,
+                rep_offset_2,
+                rep_offset_3,
+            ].map(|col|meta.query_advice(col, Rotation::prev()));
+             
+            let [rep_offset_1, rep_offset_2, rep_offset_3]
+             = [
+                rep_offset_1,
+                rep_offset_2,
+                rep_offset_3,
             ].map(|col|meta.query_advice(col, Rotation::cur()));
 
-            for (helper, coef) in offset_helpers
-                .iter().zip([1,2,3]){
-
-                cb.require_zero("offset helper boolean", 
-                    (1.expr() - (offset.expr() - coef.expr())*helper.expr())
-                    *  (offset.expr() - coef.expr()),
-                );
-            }
-
-            let literal_len = meta.query_advice(config.literal_len, Rotation::cur());
-            let literal_helper = meta.query_advice(config.literal_helper, Rotation::cur());
-            cb.require_zero("literal helper helper boolean", 
-                (1.expr() - literal_helper.expr()*literal_len.expr()) * literal_len.expr(),
-            );
-
-            let s_literal_zero = 1.expr() - literal_helper.expr()*literal_len.expr();
-
-            let s_offsets = [
-                offset_helpers[0].expr() * (offset.expr() - 1.expr()),
-                offset_helpers[1].expr() * (offset.expr() - 2.expr()),
-                offset_helpers[2].expr() * (offset.expr() - 3.expr()),
-            ];
-
-            let s_is_offset_ref = s_offsets.iter()
-                .map(|c|c.expr()).into_iter()
-                .reduce(|sum, e| sum + e).expect("has items");
-
-            let repeated_offset_pairs = [
-                config.rep_offset_1,
-                config.rep_offset_2,
-                config.rep_offset_3,
-            ].map(|col|
-                (meta.query_advice(col, Rotation::cur()), 
-                meta.query_advice(col, Rotation::prev()))
-            );
-
-            let offset_val = meta.query_advice(config.offset, Rotation::cur());
-
+            // in ref offset case, the actual offset val come from
+            // ref offset table (exception case rasised if literal len 
+            // is zero)
             let offset_ref_val_on_literal_zero = 
-                s_offsets[2].expr() * (repeated_offset_pairs[0].1.expr() - 1.expr())
-                + s_offsets[1].expr() * repeated_offset_pairs[2].1.expr()
-                + s_offsets[0].expr() * repeated_offset_pairs[1].1.expr();
+                offset_is_3.expr() * (rep_offset_1_prev.expr() - 1.expr())
+                + offset_is_1.expr() * rep_offset_2_prev.expr()
+                + offset_is_2.expr() * rep_offset_3_prev.expr();
             let offset_ref_val = 
-                s_offsets[0].expr() * repeated_offset_pairs[0].1.expr()
-                + s_offsets[1].expr() * repeated_offset_pairs[1].1.expr()
-                + s_offsets[2].expr() * repeated_offset_pairs[2].1.expr();
+                offset_is_1.expr() * rep_offset_1_prev.expr()
+                + offset_is_2.expr() * rep_offset_2_prev.expr()
+                + offset_is_3.expr() * rep_offset_3_prev.expr();
 
             let offset_ref_val = select::expr(
-                s_literal_zero.expr(),
+                literal_is_zero.expr(),
                 offset_ref_val_on_literal_zero,
                 offset_ref_val,
             );
@@ -414,122 +415,133 @@ impl SeqInstTable {
                 ), 
                 offset_val.expr()
             );
+            // and ref in offset_1 is updated by current value 
             cb.require_equal("set offset 0 to offset val", 
                 offset_val.expr(), 
-                repeated_offset_pairs[0].0.expr(),
+                rep_offset_1.expr(),
             );
 
-            // shift nature for literal 0 / non-ref
+            // following we updated table for rep_offset_2/3
+
+            // for no-ref or literal len is 0, ref offset table is
+            // updated with a "shift" nature
             cb.condition(or::expr([
-                s_literal_zero.expr(),
+                literal_is_zero.expr(),
                 not::expr(s_is_offset_ref.expr()),
             ]),|cb|{
-                cb.require_equal("shift 1", 
-                    repeated_offset_pairs[0].1.expr(), 
-                    repeated_offset_pairs[1].0.expr(),
+                cb.require_equal("shift 1 -> 2", 
+                    rep_offset_1_prev.expr(), 
+                    rep_offset_2.expr(),
                 );
-                cb.require_equal("shift 2", 
-                    repeated_offset_pairs[1].1.expr(), 
-                    repeated_offset_pairs[2].0.expr(),
+                cb.require_equal("shift 2 -> 3", 
+                    rep_offset_2_prev.expr(), 
+                    rep_offset_3.expr(),
                 );              
             });
 
-            // swap for references
-            cb.condition(not::expr(s_literal_zero.expr()), |cb|{
+            // in ref offset case (offset is 1-3), the table is
+            // updated by more complificant fashion
+            cb.condition(not::expr(literal_is_zero.expr()), |cb|{
 
-                cb.condition(s_offsets[0].expr(), |cb|{
+                // offset is 1, table not change
+                cb.condition(offset_is_1.expr(), |cb|{
                     cb.require_equal("copy offset 1 for ref 1", 
-                        repeated_offset_pairs[1].1.expr(), 
-                        repeated_offset_pairs[1].0.expr(),
+                        rep_offset_2_prev.expr(), 
+                        rep_offset_2.expr(),
                     );
                     cb.require_equal("copy offset 2 for ref 1", 
-                        repeated_offset_pairs[2].1.expr(), 
-                        repeated_offset_pairs[2].0.expr(),
+                        rep_offset_3_prev.expr(), 
+                        rep_offset_3.expr(),
                     );
                 });
 
-                cb.condition(s_offsets[1].expr(), |cb|{
+                // offset is 2, offset 1 and 2 is swapped (3 unchanged)
+                cb.condition(offset_is_2.expr(), |cb|{
                     cb.require_equal("swap 1&2 for ref 2", 
-                        repeated_offset_pairs[0].1.expr(), 
-                        repeated_offset_pairs[1].0.expr(),
+                        rep_offset_1_prev.expr(), 
+                        rep_offset_2.expr(),
                     );
-                    cb.require_equal("copy offset 2 for ref 2", 
-                        repeated_offset_pairs[2].1.expr(), 
-                        repeated_offset_pairs[2].0.expr(),
+                    cb.require_equal("copy offset 3 for ref 2", 
+                        rep_offset_3_prev.expr(), 
+                        rep_offset_3.expr(),
                     );                   
                 });
 
-                cb.condition(s_offsets[2].expr(), |cb|{
+                // offset is 3, offset table has a rotation
+                cb.condition(offset_is_3.expr(), |cb|{
                     cb.require_equal("rotate 3-1 for ref 3", 
-                        repeated_offset_pairs[0].1.expr(), 
-                        repeated_offset_pairs[1].0.expr(),
+                        rep_offset_1_prev.expr(), 
+                        rep_offset_2.expr(),
                     );
                     cb.require_equal("rotate 3-1 for ref 3", 
-                        repeated_offset_pairs[1].1.expr(), 
-                        repeated_offset_pairs[2].0.expr(),
+                        rep_offset_2_prev.expr(), 
+                        rep_offset_3.expr(),
                     );                   
                 });
             });
 
-            let corrupt_flag = meta.query_advice(config.repeat_corrupt_flag_helper, Rotation::cur());
-            cb.condition(s_literal_zero.expr(), |cb|{
-                cb.require_equal("data must not corrupt", 
-                    corrupt_flag.expr()*repeated_offset_pairs[0].0.expr(),
-                    1.expr(),
+            cb.condition(literal_is_zero.expr(), |cb|{
+                cb.require_zero("data must not corrupt", 
+                    ref_offset_1_is_zero.expr(),
                 )
             });
 
             cb.gate(
-                meta.query_fixed(config.q_enabled, Rotation::cur())*
-                not::expr(meta.query_advice(config.s_beginning, Rotation::cur())),
+                meta.query_fixed(q_enabled, Rotation::cur())*
+                not::expr(meta.query_advice(s_beginning, Rotation::cur())),
             )
         });
 
-        // meta.lookup_any("seq table lookup", |meta|{
-        //     vec![
-        //         (1.expr(), meta.query_fixed(config.q_enabled, Rotation::cur())),
-        //         (
-        //             meta.query_advice(config.block_index, Rotation::cur()),
-        //             meta.query_advice(seq_table.block_index, Rotation::cur()),
-        //         ),
-        //         (
-        //             meta.query_advice(config.block_index, Rotation::cur()),
-        //             meta.query_advice(seq_table.block_index, Rotation::cur()),
-        //         ),                
-        //     ]
-        // });
-
-        config
+        Self {
+            q_enabled,
+            block_index,
+            n_seq,
+            literal_len,
+            match_offset,
+            match_len,
+            offset,
+            acc_literal_len,
+            s_beginning,
+            seq_index,
+            rep_offset_1,
+            rep_offset_2,
+            rep_offset_3,
+            offset_is_1,
+            offset_is_2,
+            offset_is_3,
+            literal_is_zero,
+            seq_index_is_n_seq,
+            ref_offset_1_is_zero,
+        }
     }
 
-    pub fn assign<'a, F: Field>(
+    pub fn assign<'a>(
         &self,
         layouter: &mut impl Layouter<F>,
         table_rows: impl Iterator<Item=&'a AddressTableRow> + Clone,
         enabled_rows: usize,
     ) -> Result<(), Error>{
+
+        let literal_is_zero_chip = IsZeroChip::construct(self.literal_is_zero.clone());
+        let ref_offset_1_is_zero_chip = IsZeroChip::construct(self.ref_offset_1_is_zero.clone());
+        let seq_index_chip = IsEqualChip::construct(self.seq_index_is_n_seq.clone());
+        let offset_is_1_chip = IsEqualChip::construct(self.offset_is_1.clone());
+        let offset_is_2_chip = IsEqualChip::construct(self.offset_is_2.clone());
+        let offset_is_3_chip = IsEqualChip::construct(self.offset_is_3.clone());
+
         layouter.assign_region(
             || "addr table",
             |mut region|{
 
-                let mut offset = 0;
-                let mut header_offset = 0;
-                let mut block_ind = 0u64;
-                let mut n_seq = 0u64;
-
-                // sanity check, also calculate the reference
-                let mut ref_offset = [0u64;3];
-
                 let fill_header_padding = |
+                    region: &mut Region<F>,
                     offset,
                     block_ind: u64,
                     n_seq: u64,
+                    offset_table: [u64;3],
                 |->Result<(), Error>{
                     //region.assign_advice(||"", column, offset, to)
                     for col in [
-                        self.offset_helper_1,
-                        self.offset_helper_2,
-                        self.offset_helper_3,
                         self.rep_offset_1,
                         self.rep_offset_2,
                         self.rep_offset_3,
@@ -539,38 +551,59 @@ impl SeqInstTable {
                         self.acc_literal_len,
                         self.offset,
                         self.seq_index,
-                        self.literal_helper,
-                        self.repeat_corrupt_flag_helper,
                     ] {
                         region.assign_advice(
                             ||"padding values", 
                             col, offset, ||Value::known(F::zero())
                         )?;
                     }
-                    region.assign_advice(
-                        ||"header block ind", 
-                        self.block_index, offset, 
-                        ||Value::known(F::from(block_ind))
-                    )?;
-                    region.assign_advice(
-                        ||"header n_seq", 
-                        self.n_seq, offset,
-                        ||Value::known(F::from(n_seq))
-                    )?;
-                    region.assign_advice(
-                        ||"header seq helper", 
-                        self.seq_helper, offset, 
-                        ||Value::known(
-                            if n_seq == 0 {F::zero()}
-                            else {
-                                F::from(n_seq).invert().expect("not zero")
-                            }                                                        
-                        )
-                    )?;                             
+
+                    for (col, val) in [
+                        (self.rep_offset_1, offset_table[0]),
+                        (self.rep_offset_2, offset_table[1]),
+                        (self.rep_offset_3, offset_table[2]),
+                        (self.block_index, block_ind),
+                        (self.n_seq, n_seq)
+                    ]{
+                        region.assign_advice(
+                            ||"header block fill", 
+                            col, offset, 
+                            ||Value::known(F::from(val))
+                        )?;                        
+                    }
+                    for chip in [
+                        &literal_is_zero_chip,
+                        &ref_offset_1_is_zero_chip,
+                    ] {
+                        chip.assign(region, offset, Value::known(F::zero()))?;
+                    }
+
+                    for (chip, val) in [
+                        (&offset_is_1_chip, F::from(1u64)),
+                        (&offset_is_2_chip, F::from(2u64)),
+                        (&offset_is_3_chip, F::from(3u64)),
+                        (&seq_index_chip, F::from(n_seq)),
+                    ]{
+                        chip.assign(region, offset, Value::known(F::zero()), Value::known(val))?;
+                    }
+
                     Ok(())
                 };
 
-                for row in table_rows.clone() {
+                let mut offset = 0;
+                let mut block_ind = 0u64;
+                let mut n_seq = 0u64;
+                let mut block_head_fill_f : Box<
+                    dyn FnOnce(&mut Region<F>, u64) -> Result<(), Error>
+                >
+                    = Box::new(|_, _|Ok(()));
+
+                // sanity check, also calculate the reference
+                let mut seq_index = 0u64;
+                let mut offset_table : [u64;3]= [1,4,8];
+                let mut acc_literal_len = 0u64;
+
+                for table_row in table_rows.clone() {
                     region.assign_fixed(
                         ||"enable row",
                         self.q_enabled, offset,
@@ -579,12 +612,93 @@ impl SeqInstTable {
 
                     // now AddressTableRow has no block index
                     // so we just suppose it is 1
-                    const cur_block : u64 = 1;
+                    let cur_block = 1u64;
+
+                    // when meet first new block, we insert a
+                    // header row first, but the calling has to
+                    // be postpone since we need to collect the
+                    // n_seq later
                     if block_ind != cur_block {
+                        block_head_fill_f(&mut region, n_seq)?;
                         // left one row for header
                         block_ind = cur_block;
+                        seq_index = 0;
+                        acc_literal_len = 0;
+                        block_head_fill_f = Box::new(move |region, n_seq|
+                            fill_header_padding(
+                                region,
+                                offset,
+                                cur_block,
+                                n_seq,
+                                offset_table,
+                            )
+                        );
+                        offset += 1;
                     }
+
+                    let offset_val = match table_row.cooked_match_offset {
+                        0 => panic!("invalid cooked offset"),
+                        1 => if table_row.literal_length == 0 {
+                            offset_table[1]
+                        } else {
+                            offset_table[0]
+                        },
+                        2 => if table_row.literal_length == 0 {
+                            offset_table[2]
+                        } else {
+                            offset_table[1]
+                        },
+                        3 => if table_row.literal_length == 0 {
+                            offset_table[0] - 1
+                        } else {
+                            offset_table[2]
+                        },
+                        val => val - 3,
+                    };
+                    n_seq = table_row.instruction_idx + 1;
+                    acc_literal_len += table_row.literal_length;
+
+                    assert_eq!(offset_val, table_row.actual_offset);
+                    offset_table[0] = table_row.repeated_offset1;
+                    offset_table[1] = table_row.repeated_offset2;
+                    offset_table[2] = table_row.repeated_offset3;
+
+                    for (name, col, val) in [
+                        ("offset table 1", self.rep_offset_1, F::from(offset_table[0])),
+                        ("offset table 2", self.rep_offset_2, F::from(offset_table[1])),
+                        ("offset table 3", self.rep_offset_3, F::from(offset_table[2])),
+                        ("mlen", self.match_len, F::from(table_row.match_length)),
+                        ("moff", self.match_offset, F::from(table_row.cooked_match_offset)),
+                        ("llen", self.literal_len, F::from(table_row.literal_length)),
+                        ("llen_acc", self.acc_literal_len, F::from(acc_literal_len)),
+                        ("offset", self.offset, F::from(offset_val)),
+                        ("seq ind", self.seq_index, F::from(seq_index)),
+                    ] {
+                        region.assign_advice(
+                            ||name, col, offset, ||Value::known(val)
+                        )?;
+                    }
+
+                    for (chip, val) in [
+                        (&literal_is_zero_chip, F::from(table_row.literal_length)),
+                        (&ref_offset_1_is_zero_chip, F::from(offset_table[0])),
+                    ] {
+                        chip.assign(&mut region, offset, Value::known(val))?;
+                    }
+
+                    for (chip, val_l, val_r) in [
+                        (&offset_is_1_chip, F::from(offset_table[0]), F::from(1u64)),
+                        (&offset_is_2_chip, F::from(offset_table[1]), F::from(2u64)),
+                        (&offset_is_3_chip, F::from(offset_table[2]), F::from(3u64)),
+                        (&seq_index_chip, F::from(seq_index), F::from(n_seq)),
+                    ]{
+                        chip.assign(&mut region, offset, Value::known(val_l), Value::known(val_r))?;
+                    }
+                    offset += 1;
+                    seq_index += 1;  
                 }
+                // final call for last post-poned head filling func
+                block_head_fill_f(&mut region, n_seq)?;
 
                 Ok(())
             }
