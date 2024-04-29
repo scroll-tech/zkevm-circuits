@@ -1899,8 +1899,9 @@ impl DecoderConfig {
                     ),
                 ]);
 
-                let (fse_byte_offset, fse_table_size, fse_symbol, bitstring_value) = (
-                    meta.query_advice(config.fse_decoder.byte_offset, Rotation::cur()),
+                let (block_idx, fse_table_kind, fse_table_size, fse_symbol, bitstring_value) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
                     meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
                     meta.query_advice(config.fse_decoder.symbol, Rotation::cur()),
                     meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
@@ -1908,7 +1909,8 @@ impl DecoderConfig {
                 let norm_prob = bitstring_value - 1.expr();
 
                 [
-                    fse_byte_offset,
+                    block_idx,
+                    fse_table_kind,
                     fse_table_size,
                     fse_symbol,
                     norm_prob.expr(),
