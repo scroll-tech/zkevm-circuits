@@ -1936,6 +1936,7 @@ impl DecoderConfig {
                 let norm_prob = bitstring_value - 1.expr();
 
                 [
+                    0.expr(), // skip first row
                     block_idx,
                     fse_table_kind,
                     fse_table_size,
