@@ -6,12 +6,12 @@ use crate::{
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
     operation::{AccountField, AccountOp, CallContextField},
-    state_db::CodeDB,
     Error,
 };
 use eth_types::{
     bytecode::BytecodeElement,
     evm_types::{memory::MemoryWordRange, Memory},
+    state_db::CodeDB,
     Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256,
 };
 use ethers_core::utils::{get_create2_address, keccak256, rlp};

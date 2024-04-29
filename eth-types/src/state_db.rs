@@ -2,14 +2,16 @@
 //! Ethereum State Trie.
 
 use crate::{
-    precompile::is_precompiled,
-    util::{hash_code, KECCAK_CODE_HASH_EMPTY},
+    utils::{hash_code, is_precompiled},
+    Address, Hash, Word, H256, KECCAK_CODE_HASH_EMPTY, U256,
 };
-use eth_types::{Address, Hash, Word, H256, U256};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     sync::LazyLock,
 };
+
+#[cfg(feature = "scroll")]
+mod l2;
 
 static ACCOUNT_ZERO: LazyLock<Account> = LazyLock::new(Account::zero);
 /// Hash value for empty code hash.
@@ -370,7 +372,7 @@ impl StateDB {
 #[cfg(test)]
 mod statedb_tests {
     use super::*;
-    use eth_types::address;
+    use crate::address;
 
     #[test]
     fn statedb() {

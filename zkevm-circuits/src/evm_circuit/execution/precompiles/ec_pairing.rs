@@ -1,8 +1,9 @@
+use crate::util::Field;
 use bus_mapping::{
     circuit_input_builder::{N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
     precompile::{EcPairingError, PrecompileAuxData, PrecompileCalls},
 };
-use eth_types::{evm_types::GasCost, Field, ToScalar};
+use eth_types::{evm_types::GasCost, ToScalar};
 use gadgets::util::{and, not, or, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 

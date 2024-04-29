@@ -21,11 +21,11 @@ use self::{
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
     table::{AccountFieldTag, LookupTable, MptTable, RwTable, RwTableTag},
-    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Expr, Field, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field, ToLittleEndian};
+use eth_types::{Address, ToLittleEndian};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
     binary_number::{BinaryNumberChip, BinaryNumberConfig},

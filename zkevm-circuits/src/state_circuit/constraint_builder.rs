@@ -5,9 +5,8 @@ use super::{
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
     table::{AccountFieldTag, MPTProofType as ProofType, RwTableTag},
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;

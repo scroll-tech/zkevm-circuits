@@ -91,12 +91,12 @@ mod balance_tests {
         circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{AccountOp, CallContextOp, StackOp, RW},
-        state_db::CodeDB,
     };
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
+        state_db::CodeDB,
         Bytecode, ToWord, Word, U256,
     };
     use mock::TestContext;

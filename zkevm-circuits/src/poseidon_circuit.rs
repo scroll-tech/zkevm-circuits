@@ -6,7 +6,7 @@ use crate::{
     witness::{self},
 };
 //use bus_mapping::state_db::CodeDB;
-use eth_types::Field;
+use crate::util::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error},

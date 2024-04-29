@@ -1,4 +1,4 @@
-use eth_types::Field;
+use crate::util::Field;
 use gadgets::{binary_number::AsBits, util::Expr};
 use halo2_proofs::{
     circuit::Value,

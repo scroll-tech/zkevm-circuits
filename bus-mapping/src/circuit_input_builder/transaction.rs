@@ -1,15 +1,12 @@
 //! Transaction & TransactionContext utility module.
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
-use crate::{
-    l2_predeployed::l1_gas_price_oracle,
-    state_db::{CodeDB, StateDB},
-    Error,
-};
+use crate::{l2_predeployed::l1_gas_price_oracle, Error};
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
+    state_db::{CodeDB, StateDB},
     AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
 use ethers_core::utils::get_contract_address;

@@ -12,6 +12,7 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::TxCircuitTester as TestTxCircuit;
 
+use crate::util::Field;
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     // sig_circuit::SigCircuit,
@@ -51,7 +52,7 @@ use eth_types::{
         TxType::{Eip155, Eip1559, Eip2930, L1Msg, PreEip155},
     },
     sign_types::SignData,
-    AccessList, Address, Field, ToAddress, ToBigEndian, ToScalar,
+    AccessList, Address, ToAddress, ToBigEndian, ToScalar,
 };
 use ethers_core::utils::keccak256;
 use gadgets::{

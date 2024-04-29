@@ -49,9 +49,8 @@
 //!
 //! ```rust, no_run
 //! use bus_mapping::{Error, mock::BlockData};
-//! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use eth_types::{
-//!     self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
+//!     self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode, state_db::{self, StateDB, CodeDB}
 //! };
 //! use mock::test_ctx::{TestContext, helpers::*};
 //! use eth_types::evm_types::Gas;
@@ -234,7 +233,6 @@ pub mod mock;
 pub mod operation;
 pub mod precompile;
 pub mod rpc;
-pub mod state_db;
 pub mod util;
 
 pub use error::Error;

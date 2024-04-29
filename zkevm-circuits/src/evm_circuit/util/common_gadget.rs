@@ -20,11 +20,11 @@ use crate::{
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{Expr, Field},
     witness::{Block, Call, ExecStep},
 };
 use either::Either;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::Value,

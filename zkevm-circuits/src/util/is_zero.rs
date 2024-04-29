@@ -1,4 +1,4 @@
-use eth_types::Field;
+use crate::util::Field;
 use gadgets::{
     is_zero::{IsZeroChip as IsZeroGadgetChip, IsZeroConfig as IsZeroGadgetConfig},
     util::Expr,

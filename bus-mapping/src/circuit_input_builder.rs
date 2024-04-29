@@ -18,8 +18,7 @@ use crate::{
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
     rpc::GethClient,
-    state_db::{self, CodeDB, StateDB},
-    util::{hash_code_keccak, KECCAK_CODE_HASH_EMPTY},
+    util::KECCAK_CODE_HASH_EMPTY,
 };
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
@@ -30,6 +29,7 @@ use eth_types::{
     evm_types::{GasCost, OpcodeId},
     geth_types::{self, TxType},
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    state_db::{self, CodeDB, StateDB},
     Address, GethExecTrace, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_providers::JsonRpcClient;
@@ -40,7 +40,7 @@ pub use execution::{
 };
 use hex::decode_to_slice;
 
-use eth_types::sign_types::get_dummy_tx;
+use eth_types::{sign_types::get_dummy_tx, utils::hash_code_keccak};
 use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;

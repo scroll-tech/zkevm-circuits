@@ -4,7 +4,7 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{evm_types::MAX_CODE_SIZE, Field};
+    use eth_types::evm_types::MAX_CODE_SIZE;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
@@ -28,7 +28,7 @@ mod tests {
             bytecode_unroller::{unroll, UnrolledBytecode},
             TestBytecodeCircuit,
         },
-        util::SubCircuit,
+        util::{Field, SubCircuit},
     };
 
     #[cfg_attr(not(feature = "benches"), ignore)]

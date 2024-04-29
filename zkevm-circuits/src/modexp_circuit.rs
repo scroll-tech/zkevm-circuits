@@ -13,11 +13,11 @@ use halo2_proofs::{
 
 use crate::{
     table::ModExpTable,
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness,
 };
 use bus_mapping::circuit_input_builder::BigModExp;
-use eth_types::{Field, Word};
+use eth_types::Word;
 
 //use misc_precompiled_circuit::value_for_assign;
 use misc_precompiled_circuit::circuits::{

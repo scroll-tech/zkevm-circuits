@@ -4,22 +4,20 @@ use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
 use strum_macros::EnumIter;
 
-use crate::circuit_input_builder::{EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP};
-
-/// Check if address is a precompiled or not.
-pub fn is_precompiled(address: &Address) -> bool {
-    Precompiles::berlin()
-        .get(address.as_fixed_bytes())
-        .is_some()
-}
+use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
 
 pub(crate) fn execute_precompiled(
     address: &Address,
     input: &[u8],
     gas: u64,
 ) -> (Vec<u8>, u64, bool) {
+    #[cfg(feature = "scroll")]
+    let precompiles = Precompiles::bernoulli();
+    #[cfg(not(feature = "scroll"))]
+    let precompiles = Precompiles::berlin();
+
     let Some(Precompile::Standard(precompile_fn)) =
-        Precompiles::berlin().get(address.as_fixed_bytes())
+        precompiles.get(address.as_fixed_bytes().into())
     else {
         panic!("calling non-exist precompiled contract address")
     };
@@ -28,40 +26,11 @@ pub(crate) fn execute_precompiled(
         input.len(),
         hex::encode(input)
     );
-    let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
-        Ok((gas_cost, return_value)) => {
-            if cfg!(feature = "scroll") {
-                // Revm behavior is different from scroll evm,
-                // so we need to override the behavior of invalid input
-                match PrecompileCalls::from(address.0[19]) {
-                    PrecompileCalls::Blake2F | PrecompileCalls::Ripemd160 => {
-                        (vec![], gas, false, false)
-                    }
-                    PrecompileCalls::Bn128Pairing => {
-                        if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
-                            (vec![], gas, false, false)
-                        } else {
-                            (return_value, gas_cost, false, true)
-                        }
-                    }
-                    PrecompileCalls::Modexp => {
-                        let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
-                        if input_valid {
-                            // detect some edge cases like modulus = 0
-                            assert_eq!(modulus_len.as_usize(), return_value.len());
-                            (return_value, gas_cost, false, true) // no oog error
-                        } else {
-                            (vec![], gas, false, false)
-                        }
-                    }
-                    _ => (return_value, gas_cost, false, true),
-                }
-            } else {
-                (return_value, gas_cost, false, true)
-            }
-        }
+    let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(&input.to_vec().into(), gas) {
+        Ok((gas_cost, return_value)) => (return_value.to_vec(), gas_cost, false, true),
         Err(err) => match err {
             PrecompileError::OutOfGas => (vec![], gas, true, false),
+            PrecompileError::NotImplemented => (vec![], gas, false, false),
             _ => {
                 log::warn!("unknown precompile err {err:?}");
                 (vec![], gas, false, false)

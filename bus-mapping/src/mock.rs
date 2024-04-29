@@ -1,10 +1,13 @@
 //! Mock types and functions to generate mock data useful for tests
 
-use crate::{
-    circuit_input_builder::{AccessSet, Block, BlockHead, CircuitInputBuilder, CircuitsParams},
-    state_db::{self, CodeDB, StateDB},
+use crate::circuit_input_builder::{
+    AccessSet, Block, BlockHead, CircuitInputBuilder, CircuitsParams,
 };
-use eth_types::{geth_types::GethData, ToWord, Word, H256};
+use eth_types::{
+    geth_types::GethData,
+    state_db::{self, CodeDB, StateDB},
+    ToWord, Word, H256,
+};
 use ethers_core::utils::keccak256;
 
 const MOCK_OLD_STATE_ROOT: u64 = 0xcafeu64;

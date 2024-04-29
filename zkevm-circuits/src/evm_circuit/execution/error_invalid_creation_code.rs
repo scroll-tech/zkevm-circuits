@@ -16,7 +16,8 @@ use crate::{
     util::Expr,
 };
 
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use crate::util::Field;
+use eth_types::{evm_types::OpcodeId, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for code store oog and max code size exceed

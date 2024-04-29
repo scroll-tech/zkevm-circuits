@@ -1,7 +1,8 @@
 //! utils for build state trie
 
 use eth_types::{
-    Address, Bytes, Word, H256, KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY, U256, U64,
+    state_db, Address, Bytes, Word, H256, KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY, U256,
+    U64,
 };
 use std::{
     convert::TryFrom,
@@ -102,6 +103,46 @@ impl From<zktrie::AccountData> for AccountData {
             code_size: code_size.as_u64(),
             storage_root,
         }
+    }
+}
+
+impl From<&AccountData> for state_db::Account {
+    fn from(acc_data: &AccountData) -> Self {
+        if acc_data.keccak_code_hash.is_zero() {
+            state_db::Account::zero()
+        } else {
+            Self {
+                nonce: acc_data.nonce.into(),
+                balance: acc_data.balance,
+                code_hash: acc_data.poseidon_code_hash,
+                keccak_code_hash: acc_data.keccak_code_hash,
+                code_size: acc_data.code_size.into(),
+                storage: Default::default(),
+            }
+        }
+    }
+}
+
+impl From<AccountData> for zktrie::AccountData {
+    fn from(acc: AccountData) -> Self {
+        let mut nonce_codesize = [0u8; 32];
+        let u64factor = U256::from(0x10000000000000000u128);
+        (U256::from(acc.code_size) * u64factor + U256::from(acc.nonce))
+            .to_big_endian(nonce_codesize.as_mut_slice());
+        let mut balance = [0u8; 32];
+        acc.balance.to_big_endian(balance.as_mut_slice());
+        let mut poseidon_code_hash = [0u8; 32];
+        U256::from(acc.poseidon_code_hash.0).to_big_endian(poseidon_code_hash.as_mut_slice());
+        let mut code_hash = [0u8; 32];
+        U256::from(acc.keccak_code_hash.0).to_big_endian(code_hash.as_mut_slice());
+
+        [
+            nonce_codesize,
+            balance,
+            acc.storage_root.0,
+            code_hash,
+            poseidon_code_hash,
+        ]
     }
 }
 

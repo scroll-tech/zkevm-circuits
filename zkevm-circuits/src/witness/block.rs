@@ -7,7 +7,7 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 use crate::{
     evm_circuit::util::rlc,
     table::{BlockContextFieldTag, RwTableTag},
-    util::SubCircuit,
+    util::{Field, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{
@@ -16,7 +16,7 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{sign_types::SignData, Address, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
@@ -463,7 +463,7 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
-    code_db: &bus_mapping::state_db::CodeDB,
+    code_db: &eth_types::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);
     rws.check_value()?;
@@ -581,7 +581,7 @@ pub fn block_convert<F: Field>(
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert_with_l1_queue_index<F: Field>(
     block: &circuit_input_builder::Block,
-    code_db: &bus_mapping::state_db::CodeDB,
+    code_db: &eth_types::state_db::CodeDB,
     start_l1_queue_index: u64,
 ) -> Result<Block<F>, Error> {
     let mut block = block.clone();

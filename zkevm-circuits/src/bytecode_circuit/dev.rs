@@ -3,9 +3,8 @@ pub use super::circuit::BytecodeCircuit;
 use crate::{
     bytecode_circuit::circuit::BytecodeCircuitConfigArgs,
     table::{BytecodeTable, KeccakTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},

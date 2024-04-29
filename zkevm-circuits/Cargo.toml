@@ -27,7 +27,6 @@ rand_xorshift.workspace = true
 rand.workspace = true
 itertools.workspace = true
 mpt-zktrie = { path = "../zktrie" }
-keccak256 = { path = "../keccak256"}
 log.workspace = true
 env_logger.workspace = true
 serde.workspace = true
@@ -47,7 +46,6 @@ rayon.workspace = true
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
-criterion = "0.5"
 ctor.workspace = true
 mock = { path = "../mock" }
 pretty_assertions.workspace = true

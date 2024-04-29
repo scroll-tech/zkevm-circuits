@@ -22,12 +22,11 @@ use crate::{
     keccak_circuit::KeccakCircuit,
     sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
-    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Expr, Field, SubCircuit, SubCircuitConfig},
 };
 use eth_types::{
     self,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Field,
 };
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions, RangeInstructions},

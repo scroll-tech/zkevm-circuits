@@ -8,7 +8,7 @@ use crate::{
     },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, rlc_be_bytes, Challenges},
+    util::{build_tx_log_address, rlc_be_bytes, Challenges, Field},
     witness::{
         Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen, Rw, RwMap,
         RwRow, Transaction,
@@ -22,7 +22,7 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use core::iter::once;
-use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
+use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
@@ -34,6 +34,7 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use sha3::Digest;
 use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
 use std::iter::repeat;
@@ -45,7 +46,6 @@ use halo2_proofs::plonk::SecondPhase;
 
 use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -1029,7 +1029,7 @@ impl PoseidonTable {
         use crate::bytecode_circuit::bytecode_unroller::{
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
-        use bus_mapping::state_db::CodeDB;
+        use eth_types::state_db::CodeDB;
         use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
@@ -1487,9 +1487,7 @@ impl KeccakTable {
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
-        let mut keccak = Keccak::default();
-        keccak.update(input);
-        let output = keccak.digest();
+        let output = sha3::Keccak256::digest(input);
         let output_rlc = challenges.evm_word().map(|challenge| {
             rlc::value(
                 &Word::from_big_endian(output.as_slice()).to_le_bytes(),

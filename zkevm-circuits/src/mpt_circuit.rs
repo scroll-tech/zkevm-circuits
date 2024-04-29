@@ -4,10 +4,9 @@
 // use crate::mpt_circuit::mpt;
 use crate::{
     table::{LookupTable, MptTable, PoseidonTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness,
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,

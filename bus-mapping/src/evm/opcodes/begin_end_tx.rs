@@ -11,8 +11,7 @@ use crate::{
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
     },
-    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
-    state_db::CodeDB,
+    precompile::{execute_precompiled, PrecompileCalls},
     Error,
 };
 use eth_types::{
@@ -20,6 +19,8 @@ use eth_types::{
         gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
         GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
     },
+    state_db::CodeDB,
+    utils::is_precompiled,
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;

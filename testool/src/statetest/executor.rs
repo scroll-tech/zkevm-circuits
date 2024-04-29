@@ -1,10 +1,10 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::{config::TestSuite, utils::ETH_CHAIN_ID};
-use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
-    state_db::CodeDB,
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams};
+use eth_types::{
+    geth_types, state_db::CodeDB, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
+    U64,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256, U64};
 use ethers_core::utils::keccak256;
 use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
@@ -725,7 +725,7 @@ pub fn run_test(
                     // modified from bus-mapping/src/mock.rs
                     let keccak_code_hash = H256(keccak256(&account.code));
                     let code_hash = CodeDB::hash(&account.code);
-                    *acc_in_local_sdb = bus_mapping::state_db::Account {
+                    *acc_in_local_sdb = eth_types::state_db::Account {
                         nonce: account.nonce,
                         balance: account.balance,
                         storage: account.storage.clone(),

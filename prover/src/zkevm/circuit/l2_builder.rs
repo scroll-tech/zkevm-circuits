@@ -1,11 +1,14 @@
 use super::TargetCircuit;
 use crate::{config::INNER_DEGREE, utils::read_env_var};
 use anyhow::{bail, Result};
-use bus_mapping::{
-    circuit_input_builder::{self, CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
-    state_db::{CodeDB, StateDB},
+use bus_mapping::circuit_input_builder::{
+    self, CircuitInputBuilder, CircuitsParams, PrecompileEcParams,
 };
-use eth_types::{l2_types::BlockTrace, ToWord, H256};
+use eth_types::{
+    l2_types::BlockTrace,
+    state_db::{CodeDB, StateDB},
+    ToWord, H256,
+};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use mpt_zktrie::state::{ZkTrieHash, ZktrieState};

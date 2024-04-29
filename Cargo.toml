@@ -3,7 +3,6 @@ members = [
     "zkevm-circuits",
     "bus-mapping",
     "geth-utils",
-    "keccak256",
     "zktrie",
     "gadgets",
     "integration-tests",
@@ -62,7 +61,8 @@ strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
-revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-fix" }
+revm-precompile = { git = "https://github.com/scroll-tech/revm", rev = "9ecb479" } # v35
+revm-primitives = { git = "https://github.com/scroll-tech/revm", rev = "9ecb479" } # v35
 c-kzg = "1.0.0"
 
 [patch.crates-io]

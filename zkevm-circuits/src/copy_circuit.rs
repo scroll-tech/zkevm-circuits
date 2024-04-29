@@ -11,9 +11,10 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
+use crate::util::Field;
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
-use eth_types::{Field, Word};
+use eth_types::Word;
 use gadgets::{
     binary_number::BinaryNumberChip,
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},

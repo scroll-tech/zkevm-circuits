@@ -9,7 +9,6 @@ ethers-core.workspace = true
 ethers-signers.workspace = true
 hex.workspace = true
 halo2_proofs.workspace = true
-halo2-base.workspace = true
 log.workspace = true
 regex.workspace = true
 serde.workspace = true
@@ -25,11 +24,13 @@ strum_macros.workspace = true
 strum.workspace = true
 hash-circuit.workspace = true
 base64.workspace = true
+revm-precompile.workspace = true
+revm-primitives.workspace = true
 
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []
-scroll = []
+scroll = ["revm-precompile/scroll", "revm-primitives/scroll"]
 
 # trace heap allocation related feature switches
 enable-stack = []

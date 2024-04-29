@@ -9,13 +9,10 @@ use crate::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::{build_tx_log_expression, Challenges, Expr},
+    util::{build_tx_log_expression, Challenges, Expr, Field},
 };
-use bus_mapping::{
-    state_db::EMPTY_CODE_HASH_LE,
-    util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY},
-};
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
+use bus_mapping::util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY};
+use eth_types::{state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToScalar, ToWord};
 use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
