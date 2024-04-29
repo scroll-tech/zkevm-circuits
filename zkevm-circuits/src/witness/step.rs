@@ -253,7 +253,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
                     operation::Target::Memory => RwTableTag::Memory,
                     operation::Target::Stack => RwTableTag::Stack,
                     operation::Target::Storage => RwTableTag::AccountStorage,
-                    operation::Target::TransientStorage => RwTableTag::TransientStorage,
+                    operation::Target::TransientStorage => RwTableTag::AccountTransientStorage,
                     operation::Target::TxAccessListAccount => RwTableTag::TxAccessListAccount,
                     operation::Target::TxAccessListAccountStorage => {
                         RwTableTag::TxAccessListAccountStorage

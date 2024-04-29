@@ -600,8 +600,7 @@ impl Rw {
             Self::Memory { .. } => RwTableTag::Memory,
             Self::Stack { .. } => RwTableTag::Stack,
             Self::AccountStorage { .. } => RwTableTag::AccountStorage,
-            // TODO: pick one!
-            Self::AccountTransientStorage { .. } => RwTableTag::TransientStorage,
+            Self::AccountTransientStorage { .. } => RwTableTag::AccountTransientStorage,
             Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
             Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
             Self::TxRefund { .. } => RwTableTag::TxRefund,
@@ -941,7 +940,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TransientStorage,
+            RwTableTag::AccountTransientStorage,
             container
                 .transient_storage
                 .iter()

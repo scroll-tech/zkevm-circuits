@@ -56,11 +56,6 @@ impl Opcode for Tstore {
             state.call()?.address.to_word(),
         )?;
 
-        // let key = geth_step.stack.nth_last(0)?;
-        // let key_stack_position = geth_step.stack.nth_last_filled(0);
-        // let value = geth_step.stack.nth_last(1)?;
-        // let value_stack_position = geth_step.stack.nth_last_filled(1);
-
         let key = state.stack_pop(&mut exec_step)?;
         let value = state.stack_pop(&mut exec_step)?;
         #[cfg(feature = "enable-stack")]
@@ -68,9 +63,6 @@ impl Opcode for Tstore {
             assert_eq!(key, geth_step.stack.nth_last(0)?);
             assert_eq!(value, geth_step.stack.nth_last(1)?);
         }
-
-        // state.stack_read(&mut exec_step, key_stack_position, key)?;
-        // state.stack_read(&mut exec_step, value_stack_position, value)?;
 
         let (_, value_prev) = state.sdb.get_transient_storage(&contract_addr, &key);
         let value_prev = *value_prev;
@@ -110,7 +102,7 @@ mod tstore_tests {
     #[test]
     fn tstore_opcode() {
         let code = bytecode! {
-            // Write 0x6f to storage slot 0
+            // Write 0x6f to transient storage slot 0
             PUSH1(0x6fu64)
             PUSH1(0x00u64)
             TSTORE

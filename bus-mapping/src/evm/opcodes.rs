@@ -115,7 +115,6 @@ use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
 use gasprice::GasPrice;
-// use invalid_tx::InvalidTx;
 use logs::Log;
 use mload::Mload;
 use mstore::Mstore;

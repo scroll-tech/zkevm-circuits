@@ -1116,7 +1116,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "account_transient_storage_read",
             false.expr(),
-            RwTableTag::TransientStorage,
+            RwTableTag::AccountTransientStorage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -1142,7 +1142,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "account_transient_storage_write",
-            RwTableTag::TransientStorage,
+            RwTableTag::AccountTransientStorage,
             RwValues::new(
                 tx_id,
                 account_address,
