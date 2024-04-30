@@ -371,15 +371,18 @@ pub struct BitstreamDecoder {
     bitstring_value_eq_1: IsEqualConfig<Fr>,
     /// Helper config as per the above doc.
     bitstring_value_eq_3: IsEqualConfig<Fr>,
-    /// Boolean that is set for two special cases:
-    ///
-    /// 1. We don't read from the bitstream, i.e. we read 0 number of bits. We can witness such a
-    ///    case while applying an FSE table to bitstream, where the number of bits to be read from
-    ///    the bitstream is 0. This can happen when we decode sequences
-    /// 2. The bitstring that we have read in the current row is byte-aligned up to the next or the
-    ///    next-to-next byte. In this case, the next or the next-to-next following row(s) should
-    ///    have the is_nil field set.
+    /// Boolean that is set for a special case:
+    /// - The bitstring that we have read in the current row is byte-aligned up to the next or the
+    /// next-to-next byte. In this case, the next or the next-to-next following row(s) should have
+    /// the is_nil field set.
     is_nil: Column<Advice>,
+    /// Boolean that is set for a special case:
+    /// - We don't read from the bitstream, i.e. we read 0 number of bits. We can witness such a
+    /// case while applying an FSE table to bitstream, where the number of bits to be read from
+    /// the bitstream is 0. This can happen when we decode sequences in the SequencesData tag.
+    is_nb0: Column<Advice>,
+    /// Helper gadget to check when bit_index_start == bit_index_end.
+    start_eq_end: IsEqualConfig<Fr>,
 }
 
 impl BitstreamDecoder {
@@ -388,10 +391,11 @@ impl BitstreamDecoder {
         is_padding: Column<Advice>,
         u8_table: U8Table,
     ) -> Self {
+        let bit_index_start = meta.advice_column();
         let bit_index_end = meta.advice_column();
         let bitstring_value = meta.advice_column();
         Self {
-            bit_index_start: meta.advice_column(),
+            bit_index_start,
             bit_index_end,
             bit_index_end_cmp_7: ComparatorChip::configure(
                 meta,
@@ -428,20 +432,33 @@ impl BitstreamDecoder {
                 |_| 3.expr(),
             ),
             is_nil: meta.advice_column(),
+            is_nb0: meta.advice_column(),
+            start_eq_end: IsEqualChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(bit_index_start, Rotation::cur()),
+                |meta| meta.query_advice(bit_index_end, Rotation::cur()),
+            ),
         }
     }
 }
 
 impl BitstreamDecoder {
-    /// Whether the number of bits to be read from bitstream (at this row) is 0, i.e. no bits to be
-    /// read.
+    /// If we skip reading any bitstring at this row, because of byte-alignment over multiple bytes
+    /// from the previously read bitstring.
     fn is_nil(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         meta.query_advice(self.is_nil, rotation)
     }
 
-    /// True when a bitstream is read from the current row.
+    /// If we expect to read a bitstring at this row.
     fn is_not_nil(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         not::expr(self.is_nil(meta, rotation))
+    }
+
+    /// If the number of bits to be read from the bitstream is nb=0. This scenario occurs in the
+    /// SequencesData tag section, when we are applying the FSE tables to decode sequences.
+    fn is_nb0(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        meta.query_advice(self.is_nb0, rotation)
     }
 
     /// While reconstructing the FSE table, indicates whether a value=1 was found, i.e. prob=0. In
@@ -562,6 +579,16 @@ impl BitstreamDecoder {
     ) -> Expression<Fr> {
         let (_lt, eq) = self.bit_index_end_cmp_23.expr(meta, rotation);
         eq
+    }
+
+    /// bit_index_start == bit_index_end.
+    fn start_eq_end(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        let (bit_index_start, bit_index_end) = (
+            meta.query_advice(self.bit_index_start, Rotation::cur()),
+            meta.query_advice(self.bit_index_end, Rotation::cur()),
+        );
+        self.start_eq_end
+            .expr_at(meta, rotation, bit_index_start, bit_index_end)
     }
 }
 
@@ -884,8 +911,15 @@ impl DecoderConfig {
 
                 // If the previous tag was done processing, verify that the is_change boolean was
                 // set.
-                let tag_idx_eq_tag_len = config.tag_config.tag_idx_eq_tag_len.expr();
-                cb.condition(and::expr([byte_idx_delta, tag_idx_eq_tag_len]), |cb| {
+                let tag_idx_prev = meta.query_advice(config.tag_config.tag_idx, Rotation::prev());
+                let tag_len_prev = meta.query_advice(config.tag_config.tag_len, Rotation::prev());
+                let tag_idx_eq_tag_len_prev = config.tag_config.tag_idx_eq_tag_len.expr_at(
+                    meta,
+                    Rotation::prev(),
+                    tag_idx_prev,
+                    tag_len_prev,
+                );
+                cb.condition(and::expr([byte_idx_delta, tag_idx_eq_tag_len_prev]), |cb| {
                     cb.require_equal(
                         "is_change is set",
                         meta.query_advice(config.tag_config.is_change, Rotation::cur()),
@@ -1478,8 +1512,9 @@ impl DecoderConfig {
                     ),
                 );
 
+                let block_idx = meta.query_advice(config.block_config.block_idx, Rotation::cur());
                 [
-                    meta.query_advice(config.byte_idx, Rotation::cur()),
+                    block_idx,
                     byte0,
                     byte1,
                     byte2,
@@ -1891,8 +1926,9 @@ impl DecoderConfig {
                     ),
                 ]);
 
-                let (fse_byte_offset, fse_table_size, fse_symbol, bitstring_value) = (
-                    meta.query_advice(config.fse_decoder.byte_offset, Rotation::cur()),
+                let (block_idx, fse_table_kind, fse_table_size, fse_symbol, bitstring_value) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
                     meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
                     meta.query_advice(config.fse_decoder.symbol, Rotation::cur()),
                     meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
@@ -1900,7 +1936,9 @@ impl DecoderConfig {
                 let norm_prob = bitstring_value - 1.expr();
 
                 [
-                    fse_byte_offset,
+                    0.expr(), // skip first row
+                    block_idx,
+                    fse_table_kind,
                     fse_table_size,
                     fse_symbol,
                     norm_prob.expr(),
@@ -1919,12 +1957,49 @@ impl DecoderConfig {
         ///////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// Bitstream Decoding /////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
-        meta.create_gate("DecoderConfig: Bitstream Decoder (nil)", |meta| {
-            // Bitstream decoder when the bitstring to be read is nil.
-            let condition = and::expr([
-                config.bitstream_decoder.is_nil(meta, Rotation::cur()),
-                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
-            ]);
+        meta.create_gate("DecoderConfig: Bitstream Decoder (is_nil)", |meta| {
+            // Bitstream decoder when we skip reading a bitstring at a row.
+            let condition = config.bitstream_decoder.is_nil(meta, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "bit_index_start == 0",
+                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+            );
+            cb.require_zero(
+                "bit_index_end == 0",
+                meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+            );
+            cb.require_zero(
+                "bit_index_start' == 0",
+                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::next()),
+            );
+            cb.require_equal(
+                "if is_nil: byte_idx' == byte_idx",
+                meta.query_advice(config.byte_idx, Rotation::next()),
+                meta.query_advice(config.byte_idx, Rotation::cur()),
+            );
+
+            cb.require_zero(
+                "if is_nil is True then is_nb0 is False",
+                config.bitstream_decoder.is_nb0(meta, Rotation::cur()),
+            );
+            cb.require_equal(
+                "bitstream(is_nil) can occur in [FseCode, SequencesData] tags",
+                sum::expr([
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                    // TODO: add SequencesData tag once ready.
+                ]),
+                1.expr(),
+            );
+
+            cb.gate(condition)
+        });
+
+        meta.create_gate("DecoderConfig: Bitstream Decoder (is_nb0)", |meta| {
+            // Bitstream decoder when we read nb=0 bits from the bitstream.
+            let condition = config.bitstream_decoder.is_nb0(meta, Rotation::cur());
 
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1933,245 +2008,305 @@ impl DecoderConfig {
                 meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
                 meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
             );
-
             cb.require_equal(
                 "bit_index_start' == bit_index_start",
                 meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::next()),
                 meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
             );
-
             cb.require_equal(
-                "byte_idx' == byte_idx",
+                "if is_nb0: byte_idx' == byte_idx",
                 meta.query_advice(config.byte_idx, Rotation::next()),
                 meta.query_advice(config.byte_idx, Rotation::cur()),
             );
 
+            cb.require_zero(
+                "if is_nb0 is True then is_nil is False",
+                config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+            );
+            // TODO: this can only occur in the SequqencesData tag.
+            // cb.require_equal(
+            //     "bitstream(is_nb0) can occur in SequencesData",
+            //     meta.query_advice(config.tag_config.is_sequences_data, Rotation::cur()),
+            //     1.expr(),
+            // );
+
             cb.gate(condition)
         });
 
-        meta.create_gate("DecoderConfig: Bitstream Decoder (not nil)", |meta| {
-            // Bitstream decoder when the bitstring to be read is not nil.
-            let condition = and::expr([
-                not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
-                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
-            ]);
+        meta.create_gate(
+            "DecoderConfig: Bitstream Decoder (read from bitstream)",
+            |meta| {
+                // Bitstream decoder when the bitstring to be read is not nil.
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
+                ]);
+
+                let mut cb = BaseConstraintBuilder::default();
+
+                // We process bits instead of bytes for a few tags, namely, ZstdBlockSequenceFseCode
+                // and ZstdBlockSequenceData. In these tags, over adjacent rows we may experience:
+                // - byte_idx' == byte_idx
+                // - byte_idx' == byte_idx + 1
+                // depending on whether or not the bitstring read was byte-aligned.
+                //
+                // The maximum length of bitstring we expect at the moment is N=17, which means the
+                // bitstring accumulation table supports bitstring accumulation up to 3 contiguous
+                // bytes.
+                //
+                // We have the following scenarios:
+                // - bitstring strictly spans over 1 byte: 0 <= bit_index_end < 7.
+                // - bitstring is byte aligned: bit_index_end == 7.
+                // - bitstring strictly spans over 2 bytes: 8 <= bit_index_end < 15.
+                // - bitstring is byte aligned: bit_index_end == 15.
+                // - bitstring strictly spans over 3 bytes: 16 <= bit_index_end < 23.
+                // - bitstring is byte aligned: bit_index_end == 23.
+                //
+                // Every row is reserved for a bitstring read from the bitstream. That is, we have:
+                // - bitstring_len == bit_index_end - bit_index_start + 1
+                //
+                // On some rows we may not be reading a bitstring. This can occur when:
+                // - The number of bits to be read is 0, i.e. NB_fse == 0.
+                // - The previous row read a bitstring that spanned over 2 bytes and was
+                //   byte-aligned.
+                //      - No bitstring is read on the current row.
+                // - The previous row read a bitstring that spanned over 3 bytes.
+                //      - No bitstring is read on the current row.
+                // - The previous row read a bitstring that spanned over 3 bytes and was
+                //   byte-aligned.
+                //      - No bitstring is read on the current and next row.
+
+                // 1. bitstring strictly spans over 1 byte: 0 <= bit_index_end < 7.
+                cb.condition(
+                    config
+                        .bitstream_decoder
+                        .strictly_spans_one_byte(meta, Some(Rotation::cur())),
+                    |cb| {
+                        cb.require_equal(
+                            "(case1): byte_idx' == byte_idx",
+                            meta.query_advice(config.byte_idx, Rotation::next()),
+                            meta.query_advice(config.byte_idx, Rotation::cur()),
+                        );
+                        cb.require_equal(
+                            "(case1): bit_index_start' == bit_index_end + 1",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation::next(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_end,
+                                Rotation::cur(),
+                            ) + 1.expr(),
+                        );
+                    },
+                );
+
+                // 2. bitstring is byte-aligned: bit_index_end == 7.
+                cb.condition(
+                    config
+                        .bitstream_decoder
+                        .aligned_one_byte(meta, Some(Rotation::cur())),
+                    |cb| {
+                        cb.require_equal(
+                            "(case2): byte_idx' == byte_idx + 1",
+                            meta.query_advice(config.byte_idx, Rotation::next()),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                        );
+                        cb.require_zero(
+                            "(case2): bit_index_start' == 0",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation::next(),
+                            ),
+                        );
+                    },
+                );
+
+                // 3. bitstring strictly spans over 2 bytes: 8 <= bit_index_end < 15.
+                cb.condition(
+                    config
+                        .bitstream_decoder
+                        .strictly_spans_two_bytes(meta, Some(Rotation::cur())),
+                    |cb| {
+                        cb.require_equal(
+                            "(case3): byte_idx' == byte_idx + 1",
+                            meta.query_advice(config.byte_idx, Rotation::next()),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                        );
+                        cb.require_equal(
+                            "(case3): bit_index_start' == bit_index_end - 7",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation::next(),
+                            ) + 7.expr(),
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_end,
+                                Rotation::cur(),
+                            ),
+                        );
+                    },
+                );
+
+                // 4. bitstring is byte-aligned: bit_index_end == 15.
+                cb.condition(
+                    config
+                        .bitstream_decoder
+                        .aligned_two_bytes(meta, Some(Rotation::cur())),
+                    |cb| {
+                        cb.require_equal(
+                            "(case4): byte_idx' == byte_idx + 1",
+                            meta.query_advice(config.byte_idx, Rotation::next()),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                        );
+                        cb.require_equal(
+                            "(case4): byte_idx'' == byte_idx + 2",
+                            meta.query_advice(config.byte_idx, Rotation(2)),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
+                        );
+                        cb.require_equal(
+                            "(case4): bitstring decoder skipped next row",
+                            config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                            1.expr(),
+                        );
+                        cb.require_zero(
+                            "(case4): bit_index_start' == 0",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation::next(),
+                            ),
+                        );
+                        cb.require_zero(
+                            "(case4): bit_index_start'' == 0",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation(2),
+                            ),
+                        );
+                    },
+                );
+
+                // 5. bitstring strictly spans over 3 bytes: 16 <= bit_index_end < 23.
+                cb.condition(
+                    config
+                        .bitstream_decoder
+                        .strictly_spans_three_bytes(meta, Some(Rotation::cur())),
+                    |cb| {
+                        cb.require_equal(
+                            "(case5): byte_idx' == byte_idx + 1",
+                            meta.query_advice(config.byte_idx, Rotation::next()),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                        );
+                        cb.require_equal(
+                            "(case5): byte_idx'' == byte_idx + 2",
+                            meta.query_advice(config.byte_idx, Rotation(2)),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
+                        );
+                        cb.require_equal(
+                            "(case5): bitstring decoder skipped next row",
+                            config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                            1.expr(),
+                        );
+                        cb.require_equal(
+                            "(case5): bit_index_start' == bit_index_start''",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation::next(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation(2),
+                            ),
+                        );
+                        cb.require_equal(
+                            "(case5): bit_index_start'' == bit_index_end - 15",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation(2),
+                            ) + 15.expr(),
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_end,
+                                Rotation::cur(),
+                            ),
+                        );
+                    },
+                );
+
+                // 6. bitstring is byte-aligned: bit_index_end == 23.
+                cb.condition(
+                    config
+                        .bitstream_decoder
+                        .aligned_three_bytes(meta, Some(Rotation::cur())),
+                    |cb| {
+                        cb.require_equal(
+                            "(case6): byte_idx' == byte_idx + 1",
+                            meta.query_advice(config.byte_idx, Rotation::next()),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                        );
+                        cb.require_equal(
+                            "(case6): byte_idx'' == byte_idx + 2",
+                            meta.query_advice(config.byte_idx, Rotation(2)),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
+                        );
+                        cb.require_equal(
+                            "(case6): byte_idx''' == byte_idx + 3",
+                            meta.query_advice(config.byte_idx, Rotation(3)),
+                            meta.query_advice(config.byte_idx, Rotation::cur()) + 3.expr(),
+                        );
+                        cb.require_equal(
+                            "(case6): bitstring decoder skipped next row",
+                            config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                            1.expr(),
+                        );
+                        cb.require_equal(
+                            "(case6): bitstring decoder skipped next-to-next row",
+                            config.bitstream_decoder.is_nil(meta, Rotation(2)),
+                            1.expr(),
+                        );
+                        cb.require_zero(
+                            "(case6): bit_index_start' == 0",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation::next(),
+                            ),
+                        );
+                        cb.require_zero(
+                            "(case6): bit_index_start'' == 0",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation(2),
+                            ),
+                        );
+                        cb.require_zero(
+                            "(case6): bit_index_start''' == 0",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_start,
+                                Rotation(3),
+                            ),
+                        );
+                    },
+                );
+
+                cb.gate(condition)
+            },
+        );
+
+        meta.create_gate("DecoderConfig: Bitstream Decoder", |meta| {
+            let condition =
+                sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]);
 
             let mut cb = BaseConstraintBuilder::default();
 
-            // We process bits instead of bytes for a few tags, namely, ZstdBlockSequenceFseCode
-            // and ZstdBlockSequenceData. In these tags, over adjacent rows we may experience:
-            // - byte_idx' == byte_idx
-            // - byte_idx' == byte_idx + 1
-            // depending on whether or not the bitstring read was byte-aligned.
-            //
-            // The maximum length of bitstring we expect at the moment is N=17, which means the
-            // bitstring accumulation table supports bitstring accumulation up to 3 contiguous
-            // bytes.
-            //
-            // We have the following scenarios:
-            // - bitstring strictly spans over 1 byte: 0 <= bit_index_end < 7.
-            // - bitstring is byte aligned: bit_index_end == 7.
-            // - bitstring strictly spans over 2 bytes: 8 <= bit_index_end < 15.
-            // - bitstring is byte aligned: bit_index_end == 15.
-            // - bitstring strictly spans over 3 bytes: 16 <= bit_index_end < 23.
-            // - bitstring is byte aligned: bit_index_end == 23.
-            //
-            // Every row is reserved for a bitstring read from the bitstream. That is, we have:
-            // - bitstring_len == bit_index_end - bit_index_start + 1
-            //
-            // On some rows we may not be reading a bitstring. This can occur when:
-            // - The number of bits to be read is 0, i.e. NB_fse == 0.
-            // - The previous row read a bitstring that spanned over 2 bytes and was byte-aligned.
-            //      - No bitstring is read on the current row.
-            // - The previous row read a bitstring that spanned over 3 bytes.
-            //      - No bitstring is read on the current row.
-            // - The previous row read a bitstring that spanned over 3 bytes and was byte-aligned.
-            //      - No bitstring is read on the current and next row.
-
-            // 1. bitstring strictly spans over 1 byte: 0 <= bit_index_end < 7.
             cb.condition(
-                config
-                    .bitstream_decoder
-                    .strictly_spans_one_byte(meta, Some(Rotation::cur())),
+                config.bitstream_decoder.start_eq_end(meta, Rotation::cur()),
                 |cb| {
                     cb.require_equal(
-                        "(case1): byte_idx' == byte_idx",
-                        meta.query_advice(config.byte_idx, Rotation::next()),
-                        meta.query_advice(config.byte_idx, Rotation::cur()),
-                    );
-                    cb.require_equal(
-                        "(case1): bit_index_start' == bit_index_end + 1",
-                        meta.query_advice(
-                            config.bitstream_decoder.bit_index_start,
-                            Rotation::next(),
-                        ),
-                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur())
-                            + 1.expr(),
-                    );
-                },
-            );
-
-            // 2. bitstring is byte-aligned: bit_index_end == 7.
-            cb.condition(
-                config
-                    .bitstream_decoder
-                    .aligned_one_byte(meta, Some(Rotation::cur())),
-                |cb| {
-                    cb.require_equal(
-                        "(case2): byte_idx' == byte_idx + 1",
-                        meta.query_advice(config.byte_idx, Rotation::next()),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
-                    );
-                    cb.require_zero(
-                        "(case2): bit_index_start' == 0",
-                        meta.query_advice(
-                            config.bitstream_decoder.bit_index_start,
-                            Rotation::next(),
-                        ),
-                    );
-                },
-            );
-
-            // 3. bitstring strictly spans over 2 bytes: 8 <= bit_index_end < 15.
-            cb.condition(
-                config
-                    .bitstream_decoder
-                    .strictly_spans_two_bytes(meta, Some(Rotation::cur())),
-                |cb| {
-                    cb.require_equal(
-                        "(case3): byte_idx' == byte_idx + 1",
-                        meta.query_advice(config.byte_idx, Rotation::next()),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
-                    );
-                    cb.require_equal(
-                        "(case3): bit_index_start' == bit_index_end - 7",
-                        meta.query_advice(
-                            config.bitstream_decoder.bit_index_start,
-                            Rotation::next(),
-                        ) + 7.expr(),
-                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
-                    );
-                },
-            );
-
-            // 4. bitstring is byte-aligned: bit_index_end == 15.
-            cb.condition(
-                config
-                    .bitstream_decoder
-                    .aligned_two_bytes(meta, Some(Rotation::cur())),
-                |cb| {
-                    cb.require_equal(
-                        "(case4): byte_idx' == byte_idx + 1",
-                        meta.query_advice(config.byte_idx, Rotation::next()),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
-                    );
-                    cb.require_equal(
-                        "(case4): byte_idx'' == byte_idx + 2",
-                        meta.query_advice(config.byte_idx, Rotation(2)),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
-                    );
-                    cb.require_equal(
-                        "(case4): bitstring decoder skipped next row",
-                        config.bitstream_decoder.is_nil(meta, Rotation::next()),
+                        "if start == end: is_nil=1 or is_nb0=1",
+                        sum::expr([
+                            config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+                            config.bitstream_decoder.is_nb0(meta, Rotation::cur()),
+                        ]),
                         1.expr(),
-                    );
-                    cb.require_zero(
-                        "(case4): bit_index_start' == 0",
-                        meta.query_advice(
-                            config.bitstream_decoder.bit_index_start,
-                            Rotation::next(),
-                        ),
-                    );
-                    cb.require_zero(
-                        "(case4): bit_index_start'' == 0",
-                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2)),
-                    );
-                },
-            );
-
-            // 5. bitstring strictly spans over 3 bytes: 16 <= bit_index_end < 23.
-            cb.condition(
-                config
-                    .bitstream_decoder
-                    .strictly_spans_three_bytes(meta, Some(Rotation::cur())),
-                |cb| {
-                    cb.require_equal(
-                        "(case5): byte_idx' == byte_idx + 1",
-                        meta.query_advice(config.byte_idx, Rotation::next()),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
-                    );
-                    cb.require_equal(
-                        "(case5): byte_idx'' == byte_idx + 2",
-                        meta.query_advice(config.byte_idx, Rotation(2)),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
-                    );
-                    cb.require_equal(
-                        "(case5): bitstring decoder skipped next row",
-                        config.bitstream_decoder.is_nil(meta, Rotation::next()),
-                        1.expr(),
-                    );
-                    cb.require_equal(
-                        "(case5): bit_index_start' == bit_index_start''",
-                        meta.query_advice(
-                            config.bitstream_decoder.bit_index_start,
-                            Rotation::next(),
-                        ),
-                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2)),
-                    );
-                    cb.require_equal(
-                        "(case5): bit_index_start'' == bit_index_end - 15",
-                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2))
-                            + 15.expr(),
-                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
-                    );
-                },
-            );
-
-            // 6. bitstring is byte-aligned: bit_index_end == 23.
-            cb.condition(
-                config
-                    .bitstream_decoder
-                    .aligned_three_bytes(meta, Some(Rotation::cur())),
-                |cb| {
-                    cb.require_equal(
-                        "(case6): byte_idx' == byte_idx + 1",
-                        meta.query_advice(config.byte_idx, Rotation::next()),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
-                    );
-                    cb.require_equal(
-                        "(case6): byte_idx'' == byte_idx + 2",
-                        meta.query_advice(config.byte_idx, Rotation(2)),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 2.expr(),
-                    );
-                    cb.require_equal(
-                        "(case6): byte_idx''' == byte_idx + 3",
-                        meta.query_advice(config.byte_idx, Rotation(3)),
-                        meta.query_advice(config.byte_idx, Rotation::cur()) + 3.expr(),
-                    );
-                    cb.require_equal(
-                        "(case6): bitstring decoder skipped next row",
-                        config.bitstream_decoder.is_nil(meta, Rotation::next()),
-                        1.expr(),
-                    );
-                    cb.require_equal(
-                        "(case6): bitstring decoder skipped next-to-next row",
-                        config.bitstream_decoder.is_nil(meta, Rotation(2)),
-                        1.expr(),
-                    );
-                    cb.require_zero(
-                        "(case6): bit_index_start' == 0",
-                        meta.query_advice(
-                            config.bitstream_decoder.bit_index_start,
-                            Rotation::next(),
-                        ),
-                    );
-                    cb.require_zero(
-                        "(case6): bit_index_start'' == 0",
-                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(2)),
-                    );
-                    cb.require_zero(
-                        "(case6): bit_index_start''' == 0",
-                        meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation(3)),
                     );
                 },
             );
@@ -2184,6 +2319,7 @@ impl DecoderConfig {
             |meta| {
                 let condition = and::expr([
                     not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
                     sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
                 ]);
 
@@ -2229,6 +2365,7 @@ impl DecoderConfig {
         meta.lookup_any("DecoderConfig: Bitstream Decoder (bitstring end)", |meta| {
             let condition = and::expr([
                 not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
                 sum::expr([meta.query_advice(config.tag_config.is_fse_code, Rotation::cur())]),
             ]);
 

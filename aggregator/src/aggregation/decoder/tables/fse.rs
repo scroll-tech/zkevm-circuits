@@ -14,6 +14,8 @@ use zkevm_circuits::{
     table::{BitwiseOp, BitwiseOpTable, LookupTable, Pow2Table, RangeTable, U8Table},
 };
 
+use crate::aggregation::decoder::tables::rom_fse_order::{FseTableKind, RomFseTableTransition};
+
 /// An auxiliary table used to ensure that the FSE table was reconstructed appropriately. Contrary
 /// to the FseTable where the state is incremental, in the Auxiliary table we club together rows by
 /// symbol. Which means, we will have rows with symbol s0 (and varying, but not necessarily
@@ -59,14 +61,18 @@ pub struct FseTable {
     q_start: Column<Fixed>,
     /// Boolean column to mark whether the row is a padded row.
     is_padding: Column<Advice>,
-    /// The byte_idx at which the FSE table's decoding started in the encoded data.
-    byte_offset: Column<Advice>,
+    /// The block index in which this FSE table is found.
+    block_idx: Column<Advice>,
+    /// The table kind, i.e. LLT=1, MOT=2 or MLT=3.
+    table_kind: Column<Advice>,
     /// The size of the FSE table.
     table_size: Column<Advice>,
     /// Helper column for (table_size >> 1).
     table_size_rs_1: Column<Advice>,
     /// Helper column for (table_size >> 3).
     table_size_rs_3: Column<Advice>,
+    /// Incremental index given to a state, idx in 1..=table_size.
+    idx: Column<Advice>,
     /// The FSE symbol, starting at symbol=0.
     symbol: Column<Advice>,
     /// Helper gadget to know whether the symbol is the same or not.
@@ -103,6 +109,8 @@ pub struct FseTable {
     smallest_spot: Column<Advice>,
     /// Helper boolean column which is set only from baseline == 0x00.
     baseline_mark: Column<Advice>,
+    /// ROM table for verifying FSE table kind and block_idx transition.
+    rom_fse_transition: RomFseTableTransition,
 }
 
 impl FseTable {
@@ -114,6 +122,9 @@ impl FseTable {
         pow2_table: Pow2Table<20>,
         bitwise_op_table: BitwiseOpTable,
     ) -> Self {
+        // Fixed table to check the transition of table kinds and block idx.
+        let rom_fse_transition = RomFseTableTransition::construct(meta);
+
         let (is_padding, symbol, baseline) = (
             meta.advice_column(),
             meta.advice_column(),
@@ -123,10 +134,12 @@ impl FseTable {
             q_first: meta.fixed_column(),
             q_start: meta.fixed_column(),
             is_padding: meta.advice_column(),
-            byte_offset: meta.advice_column(),
+            block_idx: meta.advice_column(),
+            table_kind: meta.advice_column(),
             table_size: meta.advice_column(),
             table_size_rs_1: meta.advice_column(),
             table_size_rs_3: meta.advice_column(),
+            idx: meta.advice_column(),
             symbol,
             is_symbol_change: meta.advice_column(),
             symbol_cmp: ComparatorChip::configure(
@@ -152,6 +165,7 @@ impl FseTable {
             spot_acc: meta.advice_column(),
             smallest_spot: meta.advice_column(),
             baseline_mark: meta.advice_column(),
+            rom_fse_transition,
         };
 
         meta.lookup_any("FseTable: spot == 1 << nb", |meta| {
@@ -189,6 +203,57 @@ impl FseTable {
             )]
         });
 
+        meta.create_gate("FseTable: first row", |meta| {
+            let condition = meta.query_fixed(config.q_first, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            // The first row is all 0s. This is then followed by a q_start==1 fixed column. We want
+            // to make sure the first FSE table belongs to block_idx=1.
+            cb.require_equal(
+                "block_idx == 1 for the first FSE table",
+                meta.query_advice(config.block_idx, Rotation::next()),
+                1.expr(),
+            );
+
+            // The first FSE table described should be the LLT table.
+            cb.require_equal(
+                "table_kind == LLT for the first FSE table",
+                meta.query_advice(config.table_kind, Rotation::next()),
+                FseTableKind::LLT.expr(),
+            );
+
+            cb.gate(condition)
+        });
+
+        meta.lookup_any(
+            "FseTable: start row (FSE table kind and block_idx transition)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(config.q_start, Rotation::cur()),
+                    not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                ]);
+
+                let (block_idx_prev, block_idx_curr, table_kind_prev, table_kind_curr) = (
+                    meta.query_advice(config.block_idx, Rotation::prev()),
+                    meta.query_advice(config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.table_kind, Rotation::prev()),
+                    meta.query_advice(config.table_kind, Rotation::cur()),
+                );
+
+                [
+                    block_idx_prev,
+                    block_idx_curr,
+                    table_kind_prev,
+                    table_kind_curr,
+                ]
+                .into_iter()
+                .zip_eq(config.rom_fse_transition.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+
         meta.create_gate("FseTable: start row", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_start, Rotation::cur()),
@@ -200,6 +265,12 @@ impl FseTable {
             cb.require_zero(
                 "state inits at 0",
                 meta.query_advice(config.state, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "idx == 1",
+                meta.query_advice(config.idx, Rotation::cur()),
+                1.expr(),
             );
 
             // table_size_rs_1 == table_size >> 1.
@@ -219,14 +290,15 @@ impl FseTable {
             cb.gate(condition)
         });
 
-        meta.create_gate("FseTable: other rows", |meta| {
+        meta.create_gate("FseTable: other rows in the same FSE table", |meta| {
             let condition = not::expr(meta.query_fixed(config.q_start, Rotation::cur()));
 
             let mut cb = BaseConstraintBuilder::default();
 
             // FSE table's columns that remain unchanged.
             for column in [
-                config.byte_offset,
+                config.block_idx,
+                config.table_kind,
                 config.table_size,
                 config.table_size_rs_1,
                 config.table_size_rs_3,
@@ -264,8 +336,32 @@ impl FseTable {
                 meta.query_advice(config.is_padding, Rotation::cur()),
                 meta.query_advice(config.is_padding, Rotation::prev()),
             );
-            let is_padding_delta = is_padding_curr - is_padding_prev;
+            let is_padding_delta = is_padding_curr.expr() - is_padding_prev.expr();
+            cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
             cb.require_boolean("is_padding_delta is boolean", is_padding_delta);
+
+            // While we have not entered the padding region in this table, the idx should
+            // increment.
+            cb.condition(not::expr(is_padding_curr.expr()), |cb| {
+                cb.require_equal(
+                    "idx increments",
+                    meta.query_advice(config.idx, Rotation::cur()),
+                    meta.query_advice(config.idx, Rotation::prev()) + 1.expr(),
+                );
+            });
+
+            // If we are entering the padding region on this row, the idx on the previous row must
+            // equal the table size, i.e. all states must be generated.
+            cb.condition(
+                and::expr([not::expr(is_padding_prev), is_padding_curr]),
+                |cb| {
+                    cb.require_equal(
+                        "idx == table_size on the last state",
+                        meta.query_advice(config.idx, Rotation::prev()),
+                        meta.query_advice(config.table_size, Rotation::prev()),
+                    );
+                },
+            );
 
             cb.gate(condition)
         });
@@ -469,7 +565,9 @@ impl FseTable {
     /// This check can be done on any row within the FSE table.
     pub fn table_exprs_by_state(&self, meta: &mut VirtualCells<Fr>) -> Vec<Expression<Fr>> {
         vec![
-            meta.query_advice(self.byte_offset, Rotation::cur()),
+            meta.query_fixed(self.q_first, Rotation::cur()),
+            meta.query_advice(self.block_idx, Rotation::cur()),
+            meta.query_advice(self.table_kind, Rotation::cur()),
             meta.query_advice(self.table_size, Rotation::cur()),
             meta.query_advice(self.state, Rotation::cur()),
             meta.query_advice(self.symbol, Rotation::cur()),
@@ -485,7 +583,9 @@ impl FseTable {
     /// - symbol_count == symbol_count_acc
     pub fn table_exprs_by_symbol(&self, meta: &mut VirtualCells<Fr>) -> Vec<Expression<Fr>> {
         vec![
-            meta.query_advice(self.byte_offset, Rotation::cur()),
+            meta.query_fixed(self.q_first, Rotation::cur()),
+            meta.query_advice(self.block_idx, Rotation::cur()),
+            meta.query_advice(self.table_kind, Rotation::cur()),
             meta.query_advice(self.table_size, Rotation::cur()),
             meta.query_advice(self.symbol, Rotation::cur()),
             meta.query_advice(self.symbol_count, Rotation::cur()),
