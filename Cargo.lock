@@ -5531,7 +5531,7 @@ dependencies = [
 [[package]]
 name = "zktrie"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#8b5217408bbf1ed923e8f70d20dc0cb3712a9ff8"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#95eb7259e725b4b1056f10d92b2f961f4d87c84c"
 dependencies = [
  "gobuild",
  "zktrie_rust",
@@ -5540,7 +5540,7 @@ dependencies = [
 [[package]]
 name = "zktrie_rust"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#8b5217408bbf1ed923e8f70d20dc0cb3712a9ff8"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#95eb7259e725b4b1056f10d92b2f961f4d87c84c"
 dependencies = [
  "hex",
  "lazy_static",
