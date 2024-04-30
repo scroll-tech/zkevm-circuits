@@ -2101,9 +2101,8 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.7#6ba2b36271cbe1f6df1f794c3340763dd846f46f"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.7#daa3a06e2e96d00337188280ac43fa879e722804"
 dependencies = [
- "env_logger",
  "ethers-core",
  "halo2_proofs",
  "hex",
@@ -3303,7 +3302,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#babf5f6a69bec40b2e6523df317c073dcd0b1f97"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#bbeac4eb3075c69e406c4822c8bfbd94e1ac355f"
 dependencies = [
  "bitvec",
  "ff",
@@ -3725,15 +3724,12 @@ dependencies = [
  "auto_impl",
  "bitflags 2.5.0",
  "bitvec",
- "c-kzg",
  "cfg-if 1.0.0",
- "derive_more",
  "dyn-clone",
  "enumn",
  "halo2_proofs",
  "hashbrown 0.14.3",
  "hex",
- "once_cell",
  "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-1201)",
  "serde",
 ]
