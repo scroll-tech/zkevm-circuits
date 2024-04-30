@@ -57,7 +57,7 @@ dependencies = [
  "once_cell",
  "rand",
  "revm-precompile",
- "revm-primitives 3.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "revm-primitives",
  "serde",
  "serde_json",
  "snark-verifier",
@@ -597,7 +597,7 @@ dependencies = [
  "mock",
  "mpt-zktrie",
  "num",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
+ "poseidon-circuit",
  "pretty_assertions",
  "rand",
  "rayon",
@@ -1398,10 +1398,10 @@ dependencies = [
  "log",
  "num",
  "num-bigint",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
+ "poseidon-circuit",
  "regex",
  "revm-precompile",
- "revm-primitives 3.1.1 (git+https://github.com/scroll-tech/revm?rev=9ecb479)",
+ "revm-primitives",
  "serde",
  "serde_json",
  "serde_with",
@@ -2111,7 +2111,7 @@ dependencies = [
  "log",
  "num-bigint",
  "num-traits",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
+ "poseidon-circuit",
  "rand",
  "rand_chacha",
  "serde",
@@ -2798,7 +2798,7 @@ dependencies = [
  "hex",
  "log",
  "num-bigint",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
+ "poseidon-circuit",
  "serde",
  "serde_json",
  "zktrie",
@@ -3300,30 +3300,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "poseidon-circuit"
+name = "poseidon-base"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#bbeac4eb3075c69e406c4822c8bfbd94e1ac355f"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#1133859759f9a6abe0707a27f82ea79c17503f4a"
 dependencies = [
  "bitvec",
- "ff",
- "halo2_proofs",
+ "halo2curves",
  "lazy_static",
- "log",
- "rand",
- "rand_xorshift",
- "thiserror",
 ]
 
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-1201#c6f058bcf3bb0c7933d1979563c414f5cc480f25"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#1133859759f9a6abe0707a27f82ea79c17503f4a"
 dependencies = [
- "bitvec",
  "ff",
  "halo2_proofs",
- "lazy_static",
  "log",
+ "poseidon-base",
  "rand",
  "rand_xorshift",
  "thiserror",
@@ -3681,13 +3675,13 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 version = "6.0.0"
-source = "git+https://github.com/scroll-tech/revm?rev=9ecb479#9ecb479179b90d008f205ff21cb6787a2eab0de6"
+source = "git+https://github.com/scroll-tech/revm?rev=e1e8f7a#e1e8f7a2eb7ab7f0626713b7e33984881f8f7534"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
  "k256",
  "once_cell",
- "revm-primitives 3.1.1 (git+https://github.com/scroll-tech/revm?rev=9ecb479)",
+ "revm-primitives",
  "ripemd",
  "secp256k1 0.28.2",
  "sha2",
@@ -3697,28 +3691,7 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbbc9640790cebcb731289afb7a7d96d16ad94afeb64b5d0b66443bd151e79d6"
-dependencies = [
- "alloy-primitives",
- "auto_impl",
- "bitflags 2.5.0",
- "bitvec",
- "c-kzg",
- "cfg-if 1.0.0",
- "derive_more",
- "dyn-clone",
- "enumn",
- "hashbrown 0.14.3",
- "hex",
- "once_cell",
- "serde",
-]
-
-[[package]]
-name = "revm-primitives"
-version = "3.1.1"
-source = "git+https://github.com/scroll-tech/revm?rev=9ecb479#9ecb479179b90d008f205ff21cb6787a2eab0de6"
+source = "git+https://github.com/scroll-tech/revm?rev=e1e8f7a#e1e8f7a2eb7ab7f0626713b7e33984881f8f7534"
 dependencies = [
  "alloy-primitives",
  "auto_impl",
@@ -3727,10 +3700,10 @@ dependencies = [
  "cfg-if 1.0.0",
  "dyn-clone",
  "enumn",
- "halo2_proofs",
+ "halo2curves",
  "hashbrown 0.14.3",
  "hex",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-1201)",
+ "poseidon-base",
  "serde",
 ]
 
@@ -5512,7 +5485,7 @@ dependencies = [
  "num",
  "num-bigint",
  "paste",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
+ "poseidon-circuit",
  "pretty_assertions",
  "rand",
  "rand_chacha",
@@ -5531,7 +5504,7 @@ dependencies = [
 [[package]]
 name = "zktrie"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#95eb7259e725b4b1056f10d92b2f961f4d87c84c"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#2a19ee2155ecb959ba518384e448a638ae9858f2"
 dependencies = [
  "gobuild",
  "zktrie_rust",
@@ -5540,7 +5513,7 @@ dependencies = [
 [[package]]
 name = "zktrie_rust"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#95eb7259e725b4b1056f10d92b2f961f4d87c84c"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#2a19ee2155ecb959ba518384e448a638ae9858f2"
 dependencies = [
  "hex",
  "lazy_static",
