@@ -72,6 +72,8 @@ pub struct DecoderConfig {
     range8: RangeTable<8>,
     /// Range Table for [0, 16).
     range16: RangeTable<16>,
+    /// Power of 2 lookup table.
+    pow2_table: Pow2Table<20>,
     /// Helper table for decoding the regenerated size from LiteralsHeader.
     literals_header_table: LiteralsHeaderTable,
     /// Helper table for decoding bitstreams.
@@ -609,6 +611,19 @@ impl BitstreamDecoder {
             bit_index_end - bit_index_start + 1.expr(),
         )
     }
+
+    /// bit_index_end - bit_index_start + 1.
+    fn bitstring_len_unchecked(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Rotation,
+    ) -> Expression<Fr> {
+        let (bit_index_start, bit_index_end) = (
+            meta.query_advice(self.bit_index_start, rotation),
+            meta.query_advice(self.bit_index_end, rotation),
+        );
+        bit_index_end - bit_index_start + 1.expr()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -916,6 +931,7 @@ impl DecoderConfig {
             sequences_data_decoder,
             range8,
             range16,
+            pow2_table,
             literals_header_table,
             bitstring_table,
             fse_table,
@@ -1945,7 +1961,7 @@ impl DecoderConfig {
                 // table_size == 1 << al
                 [al, table_size]
                     .into_iter()
-                    .zip_eq(pow2_table.table_exprs(meta))
+                    .zip_eq(config.pow2_table.table_exprs(meta))
                     .map(|(arg, table)| (condition.expr() * arg, table))
                     .collect()
             },
@@ -2620,6 +2636,65 @@ impl DecoderConfig {
             },
         );
 
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (init state pow2 table)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_init_state(meta, Rotation::cur()),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                ]);
+
+                let (nb, table_size) = (
+                    config
+                        .bitstream_decoder
+                        .bitstring_len_unchecked(meta, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
+                );
+
+                // When state is initialised, we must read AL number of bits.
+                // Since table_size == 1 << AL, we do a lookup to the pow2 table.
+                [nb, table_size]
+                    .into_iter()
+                    .zip_eq(config.pow2_table.table_exprs(meta))
+                    .map(|(arg, table)| (condition.expr() * arg, table))
+                    .collect()
+            },
+        );
+
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (init state fse table)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_init_state(meta, Rotation::cur()),
+                ]);
+
+                let (block_idx, table_kind, table_size) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
+                );
+
+                [
+                    0.expr(), // q_first
+                    block_idx,
+                    table_kind,
+                    table_size,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.fse_table.table_exprs_metadata(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+
         // TODO(enable): lookup(SeqInstTable) at code-to-value for seq_values_lookup
         // meta.lookup_any(
         //     "DecoderConfig: tag ZstdBlockSequenceData (sequence instructions table)",
@@ -2744,7 +2819,7 @@ impl DecoderConfig {
                 "bitstream(is_nil) can occur in [FseCode, SequencesData] tags",
                 sum::expr([
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-                    // TODO: add SequencesData tag once ready.
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
                 ]),
                 1.expr(),
             );
@@ -2782,12 +2857,13 @@ impl DecoderConfig {
                 "if is_nb0 is True then is_nil is False",
                 config.bitstream_decoder.is_nil(meta, Rotation::cur()),
             );
-            // TODO: this can only occur in the SequqencesData tag.
-            // cb.require_equal(
-            //     "bitstream(is_nb0) can occur in SequencesData",
-            //     meta.query_advice(config.tag_config.is_sequences_data, Rotation::cur()),
-            //     1.expr(),
-            // );
+
+            // This can only occur in tag=SequencesData.
+            cb.require_equal(
+                "bitstream(is_nb0) can occur in SequencesData",
+                meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(condition)
         });

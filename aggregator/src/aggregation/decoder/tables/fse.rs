@@ -593,4 +593,16 @@ impl FseTable {
             meta.query_advice(self.is_padding, Rotation::cur()),
         ]
     }
+
+    /// Lookup table expressions for (table_kind, table_size) to know that the FSE decoder values
+    /// were correctly populated even at the "init-state" stage.
+    pub fn table_exprs_metadata(&self, meta: &mut VirtualCells<Fr>) -> Vec<Expression<Fr>> {
+        vec![
+            meta.query_fixed(self.q_first, Rotation::cur()),
+            meta.query_advice(self.block_idx, Rotation::cur()),
+            meta.query_advice(self.table_kind, Rotation::cur()),
+            meta.query_advice(self.table_size, Rotation::cur()),
+            meta.query_advice(self.is_padding, Rotation::cur()),
+        ]
+    }
 }
