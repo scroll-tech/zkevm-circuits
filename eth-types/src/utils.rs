@@ -31,8 +31,8 @@ pub fn hash_code_keccak(code: &[u8]) -> Hash {
 /// Poseidon code hash
 pub fn hash_code_poseidon(code: &[u8]) -> Hash {
     use crate::U256;
-    use halo2_proofs::halo2curves::{bn256::Fr, ff::PrimeField};
-    use hash_circuit::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
+    use halo2curves::{bn256::Fr, ff::PrimeField};
+    use poseidon_base::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
 
     let bytes_in_field = POSEIDON_HASH_BYTES_IN_FIELD;
     let fls = (0..(code.len() / bytes_in_field))
