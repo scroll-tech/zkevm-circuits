@@ -741,7 +741,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.lookup_any("tx table tag transition lookup", |meta| {
             let cond = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_fixed(q_enable, rotation::next()),
+                meta.query_fixed(q_enable, Rotation::next()),
                 not::expr(meta.query_fixed(q_first, Rotation::next())),
             ]);
             vec![
