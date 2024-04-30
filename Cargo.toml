@@ -63,8 +63,8 @@ strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
-revm-precompile = { git = "https://github.com/scroll-tech/revm", rev = "e1e8f7a", default-features = false, features = ["std", "c-kzg"] } # v35
-revm-primitives = { git = "https://github.com/scroll-tech/revm", rev = "e1e8f7a", default-features = false, features = ["std", "c-kzg"] } # v35
+revm-precompile = { git = "https://github.com/scroll-tech/revm", rev = "e1e8f7a", default-features = false, features = ["std"] } # v35
+revm-primitives = { git = "https://github.com/scroll-tech/revm", rev = "e1e8f7a", default-features = false, features = ["std"] } # v35
 c-kzg = "1.0.0"
 
 [patch.crates-io]
