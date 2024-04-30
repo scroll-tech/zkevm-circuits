@@ -3681,7 +3681,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     "=> [assign_access_list_row] offset: {:?}, tag: {:?}, value: {:?}",
                     offset,
                     TxFieldTag::AccessListAddress,
-                    Value::known(al.address.to_scalar().unwrap())
+                    Value::<F>::known(al.address.to_scalar().unwrap()),
                 );
 
                 self.assign_common_part(
