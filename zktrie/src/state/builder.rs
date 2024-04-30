@@ -10,8 +10,8 @@ use std::{
     sync::Once,
 };
 
-use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
-use hash_circuit::hash::Hashable;
+use halo2curves::{bn256::Fr, group::ff::PrimeField};
+use poseidon_base::hash::Hashable;
 
 /// Init hash scheme
 pub fn init_hash_scheme() {
@@ -49,7 +49,8 @@ pub(crate) const NODE_TYPE_MIDDLE_2: u8 = 8;
 pub(crate) const NODE_TYPE_MIDDLE_3: u8 = 9;
 pub(crate) const NODE_TYPE_LEAF: u8 = 4;
 pub(crate) const NODE_TYPE_EMPTY: u8 = 5;
-pub(crate) const SECURE_HASH_DOMAIN: u64 = 512;
+/// Secure hash domain
+pub const SECURE_HASH_DOMAIN: u64 = 512;
 
 /// AccountData
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
@@ -146,14 +147,18 @@ impl From<AccountData> for zktrie::AccountData {
     }
 }
 
-pub(crate) fn extend_address_to_h256(src: &Address) -> [u8; 32] {
+/// Extend address to H256
+pub fn extend_address_to_h256(src: &Address) -> [u8; 32] {
     let mut bts: Vec<u8> = src.as_bytes().into();
     bts.resize(32, 0);
     bts.as_slice().try_into().expect("32 bytes")
 }
 
-pub(crate) trait CanRead: Sized {
+/// The trait to parse proof
+pub trait CanRead: Sized {
+    /// Try parse
     fn try_parse(rd: impl Read) -> Result<Self, Error>;
+    /// Parse leaf
     fn parse_leaf(data: &[u8]) -> Result<Self, Error> {
         // notice the first 33 bytes has been read external
         Self::try_parse(&data[33..])
@@ -215,21 +220,28 @@ impl CanRead for StorageData {
     }
 }
 
+/// Trie proof
 #[derive(Debug, Default, Clone)]
-pub(crate) struct TrieProof<T> {
+pub struct TrieProof<T> {
+    /// Data
     pub data: T,
+    /// Key
     pub key: Option<H256>,
+    /// Key stype
     pub key_type: Option<u64>,
-    // the path from top to bottom, in (left child, right child) form
+    /// the path from top to bottom, in (left child, right child) form
     pub path: Vec<(U256, U256)>,
-    // the path type from top to bottom
+    /// the path type from top to bottom
     pub path_type: Vec<u64>,
 }
 
-pub(crate) type AccountProof = TrieProof<AccountData>;
-pub(crate) type StorageProof = TrieProof<StorageData>;
+/// Account Proof
+pub type AccountProof = TrieProof<AccountData>;
+/// Storage Proof
+pub type StorageProof = TrieProof<StorageData>;
 
-pub(crate) struct BytesArray<T>(pub T);
+/// Helper for dealing with bytes array
+pub struct BytesArray<T>(pub T);
 
 impl<'d, T, BYTES> TryFrom<BytesArray<BYTES>> for TrieProof<T>
 where

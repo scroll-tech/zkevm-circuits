@@ -27,10 +27,9 @@ snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
 revm-precompile.workspace = true
+revm-primitives.workspace = true
 c-kzg.workspace = true
 num-bigint.workspace = true
-
-revm-primitives = "3.1.0"
 
 [features]
 default = [ ]

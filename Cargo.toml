@@ -33,6 +33,8 @@ ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"
 ff = "0.13"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
+halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
+poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
 halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
@@ -61,8 +63,8 @@ strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
-revm-precompile = { git = "https://github.com/scroll-tech/revm", rev = "9ecb479" } # v35
-revm-primitives = { git = "https://github.com/scroll-tech/revm", rev = "9ecb479" } # v35
+revm-precompile = { git = "https://github.com/scroll-tech/revm", rev = "e1e8f7a", default-features = false, features = ["std", "c-kzg"] } # v35
+revm-primitives = { git = "https://github.com/scroll-tech/revm", rev = "e1e8f7a", default-features = false, features = ["std", "c-kzg"] } # v35
 c-kzg = "1.0.0"
 
 [patch.crates-io]

@@ -1,12 +1,10 @@
 //! Represent the storage state under zktrie as implement
 use eth_types::{Address, Hash, Word};
-use mpt_circuits::MPTProofType;
 
 use std::{collections::HashSet, io::Error};
 pub use zktrie::{Hash as ZkTrieHash, ZkMemoryDb, ZkTrie, ZkTrieNode};
 
 pub mod builder;
-pub mod witness;
 pub use builder::{AccountData, StorageData};
 
 use std::{cell::RefCell, fmt, rc::Rc};
@@ -14,8 +12,10 @@ use std::{cell::RefCell, fmt, rc::Rc};
 /// represent a storage state being applied in specified block
 #[derive(Clone)]
 pub struct ZktrieState {
-    zk_db: RefCell<Rc<ZkMemoryDb>>,
-    trie_root: ZkTrieHash,
+    /// The underlying db
+    pub zk_db: RefCell<Rc<ZkMemoryDb>>,
+    /// Trie root
+    pub trie_root: ZkTrieHash,
     addr_cache: HashSet<Address>,
     storage_cache: HashSet<(Address, Word)>,
 }
@@ -176,6 +176,3 @@ impl ZktrieState {
         self.zk_db.into_inner()
     }
 }
-
-#[cfg(any(feature = "test", test))]
-mod test;

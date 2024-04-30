@@ -2,11 +2,9 @@
 use crate::{
     bytecode_circuit::bytecode_unroller::HASHBLOCK_BYTES_IN_FIELD,
     table::PoseidonTable,
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness::{self},
 };
-//use bus_mapping::state_db::CodeDB;
-use crate::util::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error},
@@ -242,7 +240,7 @@ fn get_storage_poseidon_witness<F: Field>(
     block: &crate::witness::Block<F>,
 ) -> Vec<([F; 2], F, Option<F>)> {
     use itertools::Itertools;
-    use mpt_zktrie::mpt_circuits::{gadgets::mpt_update::hash_traces, types::Proof};
+    use mpt_circuits::{gadgets::mpt_update::hash_traces, types::Proof};
     hash_traces(
         &block
             .mpt_updates

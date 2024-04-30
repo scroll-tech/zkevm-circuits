@@ -762,7 +762,7 @@ impl RwTable {
     }
 }
 
-pub use mpt_zktrie::mpt_circuits::MPTProofType;
+pub use mpt_circuits::MPTProofType;
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {

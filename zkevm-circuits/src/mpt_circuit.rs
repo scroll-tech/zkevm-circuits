@@ -13,7 +13,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
-use mpt_zktrie::mpt_circuits::{
+use mpt_circuits::{
     gadgets::{mpt_update::hash_traces, poseidon::PoseidonLookup},
     mpt,
     types::Proof,

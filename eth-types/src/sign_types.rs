@@ -14,18 +14,15 @@ use ethers_core::{
     types::{Address, Bytes, Signature, TransactionRequest, U256},
     utils::keccak256,
 };
-use halo2_proofs::{
-    arithmetic::CurveAffine,
-    halo2curves::{
-        ff::FromUniformBytes,
-        group::{
-            ff::{Field as GroupField, PrimeField},
-            prime::PrimeCurveAffine,
-            Curve,
-        },
-        secp256k1::{Fp, Fq, Secp256k1Affine},
-        Coordinates,
+use halo2curves::{
+    ff::FromUniformBytes,
+    group::{
+        ff::{Field as GroupField, PrimeField},
+        prime::PrimeCurveAffine,
+        Curve,
     },
+    secp256k1::{Fp, Fq, Secp256k1Affine},
+    Coordinates, CurveAffine,
 };
 use num_bigint::BigUint;
 use sha3::digest::generic_array::GenericArray;

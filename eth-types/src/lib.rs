@@ -45,7 +45,7 @@ pub use ethers_core::{
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
-use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
+use halo2curves::{bn256::Fr, group::ff::PrimeField};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -88,7 +88,7 @@ pub mod base64 {
 /// Trait used to reduce verbosity with the declaration of the [`Field`]
 /// trait and its repr.
 pub trait Field:
-    PrimeField<Repr = [u8; 32]> + hash_circuit::hash::Hashable + std::convert::From<Fr>
+    PrimeField<Repr = [u8; 32]> + poseidon_base::hash::Hashable + std::convert::From<Fr>
 {
     /// Re-expose zero element as a function
     fn zero() -> Self {

@@ -12,7 +12,7 @@ mod dev;
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::StateCircuit as TestStateCircuit;
-use mpt_zktrie::mpt_circuits::MPTProofType;
+use mpt_circuits::MPTProofType;
 
 use self::{
     constraint_builder::{MptUpdateTableQueries, RwTableQueries},
