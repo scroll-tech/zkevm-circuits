@@ -783,6 +783,23 @@ impl SequencesDataDecoder {
         )
     }
 
+    fn state_at_prev(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        fse_decoder: &FseDecoder,
+        rotation: Rotation,
+    ) -> Expression<Fr> {
+        select::expr(
+            fse_decoder.is_llt(meta, rotation),
+            self.state_llt(meta, Rotation(rotation.0 - 1)),
+            select::expr(
+                fse_decoder.is_mlt(meta, rotation),
+                self.state_mlt(meta, Rotation(rotation.0 - 1)),
+                self.state_mot(meta, Rotation(rotation.0 - 1)),
+            ),
+        )
+    }
+
     fn symbol(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -796,6 +813,23 @@ impl SequencesDataDecoder {
                 fse_decoder.is_mlt(meta, rotation),
                 self.symbol_mlt(meta, rotation),
                 self.symbol_mot(meta, rotation),
+            ),
+        )
+    }
+
+    fn symbol_at_prev(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        fse_decoder: &FseDecoder,
+        rotation: Rotation,
+    ) -> Expression<Fr> {
+        select::expr(
+            fse_decoder.is_llt(meta, rotation),
+            self.symbol_llt(meta, Rotation(rotation.0 - 1)),
+            select::expr(
+                fse_decoder.is_mlt(meta, rotation),
+                self.symbol_mlt(meta, Rotation(rotation.0 - 1)),
+                self.symbol_mot(meta, Rotation(rotation.0 - 1)),
             ),
         )
     }
@@ -2264,10 +2298,10 @@ impl DecoderConfig {
                     ]),
                     |cb| {
                         cb.require_equal(
-                            "llt: state' == 0x00 + readBits(nb)",
+                            "llt: state == 0x00 + readBits(nb)",
                             config
                                 .sequences_data_decoder
-                                .state_llt(meta, Rotation::next()),
+                                .state_llt(meta, Rotation::cur()),
                             meta.query_advice(
                                 config.bitstream_decoder.bitstring_value,
                                 Rotation::cur(),
@@ -2284,10 +2318,10 @@ impl DecoderConfig {
                     ]),
                     |cb| {
                         cb.require_equal(
-                            "mot: state' == 0x00 + readBits(nb)",
+                            "mot: state == 0x00 + readBits(nb)",
                             config
                                 .sequences_data_decoder
-                                .state_mot(meta, Rotation::next()),
+                                .state_mot(meta, Rotation::cur()),
                             meta.query_advice(
                                 config.bitstream_decoder.bitstring_value,
                                 Rotation::cur(),
@@ -2304,10 +2338,10 @@ impl DecoderConfig {
                     ]),
                     |cb| {
                         cb.require_equal(
-                            "mlt: state' == 0x00 + readBits(nb)",
+                            "mlt: state == 0x00 + readBits(nb)",
                             config
                                 .sequences_data_decoder
-                                .state_mlt(meta, Rotation::next()),
+                                .state_mlt(meta, Rotation::cur()),
                             meta.query_advice(
                                 config.bitstream_decoder.bitstring_value,
                                 Rotation::cur(),
@@ -2427,10 +2461,10 @@ impl DecoderConfig {
                             ),
                         );
                         cb.require_equal(
-                            "llt: state' == baseline + readBits(nb)",
+                            "llt: state == baseline + readBits(nb)",
                             config
                                 .sequences_data_decoder
-                                .state_llt(meta, Rotation::next()),
+                                .state_llt(meta, Rotation::cur()),
                             baseline + bitstring_value,
                         );
                         cb.require_equal(
@@ -2460,10 +2494,10 @@ impl DecoderConfig {
                             ),
                         );
                         cb.require_equal(
-                            "mlt: state' == baseline + readBits(nb)",
+                            "mlt: state == baseline + readBits(nb)",
                             config
                                 .sequences_data_decoder
-                                .state_mlt(meta, Rotation::next()),
+                                .state_mlt(meta, Rotation::cur()),
                             baseline + bitstring_value,
                         );
                     },
@@ -2487,10 +2521,10 @@ impl DecoderConfig {
                             ),
                         );
                         cb.require_equal(
-                            "mot: state' == baseline + readBits(nb)",
+                            "mot: state == baseline + readBits(nb)",
                             config
                                 .sequences_data_decoder
-                                .state_mot(meta, Rotation::next()),
+                                .state_mot(meta, Rotation::cur()),
                             baseline + bitstring_value,
                         );
                     },
@@ -2637,11 +2671,12 @@ impl DecoderConfig {
                         .is_update_state(meta, Rotation::cur()),
                 ]);
 
-                let state =
-                    config
-                        .sequences_data_decoder
-                        .state(meta, &config.fse_decoder, Rotation::cur());
-                let symbol = config.sequences_data_decoder.symbol(
+                let state = config.sequences_data_decoder.state_at_prev(
+                    meta,
+                    &config.fse_decoder,
+                    Rotation::cur(),
+                );
+                let symbol = config.sequences_data_decoder.symbol_at_prev(
                     meta,
                     &config.fse_decoder,
                     Rotation::cur(),
