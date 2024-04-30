@@ -172,52 +172,6 @@ mod test {
         }
     }
 
-    fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
-        let is_call = opcode == OpcodeId::CALL;
-        let terminator = if caller_is_success {
-            OpcodeId::RETURN
-        } else {
-            OpcodeId::REVERT
-        };
-
-        let mut bytecode = bytecode! {
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        };
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        });
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH1(0)
-            PUSH1(0)
-            .write_op(terminator)
-        });
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
-    }
-
     #[derive(Copy, Clone, Debug)]
     enum FailureReason {
         Sstore,
