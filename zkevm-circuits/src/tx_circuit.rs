@@ -3560,7 +3560,11 @@ impl<F: Field> TxCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         // 1559_debug
-        log::trace!("=> [assign_calldata_row - tx] start_offset: {:?}, tx: {:?}", offset, tx);
+        log::trace!(
+            "=> [assign_calldata_row - tx] start_offset: {:?}, tx: {:?}",
+            offset,
+            tx
+        );
         // assign to call_data related columns
         let mut gas_cost_acc = 0;
         let mut rlc = challenges.keccak_input().map(|_| F::zero());
@@ -3578,7 +3582,12 @@ impl<F: Field> TxCircuitConfig<F> {
             };
 
             // 1559_debug
-            log::trace!("=> [assign_calldata_row] offset: {:?}, tag: {:?}, value: {:?}", offset, CallData, byte.clone());
+            log::trace!(
+                "=> [assign_calldata_row] offset: {:?}, tag: {:?}, value: {:?}",
+                offset,
+                CallData,
+                byte.clone()
+            );
 
             self.assign_common_part(
                 region,
@@ -3626,7 +3635,11 @@ impl<F: Field> TxCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         // 1559_debug
-        log::trace!("=> [assign_access_list_row] start_offset: {:?}, tx: {:?}", offset, tx);
+        log::trace!(
+            "=> [assign_access_list_row] start_offset: {:?}, tx: {:?}",
+            offset,
+            tx
+        );
         // assign to access_list related columns
 
         if tx.access_list.is_some() {
@@ -3664,7 +3677,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 };
 
                 // 1559_debug
-                log::trace!("=> [assign_access_list_row] offset: {:?}, tag: {:?}, value: {:?}", offset, TxFieldTag::AccessListAddress, Value::known(al.address.to_scalar().unwrap()));
+                log::trace!(
+                    "=> [assign_access_list_row] offset: {:?}, tag: {:?}, value: {:?}",
+                    offset,
+                    TxFieldTag::AccessListAddress,
+                    Value::known(al.address.to_scalar().unwrap())
+                );
 
                 self.assign_common_part(
                     region,
@@ -3721,7 +3739,12 @@ impl<F: Field> TxCircuitConfig<F> {
                     };
 
                     // 1559_debug
-                    log::trace!("=> [assign_access_list_row] offset: {:?}, tag: {:?}, value: {:?}", offset, TxFieldTag::AccessListStorageKey, rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word()));
+                    log::trace!(
+                        "=> [assign_access_list_row] offset: {:?}, tag: {:?}, value: {:?}",
+                        offset,
+                        TxFieldTag::AccessListStorageKey,
+                        rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word())
+                    );
 
                     self.assign_common_part(
                         region,
@@ -3890,7 +3913,12 @@ impl<F: Field> TxCircuitConfig<F> {
 
         for offset in start..end {
             // 1559_debug
-            log::trace!("=> [assign_calldata_zeros] offset: {:?}, tag: {:?}, value: {:?}", offset, CallData, Value::known(F::zero()));
+            log::trace!(
+                "=> [assign_calldata_zeros] offset: {:?}, tag: {:?}, value: {:?}",
+                offset,
+                CallData,
+                Value::known(F::zero())
+            );
             region.assign_fixed(
                 || "q_enable",
                 self.tx_table.q_enable,
