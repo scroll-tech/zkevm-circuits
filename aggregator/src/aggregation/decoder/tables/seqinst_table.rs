@@ -66,6 +66,8 @@ use witgen::AddressTableRow;
 /// |    0      |     2      |    5      |   1    |    1    |     1      |     5      |      4     |     0     |
 /// |           |            |           |        |         |            |            |            |     0     |
 /// 
+
+#[derive(Clone)]
 pub struct SeqInstTable<F: Field> {
 
     // active flag, one active row parse
@@ -492,6 +494,12 @@ impl<F: Field> SeqInstTable<F> {
             )
         });
 
+        // the beginning of following rows must be constrainted
+        meta.enable_equality(block_index);
+        meta.enable_equality(rep_offset_1);
+        meta.enable_equality(rep_offset_2);
+        meta.enable_equality(rep_offset_3);
+
         Self {
             q_enabled,
             block_index,
@@ -595,7 +603,25 @@ impl<F: Field> SeqInstTable<F> {
                     Ok(())
                 };
 
-                let mut offset = 0;
+                // top row constraint
+                for (col, val) in [
+                    (self.block_index, F::zero()),
+                    (self.rep_offset_1, F::from(1u64)),
+                    (self.rep_offset_1, F::from(4u64)),
+                    (self.rep_offset_1, F::from(8u64)),
+                ] {
+                    region.assign_advice_from_constant(||"top row", col, 0, val)?;
+                }
+
+                for col in [
+                    self.seq_index,
+                    self.acc_literal_len,
+                ] {
+                    region.assign_advice(||"top row flush", col, 0, ||Value::known(F::zero()))?;
+                }
+
+
+                let mut offset = 1;
                 let mut block_ind = 0u64;
                 let mut n_seq = 0u64;
                 let mut block_head_fill_f : Box<
@@ -706,7 +732,18 @@ impl<F: Field> SeqInstTable<F> {
                 // final call for last post-poned head filling func
                 block_head_fill_f(&mut region, n_seq)?;
 
-                // TODO: pad rest row
+                // pad the rest rows until final row
+                for (offset, blk_index) in (offset..enabled_rows)
+                    .zip(std::iter::successors(Some(block_ind+1), |ind|Some(ind+1))){
+
+                    fill_header_padding(
+                        &mut region,
+                        offset,
+                        blk_index,
+                        0,
+                        offset_table,
+                    )?;
+                }
 
                 Ok(())
             }
@@ -718,11 +755,59 @@ impl<F: Field> SeqInstTable<F> {
 #[cfg(test)]
 mod tests {
 
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::{
+        circuit::SimpleFloorPlanner,
+        dev::MockProver,
+        halo2curves::bn256::Fr,
+        plonk::Circuit,
+    };    
     use hex::FromHex;
+    use super::*;
+
+    #[derive(Clone, Debug)]
+    struct SeqTable (Vec<AddressTableRow>);
+
+    impl Circuit<Fr> for SeqTable {
+        type Config = SeqInstTable<Fr>;
+        type FloorPlanner = SimpleFloorPlanner;
+        fn without_witnesses(&self) -> Self {
+            unimplemented!()
+        }
+    
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+
+            let const_col = meta.fixed_column();
+            meta.enable_constant(const_col);
+
+            Self::Config::configure(meta)
+        }
+    
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<Fr>,
+        ) -> Result<(), Error> {
+
+            config.assign(
+                &mut layouter,
+                self.0.iter(),
+                100,
+            )?;
+
+            Ok(())
+        }
+    }
 
     #[test]
     fn seqinst_table_gates(){
+
+        let circuit = SeqTable(vec![
+
+        ]);
+
+        let k = 12;
+        let mock_prover = MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
 
     }
 }
