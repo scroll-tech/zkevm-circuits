@@ -608,17 +608,20 @@ impl FseAuxiliaryTableData {
             offset += n_bits_read;
             bit_boundaries.push((offset, value));
 
+            let N = match value {
+                0 => 1,
+                _ => value - 1,
+            };
+
             if value == 0 {
                 unimplemented!("value=0 => prob=-1: scenario unimplemented");
             }
-
-            let N = value - 1;
 
             // When a symbol has a probability of zero, it is followed by a 2-bits repeat flag. This
             // repeat flag tells how many probabilities of zeroes follow the current one. It
             // provides a number ranging from 0 to 3. If it is a 3, another 2-bits repeat flag
             // follows, and so on.
-            if N == 0 {
+            if value == 1 {
                 sym_to_states.insert(symbol, vec![]);
                 symbol += 1;
 
@@ -638,7 +641,7 @@ impl FseAuxiliaryTableData {
                 }
             }
 
-            if N >= 1 {
+            if value >= 2 {
                 let states = std::iter::once(state)
                     .chain((1..N).map(|_| {
                         state += (table_size >> 1) + (table_size >> 3) + 3;

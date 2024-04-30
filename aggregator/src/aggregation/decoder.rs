@@ -371,6 +371,11 @@ pub struct BitstreamDecoder {
     bit_index_end_cmp_23: ComparatorConfig<Fr, 1>,
     /// The value of the binary bitstring.
     bitstring_value: Column<Advice>,
+    /// Helper gadget to know when the bitstring value is 0. This contributes to an edge-case in
+    /// decoding and reconstructing the FSE table from normalised distributions, where a value=0
+    /// implies prob=-1 ("less than 1" probability). In this case, the symbol is allocated a state
+    /// at the end of the FSE table, with baseline=0x00 and nb=AL, i.e. reset state.
+    bitstring_value_eq_0: IsEqualConfig<Fr>,
     /// Helper gadget to know when the bitstring value is 1 or 3. This is useful in the case
     /// of decoding/reconstruction of FSE table, where a value=1 implies a special case of
     /// prob=0, where the symbol is instead followed by a 2-bit repeat flag. The repeat flag
@@ -427,6 +432,12 @@ impl BitstreamDecoder {
                 u8_table.into(),
             ),
             bitstring_value,
+            bitstring_value_eq_0: IsEqualChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(bitstring_value, Rotation::cur()),
+                |_| 0.expr(),
+            ),
             bitstring_value_eq_1: IsEqualChip::configure(
                 meta,
                 |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
@@ -467,6 +478,22 @@ impl BitstreamDecoder {
     /// SequencesData tag section, when we are applying the FSE tables to decode sequences.
     fn is_nb0(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         meta.query_advice(self.is_nb0, rotation)
+    }
+
+    /// If we have read a bitstring of length > 0.
+    fn is_not_nb0(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        not::expr(self.is_nb0(meta, rotation))
+    }
+
+    /// If the bitstring value is 0.
+    fn is_prob_less_than1(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Rotation,
+    ) -> Expression<Fr> {
+        let bitstring_value = meta.query_advice(self.bitstring_value, rotation);
+        self.bitstring_value_eq_0
+            .expr_at(meta, rotation, bitstring_value, 1.expr())
     }
 
     /// While reconstructing the FSE table, indicates whether a value=1 was found, i.e. prob=0. In
@@ -2183,7 +2210,14 @@ impl DecoderConfig {
                     meta.query_advice(config.fse_decoder.symbol, Rotation::cur()),
                     meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
                 );
-                let norm_prob = bitstring_value - 1.expr();
+                let is_prob_less_than1 = config
+                    .bitstream_decoder
+                    .is_prob_less_than1(meta, Rotation::cur());
+                let norm_prob = select::expr(
+                    is_prob_less_than1.expr(),
+                    1.expr(),
+                    bitstring_value - 1.expr(),
+                );
 
                 [
                     0.expr(), // skip first row
@@ -2193,6 +2227,7 @@ impl DecoderConfig {
                     fse_symbol,
                     norm_prob.expr(),
                     norm_prob.expr(),
+                    is_prob_less_than1.expr(),
                     0.expr(), // is_padding
                 ]
                 .into_iter()
@@ -2683,6 +2718,7 @@ impl DecoderConfig {
 
                 [
                     0.expr(), // q_first
+                    1.expr(), // q_start
                     block_idx,
                     table_kind,
                     table_size,
@@ -2775,6 +2811,7 @@ impl DecoderConfig {
                     symbol,
                     baseline,
                     nb,
+                    0.expr(), // is_skipped_state
                     0.expr(), // is_padding
                 ]
                 .into_iter()
