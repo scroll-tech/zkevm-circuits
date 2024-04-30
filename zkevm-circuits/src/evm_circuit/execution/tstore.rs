@@ -182,4 +182,36 @@ mod test {
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
+
+    #[test]
+    fn test_revert() {
+        let key = Word::from(34);
+        let value = Word::from(100);
+
+        let bytecode = bytecode! {
+            PUSH32(value)
+            PUSH32(key)
+            TSTORE
+            PUSH32(0)
+            PUSH32(0)
+            REVERT
+        };
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(MOCK_ACCOUNTS[0])
+                    .balance(Word::from(10u64.pow(19)))
+                    .code(bytecode);
+                accs[1]
+                    .address(MOCK_ACCOUNTS[1])
+                    .balance(Word::from(10u64.pow(19)));
+            },
+            tx_from_1_to_0,
+            |block, _txs| block,
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
 }
