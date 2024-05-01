@@ -187,6 +187,16 @@ struct BlockConfig {
     is_block: Column<Advice>,
     /// Number of sequences decoded from the sequences section header in the block.
     num_sequences: Column<Advice>,
+    /// For sequence decoding, the tag=ZstdBlockSequenceHeader bytes tell us the Compression_Mode
+    /// utilised for Literals Lengths, Match Offsets and Match Lengths. We expect only 2
+    /// possibilities:
+    /// 1. Predefined_Mode (value=0)
+    /// 2. Fse_Compressed_Mode (value=2)
+    ///
+    /// Which means a single boolean flag is sufficient to take note of which compression mode is
+    /// utilised for each of the above purposes. The boolean flag will be set if we utilise the
+    /// Fse_Compressed_Mode.
+    compression_modes: [Column<Advice>; 3],
 }
 
 impl BlockConfig {
@@ -197,7 +207,55 @@ impl BlockConfig {
             is_last_block: meta.advice_column(),
             is_block: meta.advice_column(),
             num_sequences: meta.advice_column(),
+            compression_modes: [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ],
         }
+    }
+}
+
+impl BlockConfig {
+    fn is_predefined_llt(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        not::expr(meta.query_advice(self.compression_modes[0], rotation))
+    }
+
+    fn is_predefined_mot(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        not::expr(meta.query_advice(self.compression_modes[1], rotation))
+    }
+
+    fn is_predefined_mlt(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        not::expr(meta.query_advice(self.compression_modes[2], rotation))
+    }
+
+    fn are_predefined_all(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Rotation,
+    ) -> Expression<Fr> {
+        and::expr([
+            self.is_predefined_llt(meta, rotation),
+            self.is_predefined_mot(meta, rotation),
+            self.is_predefined_mlt(meta, rotation),
+        ])
+    }
+
+    fn is_predefined(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        fse_decoder: &FseDecoder,
+        rotation: Rotation,
+    ) -> Expression<Fr> {
+        select::expr(
+            fse_decoder.is_llt(meta, rotation),
+            self.is_predefined_llt(meta, rotation),
+            select::expr(
+                fse_decoder.is_mlt(meta, rotation),
+                self.is_predefined_mlt(meta, rotation),
+                self.is_predefined_mot(meta, rotation),
+            ),
+        )
     }
 }
 
@@ -1687,6 +1745,15 @@ impl DecoderConfig {
                 meta.query_advice(config.block_config.num_sequences, Rotation::prev()),
             );
 
+            // the compression modes are remembered throughout the block's context.
+            for column in config.block_config.compression_modes {
+                cb.require_equal(
+                    "compression_modes::cur == compression_modes::prev (during block)",
+                    meta.query_advice(column, Rotation::cur()),
+                    meta.query_advice(column, Rotation::prev()),
+                );
+            }
+
             cb.gate(condition)
         });
 
@@ -1845,24 +1912,46 @@ impl DecoderConfig {
             );
 
             // The compression modes for literals length, match length and offsets are expected to
-            // be FSE, i.e. compression mode == 2, i.e. bit0 == 0 and bit1 == 1.
+            // be either Predefined_Mode or Fse_Compressed_Mode, i.e. compression mode==0 or
+            // compression_mode==2. i.e. bit0==0.
             cb.require_zero("ll: bit0 == 0", decoded_sequences_header.comp_mode_bit0_ll);
             cb.require_zero("om: bit0 == 0", decoded_sequences_header.comp_mode_bit0_om);
             cb.require_zero("ml: bit0 == 0", decoded_sequences_header.comp_mode_bit0_ml);
+
+            // Depending on bit1==0 or bit1==1 we know whether the compression mode is
+            // Predefined_Mode or Fse_Compressed_Mode. The compression_modes flag is set when
+            // Fse_Compressed_Mode is utilised.
             cb.require_equal(
-                "ll: bit1 == 1",
+                "block_config: compression_modes llt",
+                meta.query_advice(config.block_config.compression_modes[0], Rotation::cur()),
                 decoded_sequences_header.comp_mode_bit1_ll,
-                1.expr(),
             );
             cb.require_equal(
-                "om: bit1 == 1",
+                "block_config: compression_modes mot",
+                meta.query_advice(config.block_config.compression_modes[1], Rotation::cur()),
                 decoded_sequences_header.comp_mode_bit1_om,
-                1.expr(),
             );
             cb.require_equal(
-                "ml: bit1 == 1",
+                "block_config: compression_modes mlt",
+                meta.query_advice(config.block_config.compression_modes[2], Rotation::cur()),
                 decoded_sequences_header.comp_mode_bit1_ml,
-                1.expr(),
+            );
+
+            // If all the three LLT, MOT and MLT use the Predefined_Mode, we have no FSE tables to
+            // decode in the sequences section. And the tag=ZstdBlockSequenceHeader will
+            // immediately be followed by tag=ZstdBlockSequenceData.
+            let no_fse_tables = config
+                .block_config
+                .are_predefined_all(meta, Rotation::cur());
+            cb.require_equal(
+                "SequenceHeader: tag_next=FseCode or tag_next=SequencesData",
+                meta.query_advice(config.tag_config.tag_next, Rotation::cur()),
+                select::expr(
+                    no_fse_tables,
+                    // TODO: replace with SequencesData once witgen code is merged.
+                    ZstdTag::ZstdBlockHuffmanCode.expr(),
+                    ZstdTag::ZstdBlockFseCode.expr(),
+                ),
             );
 
             cb.gate(condition)
@@ -1959,6 +2048,9 @@ impl DecoderConfig {
                 ]);
 
                 [
+                    meta.query_advice(config.block_config.compression_modes[0], Rotation::cur()),
+                    meta.query_advice(config.block_config.compression_modes[1], Rotation::cur()),
+                    meta.query_advice(config.block_config.compression_modes[2], Rotation::cur()),
                     meta.query_advice(config.tag_config.tag, Rotation::prev()), // tag_prev
                     meta.query_advice(config.tag_config.tag, Rotation::cur()),  // tag_cur
                     meta.query_advice(config.tag_config.tag_next, Rotation::cur()), // tag_next
@@ -2716,6 +2808,10 @@ impl DecoderConfig {
                     meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
                     meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
                 );
+                let is_predefined_mode =
+                    config
+                        .block_config
+                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
 
                 [
                     0.expr(), // q_first
@@ -2723,8 +2819,8 @@ impl DecoderConfig {
                     block_idx,
                     table_kind,
                     table_size,
-                    0.expr(), // is_predefined
-                    0.expr(), // is_padding
+                    is_predefined_mode, // is_predefined
+                    0.expr(),           // is_padding
                 ]
                 .into_iter()
                 .zip_eq(config.fse_table.table_exprs_metadata(meta))
@@ -2803,13 +2899,17 @@ impl DecoderConfig {
                         .bitstream_decoder
                         .bitstring_len(meta, Rotation::cur()),
                 );
+                let is_predefined_mode =
+                    config
+                        .block_config
+                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
 
                 [
                     0.expr(), // q_first
                     block_idx,
                     table_kind,
                     table_size,
-                    0.expr(), // is_predefined
+                    is_predefined_mode, // is_predefined
                     state,
                     symbol,
                     baseline,
