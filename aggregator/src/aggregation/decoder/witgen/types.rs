@@ -891,7 +891,7 @@ impl<F: Field> ZstdWitnessRow<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::aggregation::decoder::tables::predefined_table;
+    use crate::aggregation::decoder::tables::{predefined_table, FsePredefinedTable};
 
     use super::*;
 
@@ -938,7 +938,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fse_reconstruction_predefined_llt() {
+    fn test_fse_reconstruction_predefined_tables() {
         // Here we test whether we can actually reconstruct the FSE table for distributions that
         // include prob=-1 cases, one such example is the Predefined FSE table as per
         // specifications.
@@ -947,41 +947,69 @@ mod tests {
         // { 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
         //   2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
         //  -1,-1,-1,-1 };
-        let default_distribution_llt = [
+        //
+        // short matchLengths_defaultDistribution[53] =
+        // { 1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,-1,-1,
+        //  -1,-1,-1,-1,-1 };
+        //
+        //  short offsetCodes_defaultDistribution[29] =
+        // { 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+        //   1, 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1 };
+        let default_distribution_llt = vec![
             4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1,
             1, 1, 1, -1, -1, -1, -1,
         ];
-        let normalised_probs_llt = {
-            let mut normalised_probs = BTreeMap::new();
-            for (i, &prob) in default_distribution_llt.iter().enumerate() {
-                normalised_probs.insert(i as u64, prob);
+        let default_distribution_mlt = vec![
+            1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1,
+        ];
+        let default_distribution_mot = vec![
+            1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1,
+            -1,
+        ];
+
+        for (table_kind, default_distribution) in [
+            (FseTableKind::LLT, default_distribution_llt),
+            (FseTableKind::MLT, default_distribution_mlt),
+            (FseTableKind::MOT, default_distribution_mot),
+        ] {
+            let normalised_probs = {
+                let mut normalised_probs = BTreeMap::new();
+                for (i, &prob) in default_distribution.iter().enumerate() {
+                    normalised_probs.insert(i as u64, prob);
+                }
+                normalised_probs
+            };
+            let (sym_to_states, _sym_to_sorted_states) =
+                FseAuxiliaryTableData::transform_normalised_probs(
+                    &normalised_probs,
+                    table_kind.accuracy_log(),
+                );
+            let expected_predefined_table = predefined_table(table_kind);
+
+            let mut computed_predefined_table = sym_to_states
+                .values()
+                .flatten()
+                .filter(|row| !row.is_state_skipped)
+                .collect::<Vec<_>>();
+            computed_predefined_table.sort_by_key(|row| row.state);
+
+            for (i, (expected, computed)) in expected_predefined_table
+                .iter()
+                .zip_eq(computed_predefined_table.iter())
+                .enumerate()
+            {
+                assert_eq!(computed.state, expected.0, "state mismatch at i={}", i);
+                assert_eq!(computed.symbol, expected.1, "symbol mismatch at i={}", i);
+                assert_eq!(
+                    computed.baseline, expected.2,
+                    "baseline mismatch at i={}",
+                    i
+                );
+                assert_eq!(computed.num_bits, expected.3, "nb mismatch at i={}", i);
             }
-            normalised_probs
-        };
-        let (sym_to_states, _sym_to_sorted_states) =
-            FseAuxiliaryTableData::transform_normalised_probs(&normalised_probs_llt, 6);
-        let expected_predefined_table = predefined_table(FseTableKind::LLT);
-
-        let mut computed_predefined_table = sym_to_states
-            .values()
-            .flatten()
-            .filter(|row| !row.is_state_skipped)
-            .collect::<Vec<_>>();
-        computed_predefined_table.sort_by_key(|row| row.state);
-
-        for (i, (expected, computed)) in expected_predefined_table
-            .iter()
-            .zip_eq(computed_predefined_table.iter())
-            .enumerate()
-        {
-            assert_eq!(computed.state, expected.0, "state mismatch at i={}", i);
-            assert_eq!(computed.symbol, expected.1, "symbol mismatch at i={}", i);
-            assert_eq!(
-                computed.baseline, expected.2,
-                "baseline mismatch at i={}",
-                i
-            );
-            assert_eq!(computed.num_bits, expected.3, "nb mismatch at i={}", i);
         }
     }
 

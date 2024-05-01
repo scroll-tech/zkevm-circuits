@@ -369,9 +369,13 @@ impl LookupTable<Fr> for RomSequencesDataInterleavedOrder {
     }
 }
 
-trait FsePredefinedTable {
+pub trait FsePredefinedTable {
+    /// Get the accuracy log of the predefined table.
+    fn accuracy_log(&self) -> u8;
     /// Get the number of states in the FSE table.
-    fn table_size(&self) -> u64;
+    fn table_size(&self) -> u64 {
+        1 << self.accuracy_log()
+    }
     /// Get the symbol in the FSE table for the given state.
     fn symbol(&self, state: u64) -> u64;
     /// Get the baseline in the FSE table for the given state.
@@ -381,11 +385,11 @@ trait FsePredefinedTable {
 }
 
 impl FsePredefinedTable for FseTableKind {
-    fn table_size(&self) -> u64 {
+    fn accuracy_log(&self) -> u8 {
         match self {
-            Self::LLT => 64,
-            Self::MOT => 32,
-            Self::MLT => 64,
+            Self::LLT => 6,
+            Self::MOT => 5,
+            Self::MLT => 6,
         }
     }
 
@@ -457,7 +461,98 @@ impl FsePredefinedTable for FseTableKind {
                 63 => 32,
                 _ => unreachable!(),
             },
-            _ => unimplemented!(),
+            Self::MOT => match state {
+                0 => 0,
+                1 => 6,
+                2 => 9,
+                3 => 15,
+                4 => 21,
+                5 => 3,
+                6 => 7,
+                7 => 12,
+                8 => 18,
+                9 => 23,
+                10 => 5,
+                11 => 8,
+                12 => 14,
+                13 => 20,
+                14 => 2,
+                15 => 7,
+                16 => 11,
+                17 => 17,
+                18 => 22,
+                19 => 4,
+                20 => 8,
+                21 => 13,
+                22 => 19,
+                23 => 1,
+                24 => 6,
+                25 => 10,
+                26 => 16,
+                27 => 28,
+                28 => 27,
+                29 => 26,
+                30 => 25,
+                31 => 24,
+                _ => unreachable!(),
+            },
+            Self::MLT => match state {
+                0..=3 => state,
+                4..=5 => state + 1,
+                6 => 8,
+                7 => 10,
+                8 => 13,
+                9 => 16,
+                10 => 19,
+                11 => 22,
+                12 => 25,
+                13 => 28,
+                14 => 31,
+                15 => 33,
+                16 => 35,
+                17 => 37,
+                18 => 39,
+                19 => 41,
+                20 => 43,
+                21 => 45,
+                22..=25 => state - 21,
+                26..=27 => state - 20,
+                28 => 9,
+                29 => 12,
+                30 => 15,
+                31 => 18,
+                32 => 21,
+                33 => 24,
+                34 => 27,
+                35 => 30,
+                36 => 32,
+                37 => 34,
+                38 => 36,
+                39 => 38,
+                40 => 40,
+                41 => 42,
+                42 => 44,
+                43..=44 => 1,
+                45 => 2,
+                46..=47 => state - 42,
+                48 => 7,
+                49 => 8,
+                50 => 11,
+                51 => 14,
+                52 => 17,
+                53 => 20,
+                54 => 23,
+                55 => 26,
+                56 => 29,
+                57 => 52,
+                58 => 51,
+                59 => 50,
+                60 => 49,
+                61 => 48,
+                62 => 47,
+                63 => 46,
+                _ => unreachable!(),
+            },
         }
     }
 
@@ -477,7 +572,18 @@ impl FsePredefinedTable for FseTableKind {
                 45..=52 | 54..=59 => 32,
                 _ => unreachable!(),
             },
-            _ => unimplemented!(),
+            Self::MOT => match state {
+                0..=14 | 16..=19 | 21..=23 | 25..=31 => 0,
+                15 | 20 | 24 => 16,
+                _ => unreachable!(),
+            },
+            Self::MLT => match state {
+                0..=1 | 3..=21 | 23 | 25 | 27..=42 | 50..=63 => 0,
+                2 | 24 | 26 | 43 | 46..=49 => 32,
+                22 | 45 => 16,
+                44 => 48,
+                _ => unreachable!(),
+            },
         }
     }
 
@@ -489,7 +595,17 @@ impl FsePredefinedTable for FseTableKind {
                 10 | 19..=21 | 31 | 41..=42 | 53 | 60..=63 => 6,
                 _ => unreachable!(),
             },
-            _ => unimplemented!(),
+            Self::MOT => match state {
+                0 | 2..=5 | 7..=10 | 12..=14 | 16..=19 | 21..=23 | 25..=31 => 5,
+                1 | 6 | 11 | 15 | 20 | 24 => 4,
+                _ => unreachable!(),
+            },
+            Self::MLT => match state {
+                0 | 7..=21 | 28..=42 | 50..=63 => 6,
+                1 | 22..=23 | 43..=45 => 4,
+                2..=6 | 24..=27 | 46..=49 => 5,
+                _ => unreachable!(),
+            },
         }
     }
 }
