@@ -12,6 +12,8 @@ pub use types::{ZstdTag::*, *};
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
 
+use crate::aggregation::decoder::tables::FseTableKind;
+
 const TAG_MAX_LEN: [(ZstdTag, u64); 13] = [
     (FrameHeaderDescriptor, 1),
     (FrameContentSize, 8),
@@ -558,9 +560,11 @@ fn process_block_raw<F: Field>(
     );
 
     let fse_aux_table = FseAuxiliaryTableData {
-        byte_offset: 0,
+        block_idx: 0,
+        table_kind: FseTableKind::LLT,
         table_size: 0,
         sym_to_states: BTreeMap::default(),
+        sym_to_sorted_states: BTreeMap::default(),
     };
     let huffman_weights = HuffmanCodesData {
         byte_offset: 0,
@@ -603,9 +607,11 @@ fn process_block_rle<F: Field>(
     );
 
     let fse_aux_table = FseAuxiliaryTableData {
-        byte_offset: 0,
+        block_idx: 0,
+        table_kind: FseTableKind::LLT,
         table_size: 0,
         sym_to_states: BTreeMap::default(),
+        sym_to_sorted_states: BTreeMap::default(),
     };
     let huffman_weights = HuffmanCodesData {
         byte_offset: 0,
@@ -660,9 +666,11 @@ fn process_block_zstd<F: Field>(
 
     witness_rows.extend_from_slice(&rows);
     let mut fse_aux_table = FseAuxiliaryTableData {
-        byte_offset: 0,
+        block_idx: 0,
+        table_kind: FseTableKind::LLT,
         table_size: 0,
         sym_to_states: BTreeMap::default(),
+        sym_to_sorted_states: BTreeMap::default(),
     };
     let mut huffman_weights = HuffmanCodesData {
         byte_offset: 0,
@@ -1035,8 +1043,10 @@ fn process_block_zstd_huffman_code<F: Field>(
     };
 
     // Recover the FSE table for generating Huffman weights
+    // TODO(ray): this part is redundant however to compile, we have added the required args to the
+    // ``reconstruct`` method.
     let (n_fse_bytes, bit_boundaries, table) =
-        FseAuxiliaryTableData::reconstruct(src, byte_offset + 1)
+        FseAuxiliaryTableData::reconstruct(src, 1, FseTableKind::LLT, byte_offset + 1)
             .expect("Reconstructing FSE table should not fail.");
 
     // Witness generation
@@ -1179,7 +1189,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 baseline: 0,
                 num_bits: 0,
                 num_emitted: 0,
-                n_acc: row.9 as u64,
+                is_state_skipped: false,
             },
         });
     }
@@ -1386,7 +1396,8 @@ fn process_block_zstd_huffman_code<F: Field>(
                 baseline: fse_row.1,
                 num_bits: fse_row.2,
                 num_emitted: num_emitted as u64,
-                n_acc: 0,
+                // TODO(ray): pls check where to get this field from.
+                is_state_skipped: false,
             },
             huffman_data: HuffmanData::default(),
             decoded_data: decoded_data.clone(),

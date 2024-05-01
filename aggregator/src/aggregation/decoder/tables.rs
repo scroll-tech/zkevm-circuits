@@ -18,9 +18,7 @@ pub use rom_fse_order::{FseTableKind, RomFseOrderTable, RomSequencesDataInterlea
 
 /// The fixed code to Baseline/NumBits for Literal Length.
 mod rom_sequence_codes;
-pub use rom_sequence_codes::{
-    LiteralLengthCodes, MatchLengthCodes, MatchOffsetCodes, RomSequenceCodes,
-};
+pub use rom_sequence_codes::RomSequenceCodes;
 
 /// Validate the following tag given the tag currently being processed.
 mod rom_tag;

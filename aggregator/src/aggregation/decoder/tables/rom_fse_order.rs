@@ -15,7 +15,7 @@ use crate::aggregation::decoder::witgen::ZstdTag::{
 };
 
 /// FSE table variants that we observe in the sequences section.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum FseTableKind {
     /// Literal length FSE table.
