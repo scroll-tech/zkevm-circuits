@@ -5,6 +5,8 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed},
 };
+use itertools::Itertools;
+use once_cell::sync::Lazy;
 use zkevm_circuits::table::LookupTable;
 
 use crate::aggregation::decoder::witgen::ZstdTag::{
@@ -363,6 +365,250 @@ impl LookupTable<Fr> for RomSequencesDataInterleavedOrder {
             String::from("table_kind_curr"),
             String::from("is_init_state"),
             String::from("is_update_state"),
+        ]
+    }
+}
+
+trait FsePredefinedTable {
+    /// Get the number of states in the FSE table.
+    fn table_size(&self) -> u64;
+    /// Get the symbol in the FSE table for the given state.
+    fn symbol(&self, state: u64) -> u64;
+    /// Get the baseline in the FSE table for the given state.
+    fn baseline(&self, state: u64) -> u64;
+    /// Get the number of bits (nb) to read from bitstream in the FSE table for the given state.
+    fn nb(&self, state: u64) -> u64;
+}
+
+impl FsePredefinedTable for FseTableKind {
+    fn table_size(&self) -> u64 {
+        match self {
+            Self::LLT => 64,
+            Self::MOT => 32,
+            Self::MLT => 64,
+        }
+    }
+
+    fn symbol(&self, state: u64) -> u64 {
+        match self {
+            Self::LLT => match state {
+                0..=1 => 0,
+                2 => 1,
+                3 => 3,
+                4 => 4,
+                5 => 6,
+                6 => 7,
+                7 => 9,
+                8 => 10,
+                9 => 12,
+                10 => 14,
+                11 => 16,
+                12 => 18,
+                13 => 19,
+                14 => 21,
+                15 => 22,
+                16 => 24,
+                17 => 25,
+                18 => 26,
+                19 => 27,
+                20 => 29,
+                21 => 31,
+                22 => 0,
+                23 => 1,
+                24 => 2,
+                25 => 4,
+                26 => 5,
+                27 => 7,
+                28 => 8,
+                29 => 10,
+                30 => 11,
+                31 => 13,
+                32 => 16,
+                33 => 17,
+                34 => 19,
+                35 => 20,
+                36 => 22,
+                37 => 23,
+                38 => 25,
+                39 => 25,
+                40 => 26,
+                41 => 28,
+                42 => 30,
+                43 => 0,
+                44 => 1,
+                45 => 2,
+                46 => 3,
+                47 => 5,
+                48 => 6,
+                49 => 8,
+                50 => 9,
+                51 => 11,
+                52 => 12,
+                53 => 15,
+                54 => 17,
+                55 => 18,
+                56 => 20,
+                57 => 21,
+                58 => 23,
+                59 => 24,
+                60 => 35,
+                61 => 34,
+                62 => 33,
+                63 => 32,
+                _ => unreachable!(),
+            },
+            _ => unimplemented!(),
+        }
+    }
+
+    fn baseline(&self, state: u64) -> u64 {
+        match self {
+            Self::LLT => match state {
+                0 => 0,
+                1 => 16,
+                2 => 32,
+                3..=16 => 0,
+                17 => 32,
+                18..=21 | 23..=24 => 0,
+                22 | 25 | 27 | 29 | 32 | 34 | 36 | 40 => 32,
+                26 | 28 | 30..=31 | 33 | 35 | 37..=38 | 41..=42 | 53 | 60..=63 => 0,
+                39 | 44 => 16,
+                43 => 48,
+                45..=52 | 54..=59 => 32,
+                _ => unreachable!(),
+            },
+            _ => unimplemented!(),
+        }
+    }
+
+    fn nb(&self, state: u64) -> u64 {
+        match self {
+            Self::LLT => match state {
+                0..=1 | 22..=23 | 38..=39 | 43..=44 => 4,
+                2..=9 | 11..=18 | 24..=30 | 32..=37 | 40 | 45..=52 | 54..=59 => 5,
+                10 | 19..=21 | 31 | 41..=42 | 53 | 60..=63 => 6,
+                _ => unreachable!(),
+            },
+            _ => unimplemented!(),
+        }
+    }
+}
+
+fn predefined_table_values(table_kind: FseTableKind) -> Vec<[Value<Fr>; 6]> {
+    let table_size = table_kind.table_size();
+    (0..table_size)
+        .map(|state| {
+            let symbol = table_kind.symbol(state);
+            let baseline = table_kind.baseline(state);
+            let nb = table_kind.nb(state);
+            [
+                Value::known(Fr::from(table_kind as u64)),
+                Value::known(Fr::from(table_size)),
+                Value::known(Fr::from(state)),
+                Value::known(Fr::from(symbol)),
+                Value::known(Fr::from(baseline)),
+                Value::known(Fr::from(nb)),
+            ]
+        })
+        .collect()
+}
+
+/// The Predefined Literal Length FSE table, as per default distributions.
+///
+/// - https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#literals-length
+/// - https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#literal-length-code
+pub static FSE_PREDEFINED_LLT: Lazy<Vec<[Value<Fr>; 6]>> =
+    Lazy::new(|| predefined_table_values(FseTableKind::LLT));
+
+/// The Predefined Match Length FSE table, as per default distributions.
+///
+/// - https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#match-length
+/// - https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#match-length-code
+pub static FSE_PREDEFINED_MLT: Lazy<Vec<[Value<Fr>; 6]>> =
+    Lazy::new(|| predefined_table_values(FseTableKind::MLT));
+
+/// The Predefined Match Offset FSE table, as per default distributions.
+///
+/// - https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#offset-codes-1
+/// - https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#offset-code
+pub static FSE_PREDEFINED_MOT: Lazy<Vec<[Value<Fr>; 6]>> =
+    Lazy::new(|| predefined_table_values(FseTableKind::MOT));
+
+#[derive(Clone, Debug)]
+pub struct RomFsePredefinedTable {
+    table_kind: Column<Fixed>,
+    table_size: Column<Fixed>,
+    state: Column<Fixed>,
+    symbol: Column<Fixed>,
+    baseline: Column<Fixed>,
+    nb: Column<Fixed>,
+}
+
+impl RomFsePredefinedTable {
+    pub fn construct(meta: &mut ConstraintSystem<Fr>) -> Self {
+        Self {
+            table_kind: meta.fixed_column(),
+            table_size: meta.fixed_column(),
+            state: meta.fixed_column(),
+            symbol: meta.fixed_column(),
+            baseline: meta.fixed_column(),
+            nb: meta.fixed_column(),
+        }
+    }
+
+    pub fn load(&self, layouter: &mut impl Layouter<Fr>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "ROM: fse predefined",
+            |mut region| {
+                for (offset, row) in [
+                    FSE_PREDEFINED_LLT.as_slice(),
+                    FSE_PREDEFINED_MLT.as_slice(),
+                    FSE_PREDEFINED_MOT.as_slice(),
+                ]
+                .concat()
+                .iter()
+                .enumerate()
+                {
+                    for ((&column, annotation), &value) in Self::fixed_columns(self)
+                        .iter()
+                        .zip_eq(Self::annotations(self))
+                        .zip_eq(row.iter())
+                    {
+                        region.assign_fixed(
+                            || format!("{annotation} at offset={offset}"),
+                            column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl LookupTable<Fr> for RomFsePredefinedTable {
+    fn columns(&self) -> Vec<Column<halo2_proofs::plonk::Any>> {
+        vec![
+            self.table_kind.into(),
+            self.table_size.into(),
+            self.state.into(),
+            self.symbol.into(),
+            self.baseline.into(),
+            self.nb.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("table_kind"),
+            String::from("table_size"),
+            String::from("state"),
+            String::from("symbol"),
+            String::from("baseline"),
+            String::from("nb"),
         ]
     }
 }

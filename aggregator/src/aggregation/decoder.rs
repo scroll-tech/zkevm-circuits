@@ -2224,6 +2224,7 @@ impl DecoderConfig {
                     block_idx,
                     fse_table_kind,
                     fse_table_size,
+                    0.expr(), // is_predefined
                     fse_symbol,
                     norm_prob.expr(),
                     norm_prob.expr(),
@@ -2722,6 +2723,7 @@ impl DecoderConfig {
                     block_idx,
                     table_kind,
                     table_size,
+                    0.expr(), // is_predefined
                     0.expr(), // is_padding
                 ]
                 .into_iter()
@@ -2807,6 +2809,7 @@ impl DecoderConfig {
                     block_idx,
                     table_kind,
                     table_size,
+                    0.expr(), // is_predefined
                     state,
                     symbol,
                     baseline,
