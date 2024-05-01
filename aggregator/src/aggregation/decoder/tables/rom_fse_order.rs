@@ -494,7 +494,21 @@ impl FsePredefinedTable for FseTableKind {
     }
 }
 
-fn predefined_table_values(table_kind: FseTableKind) -> Vec<[Value<Fr>; 6]> {
+pub fn predefined_table(table_kind: FseTableKind) -> Vec<(u64, u64, u64, u64)> {
+    let table_size = table_kind.table_size();
+    (0..table_size)
+        .map(|state| {
+            (
+                state,
+                table_kind.symbol(state),
+                table_kind.baseline(state),
+                table_kind.nb(state),
+            )
+        })
+        .collect()
+}
+
+pub fn predefined_table_values(table_kind: FseTableKind) -> Vec<[Value<Fr>; 6]> {
     let table_size = table_kind.table_size();
     (0..table_size)
         .map(|state| {

@@ -580,7 +580,6 @@ type FseStateMapping = BTreeMap<u64, (u64, u64, u64)>;
 type ReconstructedFse = (usize, Vec<(u32, u64)>, FseAuxiliaryTableData);
 
 impl FseAuxiliaryTableData {
-    #[allow(non_snake_case)]
     /// While we reconstruct an FSE table from a bitstream, we do not know before reconstruction
     /// how many exact bytes we would finally be reading.
     ///
@@ -588,6 +587,7 @@ impl FseAuxiliaryTableData {
     /// with the reconstructed FSE table. After processing the entire bitstream to reconstruct the
     /// FSE table, if the read bitstream was not byte aligned, then we discard the 1..8 bits from
     /// the last byte that we read from.
+    #[allow(non_snake_case)]
     pub fn reconstruct(
         src: &[u8],
         block_idx: u64,
@@ -687,9 +687,44 @@ impl FseAuxiliaryTableData {
             ));
         }
 
+        // sanity check: sum(probabilities) == table_size.
+        assert_eq!(
+            normalised_probs
+                .values()
+                .map(|&prob| if prob == -1 { 1u64 } else { prob as u64 })
+                .sum::<u64>(),
+            table_size
+        );
+
         ////////////////////////////////////////////////////////////////////////////////////////
         ///////////////////////////// Allocate States to Symbols ///////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////////////
+        let (sym_to_states, sym_to_sorted_states) =
+            Self::transform_normalised_probs(&normalised_probs, accuracy_log);
+
+        Ok((
+            t,
+            bit_boundaries,
+            Self {
+                block_idx,
+                table_kind,
+                table_size,
+                sym_to_states,
+                sym_to_sorted_states,
+            },
+        ))
+    }
+
+    #[allow(non_snake_case)]
+    fn transform_normalised_probs(
+        normalised_probs: &BTreeMap<u64, i32>,
+        accuracy_log: u8,
+    ) -> (
+        BTreeMap<u64, Vec<FseTableRow>>,
+        BTreeMap<u64, Vec<FseTableRow>>,
+    ) {
+        let table_size = 1 << accuracy_log;
+
         let mut sym_to_states = BTreeMap::new();
         let mut sym_to_sorted_states = BTreeMap::new();
         let mut state = 0;
@@ -701,7 +736,7 @@ impl FseAuxiliaryTableData {
             .iter()
             .filter(|(_symbol, &prob)| prob == -1)
         {
-            allocated_states.insert(symbol, true);
+            allocated_states.insert(retreating_state, true);
             let fse_table_row = FseTableRow {
                 state: retreating_state,
                 num_bits: accuracy_log as u64,
@@ -799,17 +834,7 @@ impl FseAuxiliaryTableData {
             );
         }
 
-        Ok((
-            t,
-            bit_boundaries,
-            Self {
-                block_idx,
-                table_kind,
-                table_size,
-                sym_to_states,
-                sym_to_sorted_states,
-            },
-        ))
+        (sym_to_states, sym_to_sorted_states)
     }
 
     /// Convert an FseAuxiliaryTableData into a state-mapped representation.
@@ -866,6 +891,8 @@ impl<F: Field> ZstdWitnessRow<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::aggregation::decoder::tables::predefined_table;
+
     use super::*;
 
     #[test]
@@ -908,6 +935,54 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_fse_reconstruction_predefined_llt() {
+        // Here we test whether we can actually reconstruct the FSE table for distributions that
+        // include prob=-1 cases, one such example is the Predefined FSE table as per
+        // specifications.
+        //
+        // short literalsLength_defaultDistribution[36] =
+        // { 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
+        //   2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
+        //  -1,-1,-1,-1 };
+        let default_distribution_llt = [
+            4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1,
+            1, 1, 1, -1, -1, -1, -1,
+        ];
+        let normalised_probs_llt = {
+            let mut normalised_probs = BTreeMap::new();
+            for (i, &prob) in default_distribution_llt.iter().enumerate() {
+                normalised_probs.insert(i as u64, prob);
+            }
+            normalised_probs
+        };
+        let (sym_to_states, _sym_to_sorted_states) =
+            FseAuxiliaryTableData::transform_normalised_probs(&normalised_probs_llt, 6);
+        let expected_predefined_table = predefined_table(FseTableKind::LLT);
+
+        let mut computed_predefined_table = sym_to_states
+            .values()
+            .flatten()
+            .filter(|row| !row.is_state_skipped)
+            .collect::<Vec<_>>();
+        computed_predefined_table.sort_by_key(|row| row.state);
+
+        for (i, (expected, computed)) in expected_predefined_table
+            .iter()
+            .zip_eq(computed_predefined_table.iter())
+            .enumerate()
+        {
+            assert_eq!(computed.state, expected.0, "state mismatch at i={}", i);
+            assert_eq!(computed.symbol, expected.1, "symbol mismatch at i={}", i);
+            assert_eq!(
+                computed.baseline, expected.2,
+                "baseline mismatch at i={}",
+                i
+            );
+            assert_eq!(computed.num_bits, expected.3, "nb mismatch at i={}", i);
+        }
     }
 
     #[test]

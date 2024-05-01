@@ -14,7 +14,10 @@ pub use literals_header::LiteralsHeaderTable;
 
 /// Validate the assignment of FSE table kind while decoding FSE tables in the sequences section.
 mod rom_fse_order;
-pub use rom_fse_order::{FseTableKind, RomFseOrderTable, RomSequencesDataInterleavedOrder};
+pub use rom_fse_order::{
+    predefined_table, predefined_table_values, FseTableKind, RomFseOrderTable,
+    RomSequencesDataInterleavedOrder,
+};
 
 /// The fixed code to Baseline/NumBits for Literal Length.
 mod rom_sequence_codes;
