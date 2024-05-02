@@ -58,14 +58,47 @@ pub struct SeqExecConfig<F: Field> {
     progress_cnt: Column<Advice>,
     // the copied index in literal section 
     literal_pos: Column<Advice>,
-    // the copied char of current index in literal section 
-    literal_char: Column<Advice>,
     // the back-ref pos 
     backref_pos: Column<Advice>,
-    // the referenced char in current back-ref
-    backref_char: Column<Advice>,
 
     // the flag exp indicate current row is the beginning of
     // a literal copying
     is_lit_cp_begin: Expression<F>,
+}
+
+
+impl<F: Field> SeqExecConfig<F> {
+
+    /// Construct the sequence instruction table
+    /// the maxium rotation is prev(2), next(1)
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        inst_able: &SeqInstTable<F>,
+    ) -> Self {
+        let q_enabled = meta.fixed_column();
+        let block_index = meta.advice_column();
+        let seq_index = meta.advice_column();
+        let byte_index = meta.advice_column();
+        let output_byte = meta.advice_column();
+        let s_last_seq = meta.advice_column();
+        let s_lit_cp_phase = meta.advice_column();
+        let s_back_ref_phase = meta.advice_column();
+        let progress_cnt = meta.advice_column();
+        let literal_pos = meta.advice_column();
+        let backref_pos = meta.advice_column();
+
+        Self {
+            q_enabled,
+            block_index,
+            seq_index,
+            byte_index,
+            output_byte,
+            s_last_seq,
+            s_lit_cp_phase,
+            s_back_ref_phase,
+            progress_cnt,
+            literal_pos,
+            backref_pos,
+        }
+    }    
 }

@@ -218,7 +218,7 @@ impl<F: Field> SeqInstTable<F> {
     }
 
     /// Construct the sequence instruction table
-    /// the maxium rotation is prev(2), next(1)
+    /// the maxium rotation is prev(1), next(1)
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
     ) -> Self {
