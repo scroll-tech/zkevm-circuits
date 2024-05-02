@@ -15,6 +15,7 @@ use fse_table_transition::RomFseTableTransition;
 
 mod predefined_fse;
 use predefined_fse::RomPredefinedFse;
+pub use predefined_fse::{predefined_fse, PredefinedFse};
 
 mod seq_code_to_value;
 use seq_code_to_value::RomSeqCodeToValue;

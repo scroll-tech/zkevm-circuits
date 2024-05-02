@@ -24,12 +24,14 @@ use zkevm_circuits::{
     util::Challenges,
 };
 
+use crate::aggregation::decoder::tables::FixedLookupTag;
+
 use self::{
-    tables::{
-        BitstringTable, FseTable, FseTableKind, LiteralsHeaderTable, RomFseOrderTable,
-        RomSequenceCodes, RomSequencesDataInterleavedOrder, RomTagTable,
+    tables::{BitstringTable, FixedTable, FseTable, LiteralsHeaderTable},
+    witgen::{
+        FseTableKind, ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG,
+        N_BLOCK_HEADER_BYTES,
     },
-    witgen::{ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES},
 };
 
 #[derive(Clone, Debug)]
@@ -82,14 +84,8 @@ pub struct DecoderConfig {
     fse_table: FseTable,
     /// Helper table for sequences as instructions.
     /// TODO(enable): sequence_instruction_table: SequenceInstructionTable,
-    /// ROM table for validating tag transition.
-    rom_tag_table: RomTagTable,
-    /// ROM table for the correct order in which FSE tables are described in the sequences section.
-    rom_fse_order_table: RomFseOrderTable,
-    /// ROM table for the correct interleaved order while processing tag=ZstdBlockSequencesData.
-    rom_interleaved_order_table: RomSequencesDataInterleavedOrder,
-    /// ROM table for sequence codes to value. LLC, MOC and MLC.
-    rom_sequence_codes_table: RomSequenceCodes,
+    /// Fixed lookups table.
+    fixed_table: FixedTable,
 }
 
 #[derive(Clone, Debug)]
@@ -970,11 +966,8 @@ impl DecoderConfig {
             bitwise_op_table,
         }: DecoderConfigArgs,
     ) -> Self {
-        // Fixed tables
-        let rom_tag_table = RomTagTable::construct(meta);
-        let rom_fse_order_table = RomFseOrderTable::construct(meta);
-        let rom_interleaved_order_table = RomSequencesDataInterleavedOrder::construct(meta);
-        let rom_sequence_codes_table = RomSequenceCodes::construct(meta);
+        // Fixed table
+        let fixed_table = FixedTable::construct(meta);
 
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, range8, range16);
@@ -1021,10 +1014,7 @@ impl DecoderConfig {
             bitstring_table,
             fse_table,
             // TODO(enable): sequence_instruction_table,
-            rom_tag_table,
-            rom_fse_order_table,
-            rom_interleaved_order_table,
-            rom_sequence_codes_table,
+            fixed_table,
         };
 
         macro_rules! is_tag {
@@ -1279,11 +1269,12 @@ impl DecoderConfig {
             cb.gate(condition)
         });
 
-        meta.lookup_any("DecoderConfig: lookup RomTagTable", |meta| {
+        meta.lookup_any("DecoderConfig: fixed lookup (tag transition)", |meta| {
             let condition = meta.query_fixed(config.q_first, Rotation::cur())
                 + meta.query_advice(config.tag_config.is_change, Rotation::cur());
 
             [
+                FixedLookupTag::TagTransition.expr(),
                 meta.query_advice(config.tag_config.tag, Rotation::cur()),
                 meta.query_advice(config.tag_config.tag_next, Rotation::cur()),
                 meta.query_advice(config.tag_config.max_len, Rotation::cur()),
@@ -1292,7 +1283,7 @@ impl DecoderConfig {
                 meta.query_advice(config.block_config.is_block, Rotation::cur()),
             ]
             .into_iter()
-            .zip_eq(config.rom_tag_table.table_exprs(meta))
+            .zip_eq(config.fixed_table.table_exprs(meta))
             .map(|(value, table)| (condition.expr() * value, table))
             .collect()
         });
@@ -2055,14 +2046,16 @@ impl DecoderConfig {
 
                 let cmodes_lc = (4.expr() * cmode_llt) + (2.expr() * cmode_mot) + cmode_mlt;
                 [
+                    FixedLookupTag::SeqTagOrder.expr(),
                     cmodes_lc,
                     meta.query_advice(config.tag_config.tag, Rotation::prev()), // tag_prev
                     meta.query_advice(config.tag_config.tag, Rotation::cur()),  // tag_cur
                     meta.query_advice(config.tag_config.tag_next, Rotation::cur()), // tag_next
                     meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()), // table_kind
+                    0.expr(),                                                   // unused
                 ]
                 .into_iter()
-                .zip_eq(config.rom_fse_order_table.table_exprs(meta))
+                .zip_eq(config.fixed_table.table_exprs(meta))
                 .map(|(arg, table)| (condition.expr() * arg, table))
                 .collect()
             },
@@ -2412,13 +2405,16 @@ impl DecoderConfig {
                 );
 
                 [
+                    FixedLookupTag::SeqDataInterleavedOrder.expr(),
                     table_kind_prev,
                     table_kind_curr,
                     is_init_state,
                     is_update_state,
+                    0.expr(), // unused
+                    0.expr(), // unused
                 ]
                 .into_iter()
-                .zip_eq(config.rom_interleaved_order_table.table_exprs(meta))
+                .zip_eq(config.fixed_table.table_exprs(meta))
                 .map(|(arg, table)| (condition.expr() * arg, table))
                 .collect()
             },
@@ -2761,11 +2757,19 @@ impl DecoderConfig {
                         .bitstring_len(meta, Rotation::cur()),
                 );
 
-                [table_kind, code, baseline, nb]
-                    .into_iter()
-                    .zip_eq(config.rom_sequence_codes_table.table_exprs(meta))
-                    .map(|(arg, table)| (condition.expr() * arg, table))
-                    .collect()
+                [
+                    FixedLookupTag::SeqCodeToValue.expr(),
+                    table_kind,
+                    code,
+                    baseline,
+                    nb,
+                    0.expr(), // unused
+                    0.expr(), // unused
+                ]
+                .into_iter()
+                .zip_eq(config.fixed_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
             },
         );
 

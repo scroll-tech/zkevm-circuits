@@ -12,8 +12,6 @@ pub use types::{ZstdTag::*, *};
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
 
-use crate::aggregation::decoder::tables::FseTableKind;
-
 const TAG_MAX_LEN: [(ZstdTag, u64); 13] = [
     (FrameHeaderDescriptor, 1),
     (FrameContentSize, 8),

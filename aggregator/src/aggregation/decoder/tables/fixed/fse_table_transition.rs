@@ -1,6 +1,6 @@
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
-use crate::aggregation::decoder::tables::FseTableKind;
+use crate::aggregation::decoder::witgen::FseTableKind;
 
 use super::{FixedLookupTag, FixedLookupValues};
 

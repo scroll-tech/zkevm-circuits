@@ -1,8 +1,8 @@
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
 use crate::aggregation::decoder::{
-    tables::{fixed::FixedLookupTag, FseTableKind},
-    witgen::ZstdTag,
+    tables::fixed::FixedLookupTag,
+    witgen::{FseTableKind, ZstdTag},
 };
 
 use super::FixedLookupValues;

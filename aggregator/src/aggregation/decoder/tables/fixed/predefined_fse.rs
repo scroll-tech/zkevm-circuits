@@ -1,16 +1,16 @@
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
-use crate::aggregation::decoder::tables::FseTableKind;
+use crate::aggregation::decoder::witgen::FseTableKind;
 
 use super::{FixedLookupTag, FixedLookupValues};
 
 pub struct RomPredefinedFse {
-    table_kind: FseTableKind,
-    table_size: u64,
-    state: u64,
-    symbol: u64,
-    baseline: u64,
-    nb: u64,
+    pub table_kind: FseTableKind,
+    pub table_size: u64,
+    pub state: u64,
+    pub symbol: u64,
+    pub baseline: u64,
+    pub nb: u64,
 }
 
 pub trait PredefinedFse {

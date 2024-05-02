@@ -1,8 +1,9 @@
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
-use crate::aggregation::decoder::tables::{fixed::FixedLookupTag, FseTableKind};
-
-use super::FixedLookupValues;
+use crate::aggregation::decoder::{
+    tables::fixed::{FixedLookupTag, FixedLookupValues},
+    witgen::FseTableKind,
+};
 
 pub struct RomSeqDataInterleavedOrder {
     /// FSE table used in the previous bitstring.
