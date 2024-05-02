@@ -10,6 +10,8 @@ use halo2_proofs::{circuit::Value, plonk::Expression};
 use itertools::Itertools;
 use strum_macros::EnumIter;
 
+use crate::aggregation::decoder::tables::FseTableKind;
+
 use super::{
     params::N_BITS_PER_BYTE,
     util::{bit_length, read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
@@ -528,8 +530,10 @@ pub struct FseTableRow {
     pub symbol: u64,
     /// During FSE table decoding, keep track of the number of symbol emitted
     pub num_emitted: u64,
-    /// During FSE table decoding, keep track of accumulated states assigned
-    pub n_acc: u64,
+    /// A boolean marker to indicate that as per the state transition rules of FSE codes, this
+    /// state was reached for this symbol, however it was already pre-allocated to a prior symbol,
+    /// this can happen in case we have symbols with prob=-1.
+    pub is_state_skipped: bool,
 }
 
 // Used for tracking bit markers for non-byte-aligned bitstream decoding
@@ -693,15 +697,19 @@ pub struct FseTableData {
 /// Auxiliary data accompanying the FSE table's witness values.
 #[derive(Clone, Debug)]
 pub struct FseAuxiliaryTableData {
-    /// The byte offset in the frame at which the FSE table is described.
-    pub byte_offset: u64,
-    /// The FSE's accuracy log, 
-    pub accuracy_log: u8,
+    /// The block index in which this FSE table appears.
+    pub block_idx: u64,
+    /// The FSE table kind, variants are: LLT=1, MOT=2, MLT=3.
+    pub table_kind: FseTableKind,
+    /// The FSE table's size, i.e. 1 << AL (accuracy log).
+    pub table_size: u64,
     /// A map from FseSymbol (weight) to states, also including fields for that state, for
     /// instance, the baseline and the number of bits to read from the FSE bitstream.
     ///
-    /// For each symbol, the states are in strictly increasing order.
+    /// For each symbol, the states as per the state transition rule.
     pub sym_to_states: BTreeMap<u64, Vec<FseTableRow>>,
+    /// Similar map, but where the states for each symbol are in increasing order (sorted).
+    pub sym_to_sorted_states: BTreeMap<u64, Vec<FseTableRow>>,
 }
 
 /// Another form of Fse table that has state as key instead of the FseSymbol.
@@ -712,11 +720,6 @@ type FseStateMapping = BTreeMap<u64, (u64, u64, u64)>;
 type ReconstructedFse = (usize, Vec<(u32, u64)>, FseAuxiliaryTableData);
 
 impl FseAuxiliaryTableData {
-
-    /// calc the table size, i.e. 1 << AL (accuracy log).
-    pub fn table_size(&self) -> u64 {1 << self.accuracy_log}
-
-    #[allow(non_snake_case)]
     /// While we reconstruct an FSE table from a bitstream, we do not know before reconstruction
     /// how many exact bytes we would finally be reading.
     ///
@@ -724,11 +727,13 @@ impl FseAuxiliaryTableData {
     /// with the reconstructed FSE table. After processing the entire bitstream to reconstruct the
     /// FSE table, if the read bitstream was not byte aligned, then we discard the 1..8 bits from
     /// the last byte that we read from.
-    pub fn reconstruct(src: &[u8], byte_offset: usize) -> std::io::Result<ReconstructedFse> {
-        // witgen_debug
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-
+    #[allow(non_snake_case)]
+    pub fn reconstruct(
+        src: &[u8],
+        block_idx: u64,
+        table_kind: FseTableKind,
+        byte_offset: usize,
+    ) -> std::io::Result<ReconstructedFse> {
         // construct little-endian bit-reader.
         let data = src.iter().skip(byte_offset).cloned().collect::<Vec<u8>>();
         let mut reader = BitReader::endian(Cursor::new(&data), LittleEndian);
@@ -744,9 +749,11 @@ impl FseAuxiliaryTableData {
         bit_boundaries.push((offset, accuracy_log as u64 - 5));
         let table_size = 1 << accuracy_log;
 
-        let mut sym_to_states = BTreeMap::new();
+        ////////////////////////////////////////////////////////////////////////////////////////
+        //////////////////////////// Parse Normalised Probabilities ////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////
+        let mut normalised_probs = BTreeMap::new();
         let mut R = table_size;
-        let mut state = 0x00;
         let mut symbol = 0;
         while R > 0 {
             // number of bits and value read from the variable bit-packed data.
@@ -756,27 +763,38 @@ impl FseAuxiliaryTableData {
             offset += n_bits_read;
             bit_boundaries.push((offset, value));
 
+            // Number of states allocated to this symbol.
+            // - prob=-1 => 1
+            // - prob=0  => 0
+            // - prob>=1 => prob
+            let N = match value {
+                0 => 1,
+                _ => value - 1,
+            };
+
+            // When a symbol has a value==0, it signifies a case of prob=-1 (or probability "less
+            // than 1"), where such symbols are allocated states from the end and retreating. In
+            // such cases, we reset the FSE state, i.e. read accuracy_log number of bits from the
+            // bitstream with a baseline==0x00.
             if value == 0 {
-                unimplemented!("value=0 => prob=-1: scenario unimplemented");
+                normalised_probs.insert(symbol, -1);
+                symbol += 1;
             }
 
-            let N = value - 1;
-
-            // When a symbol has a probability of zero, it is followed by a 2-bits repeat flag. This
+            // When a symbol has a value==1 (prob==0), it is followed by a 2-bits repeat flag. This
             // repeat flag tells how many probabilities of zeroes follow the current one. It
             // provides a number ranging from 0 to 3. If it is a 3, another 2-bits repeat flag
             // follows, and so on.
-            if N == 0 {
-                sym_to_states.insert(symbol, vec![]);
+            if value == 1 {
+                normalised_probs.insert(symbol, 0);
                 symbol += 1;
-
                 loop {
                     let repeat_bits = reader.read::<u8>(2)?;
                     offset += 2;
                     bit_boundaries.push((offset, repeat_bits as u64));
 
                     for k in 0..repeat_bits {
-                        sym_to_states.insert(symbol + (k as u64), vec![]);
+                        normalised_probs.insert(symbol + (k as u64), 0);
                     }
                     symbol += repeat_bits as u64;
 
@@ -786,56 +804,11 @@ impl FseAuxiliaryTableData {
                 }
             }
 
-            if N >= 1 {
-                let states = std::iter::once(state)
-                    .chain((1..N).map(|_| {
-                        state += (table_size >> 1) + (table_size >> 3) + 3;
-                        state &= table_size - 1;
-                        state
-                    }))
-                    .sorted()
-                    .collect::<Vec<u64>>();
-                let (smallest_spot_idx, nbs) = smaller_powers_of_two(table_size, N);
-                let baselines = if N == 1 {
-                    vec![0x00]
-                } else {
-                    let mut rotated_nbs = nbs.clone();
-                    rotated_nbs.rotate_left(smallest_spot_idx);
-
-                    let mut baselines = std::iter::once(0x00)
-                        .chain(rotated_nbs.iter().scan(0x00, |baseline, nb| {
-                            *baseline += 1 << nb;
-                            Some(*baseline)
-                        }))
-                        .take(N as usize)
-                        .collect::<Vec<u64>>();
-
-                    baselines.rotate_right(smallest_spot_idx);
-                    baselines
-                };
-                sym_to_states.insert(
-                    symbol,
-                    states
-                        .iter()
-                        .zip(nbs.iter())
-                        .zip(baselines.iter())
-                        .map(|((&state, &nb), &baseline)| FseTableRow {
-                            state,
-                            num_bits: nb,
-                            baseline,
-                            symbol,
-                            num_emitted: 0,
-                            n_acc: 0,
-                        })
-                        .collect(),
-                );
-
-                // increment symbol.
+            // When a symbol has a value>1 (prob>=1), it is allocated that many number of states in
+            // the FSE table.
+            if value > 1 {
+                normalised_probs.insert(symbol, N as i32);
                 symbol += 1;
-
-                // update state.
-                state += (table_size >> 1) + (table_size >> 3) + 3;
-                state &= table_size - 1;
             }
 
             // remove N slots from a total of R.
@@ -854,15 +827,154 @@ impl FseAuxiliaryTableData {
             ));
         }
 
+        // sanity check: sum(probabilities) == table_size.
+        assert_eq!(
+            normalised_probs
+                .values()
+                .map(|&prob| if prob == -1 { 1u64 } else { prob as u64 })
+                .sum::<u64>(),
+            table_size
+        );
+
+        ////////////////////////////////////////////////////////////////////////////////////////
+        ///////////////////////////// Allocate States to Symbols ///////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////
+        let (sym_to_states, sym_to_sorted_states) =
+            Self::transform_normalised_probs(&normalised_probs, accuracy_log);
+
         Ok((
             t,
             bit_boundaries,
             Self {
-                byte_offset: byte_offset as u64,
-                accuracy_log,
+                block_idx,
+                table_kind,
+                table_size,
                 sym_to_states,
+                sym_to_sorted_states,
             },
         ))
+    }
+
+    #[allow(non_snake_case)]
+    fn transform_normalised_probs(
+        normalised_probs: &BTreeMap<u64, i32>,
+        accuracy_log: u8,
+    ) -> (
+        BTreeMap<u64, Vec<FseTableRow>>,
+        BTreeMap<u64, Vec<FseTableRow>>,
+    ) {
+        let table_size = 1 << accuracy_log;
+
+        let mut sym_to_states = BTreeMap::new();
+        let mut sym_to_sorted_states = BTreeMap::new();
+        let mut state = 0;
+        let mut retreating_state = table_size - 1;
+        let mut allocated_states = HashMap::<u64, bool>::new();
+
+        // We start with the symbols that have prob=-1.
+        for (&symbol, _prob) in normalised_probs
+            .iter()
+            .filter(|(_symbol, &prob)| prob == -1)
+        {
+            allocated_states.insert(retreating_state, true);
+            let fse_table_row = FseTableRow {
+                state: retreating_state,
+                num_bits: accuracy_log as u64,
+                baseline: 0,
+                symbol,
+                is_state_skipped: false,
+                num_emitted: 0,
+            };
+            sym_to_states.insert(symbol, vec![fse_table_row.clone()]);
+            sym_to_sorted_states.insert(symbol, vec![fse_table_row]);
+            retreating_state -= 1;
+        }
+
+        // We now move to the symbols with prob>=1.
+        for (&symbol, &prob) in normalised_probs
+            .iter()
+            .filter(|(_symbol, &prob)| prob.is_positive())
+        {
+            let N = prob as usize;
+            let mut count = 0;
+            let mut states_with_skipped: Vec<(u64, bool)> = Vec::with_capacity(N);
+            while count < N {
+                if allocated_states.get(&state).is_some() {
+                    // if state has been pre-allocated to some symbol with prob=-1.
+                    states_with_skipped.push((state, true));
+                } else {
+                    // if state is not yet allocated, i.e. available for this symbol.
+                    states_with_skipped.push((state, false));
+                    count += 1;
+                }
+
+                // update state.
+                state += (table_size >> 1) + (table_size >> 3) + 3;
+                state &= table_size - 1;
+            }
+            let sorted_states = states_with_skipped
+                .iter()
+                .filter(|&(_s, is_state_skipped)| !is_state_skipped)
+                .map(|&(s, _)| s)
+                .sorted()
+                .collect::<Vec<u64>>();
+            let (smallest_spot_idx, nbs) = smaller_powers_of_two(table_size, N as u64);
+            let baselines = if N == 1 {
+                vec![0x00]
+            } else {
+                let mut rotated_nbs = nbs.clone();
+                rotated_nbs.rotate_left(smallest_spot_idx);
+
+                let mut baselines = std::iter::once(0x00)
+                    .chain(rotated_nbs.iter().scan(0x00, |baseline, nb| {
+                        *baseline += 1 << nb;
+                        Some(*baseline)
+                    }))
+                    .take(N)
+                    .collect::<Vec<u64>>();
+
+                baselines.rotate_right(smallest_spot_idx);
+                baselines
+            };
+            sym_to_states.insert(
+                symbol,
+                states_with_skipped
+                    .iter()
+                    .map(|&(s, is_state_skipped)| {
+                        let (baseline, nb) = match sorted_states.iter().position(|&ss| ss == s) {
+                            None => (0, 0),
+                            Some(sorted_idx) => (baselines[sorted_idx], nbs[sorted_idx]),
+                        };
+                        FseTableRow {
+                            state: s,
+                            num_bits: nb,
+                            baseline,
+                            symbol,
+                            num_emitted: 0,
+                            is_state_skipped,
+                        }
+                    })
+                    .collect(),
+            );
+            sym_to_sorted_states.insert(
+                symbol,
+                sorted_states
+                    .iter()
+                    .zip(nbs.iter())
+                    .zip(baselines.iter())
+                    .map(|((&s, &nb), &baseline)| FseTableRow {
+                        state: s,
+                        num_bits: nb,
+                        baseline,
+                        symbol,
+                        num_emitted: 0,
+                        is_state_skipped: false,
+                    })
+                    .collect(),
+            );
+        }
+
+        (sym_to_states, sym_to_sorted_states)
     }
 
     /// Convert an FseAuxiliaryTableData into a state-mapped representation.
@@ -916,6 +1028,8 @@ impl<F: Field> ZstdWitnessRow<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::aggregation::decoder::tables::{predefined_table, FsePredefinedTable};
+
     use super::*;
 
     #[test]
@@ -927,14 +1041,15 @@ mod tests {
         // sure FSE reconstruction ignores them.
         let src = vec![0xff, 0xff, 0xff, 0x30, 0x6f, 0x9b, 0x03, 0xff, 0xff, 0xff];
 
-        let (n_bytes, _bit_boundaries, table) = FseAuxiliaryTableData::reconstruct(&src, 3)?;
+        let (n_bytes, _bit_boundaries, table) =
+            FseAuxiliaryTableData::reconstruct(&src, 1, FseTableKind::LLT, 3)?;
 
         // TODO: assert equality for the entire table.
         // for now only comparing state/baseline/nb for S1, i.e. weight == 1.
 
         assert_eq!(n_bytes, 4);
         assert_eq!(
-            table.sym_to_states.get(&1).cloned().unwrap(),
+            table.sym_to_sorted_states.get(&1).cloned().unwrap(),
             [
                 (0x03, 0x10, 3),
                 (0x0c, 0x18, 3),
@@ -945,13 +1060,13 @@ mod tests {
             ]
             .iter()
             .enumerate()
-            .map(|(i, &(state, baseline, num_bits))| FseTableRow {
+            .map(|(_i, &(state, baseline, num_bits))| FseTableRow {
                 state,
                 symbol: 1,
                 baseline,
                 num_bits,
                 num_emitted: 0,
-                n_acc: 0,
+                is_state_skipped: false,
             })
             .collect::<Vec<FseTableRow>>(),
         );
@@ -960,12 +1075,89 @@ mod tests {
     }
 
     #[test]
+    fn test_fse_reconstruction_predefined_tables() {
+        // Here we test whether we can actually reconstruct the FSE table for distributions that
+        // include prob=-1 cases, one such example is the Predefined FSE table as per
+        // specifications.
+        //
+        // short literalsLength_defaultDistribution[36] =
+        // { 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
+        //   2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
+        //  -1,-1,-1,-1 };
+        //
+        // short matchLengths_defaultDistribution[53] =
+        // { 1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,-1,-1,
+        //  -1,-1,-1,-1,-1 };
+        //
+        //  short offsetCodes_defaultDistribution[29] =
+        // { 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+        //   1, 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1 };
+        let default_distribution_llt = vec![
+            4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1,
+            1, 1, 1, -1, -1, -1, -1,
+        ];
+        let default_distribution_mlt = vec![
+            1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1,
+        ];
+        let default_distribution_mot = vec![
+            1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1,
+            -1,
+        ];
+
+        for (table_kind, default_distribution) in [
+            (FseTableKind::LLT, default_distribution_llt),
+            (FseTableKind::MLT, default_distribution_mlt),
+            (FseTableKind::MOT, default_distribution_mot),
+        ] {
+            let normalised_probs = {
+                let mut normalised_probs = BTreeMap::new();
+                for (i, &prob) in default_distribution.iter().enumerate() {
+                    normalised_probs.insert(i as u64, prob);
+                }
+                normalised_probs
+            };
+            let (sym_to_states, _sym_to_sorted_states) =
+                FseAuxiliaryTableData::transform_normalised_probs(
+                    &normalised_probs,
+                    table_kind.accuracy_log(),
+                );
+            let expected_predefined_table = predefined_table(table_kind);
+
+            let mut computed_predefined_table = sym_to_states
+                .values()
+                .flatten()
+                .filter(|row| !row.is_state_skipped)
+                .collect::<Vec<_>>();
+            computed_predefined_table.sort_by_key(|row| row.state);
+
+            for (i, (expected, computed)) in expected_predefined_table
+                .iter()
+                .zip_eq(computed_predefined_table.iter())
+                .enumerate()
+            {
+                assert_eq!(computed.state, expected.0, "state mismatch at i={}", i);
+                assert_eq!(computed.symbol, expected.1, "symbol mismatch at i={}", i);
+                assert_eq!(
+                    computed.baseline, expected.2,
+                    "baseline mismatch at i={}",
+                    i
+                );
+                assert_eq!(computed.num_bits, expected.3, "nb mismatch at i={}", i);
+            }
+        }
+    }
+
+    #[test]
     fn test_sequences_fse_reconstruction() -> std::io::Result<()> {
         let src = vec![
             0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
         ];
 
-        let (n_bytes, _bit_boundaries, table) = FseAuxiliaryTableData::reconstruct(&src, 0)?;
+        let (n_bytes, _bit_boundaries, table) =
+            FseAuxiliaryTableData::reconstruct(&src, 1, FseTableKind::LLT, 0)?;
         let parsed_state_map = table.parse_state_table();
 
         // TODO: assertions

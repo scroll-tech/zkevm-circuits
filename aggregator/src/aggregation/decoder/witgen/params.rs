@@ -6,8 +6,8 @@ pub const N_BLOCK_HEADER_BYTES: usize = 3;
 
 /// Constants for zstd-compressed block
 pub const N_MAX_LITERAL_HEADER_BYTES: usize = 3;
-// /// Maximum bytes for the jump table
-// pub const N_JUMP_TABLE_BYTES: usize = 6;
+/// Maximum bytes for the jump table
+pub const N_JUMP_TABLE_BYTES: usize = 6;
 // /// Maximum bytes for the FSE representation
 // pub const N_MAX_LITERAL_FSE_BYTES: usize = 8;
 
