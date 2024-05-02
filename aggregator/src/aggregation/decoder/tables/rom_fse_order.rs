@@ -58,7 +58,10 @@ pub struct RomFseOrderTable {
     /// Compression mode boolean flags for LLT, MOT and MLT respectively.
     /// - Predefined_Mode > 0
     /// - Fse_Compressed_Mode > 1
-    compression_modes: [Column<Fixed>; 3],
+    ///
+    /// We use a linear combination of the 3 flags:
+    /// - 4 * llt_flag + 2 * mot_flag + mlt_flag
+    compression_modes_lc: Column<Fixed>,
     /// The tag that occurred previously.
     tag_prev: Column<Fixed>,
     /// The current tag, expected to be ZstdBlockSequenceFseCode.
@@ -72,11 +75,7 @@ pub struct RomFseOrderTable {
 impl RomFseOrderTable {
     pub fn construct(meta: &mut ConstraintSystem<Fr>) -> Self {
         Self {
-            compression_modes: [
-                meta.fixed_column(),
-                meta.fixed_column(),
-                meta.fixed_column(),
-            ],
+            compression_modes_lc: meta.fixed_column(),
             tag_prev: meta.fixed_column(),
             tag_cur: meta.fixed_column(),
             tag_next: meta.fixed_column(),
@@ -97,69 +96,57 @@ impl RomFseOrderTable {
             |mut region| {
                 for (offset, row) in [
                     // (1, 1, 1)
-                    (1, 1, 1, SeqHeader, FseCode, FseCode, LLT),
-                    (1, 1, 1, FseCode, FseCode, FseCode, MOT),
-                    (1, 1, 1, FseCode, FseCode, SeqData, MLT),
+                    (7, SeqHeader, FseCode, FseCode, LLT),
+                    (7, FseCode, FseCode, FseCode, MOT),
+                    (7, FseCode, FseCode, SeqData, MLT),
                     // (1, 1, 0)
-                    (1, 1, 0, SeqHeader, FseCode, FseCode, LLT),
-                    (1, 1, 0, FseCode, FseCode, SeqData, MOT),
+                    (6, SeqHeader, FseCode, FseCode, LLT),
+                    (6, FseCode, FseCode, SeqData, MOT),
                     // (1, 0, 1)
-                    (1, 0, 1, SeqHeader, FseCode, FseCode, LLT),
-                    (1, 0, 1, FseCode, FseCode, SeqData, MLT),
+                    (5, SeqHeader, FseCode, FseCode, LLT),
+                    (5, FseCode, FseCode, SeqData, MLT),
                     // (0, 1, 1)
-                    (0, 1, 1, SeqHeader, FseCode, FseCode, MOT),
-                    (0, 1, 1, FseCode, FseCode, SeqData, MLT),
+                    (3, SeqHeader, FseCode, FseCode, MOT),
+                    (3, FseCode, FseCode, SeqData, MLT),
                     // (1, 0, 0)
-                    (1, 0, 0, SeqHeader, FseCode, SeqData, LLT),
+                    (4, SeqHeader, FseCode, SeqData, LLT),
                     // (0, 1, 0)
-                    (0, 1, 0, SeqHeader, FseCode, SeqData, MOT),
+                    (2, SeqHeader, FseCode, SeqData, MOT),
                     // (0, 0, 1)
-                    (0, 0, 1, SeqHeader, FseCode, SeqData, MLT),
+                    (1, SeqHeader, FseCode, SeqData, MLT),
                 ]
                 .iter()
                 .enumerate()
                 {
                     region.assign_fixed(
-                        || format!("llt:compr_mode at offset={offset}"),
-                        self.compression_modes[0],
+                        || format!("compression_modes_lc at offset={offset}"),
+                        self.compression_modes_lc,
                         offset,
                         || Value::known(Fr::from(row.0 as u64)),
-                    )?;
-                    region.assign_fixed(
-                        || format!("mot:compr_mode at offset={offset}"),
-                        self.compression_modes[1],
-                        offset,
-                        || Value::known(Fr::from(row.1 as u64)),
-                    )?;
-                    region.assign_fixed(
-                        || format!("mlt:compr_mode at offset={offset}"),
-                        self.compression_modes[2],
-                        offset,
-                        || Value::known(Fr::from(row.2 as u64)),
                     )?;
                     region.assign_fixed(
                         || format!("tag_prev at offset={offset}"),
                         self.tag_prev,
                         offset,
-                        || Value::known(Fr::from(row.3 as u64)),
+                        || Value::known(Fr::from(row.1 as u64)),
                     )?;
                     region.assign_fixed(
                         || format!("tag_cur at offset={offset}"),
                         self.tag_cur,
                         offset,
-                        || Value::known(Fr::from(row.4 as u64)),
+                        || Value::known(Fr::from(row.2 as u64)),
                     )?;
                     region.assign_fixed(
                         || format!("tag_next at offset={offset}"),
                         self.tag_next,
                         offset,
-                        || Value::known(Fr::from(row.5 as u64)),
+                        || Value::known(Fr::from(row.3 as u64)),
                     )?;
                     region.assign_fixed(
                         || format!("table_kind at offset={offset}"),
                         self.table_kind,
                         offset,
-                        || Value::known(Fr::from(row.6 as u64)),
+                        || Value::known(Fr::from(row.4 as u64)),
                     )?;
                 }
 
@@ -172,9 +159,7 @@ impl RomFseOrderTable {
 impl LookupTable<Fr> for RomFseOrderTable {
     fn columns(&self) -> Vec<Column<halo2_proofs::plonk::Any>> {
         vec![
-            self.compression_modes[0].into(),
-            self.compression_modes[1].into(),
-            self.compression_modes[2].into(),
+            self.compression_modes_lc.into(),
             self.tag_prev.into(),
             self.tag_cur.into(),
             self.tag_next.into(),
@@ -184,9 +169,7 @@ impl LookupTable<Fr> for RomFseOrderTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("llt:compression_mode"),
-            String::from("mot:compression_mode"),
-            String::from("mlt:compression_mode"),
+            String::from("compression_modes_lc"),
             String::from("tag_prev"),
             String::from("tag_cur"),
             String::from("tag_next"),

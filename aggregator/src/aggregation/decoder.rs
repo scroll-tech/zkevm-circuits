@@ -2047,10 +2047,15 @@ impl DecoderConfig {
                     meta.query_advice(config.tag_config.is_change, Rotation::cur()),
                 ]);
 
-                [
+                let (cmode_llt, cmode_mot, cmode_mlt) = (
                     meta.query_advice(config.block_config.compression_modes[0], Rotation::cur()),
                     meta.query_advice(config.block_config.compression_modes[1], Rotation::cur()),
                     meta.query_advice(config.block_config.compression_modes[2], Rotation::cur()),
+                );
+
+                let cmodes_lc = (4.expr() * cmode_llt) + (2.expr() * cmode_mot) + cmode_mlt;
+                [
+                    cmodes_lc,
                     meta.query_advice(config.tag_config.tag, Rotation::prev()), // tag_prev
                     meta.query_advice(config.tag_config.tag, Rotation::cur()),  // tag_cur
                     meta.query_advice(config.tag_config.tag_next, Rotation::cur()), // tag_next
