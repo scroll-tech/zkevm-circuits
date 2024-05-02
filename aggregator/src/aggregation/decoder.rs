@@ -1,5 +1,6 @@
 mod tables;
 mod witgen;
+mod seq_exec;
 
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
