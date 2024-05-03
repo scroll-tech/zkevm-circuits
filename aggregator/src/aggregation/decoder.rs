@@ -1025,6 +1025,7 @@ impl DecoderConfig {
 
         is_prev_tag!(is_prev_frame_content_size, FrameContentSize);
         is_prev_tag!(is_prev_sequence_header, ZstdBlockSequenceHeader);
+        // TODO: update to ZstdBlockSequenceData once witgen code is merged.
         is_prev_tag!(is_prev_sequence_data, ZstdBlockHuffmanCode);
 
         meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
