@@ -330,8 +330,8 @@ impl SequencesHeaderDecoder {
         byte: Column<Advice>,
         bits: &[Column<Advice>; N_BITS_PER_BYTE],
     ) -> DecodedSequencesHeader {
-        let byte0_lt_0x80 = self.byte0_lt_0x80.is_lt(meta, None);
-        let byte0_lt_0xff = self.byte0_lt_0xff.is_lt(meta, None);
+        let byte0_lt_0x80 = self.byte0_lt_0x80.is_lt(meta, Rotation::cur());
+        let byte0_lt_0xff = self.byte0_lt_0xff.is_lt(meta, Rotation::cur());
 
         // - if byte0 < 128: byte0
         let branch0_num_seq = meta.query_advice(byte, Rotation(0));
@@ -550,11 +550,6 @@ impl BitstreamDecoder {
         meta.query_advice(self.is_nb0, rotation)
     }
 
-    /// If we have read a bitstring of length > 0.
-    fn is_not_nb0(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
-        not::expr(self.is_nb0(meta, rotation))
-    }
-
     /// If the bitstring value is 0.
     fn is_prob_less_than1(
         &self,
@@ -584,34 +579,25 @@ impl BitstreamDecoder {
 
     /// A bitstring strictly spans 1 byte if the bit_index at which it ends is such that:
     /// - 0 <= bit_index_end < 7.
-    fn strictly_spans_one_byte(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
-    ) -> Expression<Fr> {
-        let (lt, _eq) = self.bit_index_end_cmp_7.expr(meta, rotation);
+    fn strictly_spans_one_byte(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (lt, _eq) = self.bit_index_end_cmp_7.expr_at(meta, at, lhs, 7.expr());
         lt
     }
 
     /// A bitstring spans 1 byte if the bit_index at which it ends is such that:
     /// - 0 <= bit_index_end <= 7.
-    fn spans_one_byte(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
-    ) -> Expression<Fr> {
-        let (lt, eq) = self.bit_index_end_cmp_7.expr(meta, rotation);
+    fn spans_one_byte(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (lt, eq) = self.bit_index_end_cmp_7.expr_at(meta, at, lhs, 7.expr());
         lt + eq
     }
 
     /// A bitstring spans 1 byte and is byte-aligned:
     /// - bit_index_end == 7.
-    fn aligned_one_byte(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
-    ) -> Expression<Fr> {
-        let (_lt, eq) = self.bit_index_end_cmp_7.expr(meta, rotation);
+    fn aligned_one_byte(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (_lt, eq) = self.bit_index_end_cmp_7.expr_at(meta, at, lhs, 7.expr());
         eq
     }
 
@@ -620,34 +606,19 @@ impl BitstreamDecoder {
     fn strictly_spans_two_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
+        at: Rotation,
     ) -> Expression<Fr> {
-        let spans_one_byte = self.spans_one_byte(meta, rotation);
-        let (lt2, _eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
+        let spans_one_byte = self.spans_one_byte(meta, at);
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (lt2, _eq2) = self.bit_index_end_cmp_15.expr_at(meta, at, lhs, 15.expr());
         not::expr(spans_one_byte) * lt2
-    }
-
-    /// A bitstring spans 2 bytes if the bit_index at which it ends is such that:
-    /// - 8 <= bit_index_end <= 15.
-    #[allow(dead_code)]
-    fn spans_two_bytes(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
-    ) -> Expression<Fr> {
-        let spans_one_byte = self.spans_one_byte(meta, rotation);
-        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
-        not::expr(spans_one_byte) * (lt2 + eq2)
     }
 
     /// A bitstring spans 2 bytes and is byte-aligned:
     /// - bit_index_end == 15.
-    fn aligned_two_bytes(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
-    ) -> Expression<Fr> {
-        let (_lt, eq) = self.bit_index_end_cmp_15.expr(meta, rotation);
+    fn aligned_two_bytes(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (_lt, eq) = self.bit_index_end_cmp_15.expr_at(meta, at, lhs, 15.expr());
         eq
     }
 
@@ -656,33 +627,29 @@ impl BitstreamDecoder {
     fn strictly_spans_three_bytes(
         &self,
         meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
+        at: Rotation,
     ) -> Expression<Fr> {
-        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
-        let (lt3, _eq3) = self.bit_index_end_cmp_23.expr(meta, rotation);
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (lt2, eq2) = self
+            .bit_index_end_cmp_15
+            .expr_at(meta, at, lhs.expr(), 15.expr());
+        let (lt3, _eq3) = self.bit_index_end_cmp_23.expr_at(meta, at, lhs, 23.expr());
         not::expr(lt2 + eq2) * lt3
     }
 
     /// A bitstring spans 3 bytes if the bit_index at which it ends is such that:
     /// - 16 <= bit_index_end <= 23.
-    #[allow(dead_code)]
-    fn spans_three_bytes(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
-    ) -> Expression<Fr> {
-        let (lt2, eq2) = self.bit_index_end_cmp_15.expr(meta, rotation);
+    fn spans_three_bytes(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (lt2, eq2) = self.bit_index_end_cmp_15.expr_at(meta, at, lhs, 15.expr());
         not::expr(lt2 + eq2)
     }
 
     /// A bitstring spans 3 bytes and is byte-aligned:
     /// - bit_index_end == 23.
-    fn aligned_three_bytes(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Option<Rotation>,
-    ) -> Expression<Fr> {
-        let (_lt, eq) = self.bit_index_end_cmp_23.expr(meta, rotation);
+    fn aligned_three_bytes(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (_lt, eq) = self.bit_index_end_cmp_23.expr_at(meta, at, lhs, 23.expr());
         eq
     }
 
@@ -738,6 +705,8 @@ pub struct FseDecoder {
     probability_acc: Column<Advice>,
     /// Whether we are in the repeat bits loop.
     is_repeat_bits_loop: Column<Advice>,
+    /// Whether this row represents the 0-7 trailing bits that should be ignored.
+    is_trailing_bits: Column<Advice>,
 }
 
 impl FseDecoder {
@@ -748,6 +717,7 @@ impl FseDecoder {
             symbol: meta.advice_column(),
             probability_acc: meta.advice_column(),
             is_repeat_bits_loop: meta.advice_column(),
+            is_trailing_bits: meta.advice_column(),
         }
     }
 }
@@ -876,23 +846,6 @@ impl SequencesDataDecoder {
 
     fn symbol_mot(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         meta.query_advice(self.symbols[2], rotation)
-    }
-
-    fn state(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        fse_decoder: &FseDecoder,
-        rotation: Rotation,
-    ) -> Expression<Fr> {
-        select::expr(
-            fse_decoder.is_llt(meta, rotation),
-            self.state_llt(meta, rotation),
-            select::expr(
-                fse_decoder.is_mlt(meta, rotation),
-                self.state_mlt(meta, rotation),
-                self.state_mot(meta, rotation),
-            ),
-        )
     }
 
     fn state_at_prev(
@@ -2139,7 +2092,7 @@ impl DecoderConfig {
                     "fse: bitstrings cannot span 3 bytes",
                     config
                         .bitstream_decoder
-                        .spans_three_bytes(meta, Some(Rotation::cur())),
+                        .spans_three_bytes(meta, Rotation::cur()),
                 );
 
                 // If the bitstring read at the current row is ``aligned_two_bytes`` then the one
@@ -2147,7 +2100,7 @@ impl DecoderConfig {
                 cb.condition(
                     config
                         .bitstream_decoder
-                        .aligned_two_bytes(meta, Some(Rotation::cur())),
+                        .aligned_two_bytes(meta, Rotation::cur()),
                     |cb| {
                         cb.require_equal(
                             "fse: aligned_two_bytes is followed by is_nil",
@@ -2315,7 +2268,79 @@ impl DecoderConfig {
                     meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
                 );
 
-                // TODO: bitstream can be byte-unaligned (trailing bits are ignored)
+                // bitstream can be byte-unaligned (trailing bits are ignored)
+                //
+                // We have the following scenarios for the last row of tag=FseCode:
+                // - the last row is the trailing bits (ignored).
+                // - the last row is a valid bitstring that is byte-aligned.
+                cb.require_equal(
+                    "last bitstring is either byte-aligned or the 0-7 trailing bits",
+                    sum::expr([
+                        meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
+                        and::expr([
+                            config
+                                .bitstream_decoder
+                                .aligned_one_byte(meta, Rotation::cur()),
+                            config
+                                .bitstream_decoder
+                                .aligned_two_bytes(meta, Rotation::prev()),
+                            config
+                                .bitstream_decoder
+                                .aligned_three_bytes(meta, Rotation(-2)),
+                        ]),
+                    ]),
+                    1.expr(),
+                );
+
+                cb.gate(condition)
+            },
+        );
+
+        meta.create_gate(
+            "DecoderConfig: tag ZstdBlockSequenceFseCode (trailing bits)",
+            |meta| {
+                let condition =
+                    meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur());
+
+                let mut cb = BaseConstraintBuilder::default();
+
+                // 1. is_trailing_bits can occur iff tag=FseCode.
+                cb.require_equal(
+                    "tag=FseCode",
+                    meta.query_advice(config.tag_config.tag, Rotation::cur()),
+                    ZstdTag::ZstdBlockFseCode.expr(),
+                );
+
+                // 2. trailing bits only occur on the last row of the tag=FseCode section.
+                cb.require_equal(
+                    "is_change'=true",
+                    meta.query_advice(config.tag_config.is_change, Rotation::next()),
+                    1.expr(),
+                );
+
+                // 3. trailing bits are meant to byte-align the bitstream, i.e. bit_index_end==7.
+                cb.require_equal(
+                    "bit_index_end==7",
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    7.expr(),
+                );
+
+                // 4. if trailing bits exist, it means the last valid bitstring was not
+                //    byte-aligned.
+                cb.require_zero(
+                    "last valid bitstring byte-unaligned",
+                    sum::expr([
+                        config
+                            .bitstream_decoder
+                            .aligned_one_byte(meta, Rotation(-1)),
+                        config
+                            .bitstream_decoder
+                            .aligned_two_bytes(meta, Rotation(-2)),
+                        config
+                            .bitstream_decoder
+                            .aligned_three_bytes(meta, Rotation(-3)),
+                    ]),
+                );
 
                 cb.gate(condition)
             },
@@ -2325,9 +2350,10 @@ impl DecoderConfig {
             "DecoderConfig: tag ZstdBlockSequenceFseCode (normalised probability of symbol)",
             |meta| {
                 // At every row where a non-nil bitstring is read:
-                // - except the AL bits
+                // - except the AL bits (is_change=true)
                 // - except when the value=1, i.e. prob=0
                 // - except when we are in repeat-bits loop
+                // - except the trailing bits (if they exist)
                 let condition = and::expr([
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
@@ -2335,6 +2361,9 @@ impl DecoderConfig {
                     not::expr(config.bitstream_decoder.is_prob0(meta, Rotation::cur())),
                     not::expr(
                         meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur()),
+                    ),
+                    not::expr(
+                        meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
                     ),
                 ]);
 
@@ -2409,7 +2438,7 @@ impl DecoderConfig {
                     "sentinel: bit_index_end <= 7",
                     config
                         .bitstream_decoder
-                        .spans_one_byte(meta, Some(Rotation::cur())),
+                        .spans_one_byte(meta, Rotation::cur()),
                     1.expr(),
                 );
 
@@ -3254,7 +3283,7 @@ impl DecoderConfig {
                 cb.condition(
                     config
                         .bitstream_decoder
-                        .strictly_spans_one_byte(meta, Some(Rotation::cur())),
+                        .strictly_spans_one_byte(meta, Rotation::cur()),
                     |cb| {
                         cb.require_equal(
                             "(case1): byte_idx' == byte_idx",
@@ -3279,7 +3308,7 @@ impl DecoderConfig {
                 cb.condition(
                     config
                         .bitstream_decoder
-                        .aligned_one_byte(meta, Some(Rotation::cur())),
+                        .aligned_one_byte(meta, Rotation::cur()),
                     |cb| {
                         cb.require_equal(
                             "(case2): byte_idx' == byte_idx + 1",
@@ -3300,7 +3329,7 @@ impl DecoderConfig {
                 cb.condition(
                     config
                         .bitstream_decoder
-                        .strictly_spans_two_bytes(meta, Some(Rotation::cur())),
+                        .strictly_spans_two_bytes(meta, Rotation::cur()),
                     |cb| {
                         cb.require_equal(
                             "(case3): byte_idx' == byte_idx + 1",
@@ -3325,7 +3354,7 @@ impl DecoderConfig {
                 cb.condition(
                     config
                         .bitstream_decoder
-                        .aligned_two_bytes(meta, Some(Rotation::cur())),
+                        .aligned_two_bytes(meta, Rotation::cur()),
                     |cb| {
                         cb.require_equal(
                             "(case4): byte_idx' == byte_idx + 1",
@@ -3363,7 +3392,7 @@ impl DecoderConfig {
                 cb.condition(
                     config
                         .bitstream_decoder
-                        .strictly_spans_three_bytes(meta, Some(Rotation::cur())),
+                        .strictly_spans_three_bytes(meta, Rotation::cur()),
                     |cb| {
                         cb.require_equal(
                             "(case5): byte_idx' == byte_idx + 1",
@@ -3409,7 +3438,7 @@ impl DecoderConfig {
                 cb.condition(
                     config
                         .bitstream_decoder
-                        .aligned_three_bytes(meta, Some(Rotation::cur())),
+                        .aligned_three_bytes(meta, Rotation::cur()),
                     |cb| {
                         cb.require_equal(
                             "(case6): byte_idx' == byte_idx + 1",
