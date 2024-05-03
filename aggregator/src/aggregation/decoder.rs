@@ -274,9 +274,9 @@ impl BlockConfig {
 #[derive(Clone, Debug)]
 struct SequencesHeaderDecoder {
     /// Helper gadget to evaluate byte0 < 128.
-    pub byte0_lt_0x80: LtConfig<Fr, 8>,
+    pub byte0_lt_0x80: LtConfig<Fr, 1>,
     /// Helper gadget to evaluate byte0 < 255.
-    pub byte0_lt_0xff: LtConfig<Fr, 8>,
+    pub byte0_lt_0xff: LtConfig<Fr, 1>,
 }
 
 struct DecodedSequencesHeader {
