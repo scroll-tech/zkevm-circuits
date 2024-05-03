@@ -2209,7 +2209,9 @@ impl DecoderConfig {
                             "fse: probability_acc is updated correctly",
                             prob_acc_cur.expr(),
                             select::expr(
-                                config.bitstream_decoder.is_prob0(meta, Rotation::cur()),
+                                config
+                                    .bitstream_decoder
+                                    .is_prob_less_than1(meta, Rotation::cur()),
                                 prob_acc_prev.expr() + 1.expr(),
                                 prob_acc_prev.expr() + value.expr() - 1.expr(),
                             ),
@@ -3107,6 +3109,10 @@ impl DecoderConfig {
             let mut cb = BaseConstraintBuilder::default();
 
             // tag=Null also is the start of padding.
+            cb.require_zero(
+                "is_null: is_padding_prev=false",
+                meta.query_advice(config.is_padding, Rotation::prev()),
+            );
             cb.require_equal(
                 "is_null: is_padding=true",
                 meta.query_advice(config.is_padding, Rotation::cur()),
@@ -3133,15 +3139,14 @@ impl DecoderConfig {
             cb.require_equal(
                 "is_null: tag::prev check",
                 meta.query_advice(config.tag_config.tag, Rotation::prev()),
-                sum::expr([
-                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::prev()),
-                    and::expr([
-                        is_zb_sequence_header(meta),
-                        config
-                            .block_config
-                            .is_empty_sequences(meta, Rotation::prev()),
-                    ]),
-                ]),
+                select::expr(
+                    config
+                        .block_config
+                        .is_empty_sequences(meta, Rotation::prev()),
+                    ZstdTag::ZstdBlockSequenceHeader.expr(),
+                    // TODO: replace with ZstdBlockSequenceData when witgen is merged.
+                    ZstdTag::ZstdBlockHuffmanCode.expr(),
+                ),
             );
 
             cb.gate(condition)
