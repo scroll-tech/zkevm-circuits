@@ -48,14 +48,8 @@ pub struct DecoderConfig {
     bits: [Column<Advice>; N_BITS_PER_BYTE],
     /// The RLC of the zstd encoded bytes.
     encoded_rlc: Column<Advice>,
-    /// The byte that is (possibly) decoded at the current row.
-    decoded_byte: Column<Advice>,
-    /// The RLC of the bytes decoded.
-    decoded_rlc: Column<Advice>,
     /// The size of the final decoded bytes.
     decoded_len: Column<Advice>,
-    /// An incremental accumulator of the number of bytes decoded so far.
-    decoded_len_acc: Column<Advice>,
     /// Once all the encoded bytes are decoded, we append the layout with padded rows.
     is_padding: Column<Advice>,
     /// Zstd tag related config.
@@ -132,6 +126,8 @@ struct TagConfig {
     is_fse_code: Column<Advice>,
     /// Degree reduction: SequencesData
     is_sequence_data: Column<Advice>,
+    /// Degree reduction: Null
+    is_null: Column<Advice>,
 }
 
 impl TagConfig {
@@ -165,6 +161,7 @@ impl TagConfig {
             is_block_header: meta.advice_column(),
             is_fse_code: meta.advice_column(),
             is_sequence_data: meta.advice_column(),
+            is_null: meta.advice_column(),
         }
     }
 }
@@ -183,6 +180,8 @@ struct BlockConfig {
     is_block: Column<Advice>,
     /// Number of sequences decoded from the sequences section header in the block.
     num_sequences: Column<Advice>,
+    /// Helper gadget to know if the number of sequences is 0.
+    is_empty_sequences: IsEqualConfig<Fr>,
     /// For sequence decoding, the tag=ZstdBlockSequenceHeader bytes tell us the Compression_Mode
     /// utilised for Literals Lengths, Match Offsets and Match Lengths. We expect only 2
     /// possibilities:
@@ -196,13 +195,20 @@ struct BlockConfig {
 }
 
 impl BlockConfig {
-    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
+    fn configure(meta: &mut ConstraintSystem<Fr>, is_padding: Column<Advice>) -> Self {
+        let num_sequences = meta.advice_column();
         Self {
             block_len: meta.advice_column(),
             block_idx: meta.advice_column(),
             is_last_block: meta.advice_column(),
             is_block: meta.advice_column(),
-            num_sequences: meta.advice_column(),
+            num_sequences,
+            is_empty_sequences: IsEqualChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(num_sequences, Rotation::cur()),
+                |_| 0.expr(),
+            ),
             compression_modes: [
                 meta.advice_column(),
                 meta.advice_column(),
@@ -252,6 +258,16 @@ impl BlockConfig {
                 self.is_predefined_mot(meta, rotation),
             ),
         )
+    }
+
+    fn is_empty_sequences(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        rotation: Rotation,
+    ) -> Expression<Fr> {
+        let num_sequences = meta.query_advice(self.num_sequences, rotation);
+        self.is_empty_sequences
+            .expr_at(meta, rotation, num_sequences, 0.expr())
     }
 }
 
@@ -983,9 +999,9 @@ impl DecoderConfig {
         // TODO(enable): let sequence_instruction_table = SequenceInstructionTable::configure(meta);
 
         // Peripheral configs
-        let tag_config = TagConfig::configure(meta);
-        let block_config = BlockConfig::configure(meta);
         let (byte, is_padding) = (meta.advice_column(), meta.advice_column());
+        let tag_config = TagConfig::configure(meta);
+        let block_config = BlockConfig::configure(meta, is_padding);
         let sequences_header_decoder =
             SequencesHeaderDecoder::configure(meta, byte, is_padding, u8_table);
         let bitstream_decoder = BitstreamDecoder::configure(meta, is_padding, u8_table);
@@ -1003,10 +1019,7 @@ impl DecoderConfig {
                 .try_into()
                 .expect("N_BITS_PER_BYTE advice columns into array"),
             encoded_rlc: meta.advice_column_in(SecondPhase),
-            decoded_byte: meta.advice_column(),
-            decoded_rlc: meta.advice_column_in(SecondPhase),
             decoded_len: meta.advice_column(),
-            decoded_len_acc: meta.advice_column(),
             is_padding,
             tag_config,
             block_config,
@@ -1035,7 +1048,18 @@ impl DecoderConfig {
             };
         }
 
-        is_tag!(_is_null, Null);
+        macro_rules! is_prev_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<Fr>| {
+                    config
+                        .tag_config
+                        .tag_bits
+                        .value_equals(ZstdTag::$tag_variant, Rotation::prev())(meta)
+                };
+            };
+        }
+
+        is_tag!(is_null, Null);
         is_tag!(is_frame_header_descriptor, FrameHeaderDescriptor);
         is_tag!(is_frame_content_size, FrameContentSize);
         is_tag!(is_block_header, BlockHeader);
@@ -1046,16 +1070,13 @@ impl DecoderConfig {
         // TODO: update to ZstdBlockSequenceData once witgen code is merged.
         is_tag!(is_zb_sequence_data, ZstdBlockHuffmanCode);
 
+        is_prev_tag!(is_prev_frame_content_size, FrameContentSize);
+        is_prev_tag!(is_prev_sequence_header, ZstdBlockSequenceHeader);
+        is_prev_tag!(is_prev_sequence_data, ZstdBlockHuffmanCode);
+
         meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
             vec![(
                 meta.query_advice(config.byte, Rotation::cur()),
-                u8_table.into(),
-            )]
-        });
-
-        meta.lookup("DecoderConfig: 0 <= decoded byte < 256", |meta| {
-            vec![(
-                meta.query_advice(config.decoded_byte, Rotation::cur()),
                 u8_table.into(),
             )]
         });
@@ -1096,18 +1117,6 @@ impl DecoderConfig {
             cb.require_zero(
                 "encoded_rlc == 0",
                 meta.query_advice(config.encoded_rlc, Rotation::cur()),
-            );
-
-            // decoded_rlc iniialises at 0.
-            cb.require_zero(
-                "decoded_rlc == 0",
-                meta.query_advice(config.decoded_rlc, Rotation::cur()),
-            );
-
-            // decoded_len accumulator initialises at 0.
-            cb.require_zero(
-                "decoded_len_acc == 0",
-                meta.query_advice(config.decoded_len_acc, Rotation::cur()),
             );
 
             cb.gate(condition)
@@ -1195,6 +1204,7 @@ impl DecoderConfig {
                 config.tag_config.is_sequence_data,
                 is_zb_sequence_data(meta)
             );
+            degree_reduction_check!(config.tag_config.is_null, is_null(meta));
 
             cb.gate(condition)
         });
@@ -1265,7 +1275,7 @@ impl DecoderConfig {
 
             // Fields that do not change until the end of the layout once we have encountered
             // padded rows.
-            for column in [config.encoded_rlc, config.decoded_rlc, config.decoded_len] {
+            for column in [config.encoded_rlc, config.decoded_len] {
                 cb.require_equal(
                     "unchanged column in padded rows",
                     meta.query_advice(column, Rotation::cur()),
@@ -1458,33 +1468,6 @@ impl DecoderConfig {
             .map(|(value, table)| (condition.expr() * value, table))
             .collect()
         });
-
-        meta.create_gate(
-            "DecoderConfig: when byte is decoded (output region)",
-            |meta| {
-                let condition = meta.query_advice(config.tag_config.is_output, Rotation::cur());
-
-                let mut cb = BaseConstraintBuilder::default();
-
-                // decoded_len increments.
-                cb.require_equal(
-                    "decoded_len_acc::cur == decoded_len_acc::prev + 1",
-                    meta.query_advice(config.decoded_len_acc, Rotation::cur()),
-                    meta.query_advice(config.decoded_len_acc, Rotation::prev()) + 1.expr(),
-                );
-
-                // decoded_rlc accumulates correctly.
-                cb.require_equal(
-                    "decoded_rlc::cur == decoded_rlc::prev * r + decoded_byte::cur",
-                    meta.query_advice(config.decoded_rlc, Rotation::cur()),
-                    meta.query_advice(config.decoded_rlc, Rotation::prev())
-                        * challenges.keccak_input()
-                        + meta.query_advice(config.decoded_byte, Rotation::cur()),
-                );
-
-                cb.gate(condition)
-            },
-        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -1689,8 +1672,40 @@ impl DecoderConfig {
                 meta.query_advice(config.block_config.block_idx, Rotation::prev()) + 1.expr(),
             );
 
+            // We now validate the end of the previous block.
+            // - tag=BlockHeader is preceded by tag in [FrameContentSize, SeqHeader, SeqData].
+            // - if prev_tag=SequenceHeader: prev block had no sequences.
+            // - if prev_tag=SequenceData: all sequences from prev block were decoded.
+            cb.require_equal(
+                "tag::prev in [FCS, SH, SD]",
+                meta.query_advice(config.tag_config.tag, Rotation::prev()),
+                sum::expr([
+                    is_prev_frame_content_size(meta),
+                    is_prev_sequence_header(meta),
+                    is_prev_sequence_data(meta),
+                ]),
+            );
+            cb.condition(is_prev_sequence_header(meta), |cb| {
+                cb.require_equal(
+                    "tag::prev=SeqHeader",
+                    config
+                        .block_config
+                        .is_empty_sequences(meta, Rotation::prev()),
+                    1.expr(),
+                );
+            });
+            cb.condition(is_prev_sequence_data(meta), |cb| {
+                cb.require_equal(
+                    "tag::prev=SeqData",
+                    meta.query_advice(config.block_config.num_sequences, Rotation::prev()),
+                    meta.query_advice(config.sequences_data_decoder.idx, Rotation::prev()),
+                );
+            });
+
             cb.gate(condition)
         });
+
+        debug_assert!(meta.degree() <= 9);
 
         meta.lookup("DecoderConfig: tag BlockHeader (Block_Size)", |meta| {
             let condition = and::expr([
@@ -1754,11 +1769,6 @@ impl DecoderConfig {
 
             cb.gate(condition)
         });
-
-        // TODO: handling end of blocks:
-        // - next tag is BlockHeader or Null (if last block)
-        // - blocks can end only on certain zstd tags
-        // - decoded_len_acc has reached decoded_len
 
         debug_assert!(meta.degree() <= 9);
 
@@ -2689,6 +2699,19 @@ impl DecoderConfig {
         );
 
         meta.create_gate(
+            "DecoderConfig: tag ZstdBlockSequenceData (last row)",
+            |meta| {
+                let condition = meta.query_advice(config.tag_config.is_change, Rotation::next());
+
+                let mut cb = BaseConstraintBuilder::default();
+
+                // TODO
+
+                cb.gate(condition)
+            },
+        );
+
+        meta.create_gate(
             "DecoderConfig: tag ZstdBlockSequenceData (is_nil)",
             |meta| {
                 let condition = and::expr([
@@ -2939,6 +2962,59 @@ impl DecoderConfig {
                 .collect()
             },
         );
+
+        debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        //////////////////////////////////// ZstdTag::Null ////////////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        meta.create_gate("DecoderConfig: tag=Null", |meta| {
+            let condition = meta.query_advice(config.tag_config.is_null, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            // tag=Null also is the start of padding.
+            cb.require_equal(
+                "is_null: is_padding=true",
+                meta.query_advice(config.is_padding, Rotation::cur()),
+                1.expr(),
+            );
+
+            // tag::is_change=true which ensures the encoded_rlc is computed here. This also
+            // implies that the previous tag in fact ended correctly.
+            cb.require_equal(
+                "is_null: is_tag_change=true",
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                1.expr(),
+            );
+
+            // is_null=true implies we have reached the end of the encoded data. This can happen in
+            // the following scenarios:
+            // - end of block (is_last=true) with tag=SequenceData
+            // - end of block (is_last=true) with tag=SequenceHeader and num_sequences=0
+            cb.require_equal(
+                "is_null: block::is_last=true on the previous row",
+                meta.query_advice(config.block_config.is_last_block, Rotation::prev()),
+                1.expr(),
+            );
+            cb.require_equal(
+                "is_null: tag::prev check",
+                meta.query_advice(config.tag_config.tag, Rotation::prev()),
+                sum::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::prev()),
+                    and::expr([
+                        is_zb_sequence_header(meta),
+                        config
+                            .block_config
+                            .is_empty_sequences(meta, Rotation::prev()),
+                    ]),
+                ]),
+            );
+
+            cb.gate(condition)
+        });
+
+        debug_assert!(meta.degree() <= 9);
 
         ///////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// Bitstream Decoding /////////////////////////////////////
