@@ -13,8 +13,9 @@ use zkevm_circuits::{
     table::{BitwiseOp, BitwiseOpTable, LookupTable, Pow2Table, RangeTable, U8Table},
 };
 
-use crate::aggregation::decoder::tables::rom_fse_order::{
-    FseTableKind, RomFsePredefinedTable, RomFseTableTransition,
+use crate::aggregation::decoder::{
+    tables::{FixedLookupTag, FixedTable},
+    witgen::FseTableKind,
 };
 
 /// The FSE table verifies that given the symbols and the states allocated to those symbols, the
@@ -119,25 +120,18 @@ pub struct FseTable {
     baseline: Column<Advice>,
     /// The number of bits to read from bitstream when at this state.
     nb: Column<Advice>,
-    /// ROM table for verifying FSE table kind and block_idx transition.
-    rom_fse_transition: RomFseTableTransition,
-    /// ROM table for FSE predefined tables.
-    rom_fse_predefined: RomFsePredefinedTable,
 }
 
 impl FseTable {
     /// Configure the FSE table.
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
+        fixed_table: &FixedTable,
         u8_table: U8Table,
         range8_table: RangeTable<8>,
         pow2_table: Pow2Table<20>,
         bitwise_op_table: BitwiseOpTable,
     ) -> Self {
-        // Fixed table to check the transition of table kinds and block idx.
-        let rom_fse_transition = RomFseTableTransition::construct(meta);
-        let rom_fse_predefined = RomFsePredefinedTable::construct(meta);
-
         // Auxiliary table to validate that (baseline, nb) were assigned correctly to the states
         // allocated to a symbol.
         let sorted_table = FseSortedStatesTable::configure(meta, pow2_table, u8_table);
@@ -157,8 +151,6 @@ impl FseTable {
             is_skipped_state: meta.advice_column(),
             baseline: meta.advice_column(),
             nb: meta.advice_column(),
-            rom_fse_transition,
-            rom_fse_predefined,
         };
 
         // Check that on the starting row of each FSE table, i.e. q_start=true:
@@ -229,13 +221,16 @@ impl FseTable {
                 );
 
                 [
+                    FixedLookupTag::FseTableTransition.expr(),
                     block_idx_prev,
                     block_idx_curr,
                     table_kind_prev,
                     table_kind_curr,
+                    0.expr(), // unused
+                    0.expr(), // unused
                 ]
                 .into_iter()
-                .zip_eq(config.rom_fse_transition.table_exprs(meta))
+                .zip_eq(fixed_table.table_exprs(meta))
                 .map(|(arg, table)| (condition.expr() * arg, table))
                 .collect()
             },
@@ -595,11 +590,19 @@ impl FseTable {
                 meta.query_advice(config.nb, Rotation::cur()),
             );
 
-            [table_kind, table_size, state, symbol, baseline, nb]
-                .into_iter()
-                .zip_eq(config.rom_fse_predefined.table_exprs(meta))
-                .map(|(arg, table)| (condition.expr() * arg, table))
-                .collect()
+            [
+                FixedLookupTag::PredefinedFse.expr(),
+                table_kind,
+                table_size,
+                state,
+                symbol,
+                baseline,
+                nb,
+            ]
+            .into_iter()
+            .zip_eq(fixed_table.table_exprs(meta))
+            .map(|(arg, table)| (condition.expr() * arg, table))
+            .collect()
         });
 
         // For every new symbol detected.

@@ -12,21 +12,9 @@ pub use fse::FseTable;
 mod literals_header;
 pub use literals_header::LiteralsHeaderTable;
 
-/// Validate the assignment of FSE table kind while decoding FSE tables in the sequences section.
-mod rom_fse_order;
-pub use rom_fse_order::{
-    predefined_table, predefined_table_values, FsePredefinedTable, FseTableKind, RomFseOrderTable,
-    RomSequencesDataInterleavedOrder,
-};
-
-/// The fixed code to Baseline/NumBits for Literal Length.
-mod rom_sequence_codes;
-pub use rom_sequence_codes::RomSequenceCodes;
-
-/// Validate the following tag given the tag currently being processed.
-mod rom_tag;
-pub use rom_tag::RomTagTable;
-
 mod seqinst_table;
 /// Input for validating the sequence instruction comes from the parsed value  
 pub use seqinst_table::SeqInstTable;
+/// Fixed lookup table and its variants.
+mod fixed;
+pub use fixed::{predefined_fse, FixedLookupTag, FixedTable, PredefinedFse};

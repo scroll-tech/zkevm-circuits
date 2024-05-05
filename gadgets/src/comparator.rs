@@ -35,18 +35,25 @@ pub struct ComparatorConfig<F, const N_BYTES: usize> {
 }
 
 impl<F: Field, const N_BYTES: usize> ComparatorConfig<F, N_BYTES> {
-    /// Returns (lt, eq) for a comparison between lhs and rhs.
-    pub fn expr(
+    /// Returns (lt, eq) for a comparison between lhs and rhs at the current rotation.
+    pub fn expr(&self, meta: &mut VirtualCells<F>) -> (Expression<F>, Expression<F>) {
+        (
+            self.lt_chip.config.is_lt(meta, Rotation::cur()),
+            self.eq_chip.config.is_equal_expression.clone(),
+        )
+    }
+
+    /// Returns (lt, eq) for a comparison between lhs and rhs at a given rotation
+    pub fn expr_at(
         &self,
         meta: &mut VirtualCells<F>,
-        rotation: Option<Rotation>,
+        at: Rotation,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
     ) -> (Expression<F>, Expression<F>) {
-        let rotation_is_cur = rotation.map_or(true, |r| r == Rotation::cur());
-        assert!(rotation_is_cur);
-
         (
-            self.lt_chip.config.is_lt(meta, rotation),
-            self.eq_chip.config.is_equal_expression.clone(),
+            self.lt_chip.config.is_lt(meta, at),
+            self.eq_chip.config.expr_at(meta, at, lhs, rhs),
         )
     }
 }

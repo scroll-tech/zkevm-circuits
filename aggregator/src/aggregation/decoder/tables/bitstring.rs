@@ -7,7 +7,7 @@ use halo2_proofs::{
 };
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::LookupTable,
+    table::{LookupTable, RangeTable, U8Table},
 };
 
 use crate::aggregation::decoder::witgen::ZstdWitnessRow;
@@ -104,7 +104,7 @@ pub struct BitstringTable {
 
 impl BitstringTable {
     /// Construct the bitstring accumulation table.
-    pub fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<Fr>, u8_table: U8Table) -> Self {
         let config = Self {
             q_first: meta.fixed_column(),
             byte_idx_1: meta.advice_column(),
@@ -125,7 +125,7 @@ impl BitstringTable {
             is_padding: meta.advice_column(),
         };
 
-        meta.create_gate("BitstringAccumulationTable: bit_index == 0", |meta| {
+        meta.create_gate("BitstringTable: bit_index == 0", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_start, Rotation::cur()),
                 not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
@@ -137,9 +137,20 @@ impl BitstringTable {
                 .map(|i| meta.query_advice(config.bit, Rotation(i)))
                 .collect::<Vec<Expression<Fr>>>();
 
+            let (byte_idx_1, byte_idx_2, byte_idx_3) = (
+                meta.query_advice(config.byte_idx_1, Rotation::cur()),
+                meta.query_advice(config.byte_idx_2, Rotation::cur()),
+                meta.query_advice(config.byte_idx_3, Rotation::cur()),
+            );
+            let (byte_1, byte_2, byte_3) = (
+                meta.query_advice(config.byte_1, Rotation::cur()),
+                meta.query_advice(config.byte_2, Rotation::cur()),
+                meta.query_advice(config.byte_3, Rotation::cur()),
+            );
+
             cb.require_equal(
                 "byte1 is the binary accumulation of 0 <= bit_index <= 7",
-                meta.query_advice(config.byte_1, Rotation::cur()),
+                byte_1,
                 select::expr(
                     meta.query_advice(config.is_reverse, Rotation::cur()),
                     bits[7].expr()
@@ -163,7 +174,7 @@ impl BitstringTable {
 
             cb.require_equal(
                 "byte2 is the binary accumulation of 8 <= bit_index <= 15",
-                meta.query_advice(config.byte_2, Rotation::cur()),
+                byte_2,
                 select::expr(
                     meta.query_advice(config.is_reverse, Rotation::cur()),
                     bits[15].expr()
@@ -187,7 +198,7 @@ impl BitstringTable {
 
             cb.require_equal(
                 "byte3 is the binary accumulation of 16 <= bit_index <= 23",
-                meta.query_advice(config.byte_3, Rotation::cur()),
+                byte_3,
                 select::expr(
                     meta.query_advice(config.is_reverse, Rotation::cur()),
                     bits[23].expr()
@@ -224,7 +235,7 @@ impl BitstringTable {
             cb.gate(condition)
         });
 
-        meta.create_gate("BitstringAccumulationTable: bit_index > 0", |meta| {
+        meta.create_gate("BitstringTable: bit_index > 0", |meta| {
             let condition = and::expr([
                 not::expr(meta.query_fixed(config.q_start, Rotation::cur())),
                 not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
@@ -259,111 +270,106 @@ impl BitstringTable {
             cb.gate(condition)
         });
 
-        meta.create_gate(
-            "BitstringAccumulationTable: bitstring_value accumulation",
-            |meta| {
-                let condition = not::expr(meta.query_advice(config.is_padding, Rotation::cur()));
+        meta.create_gate("BitstringTable: bitstring_value accumulation", |meta| {
+            let condition = not::expr(meta.query_advice(config.is_padding, Rotation::cur()));
 
-                let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-                let is_start = meta.query_fixed(config.q_start, Rotation::cur());
-                let is_end = meta.query_fixed(config.q_start, Rotation::next());
+            let is_start = meta.query_fixed(config.q_start, Rotation::cur());
+            let is_end = meta.query_fixed(config.q_start, Rotation::next());
 
-                // bit value is boolean.
-                cb.require_boolean(
-                    "bit is boolean",
+            // bit value is boolean.
+            cb.require_boolean(
+                "bit is boolean",
+                meta.query_advice(config.bit, Rotation::cur()),
+            );
+
+            // Columns from_start and until_end are boolean.
+            cb.require_boolean(
+                "from_start is boolean",
+                meta.query_advice(config.from_start, Rotation::cur()),
+            );
+            cb.require_boolean(
+                "until_end is boolean",
+                meta.query_advice(config.until_end, Rotation::cur()),
+            );
+
+            // until_end transitions from 0 to 1 only once, i.e. delta is boolean
+            let delta = meta.query_advice(config.until_end, Rotation::next())
+                - meta.query_advice(config.until_end, Rotation::cur());
+
+            cb.condition(is_end.expr(), |cb| {
+                cb.require_equal(
+                    "if bit_index == 23: until_end == 1",
+                    meta.query_advice(config.until_end, Rotation::cur()),
+                    1.expr(),
+                );
+            });
+            cb.condition(not::expr(is_end.expr()), |cb| {
+                cb.require_boolean("until_end delta is boolean", delta);
+            });
+
+            // Constraints at meaningful bits.
+            let is_set = and::expr([
+                meta.query_advice(config.from_start, Rotation::cur()),
+                meta.query_advice(config.until_end, Rotation::cur()),
+            ]);
+            cb.condition(is_start.expr() * is_set.expr(), |cb| {
+                cb.require_equal(
+                    "if is_start && is_set: bit == bitstring_value_acc",
                     meta.query_advice(config.bit, Rotation::cur()),
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
                 );
-
-                // Columns from_start and until_end are boolean.
-                cb.require_boolean(
-                    "from_start is boolean",
-                    meta.query_advice(config.from_start, Rotation::cur()),
+                cb.require_equal(
+                    "if is_start && is_set: bitstring_len == 1",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                    1.expr(),
                 );
-                cb.require_boolean(
-                    "until_end is boolean",
-                    meta.query_advice(config.until_end, Rotation::cur()),
+            });
+            cb.condition(not::expr(is_start) * is_set, |cb| {
+                cb.require_equal(
+                    "is_set: bitstring_value_acc == bitstring_value_acc::prev * 2 + bit",
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
+                    meta.query_advice(config.bitstring_value_acc, Rotation::prev()) * 2.expr()
+                        + meta.query_advice(config.bit, Rotation::cur()),
                 );
+                cb.require_equal(
+                    "is_set: bitstring_len == bitstring_len::prev + 1",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                    meta.query_advice(config.bitstring_len, Rotation::prev()) + 1.expr(),
+                );
+            });
 
-                // until_end transitions from 0 to 1 only once, i.e. delta is boolean
-                let delta = meta.query_advice(config.until_end, Rotation::next())
-                    - meta.query_advice(config.until_end, Rotation::cur());
+            // Constraints at bits to be ignored (at the start).
+            let is_ignored_start = not::expr(meta.query_advice(config.until_end, Rotation::cur()));
+            cb.condition(is_ignored_start, |cb| {
+                cb.require_zero(
+                    "while until_end == 0: bitstring_len == 0",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "while until_end == 0: bitstring_value_acc == 0",
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
+                );
+            });
 
-                cb.condition(is_end.expr(), |cb| {
-                    cb.require_equal(
-                        "if bit_index == 23: until_end == 1",
-                        meta.query_advice(config.until_end, Rotation::cur()),
-                        1.expr(),
-                    );
-                });
-                cb.condition(not::expr(is_end.expr()), |cb| {
-                    cb.require_boolean("until_end delta is boolean", delta);
-                });
+            // Constraints at bits to be ignored (towards the end).
+            let is_ignored_end = not::expr(meta.query_advice(config.from_start, Rotation::cur()));
+            cb.condition(is_ignored_end, |cb| {
+                cb.require_equal(
+                    "bitstring_len unchanged at the last ignored bits",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                    meta.query_advice(config.bitstring_len, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "bitstring_value_acc unchanged at the last ignored bits",
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
+                    meta.query_advice(config.bitstring_value_acc, Rotation::prev()),
+                );
+            });
 
-                // Constraints at meaningful bits.
-                let is_set = and::expr([
-                    meta.query_advice(config.from_start, Rotation::cur()),
-                    meta.query_advice(config.until_end, Rotation::cur()),
-                ]);
-                cb.condition(is_start.expr() * is_set.expr(), |cb| {
-                    cb.require_equal(
-                        "if is_start && is_set: bit == bitstring_value_acc",
-                        meta.query_advice(config.bit, Rotation::cur()),
-                        meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-                    );
-                    cb.require_equal(
-                        "if is_start && is_set: bitstring_len == 1",
-                        meta.query_advice(config.bitstring_len, Rotation::cur()),
-                        1.expr(),
-                    );
-                });
-                cb.condition(not::expr(is_start) * is_set, |cb| {
-                    cb.require_equal(
-                        "is_set: bitstring_value_acc == bitstring_value_acc::prev * 2 + bit",
-                        meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-                        meta.query_advice(config.bitstring_value_acc, Rotation::prev()) * 2.expr()
-                            + meta.query_advice(config.bit, Rotation::cur()),
-                    );
-                    cb.require_equal(
-                        "is_set: bitstring_len == bitstring_len::prev + 1",
-                        meta.query_advice(config.bitstring_len, Rotation::cur()),
-                        meta.query_advice(config.bitstring_len, Rotation::prev()) + 1.expr(),
-                    );
-                });
-
-                // Constraints at bits to be ignored (at the start).
-                let is_ignored_start =
-                    not::expr(meta.query_advice(config.until_end, Rotation::cur()));
-                cb.condition(is_ignored_start, |cb| {
-                    cb.require_zero(
-                        "while until_end == 0: bitstring_len == 0",
-                        meta.query_advice(config.bitstring_len, Rotation::cur()),
-                    );
-                    cb.require_zero(
-                        "while until_end == 0: bitstring_value_acc == 0",
-                        meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-                    );
-                });
-
-                // Constraints at bits to be ignored (towards the end).
-                let is_ignored_end =
-                    not::expr(meta.query_advice(config.from_start, Rotation::cur()));
-                cb.condition(is_ignored_end, |cb| {
-                    cb.require_equal(
-                        "bitstring_len unchanged at the last ignored bits",
-                        meta.query_advice(config.bitstring_len, Rotation::cur()),
-                        meta.query_advice(config.bitstring_len, Rotation::prev()),
-                    );
-                    cb.require_equal(
-                        "bitstring_value_acc unchanged at the last ignored bits",
-                        meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-                        meta.query_advice(config.bitstring_value_acc, Rotation::prev()),
-                    );
-                });
-
-                cb.gate(condition)
-            },
-        );
+            cb.gate(condition)
+        });
 
         meta.create_gate("BitstringTable: first row", |meta| {
             let condition = meta.query_fixed(config.q_first, Rotation::cur());
@@ -378,23 +384,53 @@ impl BitstringTable {
             cb.gate(condition)
         });
 
-        meta.create_gate("BitstringAccumulationTable: padding", |meta| {
+        meta.create_gate("BitstringTable: padding", |meta| {
             let condition = not::expr(meta.query_fixed(config.q_first, Rotation::cur()));
 
             let mut cb = BaseConstraintBuilder::default();
 
-            // padding is boolean
-            cb.require_boolean(
-                "is_padding is boolean",
+            let (is_padding_curr, is_padding_prev) = (
                 meta.query_advice(config.is_padding, Rotation::cur()),
+                meta.query_advice(config.is_padding, Rotation::prev()),
             );
 
+            // padding is boolean
+            cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
+
             // padding transitions from 0 to 1 only once.
-            let delta = meta.query_advice(config.is_padding, Rotation::cur())
-                - meta.query_advice(config.is_padding, Rotation::prev());
+            let delta = is_padding_curr - is_padding_prev;
             cb.require_boolean("is_padding delta is boolean", delta);
 
             cb.gate(condition)
+        });
+
+        // For every bitstring accumulation, the byte indices must be in the order in which
+        // they appear in the rows assigned to the DecoderConfig. Which means:
+        // - byte_idx_2 at the most increments by 1 compared to byte_idx_1.
+        // - byte_idx_3 at the most increments by 1 compared to byte_idx_2.
+        //
+        // We indirectly validate this part through the lookup from DecoderConfig to the
+        // BitstringTable, that includes the byte indices.
+        //
+        // However, we still want to make sure subsequent bitstring accumulation happens in
+        // increasing order of byte indices, to avoid malicious assignments for an older byte
+        // index. We need this check only for subsequent bitstrings after q_first=true.
+        //
+        // TODO: for a multi-block setup, the difference may be greater than 255.
+        meta.lookup("BitstringTable: byte_idx_1 is increasing", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(config.q_start, Rotation::cur()),
+                not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
+                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+            ]);
+
+            let (byte_idx_1_curr, byte_idx_1_prev) = (
+                meta.query_advice(config.byte_idx_1, Rotation::cur()),
+                meta.query_advice(config.byte_idx_1, Rotation::prev()),
+            );
+            let byte_idx_delta = byte_idx_1_curr - byte_idx_1_prev;
+
+            vec![(condition * byte_idx_delta, u8_table.into())]
         });
 
         debug_assert!(meta.degree() <= 9);
