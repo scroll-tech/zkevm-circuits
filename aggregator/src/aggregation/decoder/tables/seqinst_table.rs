@@ -210,7 +210,7 @@ impl<F: Field> SeqInstTable<F> {
     pub fn instructions(&self) -> [Column<Advice>;5]{
         [
             self.block_index,
-            self.n_seq,
+            self.seq_index,
             self.offset,
             self.acc_literal_len,
             self.match_len,

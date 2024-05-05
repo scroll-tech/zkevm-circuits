@@ -28,12 +28,14 @@ use zkevm_circuits::{
 use crate::aggregation::decoder::tables::FixedLookupTag;
 
 use self::{
-    tables::{BitstringTable, FixedTable, FseTable, LiteralsHeaderTable},
+    tables::{BitstringTable, FixedTable, FseTable, LiteralsHeaderTable, SeqInstTable},
     witgen::{
         FseTableKind, ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG,
         N_BLOCK_HEADER_BYTES,
     },
 };
+
+use seq_exec::{LiteralTable, SeqExecConfig};
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig {
@@ -952,7 +954,7 @@ impl DecoderConfig {
             pow2_table,
             bitwise_op_table,
         );
-        // TODO(enable): let sequence_instruction_table = SequenceInstructionTable::configure(meta);
+        let sequence_instruction_table = SeqInstTable::configure(meta);
 
         // Peripheral configs
         let (byte_idx, byte, is_padding) = (
@@ -968,20 +970,20 @@ impl DecoderConfig {
         let fse_decoder = FseDecoder::configure(meta);
         let sequences_data_decoder = SequencesDataDecoder::configure(meta);
 
-        // TODO(enable):
-        // let literals_table = [
-        //     tag_config.tag,
-        //     block_config.block_idx,
-        //     byte_idx,
-        //     byte,
-        //     is_padding,
-        // ];
-        // let sequence_execution_table = SequenceExecutionTable::configure(
-        //     meta,
-        //     challenges,
-        //     &literals_table,
-        //     &sequence_instruction_table,
-        // );
+        let literals_table = [
+            tag_config.tag,
+            block_config.block_idx,
+            byte_idx,
+            byte,
+            tag_config.is_change,
+            is_padding,
+        ];
+        let _sequence_execution_table = SeqExecConfig::configure(
+            meta,
+            challenges,
+            &LiteralTable::construct(literals_table),
+            &sequence_instruction_table,
+        );
 
         // Main config
         let config = Self {
