@@ -247,15 +247,11 @@ impl<F: Field> SeqInstTable<F> {
             )
         });
         let [offset_is_1, offset_is_2, offset_is_3] = 
-        [
-            (rep_offset_1, 1),
-            (rep_offset_2, 2),
-            (rep_offset_3, 3)
-        ].map(|(col, val)|{
+        [1,2,3].map(|val|{
             IsEqualChip::configure(
                 meta, 
                 |meta|meta.query_fixed(q_enabled, Rotation::cur()),
-                |meta|meta.query_advice(col, Rotation::cur()), 
+                |meta|meta.query_advice(match_offset, Rotation::cur()), 
                 |_|val.expr()
             )
         });
@@ -270,8 +266,6 @@ impl<F: Field> SeqInstTable<F> {
         meta.create_gate("seq index and section borders", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
-            let n_seq = meta.query_advice(n_seq, Rotation::cur());
-
             let seq_index_next = meta.query_advice(seq_index, Rotation::next());
             let seq_index = meta.query_advice(seq_index, Rotation::cur());
             let is_seq_border = &seq_index_is_n_seq;
@@ -284,14 +278,15 @@ impl<F: Field> SeqInstTable<F> {
                 ), seq_index_next.expr()
             );
 
+            let s_beginning = meta.query_advice(s_beginning, Rotation::next());
             cb.require_boolean("s_beginning is boolean", 
-                meta.query_advice(s_beginning, Rotation::cur())
+                s_beginning.expr(),
             );
 
             cb.condition(not::expr(is_seq_border.expr()),
                 |cb|{
                     cb.require_zero("s_beginning on enabled after seq border", 
-                        meta.query_advice(s_beginning, Rotation::next())
+                        s_beginning.expr(),
                     )
                 }
             );
@@ -311,11 +306,9 @@ impl<F: Field> SeqInstTable<F> {
             let block_index_next = meta.query_advice(block_index, Rotation::next());
             let block_index = meta.query_advice(block_index, Rotation::cur());
 
-            let n_seq = meta.query_advice(n_seq, Rotation::cur());
-            let seq_index = meta.query_advice(seq_index, Rotation::cur());
             let is_seq_border = &seq_index_is_n_seq;
 
-            cb.require_equal("block is increment only in border", 
+            cb.require_equal("block can only increase in seq border", 
                 select::expr(
                     is_seq_border.expr(),
                     block_index.expr() + 1.expr(),
@@ -368,8 +361,6 @@ impl<F: Field> SeqInstTable<F> {
 
             let offset_val = meta.query_advice(offset, Rotation::cur());
             let offset = meta.query_advice(match_offset, Rotation::cur());
-
-            let literal_len = meta.query_advice(literal_len, Rotation::cur());
 
             let s_is_offset_ref = or::expr([
                 offset_is_1.expr(),
@@ -425,12 +416,9 @@ impl<F: Field> SeqInstTable<F> {
 
             // following we updated table for rep_offset_2/3
 
-            // for no-ref or literal len is 0, ref offset table is
+            // for no-ref ref offset table 2/3 is
             // updated with a "shift" nature
-            cb.condition(or::expr([
-                literal_is_zero.expr(),
-                not::expr(s_is_offset_ref.expr()),
-            ]),|cb|{
+            cb.condition(not::expr(s_is_offset_ref.expr()),|cb|{
                 cb.require_equal("shift 1 -> 2", 
                     rep_offset_1_prev.expr(), 
                     rep_offset_2.expr(),
@@ -443,22 +431,31 @@ impl<F: Field> SeqInstTable<F> {
 
             // in ref offset case (offset is 1-3), the table is
             // updated by more complificant fashion
-            cb.condition(not::expr(literal_is_zero.expr()), |cb|{
+            cb.condition(
+                and::expr([
+                    not::expr(literal_is_zero.expr()),
+                    offset_is_1.expr(),
+                ]),
+                |cb|{
 
-                // offset is 1, table not change
-                cb.condition(offset_is_1.expr(), |cb|{
-                    cb.require_equal("copy offset 1 for ref 1", 
+                    cb.require_equal("copy offset 2 for ref 1",
                         rep_offset_2_prev.expr(), 
                         rep_offset_2.expr(),
                     );
-                    cb.require_equal("copy offset 2 for ref 1", 
+                    cb.require_equal("copy offset 3 for ref 1", 
                         rep_offset_3_prev.expr(), 
                         rep_offset_3.expr(),
                     );
-                });
+                }
+            );
+            cb.condition(
+                select::expr(
+                    literal_is_zero.expr(),
+                    offset_is_1.expr(),
+                    offset_is_2.expr(),
+                ), 
+                |cb|{
 
-                // offset is 2, offset 1 and 2 is swapped (3 unchanged)
-                cb.condition(offset_is_2.expr(), |cb|{
                     cb.require_equal("swap 1&2 for ref 2", 
                         rep_offset_1_prev.expr(), 
                         rep_offset_2.expr(),
@@ -466,11 +463,19 @@ impl<F: Field> SeqInstTable<F> {
                     cb.require_equal("copy offset 3 for ref 2", 
                         rep_offset_3_prev.expr(), 
                         rep_offset_3.expr(),
-                    );                   
-                });
+                    );
+                }
+            );
+            cb.condition(
+                select::expr(
+                    literal_is_zero.expr(),
+                    // this equal to "or" since they are exclusive
+                    // this trick is used to save a degree
+                    offset_is_2.expr() + offset_is_3.expr(),
+                    offset_is_3.expr(),
+                ),
+                |cb|{
 
-                // offset is 3, offset table has a rotation
-                cb.condition(offset_is_3.expr(), |cb|{
                     cb.require_equal("rotate 3-1 for ref 3", 
                         rep_offset_1_prev.expr(), 
                         rep_offset_2.expr(),
@@ -478,9 +483,9 @@ impl<F: Field> SeqInstTable<F> {
                     cb.require_equal("rotate 3-1 for ref 3", 
                         rep_offset_2_prev.expr(), 
                         rep_offset_3.expr(),
-                    );                   
-                });
-            });
+                    ); 
+                }
+            );
 
             cb.condition(literal_is_zero.expr(), |cb|{
                 cb.require_zero("data must not corrupt", 
@@ -489,13 +494,14 @@ impl<F: Field> SeqInstTable<F> {
             });
 
             cb.gate(
-                meta.query_fixed(q_enabled, Rotation::cur())*
+                meta.query_fixed(q_enabled, Rotation::cur())* 
                 not::expr(meta.query_advice(s_beginning, Rotation::cur())),
             )
         });
 
         // the beginning of following rows must be constrainted
         meta.enable_equality(block_index);
+        meta.enable_equality(seq_index);
         meta.enable_equality(rep_offset_1);
         meta.enable_equality(rep_offset_2);
         meta.enable_equality(rep_offset_3);
@@ -543,17 +549,19 @@ impl<F: Field> SeqInstTable<F> {
 
                 let fill_header_padding = |
                     region: &mut Region<F>,
-                    offset,
+                    header_offset,
+                    end_offset,
                     block_ind: u64,
                     n_seq: u64,
                     offset_table: [u64;3],
                 |->Result<(), Error>{
+
                     region.assign_fixed(
                         ||"enable row",
-                        self.q_enabled, offset,
+                        self.q_enabled, header_offset,
                         || Value::known(F::one()),
                     )?;                    
-                    //region.assign_advice(||"", column, offset, to)
+
                     for col in [
                         self.rep_offset_1,
                         self.rep_offset_2,
@@ -567,29 +575,40 @@ impl<F: Field> SeqInstTable<F> {
                     ] {
                         region.assign_advice(
                             ||"padding values", 
-                            col, offset, ||Value::known(F::zero())
+                            col, header_offset, ||Value::known(F::zero())
                         )?;
                     }
+                    literal_is_zero_chip.assign(region, header_offset, Value::known(F::zero()))?;
 
                     for (col, val) in [
                         (self.rep_offset_1, offset_table[0]),
                         (self.rep_offset_2, offset_table[1]),
                         (self.rep_offset_3, offset_table[2]),
                         (self.block_index, block_ind),
-                        (self.n_seq, n_seq)
                     ]{
                         region.assign_advice(
                             ||"header block fill", 
-                            col, offset, 
+                            col, header_offset, 
                             ||Value::known(F::from(val))
                         )?;                        
                     }
-                    for chip in [
-                        &literal_is_zero_chip,
-                        &ref_offset_1_is_zero_chip,
-                    ] {
-                        chip.assign(region, offset, Value::known(F::zero()))?;
+                    assert_eq!(end_offset-header_offset, n_seq as usize);
+
+                    for (i, offset) in (header_offset..=end_offset)
+                        .into_iter().enumerate() {
+                        region.assign_advice(
+                            ||"fill n_seq", 
+                            self.n_seq, offset, 
+                            ||Value::known(F::from(n_seq))
+                        )?;
+                        seq_index_chip.assign(
+                            region,
+                            offset,
+                            Value::known(F::from(i as u64)),
+                            Value::known(F::from(n_seq)),
+                        )?;   
                     }
+                    ref_offset_1_is_zero_chip.assign(region, header_offset, Value::known(F::from(offset_table[0])))?;
 
                     for (chip, val) in [
                         (&offset_is_1_chip, F::from(1u64)),
@@ -597,24 +616,29 @@ impl<F: Field> SeqInstTable<F> {
                         (&offset_is_3_chip, F::from(3u64)),
                         (&seq_index_chip, F::from(n_seq)),
                     ]{
-                        chip.assign(region, offset, Value::known(F::zero()), Value::known(val))?;
+                        chip.assign(region, header_offset, Value::known(F::zero()), Value::known(val))?;
                     }
 
+                    region.assign_advice(||"set beginning flag",
+                        self.s_beginning,
+                        header_offset,
+                        ||Value::known(F::one()),
+                    )?;
                     Ok(())
                 };
 
                 // top row constraint
                 for (col, val) in [
                     (self.block_index, F::zero()),
+                    (self.seq_index, F::zero()),
                     (self.rep_offset_1, F::from(1u64)),
-                    (self.rep_offset_1, F::from(4u64)),
-                    (self.rep_offset_1, F::from(8u64)),
+                    (self.rep_offset_2, F::from(4u64)),
+                    (self.rep_offset_3, F::from(8u64)),
                 ] {
                     region.assign_advice_from_constant(||"top row", col, 0, val)?;
                 }
 
                 for col in [
-                    self.seq_index,
                     self.acc_literal_len,
                 ] {
                     region.assign_advice(||"top row flush", col, 0, ||Value::known(F::zero()))?;
@@ -625,12 +649,12 @@ impl<F: Field> SeqInstTable<F> {
                 let mut block_ind = 0u64;
                 let mut n_seq = 0u64;
                 let mut block_head_fill_f : Box<
-                    dyn FnOnce(&mut Region<F>, u64) -> Result<(), Error>
+                    dyn FnOnce(&mut Region<F>, u64, usize) -> Result<(), Error>
                 >
-                    = Box::new(|_, _|Ok(()));
+                    = Box::new(|_, _, _|Ok(()));
 
                 // sanity check, also calculate the reference
-                let mut seq_index = 0u64;
+                let mut seq_index = 1u64;
                 let mut offset_table : [u64;3]= [1,4,8];
                 let mut acc_literal_len = 0u64;
 
@@ -645,15 +669,16 @@ impl<F: Field> SeqInstTable<F> {
                     // be postpone since we need to collect the
                     // n_seq later
                     if block_ind != cur_block {
-                        block_head_fill_f(&mut region, n_seq)?;
+                        block_head_fill_f(&mut region, n_seq, offset)?;
                         // left one row for header
                         block_ind = cur_block;
-                        seq_index = 0;
+                        seq_index = 1;
                         acc_literal_len = 0;
-                        block_head_fill_f = Box::new(move |region, n_seq|
+                        block_head_fill_f = Box::new(move |region, n_seq, cur_offset|
                             fill_header_padding(
                                 region,
                                 offset,
+                                cur_offset-1,
                                 cur_block,
                                 n_seq,
                                 offset_table,
@@ -696,6 +721,7 @@ impl<F: Field> SeqInstTable<F> {
                     offset_table[2] = table_row.repeated_offset3;
 
                     for (name, col, val) in [
+                        ("beginning flag", self.s_beginning, F::zero()),
                         ("offset table 1", self.rep_offset_1, F::from(offset_table[0])),
                         ("offset table 2", self.rep_offset_2, F::from(offset_table[1])),
                         ("offset table 3", self.rep_offset_3, F::from(offset_table[2])),
@@ -705,6 +731,7 @@ impl<F: Field> SeqInstTable<F> {
                         ("llen_acc", self.acc_literal_len, F::from(acc_literal_len)),
                         ("offset", self.offset, F::from(offset_val)),
                         ("seq ind", self.seq_index, F::from(seq_index)),
+                        ("block ind", self.block_index, F::from(block_ind)),
                     ] {
                         region.assign_advice(
                             ||name, col, offset, ||Value::known(val)
@@ -719,25 +746,31 @@ impl<F: Field> SeqInstTable<F> {
                     }
 
                     for (chip, val_l, val_r) in [
-                        (&offset_is_1_chip, F::from(offset_table[0]), F::from(1u64)),
-                        (&offset_is_2_chip, F::from(offset_table[1]), F::from(2u64)),
-                        (&offset_is_3_chip, F::from(offset_table[2]), F::from(3u64)),
-                        (&seq_index_chip, F::from(seq_index), F::from(n_seq)),
+                        (&offset_is_1_chip, F::from(table_row.cooked_match_offset), F::from(1u64)),
+                        (&offset_is_2_chip, F::from(table_row.cooked_match_offset), F::from(2u64)),
+                        (&offset_is_3_chip, F::from(table_row.cooked_match_offset), F::from(3u64)),
+                        //(&seq_index_chip, F::from(seq_index), F::from(n_seq)),
                     ]{
-                        chip.assign(&mut region, offset, Value::known(val_l), Value::known(val_r))?;
+                        chip.assign(
+                            &mut region, 
+                            offset, 
+                            Value::known(val_l), 
+                            Value::known(val_r)
+                        )?;
                     }
                     offset += 1;
                     seq_index += 1;  
                 }
                 // final call for last post-poned head filling func
-                block_head_fill_f(&mut region, n_seq)?;
+                block_head_fill_f(&mut region, n_seq, offset)?;
 
                 // pad the rest rows until final row
                 for (offset, blk_index) in (offset..enabled_rows)
                     .zip(std::iter::successors(Some(block_ind+1), |ind|Some(ind+1))){
-
+                    
                     fill_header_padding(
                         &mut region,
+                        offset,
                         offset,
                         blk_index,
                         0,
@@ -791,19 +824,59 @@ mod tests {
             config.assign(
                 &mut layouter,
                 self.0.iter(),
-                100,
+                15,
             )?;
 
             Ok(())
         }
     }
 
+    fn build_table_row(samples: &[[u64;5]]) -> Vec<AddressTableRow> {
+        let mut ret = Vec::<AddressTableRow>::new();
+
+        for sample in samples {
+            let mut new_item = AddressTableRow {
+                cooked_match_offset: sample[0],
+                literal_length: sample[1],
+                repeated_offset1: sample[2],
+                repeated_offset2: sample[3],
+                repeated_offset3: sample[4],
+                actual_offset: sample[2],
+                ..Default::default()
+            };
+    
+            if let Some(old_item) = ret.last() {
+                new_item.instruction_idx = old_item.instruction_idx + 1;
+                new_item.literal_length_acc = old_item.literal_length_acc + sample[1];
+            } else {
+                new_item.literal_length_acc = sample[1];
+            }
+            
+            ret.push(new_item);
+        }
+
+        ret
+    }
+
     #[test]
     fn seqinst_table_gates(){
 
-        let circuit = SeqTable(vec![
-
-        ]);
+        // example comes from zstd's spec
+        let circuit = SeqTable(
+            build_table_row(
+                &[
+                    [1114, 11, 1111, 1, 4],
+                    [1, 22, 1111, 1, 4],
+                    [2225, 22, 2222, 1111, 1],
+                    [1114, 111, 1111, 2222, 1111],
+                    [3336, 33, 3333, 1111, 2222],
+                    [2, 22, 1111, 3333, 2222],
+                    [3, 33, 2222, 1111, 3333],
+                    [3, 0, 2221, 2222, 1111],
+                    [1, 0, 2222, 2221, 1111],
+                ],
+            ),
+        );
 
         let k = 12;
         let mock_prover = MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
