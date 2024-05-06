@@ -145,8 +145,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
-        ToWord, Word,
+        address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
     };
     use mock::TestContext;
 
