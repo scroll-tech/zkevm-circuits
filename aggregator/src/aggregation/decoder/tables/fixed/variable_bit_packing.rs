@@ -16,7 +16,7 @@ impl FixedLookupValues for RomVariableBitPacking {
     fn values() -> Vec<[Value<Fr>; 7]> {
         // The maximum range R we ever have is 512 (1 << 9) as the maximum possible accuracy log is
         // 9. So we only need to support a range up to R + 1, i.e. 513.
-        let rows = (0..=513)
+        let rows = (1..=513)
             .flat_map(|range| {
                 // Get the number of bits required to represent the highest number in this range.
                 let size = bit_length(range) as u32;
