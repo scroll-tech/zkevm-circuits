@@ -11,10 +11,9 @@ use crate::{
         U16Table, U8Table,
     },
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness::Transaction,
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error, Expression},

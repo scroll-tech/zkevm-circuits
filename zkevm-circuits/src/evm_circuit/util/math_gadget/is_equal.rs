@@ -1,7 +1,9 @@
-use crate::evm_circuit::util::{
-    constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+use crate::{
+    evm_circuit::util::{
+        constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+    },
+    util::Field,
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -55,8 +57,9 @@ impl<F: Field> IsEqualGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::{
-        constraint_builder::ConstrainBuilderCommon, CachedRegion, Cell,
+    use crate::{
+        evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, CachedRegion, Cell},
+        util::Field,
     };
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};

@@ -13,7 +13,7 @@ link to the original HackMD file: https://hackmd.io/@dieGzUCgSGmRZFQ7SDxXCA/H1vM
 [Keccak Team Keccak Spec]: https://keccak.team/files/Keccak-implementation-3.2.pdf
 
 [Keccak256 Implementation]:
-https://github.com/scroll-tech/zkevm-circuits/tree/scroll-stable/keccak256
+https://github.com/scroll-tech/zkevm-circuits/tree/develop/keccak256
 
 [Keccak Circuit Original Spec]: https://hackmd.io/NaTuIvmaQCybaOYgd-DG1Q?view#Bit-implementation
 

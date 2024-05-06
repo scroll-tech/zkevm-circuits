@@ -9,8 +9,7 @@ use crate::{
         precompiles::gen_associated_ops as precompile_associated_ops,
     },
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
-    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
-    state_db::CodeDB,
+    precompile::{execute_precompiled, PrecompileCalls},
     Error,
 };
 use eth_types::{
@@ -18,6 +17,8 @@ use eth_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
         Gas, GasCost, OpcodeId, GAS_STIPEND_CALL_WITH_VALUE,
     },
+    state_db::CodeDB,
+    utils::is_precompiled,
     GethExecStep, ToWord, Word,
 };
 use std::cmp::min;

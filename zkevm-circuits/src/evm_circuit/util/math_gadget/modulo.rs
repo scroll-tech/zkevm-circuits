@@ -5,9 +5,9 @@ use crate::{
         math_gadget::*,
         select, sum, CachedRegion,
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::plonk::Error;
 
 /// Constraints for the words a, n, r:

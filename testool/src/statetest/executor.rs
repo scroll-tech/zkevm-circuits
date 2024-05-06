@@ -1,10 +1,10 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::{config::TestSuite, utils::ETH_CHAIN_ID};
-use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
-    state_db::CodeDB,
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams};
+use eth_types::{
+    geth_types, state_db::CodeDB, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
+    U64,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256, U64};
 use ethers_core::utils::keccak256;
 use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
@@ -292,10 +292,18 @@ fn trace_config_to_witness_block_l2(
         .into_iter()
         .map(From::from)
         .collect::<Vec<_>>();
+
     // if the trace exceed max steps, we cannot fit it into circuit
-    // but we still want to make it go through bus-mapping generation
+    // but sometimes we still want to make it go through bus-mapping generation
+    let always_run_bus_mapping = false;
     let exceed_max_steps = match check_geth_traces(&geth_traces, &suite, verbose) {
-        Err(StateTestError::SkipTestMaxSteps(steps)) => steps,
+        Err(StateTestError::SkipTestMaxSteps(steps)) => {
+            if always_run_bus_mapping {
+                steps
+            } else {
+                return Err(StateTestError::SkipTestMaxSteps(steps));
+            }
+        }
         Err(e) => return Err(e),
         Ok(_) => 0,
     };
@@ -717,7 +725,7 @@ pub fn run_test(
                     // modified from bus-mapping/src/mock.rs
                     let keccak_code_hash = H256(keccak256(&account.code));
                     let code_hash = CodeDB::hash(&account.code);
-                    *acc_in_local_sdb = bus_mapping::state_db::Account {
+                    *acc_in_local_sdb = eth_types::state_db::Account {
                         nonce: account.nonce,
                         balance: account.balance,
                         storage: account.storage.clone(),

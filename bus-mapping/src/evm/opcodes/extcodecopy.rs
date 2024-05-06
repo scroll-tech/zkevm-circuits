@@ -147,12 +147,12 @@ mod extcodecopy_tests {
             AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
             TxAccessListAccountOp, RW,
         },
-        state_db::CodeDB,
     };
     use eth_types::{
         address, bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
+        state_db::CodeDB,
         Bytecode, Bytes, ToWord, Word, U256,
     };
     use mock::{test_ctx::LoggerConfig, TestContext};

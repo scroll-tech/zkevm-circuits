@@ -11,11 +11,11 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, Field},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian,
+    ToLittleEndian,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 

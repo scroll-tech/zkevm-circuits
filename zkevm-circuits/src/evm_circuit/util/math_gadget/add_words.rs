@@ -4,9 +4,9 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         from_bytes, pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Construction of 2 256-bit words addition and result, which is useful for

@@ -10,7 +10,7 @@ use crate::{
     table::{LookupTable, RlpFsmRlpTable, U8Table},
     util::{
         is_zero::{IsZeroChip, IsZeroConfig},
-        Challenges, SubCircuit, SubCircuitConfig,
+        Challenges, Field, SubCircuit, SubCircuitConfig,
     },
     witness::{
         rlp_fsm::StackOp,
@@ -21,7 +21,6 @@ use crate::{
         Transaction,
     },
 };
-use eth_types::Field;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},

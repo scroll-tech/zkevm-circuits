@@ -11,11 +11,11 @@ pub use dev::ExpCircuit as TestExpCircuit;
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{ExpTable, LookupTable, U16Table},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness,
 };
 use bus_mapping::circuit_input_builder::{ExpEvent, ExpStep};
-use eth_types::{Field, ToScalar, U256};
+use eth_types::{ToScalar, U256};
 use gadgets::{
     mul_add::{MulAddChip, MulAddConfig},
     util::{and, not, Expr},

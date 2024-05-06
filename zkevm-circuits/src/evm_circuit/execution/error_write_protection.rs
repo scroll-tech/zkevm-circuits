@@ -11,9 +11,9 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -44,11 +44,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         // max_degree. otherwise need to do fixed lookup for these opcodes
         // checking.
         cb.require_in_set(
-            "ErrorWriteProtection only happens in [CALL, SSTORE, CREATE, CREATE2, SELFDESTRUCT, LOG0..4 ]",
+            "ErrorWriteProtection only happens in [CALL, SSTORE, TSTORE, CREATE, CREATE2, SELFDESTRUCT, LOG0..4 ]",
             opcode.expr(),
             vec![
                 OpcodeId::CALL.expr(),
                 OpcodeId::SSTORE.expr(),
+                OpcodeId::TSTORE.expr(),
                 OpcodeId::CREATE.expr(),
                 OpcodeId::CREATE2.expr(),
                 OpcodeId::SELFDESTRUCT.expr(),
@@ -171,62 +172,26 @@ mod test {
         }
     }
 
-    fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
-        let is_call = opcode == OpcodeId::CALL;
-        let terminator = if caller_is_success {
-            OpcodeId::RETURN
-        } else {
-            OpcodeId::REVERT
-        };
-
-        let mut bytecode = bytecode! {
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        };
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        });
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH1(0)
-            PUSH1(0)
-            .write_op(terminator)
-        });
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
+    #[derive(Copy, Clone, Debug)]
+    enum FailureReason {
+        Sstore,
+        TStore,
+        CallWithValue,
     }
 
     #[test]
     fn test_write_protection() {
-        // test sstore with write protection error
-        test_internal_write_protection(false);
-        // test call with write protection error
-        test_internal_write_protection(true);
+        for reason in [
+            FailureReason::Sstore,
+            FailureReason::CallWithValue,
+            FailureReason::TStore,
+        ] {
+            test_internal_write_protection(reason)
+        }
     }
 
     // ErrorWriteProtection error happen in internal call
-    fn test_internal_write_protection(is_call: bool) {
+    fn test_internal_write_protection(reason: FailureReason) {
         let mut caller_bytecode = bytecode! {
             PUSH1(0)
             PUSH1(0)
@@ -247,26 +212,36 @@ mod test {
             PUSH1(0x02)
         };
 
-        if is_call {
-            callee_bytecode.append(&bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-                PUSH1(10)
-                PUSH1(200)  // non zero value
-                PUSH20(Address::repeat_byte(0xff).to_word())
-                PUSH2(10000)  // gas
-                //this call got error: ErrorWriteProtection
-                CALL
-                RETURN
-                STOP
-            });
-        } else {
-            callee_bytecode.append(&bytecode! {
-                // this SSTORE got error: ErrorWriteProtection
-                SSTORE
-                STOP
-            });
-        }
+        match reason {
+            FailureReason::CallWithValue => {
+                callee_bytecode.append(&bytecode! {
+                    PUSH1(0)
+                    PUSH1(0)
+                    PUSH1(10)
+                    PUSH1(200)  // non zero value
+                    PUSH20(Address::repeat_byte(0xff).to_word())
+                    PUSH2(10000)  // gas
+                    //this call got error: ErrorWriteProtection
+                    CALL
+                    RETURN
+                    STOP
+                });
+            }
+            FailureReason::Sstore => {
+                callee_bytecode.append(&bytecode! {
+                    // this SSTORE got error: ErrorWriteProtection
+                    SSTORE
+                    STOP
+                });
+            }
+            FailureReason::TStore => {
+                callee_bytecode.append(&bytecode! {
+                    // this TSTORE got error: ErrorWriteProtection
+                    TSTORE
+                    STOP
+                });
+            }
+        };
 
         test_ok(
             Account {

@@ -3,9 +3,8 @@ pub use super::CopyCircuit;
 use crate::{
     copy_circuit::{CopyCircuitConfig, CopyCircuitConfigArgs},
     table::{BytecodeTable, CopyTable, RwTable, TxTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Challenge, Circuit, ConstraintSystem, Error},

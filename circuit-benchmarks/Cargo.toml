@@ -10,7 +10,6 @@ license.workspace = true
 halo2_proofs.workspace = true
 ark-std.workspace = true
 zkevm-circuits = { path = "../zkevm-circuits", features = ["test"]}
-keccak256 = { path = "../keccak256" }
 bus-mapping = { path = "../bus-mapping",  features = ["test"] }
 rand_xorshift.workspace = true
 rand.workspace = true

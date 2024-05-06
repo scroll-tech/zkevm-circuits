@@ -2,7 +2,8 @@
 pub use super::EvmCircuit;
 use crate::evm_circuit::{detect_fixed_table_tags, witness::Block};
 
-use eth_types::{Field, Word};
+use crate::util::Field;
+use eth_types::Word;
 use rand::{
     distributions::uniform::{SampleRange, SampleUniform},
     random, thread_rng, Rng,

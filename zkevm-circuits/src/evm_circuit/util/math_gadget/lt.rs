@@ -6,9 +6,8 @@ use crate::{
             from_bytes, pow_of_two, transpose_val_ret, CachedRegion, Cell,
         },
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -106,6 +105,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
+    use crate::util::Field;
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 

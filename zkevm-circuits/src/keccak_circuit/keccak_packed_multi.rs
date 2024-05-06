@@ -1,6 +1,8 @@
 use super::{cell_manager::*, param::*, util::*};
-use crate::{evm_circuit::util::rlc, util::Challenges};
-use eth_types::Field;
+use crate::{
+    evm_circuit::util::rlc,
+    util::{Challenges, Field},
+};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -156,8 +158,10 @@ impl<F: Field> KeccakRegion<F> {
 /// Recombines parts back together
 pub(crate) mod decode {
     use super::{Part, PartValue};
-    use crate::{keccak_circuit::param::BIT_COUNT, util::Expr};
-    use eth_types::Field;
+    use crate::{
+        keccak_circuit::param::BIT_COUNT,
+        util::{Expr, Field},
+    };
     use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field>(parts: Vec<Part<F>>) -> Expression<F> {
@@ -179,9 +183,8 @@ pub(crate) mod split {
     use crate::{
         evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         keccak_circuit::util::{pack, pack_part, unpack, WordParts},
-        util::Expr,
+        util::{Expr, Field},
     };
-    use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
     #[allow(clippy::too_many_arguments)]
@@ -245,9 +248,8 @@ pub(crate) mod split_uniform {
             param::BIT_COUNT,
             util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts},
         },
-        util::Expr,
+        util::{Expr, Field},
     };
-    use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
     #[allow(clippy::too_many_arguments)]
@@ -409,7 +411,7 @@ pub(crate) mod split_uniform {
 // Transform values using a lookup table
 pub(crate) mod transform {
     use super::{transform_to, CellManager, KeccakRegion, Part, PartValue};
-    use eth_types::Field;
+    use crate::util::Field;
     use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]
@@ -466,9 +468,8 @@ pub(crate) mod transform_to {
     use super::{Cell, KeccakRegion, Part, PartValue};
     use crate::{
         keccak_circuit::util::{pack, to_bytes, unpack},
-        util::Expr,
+        util::{Expr, Field},
     };
-    use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]

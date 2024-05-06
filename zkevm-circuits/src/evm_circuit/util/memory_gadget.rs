@@ -16,12 +16,12 @@ use crate::{
             not, or, select, sum, Cell, CellType, MemoryAddress,
         },
     },
-    util::Expr,
+    util::{Expr, Field},
 };
 use array_init::array_init;
 use eth_types::{
     evm_types::{GasCost, MAX_EXPANDED_MEMORY_ADDRESS},
-    Field, ToLittleEndian, U256,
+    ToLittleEndian, U256,
 };
 use halo2_proofs::{
     circuit::Value,

@@ -17,7 +17,7 @@ external-tracer = { path="../external-tracer" }
 glob = "0.3"
 handlebars = "4.3"
 hex.workspace = true
-keccak256 = { path = "../keccak256" }
+sha3 = "0.10"
 log.workspace = true
 itertools.workspace = true
 mock = { path = "../mock" }

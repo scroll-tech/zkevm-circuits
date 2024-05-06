@@ -12,6 +12,7 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::TxCircuitTester as TestTxCircuit;
 
+use crate::util::Field;
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     // sig_circuit::SigCircuit,
@@ -51,7 +52,7 @@ use eth_types::{
         TxType::{Eip155, Eip1559, Eip2930, L1Msg, PreEip155},
     },
     sign_types::SignData,
-    AccessList, Address, Field, ToAddress, ToBigEndian, ToScalar,
+    AccessList, Address, ToAddress, ToBigEndian, ToScalar,
 };
 use ethers_core::utils::keccak256;
 use gadgets::{
@@ -78,9 +79,9 @@ use std::{
 use crate::{util::Challenges, witness::rlp_fsm::get_rlp_len_tag_length};
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
-use halo2_proofs::plonk::Fixed;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
+use halo2_proofs::plonk::{Any, Fixed};
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
@@ -125,6 +126,205 @@ struct RlpTableInputValue<F: Field> {
     is_none: bool,
     be_bytes_len: u32,
     be_bytes_rlc: Value<F>,
+}
+
+/// Read-only Tx Memory table row.
+#[derive(Debug, Clone)]
+pub struct TxRomTableRow {
+    pub(crate) tag: TxFieldTag,
+    pub(crate) tag_next: TxFieldTag,
+    pub(crate) is_tx_id_unchanged: u8,
+    pub(crate) is_final: u8,
+    pub(crate) is_next_dynamic_first: u8,
+}
+
+impl From<(TxFieldTag, TxFieldTag, u8, u8, u8)> for TxRomTableRow {
+    fn from(value: (TxFieldTag, TxFieldTag, u8, u8, u8)) -> Self {
+        Self {
+            tag: value.0,
+            tag_next: value.1,
+            is_tx_id_unchanged: value.2,
+            is_final: value.3,
+            is_next_dynamic_first: value.4,
+        }
+    }
+}
+
+impl TxRomTableRow {
+    pub(crate) fn values<F: Field>(&self) -> Vec<Value<F>> {
+        vec![
+            Value::known(F::from(usize::from(self.tag) as u64)),
+            Value::known(F::from(usize::from(self.tag_next) as u64)),
+            Value::known(F::from(self.is_tx_id_unchanged as u64)),
+            Value::known(F::from(self.is_final as u64)),
+            Value::known(F::from(self.is_next_dynamic_first as u64)),
+        ]
+    }
+}
+
+/// Read-only Memory table for verifying correct tag column transition within the TxCircuit.
+#[derive(Clone, Copy, Debug)]
+pub struct TxRomTable {
+    /// Tag of the current row
+    pub tag: Column<Fixed>,
+    /// Tag of the next row
+    pub tag_next: Column<Fixed>,
+    /// Indicator for if the tx_id is the same for current and next tag
+    pub is_tx_id_unchanged: Column<Fixed>,
+    /// Indicator if the dynamic section tag is complete on current row
+    /// This indicator only applies to the dynamic section
+    pub is_final: Column<Fixed>,
+    /// Indicator for the end of the fixed section
+    /// The last tag of the fixed section should transition into either calldata or access_list
+    pub is_next_dynamic_first: Column<Fixed>,
+}
+
+impl<F: Field> LookupTable<F> for TxRomTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.tag.into(),
+            self.tag_next.into(),
+            self.is_tx_id_unchanged.into(),
+            self.is_final.into(),
+            self.is_next_dynamic_first.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tag"),
+            String::from("tag_next"),
+            String::from("is_tx_id_unchanged"),
+            String::from("is_final"),
+            String::from("is_next_dynamic_first"),
+        ]
+    }
+}
+
+impl TxRomTable {
+    /// Construct the ROM table
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tag: meta.fixed_column(),
+            tag_next: meta.fixed_column(),
+            is_tx_id_unchanged: meta.fixed_column(),
+            is_final: meta.fixed_column(),
+            is_next_dynamic_first: meta.fixed_column(),
+        }
+    }
+
+    /// Load the ROM table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "Tx ROM table",
+            |mut region| {
+                let transition_scenarios: Vec<(TxFieldTag, TxFieldTag, u8, u8, u8)> = vec![
+                    // All fixed section tags. tx_id stays the same except the last tx.
+                    (TxFieldTag::Null, Nonce, 0, 1, 0),
+                    (Nonce, GasPrice, 1, 1, 0),
+                    (GasPrice, Gas, 1, 1, 0),
+                    (Gas, CallerAddress, 1, 1, 0),
+                    (CallerAddress, CalleeAddress, 1, 1, 0),
+                    (CalleeAddress, IsCreate, 1, 1, 0),
+                    (IsCreate, TxFieldTag::Value, 1, 1, 0),
+                    (TxFieldTag::Value, CallDataRLC, 1, 1, 0),
+                    (CallDataRLC, CallDataLength, 1, 1, 0),
+                    (CallDataLength, CallDataGasCost, 1, 1, 0),
+                    (CallDataGasCost, TxDataGasCost, 1, 1, 0),
+                    (TxDataGasCost, ChainID, 1, 1, 0),
+                    (ChainID, SigV, 1, 1, 0),
+                    (SigV, SigR, 1, 1, 0),
+                    (SigR, SigS, 1, 1, 0),
+                    (SigS, TxSignLength, 1, 1, 0),
+                    (TxSignLength, TxSignRLC, 1, 1, 0),
+                    (TxSignRLC, TxSignHash, 1, 1, 0),
+                    (TxSignHash, TxHashLength, 1, 1, 0),
+                    (TxHashLength, TxHashRLC, 1, 1, 0),
+                    (TxHashRLC, TxFieldTag::TxHash, 1, 1, 0),
+                    (TxFieldTag::TxHash, TxFieldTag::TxType, 1, 1, 0),
+                    (TxFieldTag::TxType, AccessListAddressesLen, 1, 1, 0),
+                    (AccessListAddressesLen, AccessListStorageKeysLen, 1, 1, 0),
+                    (AccessListStorageKeysLen, AccessListRLC, 1, 1, 0),
+                    (AccessListRLC, MaxFeePerGas, 1, 1, 0),
+                    (MaxFeePerGas, MaxPriorityFeePerGas, 1, 1, 0),
+                    (MaxPriorityFeePerGas, BlockNumber, 1, 1, 0),
+                    // Transition into dynamic section of tx_table
+                    (BlockNumber, Nonce, 0, 1, 0),
+                    (BlockNumber, CallData, 1, 1, 1),
+                    (BlockNumber, CallData, 0, 1, 1),
+                    (BlockNumber, TxFieldTag::AccessListAddress, 1, 1, 1),
+                    (BlockNumber, TxFieldTag::AccessListAddress, 0, 1, 1),
+                    // Transition between dynamic tags of tx_table
+                    (CallData, CallData, 1, 0, 0),
+                    (CallData, CallData, 0, 1, 0),
+                    (CallData, TxFieldTag::AccessListAddress, 1, 1, 0),
+                    (CallData, TxFieldTag::AccessListAddress, 0, 1, 0),
+                    (
+                        TxFieldTag::AccessListAddress,
+                        TxFieldTag::AccessListAddress,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListAddress,
+                        TxFieldTag::AccessListAddress,
+                        0,
+                        1,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListAddress,
+                        TxFieldTag::AccessListStorageKey,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListStorageKey,
+                        TxFieldTag::AccessListStorageKey,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListStorageKey,
+                        TxFieldTag::AccessListAddress,
+                        1,
+                        0,
+                        0,
+                    ),
+                    (
+                        TxFieldTag::AccessListStorageKey,
+                        TxFieldTag::AccessListAddress,
+                        0,
+                        1,
+                        0,
+                    ),
+                    (TxFieldTag::AccessListAddress, CallData, 0, 1, 0),
+                    (TxFieldTag::AccessListStorageKey, CallData, 0, 1, 0),
+                    // Continue padding. Padding has the Calldata tag
+                    (CallData, CallData, 1, 1, 0),
+                ];
+
+                for (offset, scenario) in transition_scenarios.into_iter().enumerate() {
+                    for (&column, value) in <TxRomTable as LookupTable<F>>::fixed_columns(self)
+                        .iter()
+                        .zip(TxRomTableRow::from(scenario).values::<F>().into_iter())
+                    {
+                        region.assign_fixed(
+                            || format!("rom table row: offset = {offset}"),
+                            column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
 }
 
 /// Config for TxCircuit
@@ -238,6 +438,8 @@ pub struct TxCircuitConfig<F: Field> {
     chunk_txbytes_rlc: Column<Advice>,
     chunk_txbytes_len_acc: Column<Advice>,
     pow_of_rand: Column<Advice>,
+    /// ROM table
+    tx_rom_table: TxRomTable,
 
     _marker: PhantomData<F>,
 }
@@ -434,13 +636,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_max_fee_per_gas, MaxFeePerGas);
         is_tx_tag!(is_max_priority_fee_per_gas, MaxPriorityFeePerGas);
 
-        let tx_id_unchanged = IsEqualChip::configure(
-            meta,
-            |meta| meta.query_fixed(q_enable, Rotation::cur()),
-            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
-            |meta| meta.query_advice(tx_table.tx_id, Rotation::next()),
-        );
-
         // testing if value is zero for tags
         let value_is_zero = IsZeroChip::configure(
             meta,
@@ -531,6 +726,42 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 not::expr(meta.query_advice(is_calldata, Rotation::cur())),
                 not::expr(meta.query_advice(is_calldata, Rotation::next())),
             ]))
+        });
+
+        // Table for ensuring correct tx table tag transition
+        let tx_rom_table = TxRomTable::construct(meta);
+
+        let tx_id_unchanged = IsEqualChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enable, Rotation::cur()),
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::next()),
+        );
+
+        meta.lookup_any("tx table tag transition lookup", |meta| {
+            let cond = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_fixed(q_enable, Rotation::next()),
+                not::expr(meta.query_fixed(q_first, Rotation::next())),
+            ]);
+            vec![
+                meta.query_advice(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.tag, Rotation::next()),
+                tx_id_unchanged.is_equal_expression.clone(),
+                select::expr(
+                    sum::expr([
+                        meta.query_advice(is_calldata, Rotation::cur()),
+                        meta.query_advice(is_access_list, Rotation::cur()),
+                    ]),
+                    meta.query_advice(is_final, Rotation::cur()),
+                    1.expr(),
+                ),
+                meta.query_fixed(q_dynamic_first, Rotation::next()),
+            ]
+            .into_iter()
+            .zip(tx_rom_table.table_exprs(meta))
+            .map(|(arg, table)| (cond.expr() * arg, table))
+            .collect()
         });
 
         // Basic constraints
@@ -1809,7 +2040,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             // When is_final_cur is true, the tx_id must change for the next dynamic section
             cb.condition(
                 and::expr([
-                    is_final_cur,
+                    is_final_cur.clone(),
                     not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
                 ]),
                 |cb| {
@@ -2128,6 +2359,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             chunk_txbytes_rlc,
             chunk_txbytes_len_acc,
             pow_of_rand,
+            tx_rom_table,
             _marker: PhantomData,
             num_txs,
         }
@@ -3387,7 +3619,6 @@ impl<F: Field> TxCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         // assign to access_list related columns
-
         if tx.access_list.is_some() {
             // storage key len accumulator
             let mut sks_acc: usize = 0;
@@ -3915,6 +4146,8 @@ impl<F: Field> TxCircuit<F> {
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        config.tx_rom_table.load(layouter)?;
+
         layouter.assign_region(
             || "tx table aux",
             |mut region| {

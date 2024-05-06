@@ -18,12 +18,13 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{Expr, Field},
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToScalar, U256,
+    state_db::CodeDB,
+    ToScalar, U256,
 };
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};

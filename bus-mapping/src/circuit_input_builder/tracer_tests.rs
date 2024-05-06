@@ -4,12 +4,12 @@ use crate::{
         ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError, OogError,
     },
     operation::RWCounter,
-    state_db::Account,
 };
 use eth_types::{
     address, bytecode,
     evm_types::{stack::Stack, Gas, Memory, OpcodeId},
     geth_types::GethData,
+    state_db::Account,
     word, Bytecode, GethExecError, GethExecStep, Hash, ToAddress, ToWord, Word,
 };
 use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};

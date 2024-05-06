@@ -6,14 +6,13 @@ use crate::{
         not, or, select,
     },
     table::TxFieldTag,
-    util::Expr,
+    util::{Expr, Field},
     witness::Transaction,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
     evm_types::GasCost,
     geth_types::{access_list_size, TxType},
-    Field,
 };
 use halo2_proofs::{
     circuit::Value,

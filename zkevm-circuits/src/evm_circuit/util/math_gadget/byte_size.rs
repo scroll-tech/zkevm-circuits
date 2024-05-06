@@ -6,9 +6,9 @@ use crate::{
             sum, CachedRegion, Cell,
         },
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

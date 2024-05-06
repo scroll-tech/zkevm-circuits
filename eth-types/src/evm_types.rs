@@ -9,11 +9,13 @@ pub mod memory;
 pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
+pub mod transient_storage;
 
 pub use memory::{Memory, MemoryAddress, MemoryRef};
 pub use opcode_ids::OpcodeId;
 pub use stack::{Stack, StackAddress};
 pub use storage::Storage;
+pub use transient_storage::TransientStorage;
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
