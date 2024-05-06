@@ -28,7 +28,7 @@ use zkevm_circuits::util::Challenges;
 
 use crate::{
     batch::BatchHash,
-    constants::{ACC_LEN, DIGEST_LEN, MAX_AGG_SNARKS},
+    constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
     AssignedBarycentricEvaluationConfig, ConfigParams,
@@ -38,10 +38,10 @@ use super::AggregationConfig;
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
 #[derive(Clone)]
-pub struct AggregationCircuit {
+pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
-    // it is padded already so it will have a fixed length of MAX_AGG_SNARKS
+    // it is padded already so it will have a fixed length of N_SNARKS
     pub snarks_with_padding: Vec<SnarkWitness>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
@@ -54,7 +54,7 @@ pub struct AggregationCircuit {
     pub batch_hash: BatchHash,
 }
 
-impl AggregationCircuit {
+impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
     pub fn new(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
@@ -118,7 +118,7 @@ impl AggregationCircuit {
     }
 }
 
-impl Circuit<Fr> for AggregationCircuit {
+impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
     type Config = (AggregationConfig, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
@@ -281,7 +281,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 },
             )?;
 
-            assert_eq!(snark_inputs.len(), MAX_AGG_SNARKS * DIGEST_LEN);
+            assert_eq!(snark_inputs.len(), N_SNARKS * DIGEST_LEN);
             (accumulator_instances, snark_inputs, barycentric)
         };
         end_timer!(timer);
@@ -302,7 +302,7 @@ impl Circuit<Fr> for AggregationCircuit {
             let timer = start_timer!(|| "extract hash");
             // orders:
             // - batch_public_input_hash
-            // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
+            // - chunk\[i\].piHash for i in \[0, N_SNARKS)
             // - batch_data_hash_preimage
             // - preimage for blob metadata
             // - preimage of chunk data digest (only for valid chunks)
@@ -310,7 +310,7 @@ impl Circuit<Fr> for AggregationCircuit {
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                4 + MAX_AGG_SNARKS + self.batch_hash.number_of_valid_chunks,
+                4 + N_SNARKS + self.batch_hash.number_of_valid_chunks,
                 "error extracting preimages"
             );
             end_timer!(timer);
@@ -364,7 +364,7 @@ impl Circuit<Fr> for AggregationCircuit {
                     return Ok(());
                 }
 
-                for i in 0..MAX_AGG_SNARKS {
+                for i in 0..N_SNARKS {
                     for j in 0..DIGEST_LEN {
                         let mut t1 = Fr::default();
                         let mut t2 = Fr::default();
@@ -490,7 +490,7 @@ impl Circuit<Fr> for AggregationCircuit {
     }
 }
 
-impl CircuitExt<Fr> for AggregationCircuit {
+impl<const N_SNARKS: usize> CircuitExt<Fr> for AggregationCircuit<N_SNARKS> {
     fn num_instance(&self) -> Vec<usize> {
         // 12 elements from accumulator
         // 32 elements from batch's public_input_hash

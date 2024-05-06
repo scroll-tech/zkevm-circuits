@@ -70,7 +70,7 @@ fn test_aggregation_circuit_full() {
     let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
     log::trace!("finished snark generation for circuit");
 
-    assert!(verify_snark_shplonk::<AggregationCircuit>(
+    assert!(verify_snark_shplonk::<AggregationCircuit<MAX_AGG_SNARKS>>(
         &param,
         snark,
         pk.get_vk()
@@ -82,7 +82,7 @@ fn test_aggregation_circuit_full() {
     let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>);
     log::trace!("finished snark generation for circuit");
 
-    assert!(verify_snark_shplonk::<AggregationCircuit>(
+    assert!(verify_snark_shplonk::<AggregationCircuit<MAX_AGG_SNARKS>>(
         &param,
         snark,
         pk.get_vk()
@@ -90,7 +90,7 @@ fn test_aggregation_circuit_full() {
     log::trace!("finished verification for circuit");
 }
 
-fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
+fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit<MAX_AGG_SNARKS> {
     // inner circuit: Mock circuit
     let k0 = 8;
 
