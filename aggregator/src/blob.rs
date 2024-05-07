@@ -40,15 +40,6 @@ pub const N_ROWS_NUM_CHUNKS: usize = 2;
 /// we explicitly set the most-significant byte to 0, effectively utilising only 31 bytes.
 pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 
-// /// The number of rows in Blob Data config's layout to represent the "chunk data" section.
-// pub const N_ROWS_DATA: usize = N_BLOB_BYTES - N_ROWS_METADATA;
-
-// /// The total number of rows in "digest rlc" and "digest bytes" sections.
-// pub const N_ROWS_DIGEST: usize = N_ROWS_DIGEST_RLC + N_ROWS_DIGEST_BYTES;
-
-// /// The total number of rows used in Blob Data config's layout.
-// pub const N_ROWS_BLOB_DATA_CONFIG: usize = N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST;
-
 /// KZG trusted setup
 pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
     Arc::new(
@@ -158,6 +149,7 @@ impl<const N_SNARKS: usize> BlobData<N_SNARKS> {
         N_SNARKS * 4
     }
 
+    /// The total number of rows in "digest rlc" and "digest bytes" sections.
     const fn n_rows_digest() -> usize {
         Self::n_rows_digest_rlc() + Self::n_rows_digest_bytes()
     }
@@ -167,10 +159,12 @@ impl<const N_SNARKS: usize> BlobData<N_SNARKS> {
         N_ROWS_NUM_CHUNKS + Self::n_rows_chunk_sizes()
     }
 
+    /// The number of rows in Blob Data config's layout to represent the "chunk data" section.
     pub const fn n_rows_data() -> usize {
         N_BLOB_BYTES - Self::n_rows_metadata()
     }
 
+    /// The total number of rows used in Blob Data config's layout.
     pub const fn n_rows() -> usize {
         N_BLOB_BYTES + Self::n_rows_digest()
     }
