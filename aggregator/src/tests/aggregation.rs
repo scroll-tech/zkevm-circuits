@@ -25,13 +25,20 @@ fn test_max_agg_snarks_aggregation_circuit() {
 }
 
 #[test]
-fn test_two_snark_aggregation_circuit() {
-    env_logger::init();
-
+fn test_2_snark_aggregation_circuit() {
     let k = 20;
 
-    // This set up requires one round of keccak for chunk's data hash
-    let circuit: AggregationCircuit<2> = build_new_aggregation_circuit(2);
+    let circuit: AggregationCircuit<2> = build_new_aggregation_circuit(1);
+    let instance = circuit.instances();
+    let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+    mock_prover.assert_satisfied_par();
+}
+
+#[test]
+fn test_14_snark_aggregation_circuit() {
+    let k = 20;
+
+    let circuit: AggregationCircuit<14> = build_new_aggregation_circuit(12);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
