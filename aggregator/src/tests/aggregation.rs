@@ -12,13 +12,26 @@ use crate::{
 };
 
 #[test]
-fn test_aggregation_circuit() {
+fn test_max_agg_snarks_aggregation_circuit() {
     env_logger::init();
 
     let k = 20;
 
     // This set up requires one round of keccak for chunk's data hash
-    let circuit = build_new_aggregation_circuit(2);
+    let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(2);
+    let instance = circuit.instances();
+    let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+    mock_prover.assert_satisfied_par();
+}
+
+#[test]
+fn test_two_snark_aggregation_circuit() {
+    env_logger::init();
+
+    let k = 20;
+
+    // This set up requires one round of keccak for chunk's data hash
+    let circuit: AggregationCircuit<2> = build_new_aggregation_circuit(2);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -34,7 +47,7 @@ fn test_aggregation_circuit_all_possible_num_snarks() {
     for i in 1..=MAX_AGG_SNARKS {
         println!("{i} real chunks and {} padded chunks", MAX_AGG_SNARKS - i);
         // This set up requires one round of keccak for chunk's data hash
-        let circuit = build_new_aggregation_circuit(i);
+        let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(i);
         let instance = circuit.instances();
         let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         mock_prover.assert_satisfied_par();
@@ -54,7 +67,7 @@ fn test_aggregation_circuit_full() {
     fs::create_dir(path).unwrap();
 
     // This set up requires one round of keccak for chunk's data hash
-    let circuit = build_new_aggregation_circuit(2);
+    let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(2);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(25, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -78,7 +91,7 @@ fn test_aggregation_circuit_full() {
     log::trace!("finished verification for circuit");
 
     // This set up requires two rounds of keccak for chunk's data hash
-    let circuit = build_new_aggregation_circuit(5);
+    let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(5);
     let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>);
     log::trace!("finished snark generation for circuit");
 
@@ -90,7 +103,9 @@ fn test_aggregation_circuit_full() {
     log::trace!("finished verification for circuit");
 }
 
-fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit<MAX_AGG_SNARKS> {
+fn build_new_aggregation_circuit<const N_SNARKS: usize>(
+    num_real_chunks: usize,
+) -> AggregationCircuit<N_SNARKS> {
     // inner circuit: Mock circuit
     let k0 = 8;
 
@@ -107,7 +122,7 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit<M
         ChunkHash::mock_padded_chunk_hash_for_testing(&chunks_without_padding[num_real_chunks - 1]);
     let chunks_with_padding = [
         chunks_without_padding,
-        vec![padded_chunk; MAX_AGG_SNARKS - num_real_chunks],
+        vec![padded_chunk; N_SNARKS - num_real_chunks],
     ]
     .concat();
 
@@ -132,8 +147,7 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit<M
     // ==========================
     // padded chunks
     // ==========================
-    let padded_snarks =
-        { vec![real_snarks.last().unwrap().clone(); MAX_AGG_SNARKS - num_real_chunks] };
+    let padded_snarks = { vec![real_snarks.last().unwrap().clone(); N_SNARKS - num_real_chunks] };
 
     // ==========================
     // batch

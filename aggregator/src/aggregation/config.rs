@@ -26,7 +26,7 @@ use crate::{
 #[rustfmt::skip]
 /// Configurations for aggregation circuit.
 /// This config is hard coded for BN256 curve.
-pub struct AggregationConfig {
+pub struct AggregationConfig<const N_SNARKS: usize> {
     /// Non-native field chip configurations
     pub base_field_config: FpConfig<Fr, Fq>,
     /// Keccak circuit configurations
@@ -34,7 +34,7 @@ pub struct AggregationConfig {
     /// RLC config
     pub rlc_config: RlcConfig,
     /// The blob data's config.
-    pub blob_data_config: BlobDataConfig,
+    pub blob_data_config: BlobDataConfig<N_SNARKS>,
     /// Config to do the barycentric evaluation on blob polynomial.
     pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores
@@ -44,7 +44,7 @@ pub struct AggregationConfig {
     pub instance: Column<Instance>,
 }
 
-impl AggregationConfig {
+impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
     /// Build a configuration from parameters.
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,

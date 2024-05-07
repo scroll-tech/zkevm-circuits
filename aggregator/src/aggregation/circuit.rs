@@ -51,7 +51,7 @@ pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub as_proof: Value<Vec<u8>>,
     // batch hash circuit for which the snarks are generated
     // the chunks in this batch are also padded already
-    pub batch_hash: BatchHash,
+    pub batch_hash: BatchHash<N_SNARKS>,
 }
 
 impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
@@ -59,7 +59,7 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
-        batch_hash: BatchHash,
+        batch_hash: BatchHash<N_SNARKS>,
     ) -> Result<Self, snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
@@ -119,7 +119,7 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
 }
 
 impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
-    type Config = (AggregationConfig, Challenges);
+    type Config = (AggregationConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
         unimplemented!()
@@ -323,7 +323,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 .map(|chunk| !chunk.is_padding)
                 .collect::<Vec<_>>();
             let assigned_blobs = assign_batch_hashes(
-                &config,
+                &config.keccak_circuit_config,
+                &config.rlc_config,
                 &mut layouter,
                 challenges,
                 &chunks_are_valid,

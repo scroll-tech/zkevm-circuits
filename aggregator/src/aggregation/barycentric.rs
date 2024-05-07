@@ -20,6 +20,7 @@ use std::{iter::successors, sync::LazyLock};
 use crate::{
     blob::BLOB_WIDTH,
     constants::{BITS, LIMBS},
+    MAX_AGG_SNARKS,
 };
 
 /// Base 2 logarithm of BLOB_WIDTH.
@@ -386,7 +387,7 @@ mod tests {
 
     #[test]
     fn interpolate_matches_reth_implementation() {
-        let blob = BlobData::from(&vec![
+        let blob = BlobData::<MAX_AGG_SNARKS>::from(&vec![
             vec![30; 56],
             vec![200; 100],
             vec![0; 340],

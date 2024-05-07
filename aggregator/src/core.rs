@@ -27,7 +27,7 @@ use snark_verifier_sdk::{
     Snark,
 };
 use zkevm_circuits::{
-    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit},
+    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
     util::Challenges,
 };
 
@@ -146,7 +146,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
 }
 
 /// Extracted hash cells. Including the padded ones so that the circuit is static.
-pub(crate) struct ExtractedHashCells {
+pub(crate) struct ExtractedHashCells<const N_SNARKS: usize> {
     inputs: Vec<Vec<AssignedCell<Fr, Fr>>>,
     input_rlcs: Vec<AssignedCell<Fr, Fr>>,
     outputs: Vec<Vec<AssignedCell<Fr, Fr>>>,
@@ -156,7 +156,7 @@ pub(crate) struct ExtractedHashCells {
     chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
 }
 
-impl ExtractedHashCells {
+impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
     /// Assign the cells for hash input/outputs and their RLCs.
     /// Padded the number of hashes to MAX_AGG_SNARKS
     /// DOES NOT CONSTRAIN THE CORRECTNESS.
@@ -189,7 +189,7 @@ impl ExtractedHashCells {
         for preimage in preimages
             .iter()
             .take(num_valid_chunks + 1)
-            .chain(repeat(&preimages[num_valid_chunks]).take(MAX_AGG_SNARKS - num_valid_chunks))
+            .chain(repeat(&preimages[num_valid_chunks]).take(N_SNARKS - num_valid_chunks))
         {
             {
                 let mut preimage_cells = vec![];
@@ -225,12 +225,12 @@ impl ExtractedHashCells {
         }
 
         {
-            let batch_data_hash_preimage = &preimages[MAX_AGG_SNARKS + 1];
+            let batch_data_hash_preimage = &preimages[N_SNARKS + 1];
             let batch_data_hash_digest = keccak256(batch_data_hash_preimage);
             let batch_data_hash_padded_preimage = batch_data_hash_preimage
                 .iter()
                 .cloned()
-                .chain(repeat(0).take(MAX_AGG_SNARKS * 32 - batch_data_hash_preimage.len()));
+                .chain(repeat(0).take(N_SNARKS * 32 - batch_data_hash_preimage.len()));
 
             {
                 let mut preimage_cells = vec![];
@@ -350,7 +350,8 @@ pub(crate) struct AssignedBatchHash {
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
 pub(crate) fn assign_batch_hashes(
-    config: &AggregationConfig,
+    keccak_config: &KeccakCircuitConfig<Fr>,
+    rlc_config: &RlcConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
@@ -358,7 +359,7 @@ pub(crate) fn assign_batch_hashes(
     preimages: &[Vec<u8>],
 ) -> Result<AssignedBatchHash, Error> {
     // assign the hash table
-    assign_keccak_table(config, layouter, challenges, preimages)?;
+    assign_keccak_table(keccak_config, layouter, challenges, preimages)?;
 
     // 1. batch_data_hash digest is reused for public input hash
     // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not
@@ -368,7 +369,7 @@ pub(crate) fn assign_batch_hashes(
     // padded
     // 7. batch data hash is correct w.r.t. its RLCs
     let extracted_hash_cells = conditional_constraints(
-        &config.rlc_config,
+        &rlc_config,
         layouter,
         challenges,
         chunks_are_valid,
@@ -407,7 +408,7 @@ pub(crate) fn assign_batch_hashes(
 
 /// assign hash table
 pub(crate) fn assign_keccak_table(
-    config: &AggregationConfig,
+    config: &KeccakCircuitConfig<Fr>,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     preimages: &[Vec<u8>],
@@ -440,10 +441,7 @@ pub(crate) fn assign_keccak_table(
                 let timer = start_timer!(|| "assign row");
                 log::trace!("witness length: {}", witness.len());
                 for (offset, keccak_row) in witness.iter().enumerate() {
-                    let _row =
-                        config
-                            .keccak_circuit_config
-                            .set_row(&mut region, offset, keccak_row)?;
+                    let _row = config.set_row(&mut region, offset, keccak_row)?;
                 }
                 end_timer!(timer);
                 Ok(())
