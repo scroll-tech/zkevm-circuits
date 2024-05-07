@@ -34,7 +34,6 @@ use zkevm_circuits::{
 use crate::{
     constants::{
         BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
-        MAX_AGG_SNARKS,
     },
     util::{assert_conditional_equal, assert_equal, parse_hash_preimage_cells},
     AggregationConfig, RlcConfig, BITS, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS,
@@ -158,7 +157,7 @@ pub(crate) struct ExtractedHashCells<const N_SNARKS: usize> {
 
 impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
     /// Assign the cells for hash input/outputs and their RLCs.
-    /// Padded the number of hashes to MAX_AGG_SNARKS
+    /// Padded the number of hashes to N_SNARKS
     /// DOES NOT CONSTRAIN THE CORRECTNESS.
     /// Call `check_against_lookup_table` function to constrain the hash is correct.
     #[allow(clippy::too_many_arguments)]
@@ -182,9 +181,9 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
 
         // preimages are padded as follows
         // - the first hash is batch_public_input_hash
-        // - the next hashes are chunk\[i\].piHash, we padded it to MAX_AGG_SNARK by repeating the
-        //   last chunk
-        // - the last hash is batch_data_hash, its input is padded to 32*MAX_AGG_SNARK
+        // - the next hashes are chunk\[i\].piHash, we padded it to N_SNARKS by repeating the last
+        //   chunk
+        // - the last hash is batch_data_hash, its input is padded to 32*N_SNARKS
         log::trace!("preimage len: {}", preimages.len());
         for preimage in preimages
             .iter()
@@ -336,8 +335,8 @@ pub(crate) struct AssignedBatchHash {
 // 1. batch_data_hash digest is reused for public input hash
 // 2. batch_pi_hash used same roots as chunk_pi_hash
 // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
-// 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
-// 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
+// 2.2. batch_pi_hash and chunk[N_SNARKS-1] use a same post_state_root
+// 2.3. batch_pi_hash and chunk[N_SNARKS-1] use a same withdraw_root
 // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
 // 4. chunks are continuous: they are linked via the state roots
 // 5. batch and all its chunks use a same chain id
@@ -345,11 +344,11 @@ pub(crate) struct AssignedBatchHash {
 // padded
 // 7. the hash input length are correct
 // - hashes[0] has 200 bytes
-// - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
+// - hashes[1..N_SNARKS+1] has 168 bytes input
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
-pub(crate) fn assign_batch_hashes(
+pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     keccak_config: &KeccakCircuitConfig<Fr>,
     rlc_config: &RlcConfig,
     layouter: &mut impl Layouter<Fr>,
@@ -368,7 +367,7 @@ pub(crate) fn assign_batch_hashes(
     // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
     // padded
     // 7. batch data hash is correct w.r.t. its RLCs
-    let extracted_hash_cells = conditional_constraints(
+    let extracted_hash_cells = conditional_constraints::<N_SNARKS>(
         &rlc_config,
         layouter,
         challenges,
@@ -379,17 +378,17 @@ pub(crate) fn assign_batch_hashes(
 
     // 2. batch_pi_hash used same roots as chunk_pi_hash
     // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
-    // 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
-    // 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
+    // 2.2. batch_pi_hash and chunk[N_SNARKS-1] use a same post_state_root
+    // 2.3. batch_pi_hash and chunk[N_SNARKS-1] use a same withdraw_root
     // 5. batch and all its chunks use a same chain id
-    copy_constraints(layouter, &extracted_hash_cells.inputs)?;
+    copy_constraints::<N_SNARKS>(layouter, &extracted_hash_cells.inputs)?;
 
     let batch_pi_input = &extracted_hash_cells.inputs[0]; //[0..INPUT_LEN_PER_ROUND * 2];
     let expected_blob_cells = ExpectedBlobCells {
         z: batch_pi_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + DIGEST_LEN].to_vec(),
         y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + DIGEST_LEN].to_vec(),
         versioned_hash: batch_pi_input[BATCH_VH_OFFSET..BATCH_VH_OFFSET + DIGEST_LEN].to_vec(),
-        chunk_tx_data_digests: (0..MAX_AGG_SNARKS)
+        chunk_tx_data_digests: (0..N_SNARKS)
             .map(|i| {
                 extracted_hash_cells.inputs[i + 1]
                     [CHUNK_TX_DATA_HASH_INDEX..CHUNK_TX_DATA_HASH_INDEX + DIGEST_LEN]
@@ -454,10 +453,10 @@ pub(crate) fn assign_keccak_table(
 // Assert the following constraints
 // 2. batch_pi_hash used same roots as chunk_pi_hash
 // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
-// 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
-// 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
+// 2.2. batch_pi_hash and chunk[N_SNARKS-1] use a same post_state_root
+// 2.3. batch_pi_hash and chunk[N_SNARKS-1] use a same withdraw_root
 // 5. batch and all its chunks use a same chain id
-fn copy_constraints(
+fn copy_constraints<const N_SNARKS: usize>(
     layouter: &mut impl Layouter<Fr>,
     hash_input_cells: &[Vec<AssignedCell<Fr, Fr>>],
 ) -> Result<(), Error> {
@@ -481,7 +480,7 @@ fn copy_constraints(
                     batch_pi_hash_preimage,
                     chunk_pi_hash_preimages,
                     _potential_batch_data_hash_preimage,
-                ) = parse_hash_preimage_cells(hash_input_cells);
+                ) = parse_hash_preimage_cells::<N_SNARKS>(hash_input_cells);
 
                 // ====================================================
                 // Constraint the relations between hash preimages
@@ -535,35 +534,33 @@ fn copy_constraints(
                     // sanity check
                     assert_equal(
                         &batch_pi_hash_preimage[i + POST_STATE_ROOT_INDEX],
-                        &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + POST_STATE_ROOT_INDEX],
+                        &chunk_pi_hash_preimages[N_SNARKS - 1][i + POST_STATE_ROOT_INDEX],
                         format!(
                             "chunk and batch's post_state_root do not match: {:?} {:?}",
                             &batch_pi_hash_preimage[i + POST_STATE_ROOT_INDEX].value(),
-                            &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + POST_STATE_ROOT_INDEX]
+                            &chunk_pi_hash_preimages[N_SNARKS - 1][i + POST_STATE_ROOT_INDEX]
                                 .value(),
                         )
                         .as_str(),
                     )?;
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + POST_STATE_ROOT_INDEX].cell(),
-                        chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + POST_STATE_ROOT_INDEX]
-                            .cell(),
+                        chunk_pi_hash_preimages[N_SNARKS - 1][i + POST_STATE_ROOT_INDEX].cell(),
                     )?;
                     // 2.3 chunk[k-1].withdraw_root
                     assert_equal(
                         &batch_pi_hash_preimage[i + WITHDRAW_ROOT_INDEX],
-                        &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + WITHDRAW_ROOT_INDEX],
+                        &chunk_pi_hash_preimages[N_SNARKS - 1][i + WITHDRAW_ROOT_INDEX],
                         format!(
                             "chunk and batch's withdraw_root do not match: {:?} {:?}",
                             &batch_pi_hash_preimage[i + WITHDRAW_ROOT_INDEX].value(),
-                            &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + WITHDRAW_ROOT_INDEX]
-                                .value(),
+                            &chunk_pi_hash_preimages[N_SNARKS - 1][i + WITHDRAW_ROOT_INDEX].value(),
                         )
                         .as_str(),
                     )?;
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + WITHDRAW_ROOT_INDEX].cell(),
-                        chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + WITHDRAW_ROOT_INDEX].cell(),
+                        chunk_pi_hash_preimages[N_SNARKS - 1][i + WITHDRAW_ROOT_INDEX].cell(),
                     )?;
                 }
 
@@ -604,23 +601,23 @@ fn copy_constraints(
 // padded
 // 7. the hash input length are correct
 // - hashes[0] has 200 bytes
-// - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
+// - hashes[1..N_SNARKS+1] has 168 bytes input
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
 #[allow(clippy::type_complexity)]
-pub(crate) fn conditional_constraints(
+pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     rlc_config: &RlcConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-) -> Result<ExtractedHashCells, Error> {
+) -> Result<ExtractedHashCells<N_SNARKS>, Error> {
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<ExtractedHashCells, halo2_proofs::plonk::Error> {
+            |mut region| -> Result<ExtractedHashCells<N_SNARKS>, halo2_proofs::plonk::Error> {
                 let mut offset = 0;
                 rlc_config.init(&mut region)?;
                 // ====================================================
@@ -685,7 +682,7 @@ pub(crate) fn conditional_constraints(
                 // ====================================================
                 // preimages
                 let (batch_pi_hash_preimage, chunk_pi_hash_preimages, batch_data_hash_preimage) =
-                    parse_hash_preimage_cells(&assigned_hash_cells.inputs);
+                    parse_hash_preimage_cells::<N_SNARKS>(&assigned_hash_cells.inputs);
 
                 // ====================================================
                 // start the actual statements
@@ -723,12 +720,12 @@ pub(crate) fn conditional_constraints(
                 );
                 log::info!(
                     "batch data hash rlc from table: {:?}",
-                    assigned_hash_cells.output_rlcs[MAX_AGG_SNARKS + 1].value()
+                    assigned_hash_cells.output_rlcs[N_SNARKS + 1].value()
                 );
 
                 region.constrain_equal(
                     batch_data_hash_rlc.cell(),
-                    assigned_hash_cells.output_rlcs[MAX_AGG_SNARKS + 1].cell(),
+                    assigned_hash_cells.output_rlcs[N_SNARKS + 1].cell(),
                 )?;
 
                 // 3 batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when
@@ -769,7 +766,7 @@ pub(crate) fn conditional_constraints(
 
                 region.constrain_equal(
                     batch_data_hash_reconstructed_rlc.cell(),
-                    assigned_hash_cells.input_rlcs[MAX_AGG_SNARKS + 1].cell(),
+                    assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
                 )?;
 
                 log::info!(
@@ -778,7 +775,7 @@ pub(crate) fn conditional_constraints(
                 );
                 log::info!(
                     "batch data hash rlc from table: {:?}",
-                    assigned_hash_cells.input_rlcs[MAX_AGG_SNARKS + 1].value()
+                    assigned_hash_cells.input_rlcs[N_SNARKS + 1].value()
                 );
 
                 // ====================================================
@@ -789,7 +786,7 @@ pub(crate) fn conditional_constraints(
                 //        chain id ||
                 //        chunk[i].prevStateRoot || chunk[i].postStateRoot || chunk[i].withdrawRoot
                 //        || chunk[i].datahash)
-                for i in 0..MAX_AGG_SNARKS - 1 {
+                for i in 0..N_SNARKS - 1 {
                     for j in 0..DIGEST_LEN {
                         // sanity check
                         assert_conditional_equal(
@@ -819,10 +816,9 @@ pub(crate) fn conditional_constraints(
                 // chunk[i] is padded
                 // ====================================================
 
-                let chunk_pi_hash_rlc_cells =
-                    &assigned_hash_cells.input_rlcs[1..MAX_AGG_SNARKS + 1];
+                let chunk_pi_hash_rlc_cells = &assigned_hash_cells.input_rlcs[1..N_SNARKS + 1];
 
-                for i in 1..MAX_AGG_SNARKS {
+                for i in 1..N_SNARKS {
                     rlc_config.conditional_enforce_equal(
                         &mut region,
                         &chunk_pi_hash_rlc_cells[i - 1],
@@ -855,7 +851,7 @@ pub(crate) fn conditional_constraints(
 
                 region.constrain_equal(
                     rlc_cell.cell(),
-                    assigned_hash_cells.input_rlcs[MAX_AGG_SNARKS + 1].cell(),
+                    assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
                 )?;
 
                 log::trace!("rlc chip uses {} rows", offset);

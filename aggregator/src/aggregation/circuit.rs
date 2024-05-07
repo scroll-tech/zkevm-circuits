@@ -322,7 +322,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 .iter()
                 .map(|chunk| !chunk.is_padding)
                 .collect::<Vec<_>>();
-            let assigned_blobs = assign_batch_hashes(
+            let assigned_blobs = assign_batch_hashes::<N_SNARKS>(
                 &config.keccak_circuit_config,
                 &config.rlc_config,
                 &mut layouter,
@@ -339,7 +339,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
-            parse_hash_digest_cells(&assigned_blobs.hash_output);
+            parse_hash_digest_cells::<N_SNARKS>(&assigned_blobs.hash_output);
 
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
