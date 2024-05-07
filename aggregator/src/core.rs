@@ -368,7 +368,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     // padded
     // 7. batch data hash is correct w.r.t. its RLCs
     let extracted_hash_cells = conditional_constraints::<N_SNARKS>(
-        &rlc_config,
+        rlc_config,
         layouter,
         challenges,
         chunks_are_valid,
