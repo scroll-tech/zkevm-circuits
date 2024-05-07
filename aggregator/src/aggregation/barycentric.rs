@@ -20,7 +20,6 @@ use std::{iter::successors, sync::LazyLock};
 use crate::{
     blob::BLOB_WIDTH,
     constants::{BITS, LIMBS},
-    MAX_AGG_SNARKS,
 };
 
 /// Base 2 logarithm of BLOB_WIDTH.
@@ -350,7 +349,10 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blob::{BlobData, KZG_TRUSTED_SETUP};
+    use crate::{
+        blob::{BlobData, KZG_TRUSTED_SETUP},
+        MAX_AGG_SNARKS,
+    };
     use c_kzg::{Blob as RethBlob, KzgProof};
     use std::collections::BTreeSet;
 

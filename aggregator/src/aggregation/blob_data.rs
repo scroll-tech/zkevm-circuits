@@ -79,7 +79,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         range_table: RangeTable<N_SNARKS>,
         keccak_table: &KeccakTable,
     ) -> Self {
-        let N_ROWS_METADATA = BlobData::<N_SNARKS>::n_rows_metadata();
+        let n_rows_metadata = BlobData::<N_SNARKS>::n_rows_metadata();
 
         let config = Self {
             u8_table,
@@ -271,7 +271,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
 
                 let accumulator = meta.query_advice(config.accumulator, Rotation::cur());
                 let preimage_len =
-                    is_data.expr() * accumulator + (1.expr() - is_data) * N_ROWS_METADATA.expr();
+                    is_data.expr() * accumulator + (1.expr() - is_data) * n_rows_metadata.expr();
 
                 [
                     1.expr(),                                                // q_enable
@@ -399,26 +399,23 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         challenge_value: Challenges<Value<Fr>>,
         blob: &BlobData<N_SNARKS>,
     ) -> Result<Vec<AssignedBlobDataConfig>, Error> {
-        let N_ROWS_DATA = BlobData::<N_SNARKS>::n_rows_data();
-        let N_ROWS_METADATA = BlobData::<N_SNARKS>::n_rows_metadata();
-        let N_ROWS_BLOB_DATA_CONFIG = BlobData::<N_SNARKS>::n_rows();
-
-        let rows = blob.to_rows(challenge_value);
-        assert_eq!(rows.len(), N_ROWS_BLOB_DATA_CONFIG);
-
+        let n_rows_data = BlobData::<N_SNARKS>::n_rows_data();
         let n_rows_metadata = BlobData::<N_SNARKS>::n_rows_metadata();
 
+        let rows = blob.to_rows(challenge_value);
+        assert_eq!(rows.len(), BlobData::<N_SNARKS>::n_rows());
+
         // enable data selector
-        for offset in n_rows_metadata..n_rows_metadata + N_ROWS_DATA {
+        for offset in n_rows_metadata..n_rows_metadata + n_rows_data {
             self.data_selector.enable(region, offset)?;
         }
 
         // enable hash selector
-        for offset in n_rows_metadata + N_ROWS_DATA..BlobData::<N_SNARKS>::n_rows() {
+        for offset in n_rows_metadata + n_rows_data..BlobData::<N_SNARKS>::n_rows() {
             self.hash_selector.enable(region, offset)?;
         }
 
-        let mut assigned_rows = Vec::with_capacity(N_ROWS_BLOB_DATA_CONFIG);
+        let mut assigned_rows = Vec::with_capacity(BlobData::<N_SNARKS>::n_rows());
         let mut count = 0u64;
         for (i, row) in rows.iter().enumerate() {
             let byte = region.assign_advice(
@@ -445,7 +442,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                 i,
                 || Value::known(Fr::from(row.is_boundary as u64)),
             )?;
-            let bcount = if (N_ROWS_METADATA..N_ROWS_METADATA + N_ROWS_DATA).contains(&i) {
+            let bcount = if (n_rows_metadata..n_rows_metadata + n_rows_data).contains(&i) {
                 count += row.is_boundary as u64;
                 count
             } else {
@@ -496,10 +493,9 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_rows: &[AssignedBlobDataConfig],
     ) -> Result<AssignedBlobDataExport, Error> {
-        let N_ROWS_METADATA = BlobData::<N_SNARKS>::n_rows_metadata();
-        let N_ROWS_DIGEST_RLC = BlobData::<N_SNARKS>::n_rows_digest_rlc();
-        let N_ROWS_DATA = BlobData::<N_SNARKS>::n_rows_data();
-        let N_ROWS_DIGEST_BYTES = BlobData::<N_SNARKS>::n_rows_digest_bytes();
+        let n_rows_metadata = BlobData::<N_SNARKS>::n_rows_metadata();
+        let n_rows_digest_rlc = BlobData::<N_SNARKS>::n_rows_digest_rlc();
+        let n_rows_data = BlobData::<N_SNARKS>::n_rows_data();
 
         rlc_config.init(region)?;
         let mut rlc_config_offset = 0;
@@ -655,7 +651,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             rlc_config.not(region, &all_chunks_empty, &mut rlc_config_offset)?;
 
         // constrain preimage_rlc column
-        let metadata_rows = &assigned_rows[..N_ROWS_METADATA];
+        let metadata_rows = &assigned_rows[..n_rows_metadata];
         region.constrain_equal(
             metadata_rows[0].byte.cell(),
             metadata_rows[0].preimage_rlc.cell(),
@@ -682,7 +678,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         }
 
         // in the metadata section, these columns are 0 except (possibly) on the last row.
-        for row in metadata_rows.iter().take(N_ROWS_METADATA - 1) {
+        for row in metadata_rows.iter().take(n_rows_metadata - 1) {
             let cells = [&row.is_boundary, &row.digest_rlc].map(AssignedCell::cell);
 
             for cell in cells {
@@ -693,7 +689,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         // in the final row of the metadata section, boundary is 1. note that this triggers a keccak
         // lookup which constrains digest_rlc.
         region.constrain_equal(
-            metadata_rows[N_ROWS_METADATA - 1].is_boundary.cell(),
+            metadata_rows[n_rows_metadata - 1].is_boundary.cell(),
             one.cell(),
         )?;
 
@@ -705,8 +701,8 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         // there are no non-empty chunks, this will be 0 and must also be a padding row.
         let rows = assigned_rows
             .iter()
-            .skip(N_ROWS_METADATA)
-            .take(N_ROWS_DATA)
+            .skip(n_rows_metadata)
+            .take(n_rows_data)
             .collect::<Vec<_>>();
         rlc_config.conditional_enforce_equal(
             region,
@@ -750,8 +746,8 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
 
         let rows = assigned_rows
             .iter()
-            .skip(N_ROWS_METADATA + N_ROWS_DATA)
-            .take(N_ROWS_DIGEST_RLC)
+            .skip(n_rows_metadata + n_rows_data)
+            .take(n_rows_digest_rlc)
             .collect::<Vec<_>>();
 
         // rows have chunk_idx set from 0 (metadata) -> N_SNARKS.
@@ -767,14 +763,14 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
 
         let challenge_digest_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
         let challenge_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
-        let versioned_hash_rlc = &rows.get(N_ROWS_DIGEST_RLC - 2).unwrap().digest_rlc;
+        let versioned_hash_rlc = &rows.get(n_rows_digest_rlc - 2).unwrap().digest_rlc;
 
         // ensure that on the last row of this section the is_boundary is turned on
         // which would enable the keccak table lookup for challenge_digest
         region.constrain_equal(rows.last().unwrap().is_boundary.cell(), one.cell())?;
 
         let metadata_digest_rlc_computed =
-            &assigned_rows.get(N_ROWS_METADATA - 1).unwrap().digest_rlc;
+            &assigned_rows.get(n_rows_metadata - 1).unwrap().digest_rlc;
         let metadata_digest_rlc_specified = &rows.first().unwrap().digest_rlc;
         region.constrain_equal(
             metadata_digest_rlc_computed.cell(),
@@ -835,8 +831,8 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         let mut challenge_digest_preimage_keccak_rlc = zero.clone();
         let rows = assigned_rows
             .iter()
-            .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC)
-            .take(N_ROWS_DIGEST_BYTES)
+            .skip(n_rows_metadata + n_rows_data + n_rows_digest_rlc)
+            .take(BlobData::<N_SNARKS>::n_rows_digest_bytes())
             .collect::<Vec<_>>();
         for (i, digest_rlc_specified) in std::iter::once(metadata_digest_rlc_specified)
             .chain(chunk_digest_evm_rlcs)
@@ -883,7 +879,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         let mut blob_fields: Vec<Vec<AssignedCell<Fr, Fr>>> = Vec::with_capacity(BLOB_WIDTH);
         let blob_bytes = assigned_rows
             .iter()
-            .take(N_ROWS_METADATA + N_ROWS_DATA)
+            .take(n_rows_metadata + n_rows_data)
             .map(|row| row.byte.clone())
             .collect::<Vec<_>>();
         for chunk in blob_bytes.chunks_exact(N_DATA_BYTES_PER_COEFFICIENT) {
@@ -894,7 +890,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         let mut chunk_data_digests = Vec::with_capacity(N_SNARKS);
         let chunk_data_digests_bytes = assigned_rows
             .iter()
-            .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC + N_BYTES_U256)
+            .skip(n_rows_metadata + n_rows_data + n_rows_digest_rlc + N_BYTES_U256)
             .take(N_SNARKS * N_BYTES_U256)
             .map(|row| row.byte.clone())
             .collect::<Vec<_>>();
