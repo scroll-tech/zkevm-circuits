@@ -42,6 +42,8 @@ use seq_exec::{LiteralTable, SequenceConfig, SeqExecConfig};
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig {
+    /// Fixed column to mark all the usable rows.
+    q_enable: Column<Fixed>,
     /// Fixed column to mark the first row in the layout.
     q_first: Column<Fixed>,
     /// The byte index in the encoded data. At the first byte, byte_idx = 1.
@@ -58,14 +60,10 @@ pub struct DecoderConfig {
     decoded_len: Column<Advice>,
     /// Once all the encoded bytes are decoded, we append the layout with padded rows.
     is_padding: Column<Advice>,
-
-    // witgen_debug
-    // /// Zstd tag related config.
-    // tag_config: TagConfig,
-
-    // witgen_debug
-    // /// Block related config.
-    // block_config: BlockConfig,
+    /// Zstd tag related config.
+    tag_config: TagConfig,
+    /// Block related config.
+    block_config: BlockConfig,
 
     // witgen_debug
     // /// Decoding helpers for the sequences section header.
@@ -84,6 +82,8 @@ pub struct DecoderConfig {
     // sequences_data_decoder: SequencesDataDecoder,
 
     // witgen_debug
+    // /// Range Table for [0, 255]
+    u8_table: U8Table,
     // /// Range Table for [0, 8).
     // range8: RangeTable<8>,
     // /// Range Table for [0, 16).
@@ -112,34 +112,24 @@ pub struct DecoderConfig {
 
     // witgen_debug
     // /// Fixed lookups table.
-    // fixed_table: FixedTable,
+    fixed_table: FixedTable,
 }
 
 #[derive(Clone, Debug)]
 struct TagConfig {
-    /// Marks all enabled rows.
-    q_enable: Column<Fixed>,
     /// The ZstdTag being processed at the current row.
     tag: Column<Advice>,
-
-    // witgen_debug
     /// Tag decomposed as bits. This is useful in constructing conditional checks against the tag
     /// value.
-    // tag_bits: BinaryNumberConfig<ZstdTag, N_BITS_ZSTD_TAG>,
-
-
+    tag_bits: BinaryNumberConfig<ZstdTag, N_BITS_ZSTD_TAG>,
     /// The Zstd tag that will be processed after processing the current tag.
     tag_next: Column<Advice>,
     /// The number of bytes in the current tag.
     tag_len: Column<Advice>,
     /// The byte index within the current tag. At the first tag byte, tag_idx = 1.
     tag_idx: Column<Advice>,
-
-    // witgen_debug
     /// A utility gadget to identify the row where tag_idx == tag_len.
-    // tag_idx_eq_tag_len: IsEqualConfig<Fr>,
-
-
+    tag_idx_eq_tag_len: IsEqualConfig<Fr>,
     /// The maximum number bytes that the current tag may occupy. This is an upper bound on the
     /// number of bytes required to encode this tag. For instance, the LiteralsHeader is variable
     /// sized, ranging from 1-5 bytes. The max_len for LiteralsHeader would be 5.
@@ -172,27 +162,23 @@ struct TagConfig {
 }
 
 impl TagConfig {
-    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
-        let q_enable = meta.fixed_column();
+    fn configure(meta: &mut ConstraintSystem<Fr>, q_enable: Column<Fixed>) -> Self {
         let tag = meta.advice_column();
         let tag_idx = meta.advice_column();
         let tag_len = meta.advice_column();
 
         Self {
-            q_enable,
             tag,
-            // witgen_debug
-            // tag_bits: BinaryNumberChip::configure(meta, q_enable, Some(tag.into())),
+            tag_bits: BinaryNumberChip::configure(meta, q_enable, Some(tag.into())),
             tag_next: meta.advice_column(),
             tag_len,
             tag_idx,
-            // witgen_debug
-            // tag_idx_eq_tag_len: IsEqualChip::configure(
-            //     meta,
-            //     |meta| meta.query_fixed(q_enable, Rotation::cur()),
-            //     |meta| meta.query_advice(tag_idx, Rotation::cur()),
-            //     |meta| meta.query_advice(tag_len, Rotation::cur()),
-            // ),
+            tag_idx_eq_tag_len: IsEqualChip::configure(
+                meta,
+                |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                |meta| meta.query_advice(tag_idx, Rotation::cur()),
+                |meta| meta.query_advice(tag_len, Rotation::cur()),
+            ),
             max_len: meta.advice_column(),
             tag_rlc: meta.advice_column_in(SecondPhase),
             rpow_tag_len: meta.advice_column_in(SecondPhase),
@@ -223,8 +209,11 @@ struct BlockConfig {
     is_block: Column<Advice>,
     /// Number of sequences decoded from the sequences section header in the block.
     num_sequences: Column<Advice>,
+
+    // witgen_debug
     /// Helper gadget to know if the number of sequences is 0.
-    is_empty_sequences: IsEqualConfig<Fr>,
+    // is_empty_sequences: IsEqualConfig<Fr>,
+
     /// For sequence decoding, the tag=ZstdBlockSequenceHeader bytes tell us the Compression_Mode
     /// utilised for Literals Lengths, Match Offsets and Match Lengths. We expect only 2
     /// possibilities:
@@ -246,12 +235,13 @@ impl BlockConfig {
             is_last_block: meta.advice_column(),
             is_block: meta.advice_column(),
             num_sequences,
-            is_empty_sequences: IsEqualChip::configure(
-                meta,
-                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
-                |meta| meta.query_advice(num_sequences, Rotation::cur()),
-                |_| 0.expr(),
-            ),
+            // witgen_debug
+            // is_empty_sequences: IsEqualChip::configure(
+            //     meta,
+            //     |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+            //     |meta| meta.query_advice(num_sequences, Rotation::cur()),
+            //     |_| 0.expr(),
+            // ),
             compression_modes: [
                 meta.advice_column(),
                 meta.advice_column(),
@@ -303,15 +293,16 @@ impl BlockConfig {
         )
     }
 
-    fn is_empty_sequences(
-        &self,
-        meta: &mut VirtualCells<Fr>,
-        rotation: Rotation,
-    ) -> Expression<Fr> {
-        let num_sequences = meta.query_advice(self.num_sequences, rotation);
-        self.is_empty_sequences
-            .expr_at(meta, rotation, num_sequences, 0.expr())
-    }
+    // witgen_debug
+    // fn is_empty_sequences(
+    //     &self,
+    //     meta: &mut VirtualCells<Fr>,
+    //     rotation: Rotation,
+    // ) -> Expression<Fr> {
+    //     let num_sequences = meta.query_advice(self.num_sequences, rotation);
+    //     self.is_empty_sequences
+    //         .expr_at(meta, rotation, num_sequences, 0.expr())
+    // }
 }
 
 #[derive(Clone, Debug)]
@@ -1003,15 +994,17 @@ impl DecoderConfig {
         // let sequence_instruction_table = SeqInstTable::configure(meta);
 
         // Peripheral configs
-        let (byte_idx, byte, is_padding) = (
+        let (q_enable, byte_idx, byte, is_padding) = (
+            meta.fixed_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
         );
 
+        let tag_config = TagConfig::configure(meta, q_enable);
+        let block_config = BlockConfig::configure(meta, is_padding);
+
         // witgen_debug
-        // let tag_config = TagConfig::configure(meta);
-        // let block_config = BlockConfig::configure(meta, is_padding);
         // let sequences_header_decoder =
         //     SequencesHeaderDecoder::configure(meta, byte, is_padding, u8_table);
         // let bitstream_decoder = BitstreamDecoder::configure(meta, is_padding, u8_table);
@@ -1040,6 +1033,7 @@ impl DecoderConfig {
 
         // Main config
         let config = Self {
+            q_enable,
             q_first: meta.fixed_column(),
             byte_idx,
             byte,
@@ -1051,18 +1045,17 @@ impl DecoderConfig {
             encoded_rlc: meta.advice_column_in(SecondPhase),
             decoded_len: meta.advice_column(),
             is_padding,
+            tag_config,
+            block_config,
 
             // witgen_debug
-            // tag_config,
-
-            // witgen_debug
-            // block_config,
             // sequences_header_decoder,
             // bitstream_decoder,
             // fse_decoder,
             // sequences_data_decoder,
 
             // witgen_debug
+            u8_table,
             // range8,
             // range16,
             // pow2_table,
@@ -1077,192 +1070,192 @@ impl DecoderConfig {
             // TODO(enable): sequence_execution_table,
 
             // witgen_debug
-            // fixed_table,
+            fixed_table,
         };
 
+        macro_rules! is_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<Fr>| {
+                    config
+                        .tag_config
+                        .tag_bits
+                        .value_equals(ZstdTag::$tag_variant, Rotation::cur())(meta)
+                };
+            };
+        }
 
-        // witgen_debug
-        // macro_rules! is_tag {
-        //     ($var:ident, $tag_variant:ident) => {
-        //         let $var = |meta: &mut VirtualCells<Fr>| {
-        //             config
-        //                 .tag_config
-        //                 .tag_bits
-        //                 .value_equals(ZstdTag::$tag_variant, Rotation::cur())(meta)
-        //         };
-        //     };
-        // }
+        macro_rules! is_prev_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<Fr>| {
+                    config
+                        .tag_config
+                        .tag_bits
+                        .value_equals(ZstdTag::$tag_variant, Rotation::prev())(meta)
+                };
+            };
+        }
 
-        // macro_rules! is_prev_tag {
-        //     ($var:ident, $tag_variant:ident) => {
-        //         let $var = |meta: &mut VirtualCells<Fr>| {
-        //             config
-        //                 .tag_config
-        //                 .tag_bits
-        //                 .value_equals(ZstdTag::$tag_variant, Rotation::prev())(meta)
-        //         };
-        //     };
-        // }
+        is_tag!(is_null, Null);
+        is_tag!(is_frame_header_descriptor, FrameHeaderDescriptor);
+        is_tag!(is_frame_content_size, FrameContentSize);
+        is_tag!(is_block_header, BlockHeader);
+        is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
+        is_tag!(is_zb_raw_block, ZstdBlockLiteralsRawBytes);
+        is_tag!(is_zb_sequence_header, ZstdBlockSequenceHeader);
+        is_tag!(is_zb_sequence_fse, ZstdBlockSequenceFseCode);
+        is_tag!(is_zb_sequence_data, ZstdBlockSequenceData);
 
-        // witgen_debug
-        // is_tag!(is_null, Null);
-        // is_tag!(is_frame_header_descriptor, FrameHeaderDescriptor);
-        // is_tag!(is_frame_content_size, FrameContentSize);
-        // is_tag!(is_block_header, BlockHeader);
-        // is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
-        // is_tag!(is_zb_raw_block, ZstdBlockLiteralsRawBytes);
-        // is_tag!(is_zb_sequence_header, ZstdBlockSequenceHeader);
-        // is_tag!(is_zb_sequence_fse, ZstdBlockSequenceFseCode);
-        // is_tag!(is_zb_sequence_data, ZstdBlockSequenceData);
+        is_prev_tag!(is_prev_frame_content_size, FrameContentSize);
+        is_prev_tag!(is_prev_sequence_header, ZstdBlockSequenceHeader);
+        is_prev_tag!(is_prev_sequence_data, ZstdBlockSequenceData);
 
-        // is_prev_tag!(is_prev_frame_content_size, FrameContentSize);
-        // is_prev_tag!(is_prev_sequence_header, ZstdBlockSequenceHeader);
-        // is_prev_tag!(is_prev_sequence_data, ZstdBlockSequenceData);
+        meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
+            vec![(
+                meta.query_advice(config.byte, Rotation::cur()),
+                u8_table.into(),
+            )]
+        });
 
-        // witgen_debug
-        // meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
-        //     vec![(
-        //         meta.query_advice(config.byte, Rotation::cur()),
-        //         u8_table.into(),
-        //     )]
-        // });
+        meta.create_gate("DecoderConfig: first row", |meta| {
+            let condition = meta.query_fixed(config.q_first, Rotation::cur());
 
-        // witgen_debug
-        // meta.create_gate("DecoderConfig: first row", |meta| {
-        //     let condition = meta.query_fixed(config.q_first, Rotation::cur());
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            // The first row is not padded row.
+            cb.require_zero(
+                "is_padding is False on the first row",
+                meta.query_advice(config.is_padding, Rotation::cur()),
+            );
 
-        //     // The first row is not padded row.
-        //     cb.require_zero(
-        //         "is_padding is False on the first row",
-        //         meta.query_advice(config.is_padding, Rotation::cur()),
-        //     );
+            // byte_idx initialises at 1.
+            cb.require_equal(
+                "byte_idx == 1",
+                meta.query_advice(config.byte_idx, Rotation::cur()),
+                1.expr(),
+            );
 
-        //     // byte_idx initialises at 1.
-        //     cb.require_equal(
-        //         "byte_idx == 1",
-        //         meta.query_advice(config.byte_idx, Rotation::cur()),
-        //         1.expr(),
-        //     );
+            // tag_idx is initialised correctly.
+            cb.require_equal(
+                "tag_idx == 1",
+                meta.query_advice(config.tag_config.tag_idx, Rotation::cur()),
+                1.expr(),
+            );
 
-        //     // tag_idx is initialised correctly.
-        //     cb.require_equal(
-        //         "tag_idx == 1",
-        //         meta.query_advice(config.tag_config.tag_idx, Rotation::cur()),
-        //         1.expr(),
-        //     );
+            // The first tag we process is the FrameHeaderDescriptor.
+            cb.require_equal(
+                "tag == FrameHeaderDescriptor",
+                meta.query_advice(config.tag_config.tag, Rotation::cur()),
+                ZstdTag::FrameHeaderDescriptor.expr(),
+            );
 
-        //     // The first tag we process is the FrameHeaderDescriptor.
-        //     cb.require_equal(
-        //         "tag == FrameHeaderDescriptor",
-        //         meta.query_advice(config.tag_config.tag, Rotation::cur()),
-        //         ZstdTag::FrameHeaderDescriptor.expr(),
-        //     );
+            // encoded_rlc initialises at 0.
+            cb.require_zero(
+                "encoded_rlc == 0",
+                meta.query_advice(config.encoded_rlc, Rotation::cur()),
+            );
 
-        //     // encoded_rlc initialises at 0.
-        //     cb.require_zero(
-        //         "encoded_rlc == 0",
-        //         meta.query_advice(config.encoded_rlc, Rotation::cur()),
-        //     );
+            cb.gate(condition)
+        });
 
-        //     cb.gate(condition)
-        // });
+        meta.create_gate("DecoderConfig: all rows except the first row", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(config.q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
+            ]);
 
-        // witgen_debug
-        // meta.create_gate("DecoderConfig: all rows except the first row", |meta| {
-        //     let condition = not::expr(meta.query_fixed(config.q_first, Rotation::cur()));
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
+            let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
 
-        //     let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
-        //     let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
+            // is_padding is boolean.
+            cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
 
-        //     // is_padding is boolean.
-        //     cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
+            // is_padding transitions from 0 -> 1 only once, i.e. is_padding_delta is boolean.
+            let is_padding_delta = is_padding_curr - is_padding_prev;
+            cb.require_boolean("is_padding_delta is boolean", is_padding_delta);
 
-        //     // is_padding transitions from 0 -> 1 only once, i.e. is_padding_delta is boolean.
-        //     let is_padding_delta = is_padding_curr - is_padding_prev;
-        //     cb.require_boolean("is_padding_delta is boolean", is_padding_delta);
+            cb.gate(condition)
+        });
 
-        //     cb.gate(condition)
-        // });
+        meta.create_gate("DecoderConfig: all non-padded rows", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(config.q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+            ]);
 
-        // witgen_debug
-        // meta.create_gate("DecoderConfig: all non-padded rows", |meta| {
-        //     let condition = not::expr(meta.query_advice(config.is_padding, Rotation::cur()));
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            // byte decomposed into bits.
+            let bits = config
+                .bits
+                .map(|bit| meta.query_advice(bit, Rotation::cur()));
+            for bit in bits.iter() {
+                cb.require_boolean("bit in [0, 1]", bit.expr());
+            }
+            cb.require_equal(
+                "bits are the binary decomposition of byte",
+                meta.query_advice(config.byte, Rotation::cur()),
+                select::expr(
+                    meta.query_advice(config.tag_config.is_reverse, Rotation::cur()),
+                    // LE if reverse
+                    bits[7].expr()
+                        + bits[6].expr() * 2.expr()
+                        + bits[5].expr() * 4.expr()
+                        + bits[4].expr() * 8.expr()
+                        + bits[3].expr() * 16.expr()
+                        + bits[2].expr() * 32.expr()
+                        + bits[1].expr() * 64.expr()
+                        + bits[0].expr() * 128.expr(),
+                    // BE if not reverse
+                    bits[0].expr()
+                        + bits[1].expr() * 2.expr()
+                        + bits[2].expr() * 4.expr()
+                        + bits[3].expr() * 8.expr()
+                        + bits[4].expr() * 16.expr()
+                        + bits[5].expr() * 32.expr()
+                        + bits[6].expr() * 64.expr()
+                        + bits[7].expr() * 128.expr(),
+                ),
+            );
 
-        //     // byte decomposed into bits.
-        //     let bits = config
-        //         .bits
-        //         .map(|bit| meta.query_advice(bit, Rotation::cur()));
-        //     for bit in bits.iter() {
-        //         cb.require_boolean("bit in [0, 1]", bit.expr());
-        //     }
-        //     cb.require_equal(
-        //         "bits are the binary decomposition of byte",
-        //         meta.query_advice(config.byte, Rotation::cur()),
-        //         select::expr(
-        //             meta.query_advice(config.tag_config.is_reverse, Rotation::cur()),
-        //             // LE if reverse
-        //             bits[7].expr()
-        //                 + bits[6].expr() * 2.expr()
-        //                 + bits[5].expr() * 4.expr()
-        //                 + bits[4].expr() * 8.expr()
-        //                 + bits[3].expr() * 16.expr()
-        //                 + bits[2].expr() * 32.expr()
-        //                 + bits[1].expr() * 64.expr()
-        //                 + bits[0].expr() * 128.expr(),
-        //             // BE if not reverse
-        //             bits[0].expr()
-        //                 + bits[1].expr() * 2.expr()
-        //                 + bits[2].expr() * 4.expr()
-        //                 + bits[3].expr() * 8.expr()
-        //                 + bits[4].expr() * 16.expr()
-        //                 + bits[5].expr() * 32.expr()
-        //                 + bits[6].expr() * 64.expr()
-        //                 + bits[7].expr() * 128.expr(),
-        //         ),
-        //     );
+            // Constrain boolean columns.
+            cb.require_boolean(
+                "TagConfig::is_change in [0, 1]",
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+            );
 
-        //     // Constrain boolean columns.
-        //     cb.require_boolean(
-        //         "TagConfig::is_change in [0, 1]",
-        //         meta.query_advice(config.tag_config.is_change, Rotation::cur()),
-        //     );
+            // Degree reduction columns.
+            macro_rules! degree_reduction_check {
+                ($column:expr, $expr:expr) => {
+                    cb.require_equal(
+                        "Degree reduction column check",
+                        meta.query_advice($column, Rotation::cur()),
+                        $expr,
+                    );
+                };
+            }
+            degree_reduction_check!(
+                config.tag_config.is_frame_content_size,
+                is_frame_content_size(meta)
+            );
+            degree_reduction_check!(config.tag_config.is_block_header, is_block_header(meta));
+            degree_reduction_check!(config.tag_config.is_fse_code, is_zb_sequence_fse(meta));
+            degree_reduction_check!(
+                config.tag_config.is_sequence_data,
+                is_zb_sequence_data(meta)
+            );
+            degree_reduction_check!(config.tag_config.is_null, is_null(meta));
 
-        //     // Degree reduction columns.
-        //     macro_rules! degree_reduction_check {
-        //         ($column:expr, $expr:expr) => {
-        //             cb.require_equal(
-        //                 "Degree reduction column check",
-        //                 meta.query_advice($column, Rotation::cur()),
-        //                 $expr,
-        //             );
-        //         };
-        //     }
-        //     degree_reduction_check!(
-        //         config.tag_config.is_frame_content_size,
-        //         is_frame_content_size(meta)
-        //     );
-        //     degree_reduction_check!(config.tag_config.is_block_header, is_block_header(meta));
-        //     degree_reduction_check!(config.tag_config.is_fse_code, is_zb_sequence_fse(meta));
-        //     degree_reduction_check!(
-        //         config.tag_config.is_sequence_data,
-        //         is_zb_sequence_data(meta)
-        //     );
-        //     degree_reduction_check!(config.tag_config.is_null, is_null(meta));
-
-        //     cb.gate(condition)
-        // });
+            cb.gate(condition)
+        });
 
         // witgen_debug
         // meta.create_gate(
         //     "DecoderConfig: all non-padded rows except the first row",
         //     |meta| {
         //         let condition = and::expr([
+        //             meta.query_fixed(config.q_enable, Rotation::cur()),
         //             not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
         //             not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
         //         ]);
@@ -1316,115 +1309,124 @@ impl DecoderConfig {
         // );
 
         // witgen_debug
-        // meta.create_gate("DecoderConfig: padded rows", |meta| {
-        //     let condition = and::expr([
-        //         meta.query_advice(config.is_padding, Rotation::prev()),
-        //         meta.query_advice(config.is_padding, Rotation::cur()),
-        //     ]);
+        meta.create_gate("DecoderConfig: padded rows", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(config.q_enable, Rotation::cur()),
+                meta.query_advice(config.is_padding, Rotation::prev()),
+                meta.query_advice(config.is_padding, Rotation::cur()),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     // Fields that do not change until the end of the layout once we have encountered
-        //     // padded rows.
-        //     for column in [config.encoded_rlc, config.decoded_len] {
-        //         cb.require_equal(
-        //             "unchanged column in padded rows",
-        //             meta.query_advice(column, Rotation::cur()),
-        //             meta.query_advice(column, Rotation::prev()),
-        //         );
-        //     }
+            // Fields that do not change until the end of the layout once we have encountered
+            // padded rows.
+            for column in [config.encoded_rlc, config.decoded_len] {
+                cb.require_equal(
+                    "unchanged column in padded rows",
+                    meta.query_advice(column, Rotation::cur()),
+                    meta.query_advice(column, Rotation::prev()),
+                );
+            }
 
-        //     cb.gate(condition)
-        // });
-
-        // witgen_debug
-        // meta.lookup_any("DecoderConfig: fixed lookup (tag transition)", |meta| {
-        //     let condition = meta.query_fixed(config.q_first, Rotation::cur())
-        //         + meta.query_advice(config.tag_config.is_change, Rotation::cur());
-
-        //     [
-        //         FixedLookupTag::TagTransition.expr(),
-        //         meta.query_advice(config.tag_config.tag, Rotation::cur()),
-        //         meta.query_advice(config.tag_config.tag_next, Rotation::cur()),
-        //         meta.query_advice(config.tag_config.max_len, Rotation::cur()),
-        //         meta.query_advice(config.tag_config.is_output, Rotation::cur()),
-        //         meta.query_advice(config.tag_config.is_reverse, Rotation::cur()),
-        //         meta.query_advice(config.block_config.is_block, Rotation::cur()),
-        //     ]
-        //     .into_iter()
-        //     .zip_eq(config.fixed_table.table_exprs(meta))
-        //     .map(|(value, table)| (condition.expr() * value, table))
-        //     .collect()
-        // });
+            cb.gate(condition)
+        });
 
         // witgen_debug
-        // meta.create_gate("DecoderConfig: new tag", |meta| {
-        //     let condition = meta.query_advice(config.tag_config.is_change, Rotation::cur());
+        meta.lookup_any("DecoderConfig: fixed lookup (tag transition)", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(config.q_enable, Rotation::cur()),
+                sum::expr([
+                    meta.query_fixed(config.q_first, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                ]),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            [
+                FixedLookupTag::TagTransition.expr(),
+                meta.query_advice(config.tag_config.tag, Rotation::cur()),
+                meta.query_advice(config.tag_config.tag_next, Rotation::cur()),
+                meta.query_advice(config.tag_config.max_len, Rotation::cur()),
+                meta.query_advice(config.tag_config.is_output, Rotation::cur()),
+                meta.query_advice(config.tag_config.is_reverse, Rotation::cur()),
+                meta.query_advice(config.block_config.is_block, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip_eq(config.fixed_table.table_exprs(meta))
+            .map(|(value, table)| (condition.expr() * value, table))
+            .collect()
+        });
 
-        //     // The previous tag was processed completely.
-        //     cb.require_equal(
-        //         "tag_idx::prev == tag_len::prev",
-        //         meta.query_advice(config.tag_config.tag_idx, Rotation::prev()),
-        //         meta.query_advice(config.tag_config.tag_len, Rotation::prev()),
-        //     );
+        // witgen_debug
+        meta.create_gate("DecoderConfig: new tag", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(config.q_enable, Rotation::cur()),
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+            ]);
 
-        //     // Tag change also implies that the byte_idx transition did happen.
-        //     cb.require_equal(
-        //         "byte_idx::prev + 1 == byte_idx::cur",
-        //         meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
-        //         meta.query_advice(config.byte_idx, Rotation::cur()),
-        //     );
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     // The current tag is in fact the tag_next promised while processing the previous tag.
-        //     cb.require_equal(
-        //         "tag_next::prev == tag::cur",
-        //         meta.query_advice(config.tag_config.tag_next, Rotation::prev()),
-        //         meta.query_advice(config.tag_config.tag, Rotation::cur()),
-        //     );
+            // The previous tag was processed completely.
+            cb.require_equal(
+                "tag_idx::prev == tag_len::prev",
+                meta.query_advice(config.tag_config.tag_idx, Rotation::prev()),
+                meta.query_advice(config.tag_config.tag_len, Rotation::prev()),
+            );
 
-        //     // If the previous tag was processed from back-to-front, the RLC of the tag bytes had
-        //     // initialised at the last byte.
-        //     let prev_tag_reverse =
-        //         meta.query_advice(config.tag_config.is_reverse, Rotation::prev());
-        //     cb.condition(prev_tag_reverse, |cb| {
-        //         cb.require_equal(
-        //             "tag_rlc::prev == byte::prev",
-        //             meta.query_advice(config.tag_config.tag_rlc, Rotation::prev()),
-        //             meta.query_advice(config.byte, Rotation::prev()),
-        //         );
-        //     });
+            // Tag change also implies that the byte_idx transition did happen.
+            cb.require_equal(
+                "byte_idx::prev + 1 == byte_idx::cur",
+                meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
+                meta.query_advice(config.byte_idx, Rotation::cur()),
+            );
 
-        //     // The tag_idx is initialised correctly.
-        //     cb.require_equal(
-        //         "tag_idx::cur == 1",
-        //         meta.query_advice(config.tag_config.tag_idx, Rotation::cur()),
-        //         1.expr(),
-        //     );
+            // The current tag is in fact the tag_next promised while processing the previous tag.
+            cb.require_equal(
+                "tag_next::prev == tag::cur",
+                meta.query_advice(config.tag_config.tag_next, Rotation::prev()),
+                meta.query_advice(config.tag_config.tag, Rotation::cur()),
+            );
 
-        //     // If the new tag is not processed from back-to-front, the RLC of the tag bytes
-        //     // initialises at the first byte.
-        //     let curr_tag_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
-        //     cb.condition(not::expr(curr_tag_reverse), |cb| {
-        //         cb.require_equal(
-        //             "tag_rlc::cur == byte::cur",
-        //             meta.query_advice(config.tag_config.tag_rlc, Rotation::cur()),
-        //             meta.query_advice(config.byte, Rotation::cur()),
-        //         );
-        //     });
+            // If the previous tag was processed from back-to-front, the RLC of the tag bytes had
+            // initialised at the last byte.
+            let prev_tag_reverse =
+                meta.query_advice(config.tag_config.is_reverse, Rotation::prev());
+            cb.condition(prev_tag_reverse, |cb| {
+                cb.require_equal(
+                    "tag_rlc::prev == byte::prev",
+                    meta.query_advice(config.tag_config.tag_rlc, Rotation::prev()),
+                    meta.query_advice(config.byte, Rotation::prev()),
+                );
+            });
 
-        //     // The RLC of encoded bytes is computed correctly.
-        //     cb.require_equal(
-        //         "encoded_rlc::cur == encoded_rlc::prev * (r ^ tag_len::prev) + tag_rlc::prev",
-        //         meta.query_advice(config.encoded_rlc, Rotation::cur()),
-        //         meta.query_advice(config.encoded_rlc, Rotation::prev())
-        //             * meta.query_advice(config.tag_config.rpow_tag_len, Rotation::prev())
-        //             + meta.query_advice(config.tag_config.tag_rlc, Rotation::prev()),
-        //     );
+            // The tag_idx is initialised correctly.
+            cb.require_equal(
+                "tag_idx::cur == 1",
+                meta.query_advice(config.tag_config.tag_idx, Rotation::cur()),
+                1.expr(),
+            );
 
-        //     cb.gate(condition)
-        // });
+            // If the new tag is not processed from back-to-front, the RLC of the tag bytes
+            // initialises at the first byte.
+            let curr_tag_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+            cb.condition(not::expr(curr_tag_reverse), |cb| {
+                cb.require_equal(
+                    "tag_rlc::cur == byte::cur",
+                    meta.query_advice(config.tag_config.tag_rlc, Rotation::cur()),
+                    meta.query_advice(config.byte, Rotation::cur()),
+                );
+            });
+
+            // The RLC of encoded bytes is computed correctly.
+            cb.require_equal(
+                "encoded_rlc::cur == encoded_rlc::prev * (r ^ tag_len::prev) + tag_rlc::prev",
+                meta.query_advice(config.encoded_rlc, Rotation::cur()),
+                meta.query_advice(config.encoded_rlc, Rotation::prev())
+                    * meta.query_advice(config.tag_config.rpow_tag_len, Rotation::prev())
+                    + meta.query_advice(config.tag_config.tag_rlc, Rotation::prev()),
+            );
+
+            cb.gate(condition)
+        });
 
         // witgen_debug
         // meta.create_gate("DecoderConfig: continue same tag", |meta| {
@@ -3879,9 +3881,10 @@ impl DecoderConfig {
         /////////////////////////////////////////
 
         // witgen_debug
+        self.u8_table.load(layouter)?;
         // self.range8.load(layouter)?;
         // self.range16.load(layouter)?;
-        // self.fixed_table.load(layouter)?;
+        self.fixed_table.load(layouter)?;
         // self.pow2_table.load(layouter)?;
 
         // witgen_debug
@@ -3954,6 +3957,9 @@ impl DecoderConfig {
                 /////////// Assign First Row  ///////////
                 /////////////////////////////////////////
                 region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(Fr::one()))?;
+                for i in 0..((1 << k) - self.unusable_rows()) {
+                    region.assign_fixed(|| "q_enable", self.q_enable, i, || Value::known(Fr::one()))?;
+                }
 
                 /////////////////////////////////////////
                 ///////// Assign Witness Rows  //////////
@@ -3963,7 +3969,7 @@ impl DecoderConfig {
                         || "is_padding",
                         self.is_padding,
                         i,
-                        || Value::known(Fr::from(0u64)),
+                        || Value::known(Fr::zero()),
                     )?;
                     region.assign_advice(
                         || "byte_idx",
@@ -4107,221 +4113,209 @@ impl DecoderConfig {
                     /////////////////////////////////////////
                     ////////// Assign Tag Config  ///////////
                     /////////////////////////////////////////
+                    region.assign_advice(
+                        || "tag_config.tag",
+                        self.tag_config.tag,
+                        i,
+                        || Value::known(Fr::from(row.state.tag as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_config.tag_next",
+                        self.tag_config.tag_next,
+                        i,
+                        || Value::known(Fr::from(row.state.tag_next as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_config.tag_len",
+                        self.tag_config.tag_len,
+                        i,
+                        || Value::known(Fr::from(row.state.tag_len as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_config.max_len",
+                        self.tag_config.max_len,
+                        i,
+                        || Value::known(Fr::from(row.state.max_tag_len as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_config.tag_idx",
+                        self.tag_config.tag_idx,
+                        i,
+                        || Value::known(Fr::from(row.state.tag_idx as u64)),
+                    )?;
 
-                    // witgen_debug
-                    // region.assign_fixed(
-                    //     || "tag_config.q_enable",
-                    //     self.tag_config.q_enable,
-                    //     i,
-                    //     || Value::known(Fr::one()),
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.tag",
-                    //     self.tag_config.tag,
-                    //     i,
-                    //     || Value::known(Fr::from(row.state.tag as u64)),
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.tag_next",
-                    //     self.tag_config.tag_next,
-                    //     i,
-                    //     || Value::known(Fr::from(row.state.tag_next as u64)),
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.tag_len",
-                    //     self.tag_config.tag_len,
-                    //     i,
-                    //     || Value::known(Fr::from(row.state.tag_len as u64)),
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.max_len",
-                    //     self.tag_config.max_len,
-                    //     i,
-                    //     || Value::known(Fr::from(row.state.max_tag_len as u64)),
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.tag_idx",
-                    //     self.tag_config.tag_idx,
-                    //     i,
-                    //     || Value::known(Fr::from(row.state.tag_idx as u64)),
-                    // )?;
+                    let is_sequence_data = row.state.tag == ZstdTag::ZstdBlockSequenceData;
+                    region.assign_advice(
+                        || "tag_config.is_sequence_data",
+                        self.tag_config.is_sequence_data,
+                        i,
+                        || Value::known(Fr::from(is_sequence_data as u64)),
+                    )?;
 
-                    // let is_sequence_data = row.state.tag == ZstdTag::ZstdBlockSequenceData;
-                    // region.assign_advice(
-                    //     || "tag_config.is_sequence_data",
-                    //     self.tag_config.is_sequence_data,
-                    //     i,
-                    //     || Value::known(Fr::from(is_sequence_data as u64)),
-                    // )?;
+                    let is_frame_content_size = row.state.tag == ZstdTag::FrameContentSize;
+                    region.assign_advice(
+                        || "tag_config.is_frame_content_size",
+                        self.tag_config.is_frame_content_size,
+                        i,
+                        || Value::known(Fr::from(is_frame_content_size as u64)),
+                    )?;
 
-                    // let is_frame_content_size = row.state.tag == ZstdTag::FrameContentSize;
-                    // region.assign_advice(
-                    //     || "tag_config.is_frame_content_size",
-                    //     self.tag_config.is_frame_content_size,
-                    //     i,
-                    //     || Value::known(Fr::from(is_frame_content_size as u64)),
-                    // )?;
+                    let is_block_header = row.state.tag == ZstdTag::BlockHeader;
+                    region.assign_advice(
+                        || "tag_config.is_block_header",
+                        self.tag_config.is_block_header,
+                        i,
+                        || Value::known(Fr::from(is_block_header as u64)),
+                    )?;
 
-                    // let is_block_header = row.state.tag == ZstdTag::BlockHeader;
-                    // region.assign_advice(
-                    //     || "tag_config.is_block_header",
-                    //     self.tag_config.is_block_header,
-                    //     i,
-                    //     || Value::known(Fr::from(is_block_header as u64)),
-                    // )?;
+                    let is_fse_code = row.state.tag == ZstdTag::ZstdBlockSequenceFseCode;
+                    region.assign_advice(
+                        || "tag_config.is_fse_code",
+                        self.tag_config.is_fse_code,
+                        i,
+                        || Value::known(Fr::from(is_fse_code as u64)),
+                    )?;
 
-                    // let is_fse_code = row.state.tag == ZstdTag::ZstdBlockSequenceFseCode;
-                    // region.assign_advice(
-                    //     || "tag_config.is_fse_code",
-                    //     self.tag_config.is_fse_code,
-                    //     i,
-                    //     || Value::known(Fr::from(is_fse_code as u64)),
-                    // )?;
+                    let is_null = row.state.tag == ZstdTag::Null;
+                    region.assign_advice(
+                        || "tag_config.is_null",
+                        self.tag_config.is_null,
+                        i,
+                        || Value::known(Fr::from(is_null as u64)),
+                    )?;
 
-                    // let is_null = row.state.tag == ZstdTag::Null;
-                    // region.assign_advice(
-                    //     || "tag_config.is_null",
-                    //     self.tag_config.is_null,
-                    //     i,
-                    //     || Value::known(Fr::from(is_null as u64)),
-                    // )?;
+                    region.assign_advice(
+                        || "tag_config.is_change",
+                        self.tag_config.is_change,
+                        i,
+                        || Value::known(Fr::from((row.state.is_tag_change && i > 0) as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_config.is_reverse",
+                        self.tag_config.is_reverse,
+                        i,
+                        || Value::known(Fr::from(row.state.tag.is_reverse() as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_config.tag_rlc",
+                        self.tag_config.tag_rlc,
+                        i,
+                        || row.state.tag_rlc_acc,
+                    )?;
+                    region.assign_advice(
+                        || "tag_config.is_output",
+                        self.tag_config.is_output,
+                        i,
+                        || Value::known(Fr::from(row.state.tag.is_output() as u64)),
+                    )?;
 
-                    // region.assign_advice(
-                    //     || "tag_config.is_change",
-                    //     self.tag_config.is_change,
-                    //     i,
-                    //     || Value::known(Fr::from((row.state.is_tag_change && i > 0) as u64)),
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.is_reverse",
-                    //     self.tag_config.is_reverse,
-                    //     i,
-                    //     || Value::known(Fr::from(row.encoded_data.reverse as u64)),
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.tag_rlc",
-                    //     self.tag_config.tag_rlc,
-                    //     i,
-                    //     || row.state.tag_rlc_acc,
-                    // )?;
-                    // region.assign_advice(
-                    //     || "tag_config.is_output",
-                    //     self.tag_config.is_output,
-                    //     i,
-                    //     || Value::known(Fr::from(row.state.tag.is_output() as u64)),
-                    // )?;
+                    let tag_len = row.state.tag_len as usize;
+                    if tag_len >= pow_of_rand.len() {
+                        let mut last = pow_of_rand
+                            .last()
+                            .expect("Last pow_of_rand exists.")
+                            .clone();
+                        for _ in pow_of_rand.len()..=tag_len {
+                            last = last * challenges.keccak_input();
+                            pow_of_rand.push(last.clone());
+                        }
+                    }
+                    region.assign_advice(
+                        || "tag_config.rpow_tag_len",
+                        self.tag_config.rpow_tag_len,
+                        i,
+                        || pow_of_rand[tag_len],
+                    )?;
 
-                    // let tag_len = row.state.tag_len as usize;
-                    // if tag_len >= pow_of_rand.len() {
-                    //     let mut last = pow_of_rand
-                    //         .last()
-                    //         .expect("Last pow_of_rand exists.")
-                    //         .clone();
-                    //     for _ in pow_of_rand.len()..=tag_len {
-                    //         last = last * challenges.keccak_input();
-                    //         pow_of_rand.push(last.clone());
-                    //     }
-                    // }
-                    // region.assign_advice(
-                    //     || "tag_config.rpow_tag_len",
-                    //     self.tag_config.rpow_tag_len,
-                    //     i,
-                    //     || pow_of_rand[tag_len],
-                    // )?;
+                    let tag_idx_eq_tag_len =
+                        IsEqualChip::construct(self.tag_config.tag_idx_eq_tag_len.clone());
+                    tag_idx_eq_tag_len.assign(
+                        &mut region,
+                        i,
+                        Value::known(Fr::from(row.state.tag_idx as u64)),
+                        Value::known(Fr::from(row.state.tag_len as u64)),
+                    )?;
 
-                    // witgen_debug
-                    // let tag_idx_eq_tag_len =
-                    //     IsEqualChip::construct(self.tag_config.tag_idx_eq_tag_len.clone());
-                    // tag_idx_eq_tag_len.assign(
-                    //     &mut region,
-                    //     i,
-                    //     Value::known(Fr::from(row.state.tag_idx as u64)),
-                    //     Value::known(Fr::from(row.state.tag_len as u64)),
-                    // )?;
-
-                    // witgen_debug
-                    // let tag_chip = BinaryNumberChip::construct(self.tag_config.tag_bits);
-                    // tag_chip.assign(&mut region, i, &row.state.tag)?;
+                    let tag_chip = BinaryNumberChip::construct(self.tag_config.tag_bits);
+                    tag_chip.assign(&mut region, i, &row.state.tag)?;
 
                     /////////////////////////////////////////
                     ///////// Assign Block Config  //////////
                     /////////////////////////////////////////
                     let block_idx = row.state.block_idx;
-                    let is_not_block = row.state.tag == FrameHeaderDescriptor
-                        || row.state.tag == FrameContentSize
-                        || row.state.tag == BlockHeader;
+                    let is_block = row.state.tag.is_block();
                     let is_block_header = row.state.tag == BlockHeader;
 
-                    // witgen_debug
-                    // if !is_not_block || is_block_header {
-                    //     if block_idx != curr_block_info.block_idx as u64 {
-                    //         curr_block_info = block_info_arr
-                    //             .iter()
-                    //             .find(|&b| b.block_idx == block_idx as usize)
-                    //             .expect("Block info should exist")
-                    //             .clone();
-                    //     }
-                    //     if block_idx != curr_sequence_info.block_idx as u64 {
-                    //         curr_sequence_info = sequence_info_arr
-                    //             .iter()
-                    //             .find(|&s| s.block_idx == block_idx as usize)
-                    //             .expect("Sequence info should exist")
-                    //             .clone();
-                    //     }
-                    //     region.assign_advice(
-                    //         || "block_config.block_len",
-                    //         self.block_config.block_len,
-                    //         i,
-                    //         || Value::known(Fr::from(curr_block_info.block_len as u64)),
-                    //     )?;
-                    //     region.assign_advice(
-                    //         || "block_config.block_idx",
-                    //         self.block_config.block_idx,
-                    //         i,
-                    //         || Value::known(Fr::from(curr_block_info.block_idx as u64)),
-                    //     )?;
-                    //     region.assign_advice(
-                    //         || "block_config.is_last_block",
-                    //         self.block_config.is_last_block,
-                    //         i,
-                    //         || Value::known(Fr::from(curr_block_info.is_last_block as u64)),
-                    //     )?;
-                    //     region.assign_advice(
-                    //         || "block_config.is_block",
-                    //         self.block_config.is_block,
-                    //         i,
-                    //         || Value::known(Fr::one()),
-                    //     )?;
-                    //     region.assign_advice(
-                    //         || "block_config.num_sequences",
-                    //         self.block_config.num_sequences,
-                    //         i,
-                    //         || Value::known(Fr::from(curr_sequence_info.num_sequences as u64)),
-                    //     )?;
+                    if is_block || is_block_header {
+                        if block_idx != curr_block_info.block_idx as u64 {
+                            curr_block_info = block_info_arr
+                                .iter()
+                                .find(|&b| b.block_idx == block_idx as usize)
+                                .expect("Block info should exist")
+                                .clone();
+                        }
+                        if block_idx != curr_sequence_info.block_idx as u64 {
+                            curr_sequence_info = sequence_info_arr
+                                .iter()
+                                .find(|&s| s.block_idx == block_idx as usize)
+                                .expect("Sequence info should exist")
+                                .clone();
+                        }
+                        region.assign_advice(
+                            || "block_config.block_len",
+                            self.block_config.block_len,
+                            i,
+                            || Value::known(Fr::from(curr_block_info.block_len as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "block_config.block_idx",
+                            self.block_config.block_idx,
+                            i,
+                            || Value::known(Fr::from(curr_block_info.block_idx as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "block_config.is_last_block",
+                            self.block_config.is_last_block,
+                            i,
+                            || Value::known(Fr::from(curr_block_info.is_last_block as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "block_config.is_block",
+                            self.block_config.is_block,
+                            i,
+                            || Value::known(Fr::from(is_block as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "block_config.num_sequences",
+                            self.block_config.num_sequences,
+                            i,
+                            || Value::known(Fr::from(curr_sequence_info.num_sequences as u64)),
+                        )?;
 
-                    //     let table_names = ["LLT", "MOT", "MLT"];
-                    //     for idx in 0..3 {
-                    //         region.assign_advice(
-                    //             || table_names[idx],
-                    //             self.block_config.compression_modes[idx],
-                    //             i,
-                    //             || {
-                    //                 Value::known(Fr::from(
-                    //                     curr_sequence_info.compression_mode[idx] as u64,
-                    //                 ))
-                    //             },
-                    //         )?;
-                    //     }
+                        let table_names = ["LLT", "MOT", "MLT"];
+                        for idx in 0..3 {
+                            region.assign_advice(
+                                || table_names[idx],
+                                self.block_config.compression_modes[idx],
+                                i,
+                                || {
+                                    Value::known(Fr::from(
+                                        curr_sequence_info.compression_mode[idx] as u64,
+                                    ))
+                                },
+                            )?;
+                        }
 
-                    //     let is_empty_sequences =
-                    //         IsEqualChip::construct(self.block_config.is_empty_sequences.clone());
-                    //     is_empty_sequences.assign(
-                    //         &mut region,
-                    //         i,
-                    //         Value::known(Fr::from(curr_sequence_info.num_sequences as u64)),
-                    //         Value::known(Fr::from(0u64)),
-                    //     )?;
-                    // }
+                        // witgen_debug
+                        //     let is_empty_sequences =
+                        //     IsEqualChip::construct(self.block_config.is_empty_sequences.clone());
+                        //     is_empty_sequences.assign(
+                        //         &mut region,
+                        //         i,
+                        //         Value::known(Fr::from(curr_sequence_info.num_sequences as u64)),
+                        //         Value::known(Fr::zero()),
+                        //     )?;
+                    }
 
                     ////////////////////////////////////////////////////////////
                     ///////// Assign Extra Sequence Bitstream Fields  //////////
@@ -4464,7 +4458,8 @@ impl DecoderConfig {
                     // )?;
                 }
 
-                for idx in (witness_rows.len())..(2u64.pow(k - 1) as usize) {
+                // witgen_debug
+                for idx in (witness_rows.len())..(2u64.pow(k) as usize - self.unusable_rows()) {
                     region.assign_advice(
                         || "is_padding",
                         self.is_padding,
@@ -4486,6 +4481,10 @@ impl DecoderConfig {
         // }
 
         Ok(())
+    }
+
+    pub fn unusable_rows (&self) -> usize {
+        6
     }
 }
 
@@ -4627,12 +4626,10 @@ mod tests {
             encoder.finish().expect("Encoder success")
         };
 
-        let k = 18;
+        let k = 11;
         let decoder_config_tester = DecoderConfigTester { 
             compressed, 
             k,
-            // witgen_debug
-            // k: k - 1,
         };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();

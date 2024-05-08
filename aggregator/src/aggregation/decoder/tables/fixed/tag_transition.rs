@@ -1,6 +1,6 @@
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
-use crate::aggregation::decoder::{tables::fixed::FixedLookupTag, witgen::ZstdTag};
+use crate::aggregation::decoder::{tables::fixed::FixedLookupTag, witgen::{ZstdTag, lookup_max_tag_len}};
 
 use super::FixedLookupValues;
 
@@ -23,22 +23,27 @@ impl FixedLookupValues for RomTagTransition {
     fn values() -> Vec<[Value<Fr>; 7]> {
         use ZstdTag::{
             BlockHeader, FrameContentSize, FrameHeaderDescriptor, ZstdBlockLiteralsHeader,
-            ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader,
+            ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader, ZstdBlockSequenceFseCode, ZstdBlockSequenceData, Null,
         };
 
         [
-            (FrameHeaderDescriptor, FrameContentSize, 1),
-            (FrameContentSize, BlockHeader, 8),
-            (BlockHeader, ZstdBlockLiteralsHeader, 3),
-            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, 5),
-            (ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader, 1048575), // (1 << 20) - 1
+            (FrameHeaderDescriptor, FrameContentSize),
+            (FrameContentSize, BlockHeader),
+            (BlockHeader, ZstdBlockLiteralsHeader),
+            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes),
+            (ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader),
+            (ZstdBlockSequenceHeader, ZstdBlockSequenceFseCode),
+            (ZstdBlockSequenceHeader, ZstdBlockSequenceData),
+            (ZstdBlockSequenceFseCode, ZstdBlockSequenceFseCode),
+            (ZstdBlockSequenceFseCode, ZstdBlockSequenceData),
+            (ZstdBlockSequenceData, Null),
         ]
-        .map(|(tag, tag_next, max_len)| {
+        .map(|(tag, tag_next)| {
             [
                 Value::known(Fr::from(FixedLookupTag::TagTransition as u64)),
                 Value::known(Fr::from(tag as u64)),
                 Value::known(Fr::from(tag_next as u64)),
-                Value::known(Fr::from(max_len)),
+                Value::known(Fr::from(lookup_max_tag_len(tag))),
                 Value::known(Fr::from(tag.is_output())),
                 Value::known(Fr::from(tag.is_reverse())),
                 Value::known(Fr::from(tag.is_block())),

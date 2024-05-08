@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(clippy::too_many_arguments)]
+
 use eth_types::Field;
 // use ethers_core::k256::pkcs8::der::Sequence;
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
@@ -29,7 +32,7 @@ const TAG_MAX_LEN: [(ZstdTag, u64); 8] = [
     (ZstdBlockSequenceData, 1048575), // (1 << 20) - 1
 ];
 
-fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
+pub fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
     TAG_MAX_LEN.iter().find(|record| record.0 == tag).unwrap().1
 }
 
@@ -66,23 +69,14 @@ fn process_frame_header<F: Field>(
         _ => unreachable!("2-bit value"),
     };
 
-    // FrameContentSize bytes are read in little-endian, hence its in reverse mode.
     let fcs_bytes = src
         .iter()
         .skip(byte_offset + 1)
         .take(fcs_tag_len)
-        // .rev()
-        .cloned()
-        .collect::<Vec<u8>>();
-    let fcs_bytes_rev = src
-        .iter()
-        .skip(byte_offset + 1)
-        .take(fcs_tag_len)
-        .rev()
         .cloned()
         .collect::<Vec<u8>>();
     let fcs = {
-        let fcs = fcs_bytes_rev
+        let fcs = fcs_bytes
             .iter()
             .fold(0u64, |acc, &byte| acc * 256u64 + (byte as u64));
         match fcs_tag_len {
@@ -92,7 +86,6 @@ fn process_frame_header<F: Field>(
     };
     let fcs_tag_value_iter = fcs_bytes
         .iter()
-        .rev()
         .scan(Value::known(F::zero()), |acc, &byte| {
             *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
             Some(*acc)
@@ -157,11 +150,11 @@ fn process_frame_header<F: Field>(
             fse_data: FseDecodingRow::default(),
         })
         .chain(
-            fcs_bytes_rev
+            fcs_bytes
                 .iter()
                 .zip(fcs_tag_value_iter)
-                .zip(fcs_value_rlcs.iter().rev())
-                .zip(tag_rlc_iter.iter().rev())
+                .zip(fcs_value_rlcs.iter())
+                .zip(tag_rlc_iter.iter())
                 .enumerate()
                 .map(
                     |(i, (((&value_byte, tag_value_acc), _value_rlc), &tag_rlc_acc))| {
@@ -183,7 +176,7 @@ fn process_frame_header<F: Field>(
                                 byte_idx: (byte_offset + 2 + i) as u64,
                                 encoded_len: last_row.encoded_data.encoded_len,
                                 value_byte,
-                                reverse: true,
+                                reverse: false,
                                 reverse_idx: (fcs_tag_len - i) as u64,
                                 reverse_len: fcs_tag_len as u64,
                                 aux_1: *aux_1,
@@ -285,7 +278,6 @@ fn process_block_header<F: Field>(
 
     let tag_value_iter = bh_bytes
         .iter()
-        .rev()
         .scan(Value::known(F::zero()), |acc, &byte| {
             *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
             Some(*acc)
@@ -326,9 +318,8 @@ fn process_block_header<F: Field>(
         byte_offset + N_BLOCK_HEADER_BYTES,
         bh_bytes
             .iter()
-            .rev()
             .zip(tag_value_iter)
-            .zip(tag_rlc_iter.iter().rev())
+            .zip(tag_rlc_iter.iter())
             .enumerate()
             .map(
                 |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
@@ -349,7 +340,7 @@ fn process_block_header<F: Field>(
                         byte_idx: (byte_offset + i + 1) as u64,
                         encoded_len: last_row.encoded_data.encoded_len,
                         value_byte,
-                        reverse: true,
+                        reverse: false,
                         value_rlc,
                         ..Default::default()
                     },
@@ -404,6 +395,10 @@ fn process_block_zstd<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     let literals_block_result: LiteralsBlockResult<F> = {
+        let last_row = rows.last().cloned().unwrap();
+        let multiplier =
+            (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+        let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
         let tag = ZstdTag::ZstdBlockLiteralsRawBytes;
         let tag_next = ZstdTag::ZstdBlockSequenceHeader;
         let literals = src[byte_offset..(byte_offset + regen_size)].to_vec();
@@ -436,15 +431,13 @@ fn process_block_zstd<F: Field>(
             literals
                 .iter()
                 .zip(tag_value_iter)
-                .zip(value_rlc_iter)
                 .zip(decoded_value_rlc_iter)
                 .zip(tag_rlc_iter)
                 .enumerate()
                 .map(
                     |(
                         i,
-                        (
-                            (((&value_byte, tag_value_acc), value_rlc), decoded_value_rlc),
+                        (((&value_byte, tag_value_acc), decoded_value_rlc),
                             tag_rlc_acc,
                         ),
                     )| {
@@ -501,6 +494,7 @@ fn process_block_zstd<F: Field>(
             end_offset,
             literals.clone(),
             last_row,
+            last_block,
             randomness,
         );
     witness_rows.extend_from_slice(&rows);
@@ -542,6 +536,7 @@ fn process_sequences<F: Field>(
     end_offset: usize,
     literals: Vec<u64>,
     last_row: &ZstdWitnessRow<F>,
+    last_block: bool,
     randomness: Value<F>,
 ) -> SequencesProcessingResult<F> {
     // Initialize witness rows
@@ -745,6 +740,7 @@ fn process_sequences<F: Field>(
     };
 
     // Add witness rows for the FSE tables
+    let mut last_row = header_rows.last().cloned().unwrap();
     for (idx, start_offset, end_offset, bit_boundaries, tag_len, table) in [
         (
             0usize,
@@ -800,6 +796,10 @@ fn process_sequences<F: Field>(
         let kind = table.table_kind;
         let mut next_symbol: u64 = 0;
         let mut is_repeating_bit_boundary: HashMap<usize, bool> = HashMap::new();
+
+        let multiplier =
+            (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+        let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
 
         let bitstream_rows = bit_boundaries
             .iter()
@@ -961,7 +961,7 @@ fn process_sequences<F: Field>(
             )>>();
 
         // Transform bitstream rows into witness rows
-        for row in bitstream_rows {
+        for (j, row) in bitstream_rows.iter().enumerate() {
             witness_rows.push(ZstdWitnessRow {
                 state: ZstdState {
                     tag: ZstdTag::ZstdBlockSequenceFseCode,
@@ -976,14 +976,14 @@ fn process_sequences<F: Field>(
                     tag_idx: row.2 as u64,
                     tag_value,
                     tag_value_acc: row.7,
-                    is_tag_change: false,
+                    is_tag_change: j == 0,
                     tag_rlc,
                     tag_rlc_acc: row.8,
                 },
                 encoded_data: EncodedData {
                     byte_idx: (start_offset + row.2) as u64,
                     encoded_len,
-                    value_byte: src[start_offset + row.2],
+                    value_byte: src[start_offset + row.2 - 1],
                     value_rlc,
                     reverse: false,
                     ..Default::default()
@@ -1014,6 +1014,7 @@ fn process_sequences<F: Field>(
                 },
             });
         }
+        last_row = witness_rows.last().cloned().unwrap();
     }
 
     // Reconstruct LLTV, CMOTV, and MLTV which specifies bit actions for a specific state
@@ -1102,7 +1103,7 @@ fn process_sequences<F: Field>(
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
             tag: ZstdTag::ZstdBlockSequenceData,
-            tag_next: ZstdTag::ZstdBlockSequenceData,
+            tag_next: if last_block { ZstdTag::Null } else { ZstdTag::BlockHeader },
             block_idx,
             max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceData),
             tag_len: n_sequence_data_bytes as u64,
@@ -1267,22 +1268,29 @@ fn process_sequences<F: Field>(
         witness_rows.push(ZstdWitnessRow {
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockSequenceData,
-                tag_next: ZstdTag::ZstdBlockSequenceData,
+                tag_next: if last_block { ZstdTag::Null } else { ZstdTag::BlockHeader },
                 block_idx,
                 max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceData),
                 tag_len: n_sequence_data_bytes as u64,
                 tag_idx: current_byte_idx as u64,
                 tag_value,
                 tag_value_acc: next_tag_value_acc,
-                is_tag_change: true,
+                is_tag_change: false,
                 tag_rlc,
                 tag_rlc_acc: next_tag_rlc_acc,
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + current_byte_idx) as u64,
                 encoded_len,
-                // value_byte: src[byte_offset + current_byte_idx], // witgen_debug, idx overflow
-                value_byte: src[0], // TODO
+                // witgen_debug, idx overflow
+                // TODO(ray): This is a special case of the sequences data being a part of the
+                // "last block", hence the overflow. I have just re-used the "last" byte from the
+                // source data in such a case.
+                value_byte: if byte_offset + current_byte_idx < src.len() {
+                    src[byte_offset + current_byte_idx]
+                } else {
+                    src.last().cloned().unwrap()
+                },
                 value_rlc,
                 reverse: true,
                 reverse_len: n_sequence_data_bytes as u64,
