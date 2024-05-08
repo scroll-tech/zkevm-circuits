@@ -493,7 +493,7 @@ fn process_block_zstd<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     let last_row = witness_rows.last().expect("last row expected to exist");
-    let (bytes_offset, rows, fse_aux_tables, address_table_rows, original_inputs, sequence_info) =
+    let (bytes_offset, rows, fse_aux_tables, address_table_rows, original_inputs, sequence_info, sequence_exec_info) =
         process_sequences::<F>(
             src,
             block_idx,
@@ -532,6 +532,7 @@ type SequencesProcessingResult<F> = (
     Vec<AddressTableRow>,       // Parsed sequence instructions
     Vec<u8>,                    // Recovered original input
     SequenceInfo,
+    Vec<SequenceExec>,
 );
 
 fn process_sequences<F: Field>(
@@ -1418,34 +1419,54 @@ fn process_sequences<F: Field>(
     // At this point, the address table rows are not padded. Paddings will be added as sequence
     // instructions progress.
     let mut recovered_inputs: Vec<u8> = vec![];
+    let mut seq_exec_info: Vec<SequenceExec> = vec![];
     let mut current_literal_pos: usize = 0;
 
     for inst in address_table_rows.clone() {
         let new_literal_pos = current_literal_pos + (inst.literal_length as usize);
-        recovered_inputs.extend_from_slice(
-            literals[current_literal_pos..new_literal_pos]
-                .iter()
-                .map(|&v| v as u8)
-                .collect::<Vec<u8>>()
-                .as_slice(),
-        );
+        if new_literal_pos > current_literal_pos {
+            let r = current_literal_pos..new_literal_pos;
+            seq_exec_info.push(
+                SequenceExec(
+                    inst.instruction_idx as usize,
+                    SequenceExecInfo::LiteralCopy(r.clone()),
+                )
+            );
+            recovered_inputs.extend_from_slice(
+                literals[r]
+                    .iter()
+                    .map(|&v| v as u8)
+                    .collect::<Vec<u8>>()
+                    .as_slice(),
+            );            
+        }
 
         let match_pos = recovered_inputs.len() - (inst.actual_offset as usize);
-        let matched_bytes = recovered_inputs
-            .clone()
-            .into_iter()
-            .skip(match_pos)
-            .take(inst.match_length as usize)
-            .collect::<Vec<u8>>();
-        recovered_inputs.extend_from_slice(&matched_bytes.as_slice());
-
+        if inst.match_length > 0 {
+            let r = match_pos..(inst.match_length as usize + match_pos);
+            seq_exec_info.push(
+                SequenceExec(
+                    inst.instruction_idx as usize,
+                    SequenceExecInfo::BackRef(r.clone()),
+                )
+            );
+            let matched_bytes = Vec::from(&recovered_inputs[r]);
+            recovered_inputs.extend_from_slice(&matched_bytes.as_slice());
+        }
         current_literal_pos = new_literal_pos;
     }
 
     // Add remaining literal bytes
     if current_literal_pos < literals.len() {
+        let r = current_literal_pos..literals.len();
+        seq_exec_info.push(
+            SequenceExec(
+                sequence_info.num_sequences+1,
+                SequenceExecInfo::LiteralCopy(r.clone()),
+            )
+        );        
         recovered_inputs.extend_from_slice(
-            literals[current_literal_pos..literals.len()]
+            literals[r]
                 .iter()
                 .map(|&v| v as u8)
                 .collect::<Vec<u8>>()
@@ -1460,6 +1481,7 @@ fn process_sequences<F: Field>(
         address_table_rows,
         recovered_inputs,
         sequence_info,
+        seq_exec_info,
     )
 }
 

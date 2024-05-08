@@ -793,8 +793,7 @@ mod tests {
         dev::MockProver,
         halo2curves::bn256::Fr,
         plonk::Circuit,
-    };    
-    use hex::FromHex;
+    };
     use super::*;
 
     #[derive(Clone, Debug)]

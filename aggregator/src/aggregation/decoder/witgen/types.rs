@@ -106,6 +106,17 @@ pub struct SequenceInfo {
     pub compression_mode: [bool; 3],
 }
 
+/// The type for indicate each range in output bytes by sequence execution
+#[derive(Debug, Clone)]
+pub enum SequenceExecInfo {
+    LiteralCopy(std::ops::Range<usize>),
+    BackRef(std::ops::Range<usize>),
+}
+
+/// The type to describe an execution: (instruction_id, exec_info)
+#[derive(Debug, Clone)]
+pub struct SequenceExec (pub usize, pub SequenceExecInfo);
+
 /// The type of Lstream.
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum LstreamNum {
