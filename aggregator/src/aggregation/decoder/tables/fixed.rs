@@ -29,6 +29,9 @@ use seq_tag_order::RomSeqTagOrder;
 mod tag_transition;
 use tag_transition::RomTagTransition;
 
+mod variable_bit_packing;
+use variable_bit_packing::RomVariableBitPacking;
+
 pub trait FixedLookupValues {
     fn values() -> Vec<[Value<Fr>; 7]>;
 }
@@ -52,6 +55,11 @@ pub enum FixedLookupTag {
     /// Represents the FSE table reconstructed from the default distributions, i.e. Predefined FSE
     /// table.
     PredefinedFse,
+    /// Represents read and decoded values for the variable bit-packing as specified in the [zstd
+    /// comopression format][doclink]:
+    ///
+    /// doclink: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#fse-table-description
+    VariableBitPacking,
 }
 
 impl_expr!(FixedLookupTag);
@@ -65,6 +73,7 @@ impl FixedLookupTag {
             Self::SeqCodeToValue => RomSeqCodeToValue::values(),
             Self::FseTableTransition => RomFseTableTransition::values(),
             Self::PredefinedFse => RomPredefinedFse::values(),
+            Self::VariableBitPacking => RomVariableBitPacking::values(),
         }
     }
 }
