@@ -7,7 +7,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Value, Region, Layouter},
-    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
 };
 use zkevm_circuits::{
@@ -594,8 +594,7 @@ impl<F: Field> SeqInstTable<F> {
                     }
                     assert_eq!(end_offset-header_offset, n_seq as usize);
 
-                    for (i, offset) in (header_offset..=end_offset)
-                        .into_iter().enumerate() {
+                    for (i, offset) in (header_offset..=end_offset).enumerate() {
                         region.assign_advice(
                             ||"fill n_seq", 
                             self.n_seq, offset, 
@@ -648,6 +647,7 @@ impl<F: Field> SeqInstTable<F> {
                 let mut offset = 1;
                 let mut block_ind = 0u64;
                 let mut n_seq = 0u64;
+                #[allow(clippy::type_complexity)]
                 let mut block_head_fill_f : Box<
                     dyn FnOnce(&mut Region<F>, u64, usize) -> Result<(), Error>
                 >

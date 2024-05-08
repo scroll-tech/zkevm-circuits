@@ -35,7 +35,7 @@ use self::{
     },
 };
 
-use seq_exec::{LiteralTable, SeqExecConfig};
+use seq_exec::{LiteralTable, SequenceConfig, SeqExecConfig};
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig {
@@ -976,19 +976,23 @@ impl DecoderConfig {
         let fse_decoder = FseDecoder::configure(meta, is_padding);
         let sequences_data_decoder = SequencesDataDecoder::configure(meta);
 
-        let literals_table = [
-            tag_config.tag,
-            block_config.block_idx,
-            byte_idx,
-            byte,
-            tag_config.is_change,
-            is_padding,
-        ];
         let _sequence_execution_table = SeqExecConfig::configure(
             meta,
             challenges,
-            &LiteralTable::construct(literals_table),
+            &LiteralTable::construct([
+                tag_config.tag,
+                block_config.block_idx,
+                byte_idx,
+                byte,
+                tag_config.is_change,
+                is_padding,
+            ]),
             &sequence_instruction_table,
+            &SequenceConfig::construct([
+                block_config.is_block,
+                block_config.block_idx,
+                block_config.num_sequences,
+            ]),
         );
 
         // Main config

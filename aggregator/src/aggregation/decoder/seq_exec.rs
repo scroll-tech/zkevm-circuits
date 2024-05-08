@@ -20,6 +20,42 @@ use witgen::{AddressTableRow, ZstdTag};
 use super::tables;
 use tables::SeqInstTable;
 
+/// TODO: This is in fact part of the `BlockConfig` in
+/// Decoder, we can use BlockConfig if it is decoupled 
+/// from Decoder module later 
+pub struct SequenceConfig {
+    // the `is_block` flag in `BlockConfig`
+    enabled: Column<Advice>,
+    // the index of block which the literal section is in
+    block_index: Column<Advice>,
+    // Number of sequences decoded from the sequences section header in the block.
+    num_sequences: Column<Advice>,      
+}
+
+impl SequenceConfig {
+
+    /// construct table for rows: [enabled, blk_index, num_seq]
+    pub fn construct(cols: [Column<Advice>;3]) -> Self {
+        Self {
+            enabled: cols[0],
+            block_index: cols[1],
+            num_sequences: cols[2],
+        }
+    }
+
+    /// export the exps for literal copying lookup: [tag, blk_ind, byte_ind, char, padding]
+    pub fn lookup_tbl<F: Field>(
+        &self,
+        meta: &mut VirtualCells<'_, F>
+    ) -> [Expression<F>; 3]{
+        [
+            meta.query_advice(self.enabled, Rotation::cur()),
+            meta.query_advice(self.block_index, Rotation::cur()),   
+            meta.query_advice(self.num_sequences, Rotation::cur()),     
+        ]
+    }
+}
+
 /// The literal table which execution circuit expect to lookup from
 #[derive(Clone)]
 pub struct LiteralTable {
@@ -53,9 +89,9 @@ impl LiteralTable {
     }
 
     /// export the exps for literal copying lookup: [tag, blk_ind, byte_ind, char, padding]
-    pub fn lookup_tbl_for_lit_cp<'a, F: Field>(
+    pub fn lookup_tbl_for_lit_cp<F: Field>(
         &self,
-        meta: &mut VirtualCells<'a, F>
+        meta: &mut VirtualCells<'_, F>
     ) -> [Expression<F>; 5]{
         [
             meta.query_advice(self.tag, Rotation::cur()),
@@ -67,9 +103,9 @@ impl LiteralTable {
     }
 
     /// export the exps for literal size lookup: [tag, blk_ind, byte_ind, flag, padding]
-    pub fn lookup_tbl_for_lit_size<'a, F: Field>(
+    pub fn lookup_tbl_for_lit_size<F: Field>(
         &self,
-        meta: &mut VirtualCells<'a, F>
+        meta: &mut VirtualCells<'_, F>
     ) -> [Expression<F>; 5]{
         [
             meta.query_advice(self.tag, Rotation::cur()),
@@ -143,6 +179,7 @@ impl<F: Field> SeqExecConfig<F> {
         challenges: &Challenges<Expression<F>>,
         literal_table: &LiteralTable,
         inst_table: &SeqInstTable<F>,
+        seq_config: &SequenceConfig,
     ) -> Self {
         let q_enabled = meta.fixed_column();
         let q_head = meta.fixed_column();
@@ -466,19 +503,22 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
-        // TODO:
         meta.lookup_any("lookup instruction counts", |meta|{
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
             let block_index = meta.query_advice(block_index, Rotation::prev());
-            let seq_index_at_block_end = meta.query_advice(seq_index, Rotation::prev());
+            let seq_index_at_block_end = 
+                meta.query_advice(seq_index, Rotation::prev())
+                // if we have a additional literal copying phase, we 
+                // in fact has one extra instruction
+                - meta.query_advice(s_last_lit_cp_phase, Rotation::prev());
 
-            [].into_iter().zip(
+            seq_config.lookup_tbl(meta).into_iter().zip(
                 [
+                    1.expr(),
                     block_index,
                     seq_index_at_block_end,
                 ]
-            ).map(|(lookup_col, src_expr)|{
-                let lookup_expr = meta.query_advice(lookup_col, Rotation::cur());
+            ).map(|(lookup_expr, src_expr)|{
                 (src_expr * is_block_begin.expr() * q_enabled.expr(), lookup_expr)
             }).collect()
         });
