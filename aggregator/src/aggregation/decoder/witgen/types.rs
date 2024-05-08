@@ -1,22 +1,19 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::Cursor,
-};
+use std::{collections::BTreeMap, io::Cursor};
 
-use bitstream_io::{write, BitRead, BitReader, LittleEndian};
+use bitstream_io::{BitRead, BitReader, LittleEndian};
 use eth_types::Field;
 use gadgets::impl_expr;
 use halo2_proofs::{circuit::Value, plonk::Expression};
 use itertools::Itertools;
+use std::collections::HashMap;
 use strum_macros::EnumIter;
+
+use crate::aggregation::decoder::tables::FseTable;
 
 use super::{
     params::N_BITS_PER_BYTE,
-    util::{bit_length, read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
+    util::{read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
 };
-
-// witgen_debug
-use std::{io, io::Write};
 
 /// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
 /// fields are assigned correctly.
@@ -73,59 +70,9 @@ impl RomTagTableRow {
     }
 }
 
-/// The symbol emitted by FSE table. This is also the weight in the canonical Huffman code.
-#[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FseSymbol {
-    ///
-    S0 = 0,
-    ///
-    S1,
-    ///
-    S2,
-    ///
-    S3,
-    ///
-    S4,
-    ///
-    S5,
-    ///
-    S6,
-    ///
-    S7,
-}
-
-impl_expr!(FseSymbol);
-
-impl From<FseSymbol> for usize {
-    fn from(value: FseSymbol) -> Self {
-        value as usize
-    }
-}
-
-impl From<FseSymbol> for u64 {
-    fn from(value: FseSymbol) -> Self {
-        value as u64
-    }
-}
-
-impl From<usize> for FseSymbol {
-    fn from(value: usize) -> Self {
-        match value {
-            0 => Self::S0,
-            1 => Self::S1,
-            2 => Self::S2,
-            3 => Self::S3,
-            4 => Self::S4,
-            5 => Self::S5,
-            6 => Self::S6,
-            7 => Self::S7,
-            _ => unreachable!("FseSymbol in [0, 8)"),
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Copy)]
 pub enum BlockType {
+    #[default]
     RawBlock = 0,
     RleBlock,
     ZstdCompressedBlock,
@@ -142,6 +89,21 @@ impl From<u8> for BlockType {
             _ => unreachable!("BlockType is 2 bits"),
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BlockInfo {
+    pub block_idx: usize,
+    pub block_type: BlockType,
+    pub block_len: usize,
+    pub is_last_block: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SequenceInfo {
+    pub block_idx: usize,
+    pub num_sequences: usize,
+    pub compression_mode: [bool; 3],
 }
 
 /// The type of Lstream.
@@ -187,26 +149,14 @@ pub enum ZstdTag {
     FrameContentSize,
     /// The block's header.
     BlockHeader,
-    /// Raw bytes.
-    RawBlockBytes,
-    /// Run-length encoded bytes.
-    RleBlockBytes,
     /// Zstd block's literals header.
     ZstdBlockLiteralsHeader,
     /// Zstd blocks might contain raw bytes.
     ZstdBlockLiteralsRawBytes,
-    /// Zstd blocks might contain rle bytes.
-    ZstdBlockLiteralsRleBytes,
-    /// Zstd block's huffman header and FSE code.
-    ZstdBlockFseCode,
-    /// Zstd block's huffman code.
-    ZstdBlockHuffmanCode,
-    /// Zstd block's jump table.
-    ZstdBlockJumpTable,
-    /// Literal stream.
-    ZstdBlockLstream,
     /// Beginning of sequence section.
     ZstdBlockSequenceHeader,
+    /// Zstd block's FSE code.
+    ZstdBlockSequenceFseCode,
     /// sequence bitstream for recovering instructions
     ZstdBlockSequenceData,
 }
@@ -219,16 +169,10 @@ impl ZstdTag {
             Self::FrameHeaderDescriptor => false,
             Self::FrameContentSize => false,
             Self::BlockHeader => false,
-            Self::RawBlockBytes => true,
-            Self::RleBlockBytes => true,
             Self::ZstdBlockLiteralsHeader => false,
             Self::ZstdBlockLiteralsRawBytes => false,
-            Self::ZstdBlockLiteralsRleBytes => false,
-            Self::ZstdBlockFseCode => false,
-            Self::ZstdBlockHuffmanCode => false,
-            Self::ZstdBlockJumpTable => false,
-            Self::ZstdBlockLstream => false,
             Self::ZstdBlockSequenceHeader => false,
+            Self::ZstdBlockSequenceFseCode => false,
             Self::ZstdBlockSequenceData => true,
         }
     }
@@ -240,16 +184,10 @@ impl ZstdTag {
             Self::FrameHeaderDescriptor => false,
             Self::FrameContentSize => false,
             Self::BlockHeader => false,
-            Self::RawBlockBytes => true,
-            Self::RleBlockBytes => true,
             Self::ZstdBlockLiteralsHeader => true,
             Self::ZstdBlockLiteralsRawBytes => true,
-            Self::ZstdBlockLiteralsRleBytes => true,
-            Self::ZstdBlockFseCode => true,
-            Self::ZstdBlockHuffmanCode => true,
-            Self::ZstdBlockJumpTable => true,
-            Self::ZstdBlockLstream => true,
             Self::ZstdBlockSequenceHeader => true,
+            Self::ZstdBlockSequenceFseCode => true,
             Self::ZstdBlockSequenceData => true,
         }
     }
@@ -259,18 +197,12 @@ impl ZstdTag {
         match self {
             Self::Null => false,
             Self::FrameHeaderDescriptor => false,
-            Self::FrameContentSize => true,
-            Self::BlockHeader => true,
-            Self::RawBlockBytes => false,
-            Self::RleBlockBytes => false,
+            Self::FrameContentSize => false,
+            Self::BlockHeader => false,
             Self::ZstdBlockLiteralsHeader => false,
             Self::ZstdBlockLiteralsRawBytes => false,
-            Self::ZstdBlockLiteralsRleBytes => false,
-            Self::ZstdBlockFseCode => false,
-            Self::ZstdBlockHuffmanCode => true,
-            Self::ZstdBlockJumpTable => false,
-            Self::ZstdBlockLstream => true,
             Self::ZstdBlockSequenceHeader => false,
+            Self::ZstdBlockSequenceFseCode => false,
             Self::ZstdBlockSequenceData => true,
         }
     }
@@ -305,16 +237,10 @@ impl ToString for ZstdTag {
             Self::FrameHeaderDescriptor => "FrameHeaderDescriptor",
             Self::FrameContentSize => "FrameContentSize",
             Self::BlockHeader => "BlockHeader",
-            Self::RawBlockBytes => "RawBlockBytes",
-            Self::RleBlockBytes => "RleBlockBytes",
             Self::ZstdBlockLiteralsHeader => "ZstdBlockLiteralsHeader",
             Self::ZstdBlockLiteralsRawBytes => "ZstdBlockLiteralsRawBytes",
-            Self::ZstdBlockLiteralsRleBytes => "ZstdBlockLiteralsRleBytes",
-            Self::ZstdBlockFseCode => "ZstdBlockFseCode",
-            Self::ZstdBlockHuffmanCode => "ZstdBlockHuffmanCode",
-            Self::ZstdBlockJumpTable => "ZstdBlockJumpTable",
-            Self::ZstdBlockLstream => "ZstdBlockLstream",
             Self::ZstdBlockSequenceHeader => "ZstdBlockSequenceHeader",
+            Self::ZstdBlockSequenceFseCode => "ZstdBlockSequenceFseCode",
             Self::ZstdBlockSequenceData => "ZstdBlockSequenceData",
         })
     }
@@ -324,6 +250,7 @@ impl ToString for ZstdTag {
 pub struct ZstdState<F> {
     pub tag: ZstdTag,
     pub tag_next: ZstdTag,
+    pub block_idx: u64,
     pub max_tag_len: u64,
     pub tag_len: u64,
     pub tag_idx: u64,
@@ -340,6 +267,7 @@ impl<F: Field> Default for ZstdState<F> {
         Self {
             tag: ZstdTag::Null,
             tag_next: ZstdTag::FrameHeaderDescriptor,
+            block_idx: 0,
             max_tag_len: 0,
             tag_len: 0,
             tag_idx: 0,
@@ -396,137 +324,28 @@ pub struct DecodedData<F> {
     pub decoded_value_rlc: Value<F>,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct HuffmanData {
-    pub byte_offset: u64,
-    pub bit_value: u8,
-    pub stream_idx: usize,
-    pub k: (u8, u8),
-}
-
-/// Witness to the HuffmanCodesTable.
-#[derive(Clone, Debug)]
-pub struct HuffmanCodesData {
-    /// The byte offset in the frame at which the FSE table is described.
-    pub byte_offset: u64,
-    /// A mapping of symbol to the weight assigned to it as per canonical Huffman coding. The
-    /// symbol is the raw byte that is encoded using a Huffman code and the weight assigned to it
-    /// is a symbol emitted by the corresponding FSE table.
-    pub weights: Vec<FseSymbol>,
-}
-
-/// Denotes the tuple (max_bitstring_len, Map<symbol, (weight, bit_value)>).
-type ParsedCanonicalHuffmanCode = (u64, BTreeMap<u64, (u64, u64)>);
-/// A representation indexed by bitstring (String) as key for decoding symbols specifically.
-/// Huffman code decoding ensures prefix code, thus the explicit articulation of bitstring is
-/// necessary.
-type ParsedCanonicalHuffmanCodeBitstringMap = (u64, HashMap<String, u64>);
-
-impl HuffmanCodesData {
-    /// Reconstruct the bitstrings for each symbol based on the canonical Huffman code weights. The
-    /// returned value is tuple of max bitstring length and a map from symbol to its weight and bit
-    /// value.
-    pub fn parse_canonical(&self) -> ParsedCanonicalHuffmanCode {
-        let sum_weights: u64 = self
-            .weights
-            .iter()
-            .map(|&weight| {
-                let weight: usize = weight.into();
-                if weight > 0 {
-                    1 << (weight - 1)
-                } else {
-                    0
-                }
-            })
-            .sum();
-
-        // Calculate the last symbol's weight and append it.
-        let max_bitstring_len = bit_length(sum_weights);
-        let nearest_pow2 = 1 << max_bitstring_len;
-        let last_weight = ((nearest_pow2 - sum_weights) as f64).log2() as u64;
-        let weights = self
-            .weights
-            .iter()
-            .map(|&weight| weight as u64)
-            .chain(std::iter::once(last_weight))
-            .collect::<Vec<u64>>();
-
-        let mut sym_to_tuple = BTreeMap::new();
-        let mut bit_value = 0;
-        for l in (0..=max_bitstring_len).rev() {
-            bit_value = (bit_value + 1) >> 1;
-            weights
-                .iter()
-                .enumerate()
-                .filter(|(_symbol, &weight)| max_bitstring_len - weight + 1 == l)
-                .for_each(|(symbol, &weight)| {
-                    sym_to_tuple.insert(symbol as u64, (weight, bit_value));
-                    bit_value += 1;
-                });
-        }
-
-        // populate symbols that don't occur in the Huffman code.
-        weights
-            .iter()
-            .enumerate()
-            .filter(|(_, &weight)| weight == 0)
-            .for_each(|(sym, _)| {
-                sym_to_tuple.insert(sym as u64, (0, 0));
-            });
-
-        (max_bitstring_len, sym_to_tuple)
-    }
-
-    /// parse bit string map
-    pub fn parse_bitstring_map(&self) -> ParsedCanonicalHuffmanCodeBitstringMap {
-        let mut weights: Vec<usize> = self.weights.iter().map(|w| *w as usize).collect();
-        let sum_weights: usize = weights
-            .iter()
-            .filter_map(|&w| if w > 0 { Some(1 << (w - 1)) } else { None })
-            .sum();
-
-        let nearest_pow_2: usize = 1 << (sum_weights - 1).next_power_of_two().trailing_zeros();
-        weights.push(f64::log2((nearest_pow_2 - sum_weights) as f64).ceil() as usize + 1);
-        let max_number_of_bits = nearest_pow_2.trailing_zeros() as usize;
-        let n = weights.len();
-
-        let bitstring_length: Vec<usize> = weights
-            .iter()
-            .map(|&w| {
-                if w != 0 {
-                    max_number_of_bits - w + 1
-                } else {
-                    0
-                }
-            })
-            .collect();
-
-        let mut bitstring_map = HashMap::new();
-        let mut cur_bit_value = 0;
-
-        for bit_len in (1..=max_number_of_bits).rev() {
-            cur_bit_value += 1;
-            cur_bit_value >>= 1;
-
-            for (sym, b_len) in bitstring_length.iter().enumerate().take(n) {
-                if *b_len == bit_len {
-                    bitstring_map.insert(
-                        format!("{:0width$b}", cur_bit_value, width = bit_len),
-                        sym as u64,
-                    );
-                    cur_bit_value += 1;
-                }
-            }
-        }
-
-        let max_bitstring_len = bitstring_map
-            .keys()
-            .map(|k| k.len())
-            .max()
-            .expect("Keys have maximum len");
-
-        (max_bitstring_len as u64, bitstring_map)
-    }
+/// FSE decoding data from witness generation
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FseDecodingRow {
+    /// The FSE table that is being decoded. Possible values are:
+    /// - LLT = 1, MOT = 2, MLT = 3
+    pub table_kind: u64,
+    /// The number of states in the FSE table. table_size == 1 << AL, where AL is the accuracy log
+    /// of the FSE table.
+    pub table_size: u64,
+    /// The symbol emitted by the FSE table at this state.
+    pub symbol: u64,
+    /// During FSE table decoding, keep track of the number of symbol emitted
+    pub num_emitted: u64,
+    /// The value decoded as per variable bit-packing.
+    pub value_decoded: u64,
+    /// An accumulator of the number of states allocated to each symbol as we decode the FSE table.
+    /// This is the normalised probability for the symbol.
+    pub probability_acc: u64,
+    /// Whether we are in the repeat bits loop.
+    pub is_repeat_bits_loop: bool,
+    /// Whether this row represents the 0-7 trailing bits that should be ignored.
+    pub is_trailing_bits: bool,
 }
 
 /// A single row in the FSE table.
@@ -559,18 +378,30 @@ pub struct BitstreamReadRow {
     pub bit_value: u64,
     /// Whether 0 bit is read
     pub is_zero_bit_read: bool,
+    /// Indicator for when sequence data bitstream initial baselines are determined
+    pub is_seq_init: bool,
+    /// Idx of sequence instruction
+    pub seq_idx: usize,
+    /// The states (LLT, MLT, MOT) at this row
+    pub states: [bool; 3],
+    /// The symbols emitted at this state (LLT, MLT, MOT)
+    pub symbols: [bool; 3],
+    /// The values computed for literal length, match length and match offset.
+    pub values: [u64; 3],
+    /// The baseline value associated with this state.
+    pub baseline: u64,
 }
 
 /// Sequence data is interleaved with 6 bitstreams. Each producing a different type of value.
 #[derive(Clone, Copy, Debug)]
 pub enum SequenceDataTag {
-    NULL = 0,
-    LiteralLength_FSE,
-    MatchLength_FSE,
-    CookedMatchOffset_FSE,
-    LiteralLength_Value,
-    MatchLength_Value,
-    CookedMatchOffset_Value,
+    Null = 0,
+    LiteralLengthFse,
+    MatchLengthFse,
+    CookedMatchOffsetFse,
+    LiteralLengthValue,
+    MatchLengthValue,
+    CookedMatchOffsetValue,
 }
 
 /// A single row in the Address table.
@@ -684,10 +515,10 @@ impl SequenceFixedStateActionTable {
     }
 
     /// Reconstruct action state table for offset recovery
-    pub fn reconstruct_cmotv(N: u64) -> Self {
+    pub fn reconstruct_cmotv(n: u64) -> Self {
         let mut states_to_actions = vec![];
 
-        for idx in 0..=N {
+        for idx in 0..=n {
             states_to_actions.push((idx, ((1 << idx) as u64, idx)))
         }
 
@@ -711,10 +542,15 @@ pub struct FseTableData {
 pub struct FseAuxiliaryTableData {
     /// The block index in which this FSE table appears.
     pub block_idx: u64,
+    /// Indicates whether the table is pre-defined.
+    pub is_predefined: bool,
     /// The FSE table kind, variants are: LLT=1, MOT=2, MLT=3.
     pub table_kind: FseTableKind,
     /// The FSE table's size, i.e. 1 << AL (accuracy log).
     pub table_size: u64,
+    /// Normalized probability,
+    /// Used to indicate actual probability frequency of symbols, with 0 and -1 symbols present
+    pub normalised_probs: BTreeMap<u64, i32>,
     /// A map from FseSymbol (weight) to states, also including fields for that state, for
     /// instance, the baseline and the number of bits to read from the FSE bitstream.
     ///
@@ -745,6 +581,7 @@ impl FseAuxiliaryTableData {
         block_idx: u64,
         table_kind: FseTableKind,
         byte_offset: usize,
+        is_predefined: bool,
     ) -> std::io::Result<ReconstructedFse> {
         // construct little-endian bit-reader.
         let data = src.iter().skip(byte_offset).cloned().collect::<Vec<u8>>();
@@ -767,68 +604,102 @@ impl FseAuxiliaryTableData {
         let mut normalised_probs = BTreeMap::new();
         let mut R = table_size;
         let mut symbol = 0;
-        while R > 0 {
-            // number of bits and value read from the variable bit-packed data.
-            // And update the total number of bits read so far.
-            let (n_bits_read, value) = read_variable_bit_packing(&data, offset, R + 1)?;
-            reader.skip(n_bits_read)?;
-            offset += n_bits_read;
-            bit_boundaries.push((offset, value));
 
-            // Number of states allocated to this symbol.
-            // - prob=-1 => 1
-            // - prob=0  => 0
-            // - prob>=1 => prob
-            let N = match value {
-                0 => 1,
-                _ => value - 1,
+        if is_predefined {
+            let predefined_frequencies = match table_kind {
+                FseTableKind::LLT => {
+                    vec![
+                        4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                        3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1,
+                    ]
+                }
+                FseTableKind::MOT => {
+                    vec![
+                        1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1,
+                        -1, -1, -1, -1,
+                    ]
+                }
+                FseTableKind::MLT => {
+                    vec![
+                        1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1,
+                        -1, -1, -1, -1,
+                    ]
+                }
+                _ => unreachable!("Invalid table type."),
             };
-
-            // When a symbol has a value==0, it signifies a case of prob=-1 (or probability "less
-            // than 1"), where such symbols are allocated states from the end and retreating. In
-            // such cases, we reset the FSE state, i.e. read accuracy_log number of bits from the
-            // bitstream with a baseline==0x00.
-            if value == 0 {
-                normalised_probs.insert(symbol, -1);
-                symbol += 1;
+            for (symbol, freq) in predefined_frequencies.into_iter().enumerate() {
+                normalised_probs.insert(symbol as u64, freq);
             }
+        } else {
+            while R > 0 {
+                // number of bits and value read from the variable bit-packed data.
+                // And update the total number of bits read so far.
+                let (n_bits_read, value) = read_variable_bit_packing(&data, offset, R + 1)?;
+                reader.skip(n_bits_read)?;
+                offset += n_bits_read;
+                bit_boundaries.push((offset, value));
 
-            // When a symbol has a value==1 (prob==0), it is followed by a 2-bits repeat flag. This
-            // repeat flag tells how many probabilities of zeroes follow the current one. It
-            // provides a number ranging from 0 to 3. If it is a 3, another 2-bits repeat flag
-            // follows, and so on.
-            if value == 1 {
-                normalised_probs.insert(symbol, 0);
-                symbol += 1;
-                loop {
-                    let repeat_bits = reader.read::<u8>(2)?;
-                    offset += 2;
-                    bit_boundaries.push((offset, repeat_bits as u64));
+                // Number of states allocated to this symbol.
+                // - prob=-1 => 1
+                // - prob=0  => 0
+                // - prob>=1 => prob
+                let N = match value {
+                    0 => 1,
+                    _ => value - 1,
+                };
 
-                    for k in 0..repeat_bits {
-                        normalised_probs.insert(symbol + (k as u64), 0);
-                    }
-                    symbol += repeat_bits as u64;
+                // When a symbol has a value==0, it signifies a case of prob=-1 (or probability
+                // "less than 1"), where such symbols are allocated states from the
+                // end and retreating. In such cases, we reset the FSE state, i.e.
+                // read accuracy_log number of bits from the bitstream with a
+                // baseline==0x00.
+                if value == 0 {
+                    normalised_probs.insert(symbol, -1);
+                    symbol += 1;
+                }
 
-                    if repeat_bits < 3 {
-                        break;
+                // When a symbol has a value==1 (prob==0), it is followed by a 2-bits repeat flag.
+                // This repeat flag tells how many probabilities of zeroes follow
+                // the current one. It provides a number ranging from 0 to 3. If it
+                // is a 3, another 2-bits repeat flag follows, and so on.
+                if value == 1 {
+                    normalised_probs.insert(symbol, 0);
+                    symbol += 1;
+                    loop {
+                        let repeat_bits = reader.read::<u8>(2)?;
+                        offset += 2;
+                        bit_boundaries.push((offset, repeat_bits as u64));
+
+                        for k in 0..repeat_bits {
+                            normalised_probs.insert(symbol + (k as u64), 0);
+                        }
+                        symbol += repeat_bits as u64;
+
+                        if repeat_bits < 3 {
+                            break;
+                        }
                     }
                 }
-            }
 
-            // When a symbol has a value>1 (prob>=1), it is allocated that many number of states in
-            // the FSE table.
-            if value > 1 {
-                normalised_probs.insert(symbol, N as i32);
-                symbol += 1;
-            }
+                // When a symbol has a value>1 (prob>=1), it is allocated that many number of states
+                // in the FSE table.
+                if value > 1 {
+                    normalised_probs.insert(symbol, N as i32);
+                    symbol += 1;
+                }
 
-            // remove N slots from a total of R.
-            R -= N;
+                // remove N slots from a total of R.
+                R -= N;
+            }
         }
 
         // ignore any bits left to be read until byte-aligned.
-        let t = (((offset as usize) - 1) / N_BITS_PER_BYTE) + 1;
+        let t = if is_predefined {
+            0
+        } else {
+            (((offset as usize) - 1) / N_BITS_PER_BYTE) + 1
+        };
 
         // read the trailing section
         if t * N_BITS_PER_BYTE > (offset as usize) {
@@ -856,11 +727,17 @@ impl FseAuxiliaryTableData {
 
         Ok((
             t,
-            bit_boundaries,
+            if is_predefined {
+                vec![]
+            } else {
+                bit_boundaries
+            },
             Self {
                 block_idx,
+                is_predefined,
                 table_kind,
                 table_size,
+                normalised_probs,
                 sym_to_states,
                 sym_to_sorted_states,
             },
@@ -1017,7 +894,7 @@ pub struct ZstdWitnessRow<F> {
     /// Data on decompressed data
     pub decoded_data: DecodedData<F>,
     /// Fse decoding state transition data
-    pub fse_data: FseTableRow,
+    pub fse_data: FseDecodingRow,
     /// Bitstream reader
     pub bitstream_read_data: BitstreamReadRow,
 }
@@ -1032,7 +909,7 @@ impl<F: Field> ZstdWitnessRow<F> {
                 ..Default::default()
             },
             decoded_data: DecodedData::default(),
-            fse_data: FseTableRow::default(),
+            fse_data: FseDecodingRow::default(),
             bitstream_read_data: BitstreamReadRow::default(),
         }
     }
@@ -1054,7 +931,7 @@ mod tests {
         let src = vec![0xff, 0xff, 0xff, 0x30, 0x6f, 0x9b, 0x03, 0xff, 0xff, 0xff];
 
         let (n_bytes, _bit_boundaries, table) =
-            FseAuxiliaryTableData::reconstruct(&src, 1, FseTableKind::LLT, 3)?;
+            FseAuxiliaryTableData::reconstruct(&src, 1, FseTableKind::LLT, 3, false)?;
 
         // TODO: assert equality for the entire table.
         // for now only comparing state/baseline/nb for S1, i.e. weight == 1.
@@ -1172,104 +1049,12 @@ mod tests {
             0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
         ];
 
-        let (n_bytes, _bit_boundaries, table) =
-            FseAuxiliaryTableData::reconstruct(&src, 1, FseTableKind::LLT, 0)?;
-        let parsed_state_map = table.parse_state_table();
+        let (_n_bytes, _bit_boundaries, table) =
+            FseAuxiliaryTableData::reconstruct(&src, 0, FseTableKind::LLT, 0, false)?;
+        let _parsed_state_map = table.parse_state_table();
 
+        // witgen_debug
         // TODO: assertions
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_huffman_bitstring_reconstruction() -> std::io::Result<()> {
-        let weights = vec![
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 6, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 3, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-            1, 2, 0, 0, 0, 2, 0, 1, 1, 1, 1, 1, 0, 0, 1, 2, 1, 0, 1, 1, 1, 2, 0, 0, 1, 1, 1, 1, 0,
-            1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 5, 3, 3, 3, 6, 3, 2, 4, 4, 0, 1, 4, 4, 5, 5, 2, 0, 4, 4,
-            5, 3, 1, 3, 1, 3,
-        ]
-        .into_iter()
-        .map(FseSymbol::from)
-        .collect::<Vec<FseSymbol>>();
-
-        let huffman_codes_data = HuffmanCodesData {
-            byte_offset: 0,
-            weights,
-        };
-
-        let (max_bitstring_len, bitstring_map) = huffman_codes_data.parse_bitstring_map();
-
-        let expected_bitstrings: [(&str, u64); 53] = [
-            ("01001", 10),
-            ("110", 32),
-            ("00000000", 33),
-            ("0001100", 39),
-            ("001010", 44),
-            ("0001101", 46),
-            ("00000001", 50),
-            ("00000010", 58),
-            ("0001110", 59),
-            ("0001111", 63),
-            ("00000011", 65),
-            ("00000100", 66),
-            ("00000101", 67),
-            ("00000110", 68),
-            ("00000111", 69),
-            ("00001000", 72),
-            ("0010000", 73),
-            ("00001001", 74),
-            ("00001010", 76),
-            ("00001011", 77),
-            ("00001100", 78),
-            ("0010001", 79),
-            ("00001101", 82),
-            ("00001110", 83),
-            ("00001111", 84),
-            ("00010000", 85),
-            ("00010001", 87),
-            ("00010010", 91),
-            ("00010011", 93),
-            ("1000", 97),
-            ("001011", 98),
-            ("001100", 99),
-            ("001101", 100),
-            ("111", 101),
-            ("001110", 102),
-            ("0010010", 103),
-            ("01010", 104),
-            ("01011", 105),
-            ("00010100", 107),
-            ("01100", 108),
-            ("01101", 109),
-            ("1001", 110),
-            ("1010", 111),
-            ("0010011", 112),
-            ("01110", 114),
-            ("01111", 115),
-            ("1011", 116),
-            ("001111", 117),
-            ("00010101", 118),
-            ("010000", 119),
-            ("00010110", 120),
-            ("010001", 121),
-            ("00010111", 122),
-        ];
-
-        assert_eq!(max_bitstring_len, 8, "max bitstring len is 8");
-        assert_eq!(
-            expected_bitstrings.len(),
-            bitstring_map.len(),
-            "# of bitstring is the same"
-        );
-        for pair in expected_bitstrings {
-            assert_eq!(
-                *bitstring_map.get(pair.0).unwrap(),
-                pair.1,
-                "bitstring mapping is correct"
-            );
-        }
 
         Ok(())
     }

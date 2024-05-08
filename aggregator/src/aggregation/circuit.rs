@@ -440,7 +440,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
             let batch_data = BatchData::from(&self.batch_hash);
 
-            let blob_data_exports = config.blob_data_config.assign(
+            let _blob_data_exports = config.blob_data_config.assign(
                 &mut layouter,
                 challenges,
                 &config.rlc_config,

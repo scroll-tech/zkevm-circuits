@@ -49,7 +49,7 @@ impl FixedLookupValues for RomSeqTagOrder {
     fn values() -> Vec<[Value<Fr>; 7]> {
         use FseTableKind::{LLT, MLT, MOT};
         use ZstdTag::{
-            ZstdBlockFseCode as FseCode, ZstdBlockLstream as SeqData,
+            ZstdBlockSequenceData as SeqData, ZstdBlockSequenceFseCode as FseCode,
             ZstdBlockSequenceHeader as SeqHeader,
         };
 
