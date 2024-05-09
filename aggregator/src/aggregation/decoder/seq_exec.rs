@@ -16,13 +16,15 @@ use zkevm_circuits::{
     util::Challenges,
 };
 use crate::aggregation::decoder::witgen;
-use witgen::{AddressTableRow, ZstdTag, SequenceInfo, SequenceExec, SequenceExecInfo};
+use witgen::{ZstdTag, SequenceInfo, SequenceExec, SequenceExecInfo};
 use super::tables;
 use tables::SeqInstTable;
 
 /// TODO: This is in fact part of the `BlockConfig` in
 /// Decoder, we can use BlockConfig if it is decoupled 
-/// from Decoder module later 
+/// from Decoder module later
+
+#[derive(Clone)] 
 pub struct SequenceConfig {
     // the `is_block` flag in `BlockConfig`
     enabled: Column<Advice>,
@@ -33,6 +35,35 @@ pub struct SequenceConfig {
 }
 
 impl SequenceConfig {
+
+    #[cfg(test)]
+    pub fn mock_assign<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        seq_cfg: &SequenceInfo,       
+    ) -> Result<(), Error>{
+
+        layouter.assign_region(||"seq cfg mock", 
+            |mut region|{
+                let mut offset = 0usize;
+
+                for col in [self.enabled, self.block_index, self.num_sequences]{
+                    region.assign_advice(||"flush for non lookup", col, offset, ||Value::known(F::zero()))?;
+                }
+
+                offset += 1;
+                for (col, val) in [
+                    (self.enabled, F::one()),
+                    (self.block_index, F::from(seq_cfg.block_idx as u64)),
+                    (self.num_sequences, F::from(seq_cfg.num_sequences as u64)),
+                ]{
+                    region.assign_advice(||"flush mock table", col, offset, ||Value::known(val))?;
+                }
+
+                Ok(())
+            }
+        )
+    }
 
     /// construct table for rows: [enabled, blk_index, num_seq]
     pub fn construct(cols: [Column<Advice>;3]) -> Self {
@@ -75,6 +106,48 @@ pub struct LiteralTable {
 }
 
 impl LiteralTable {
+
+    #[cfg(test)]
+    pub fn mock_assign<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        literals: &[u64],       
+    ) -> Result<(), Error>{
+
+        layouter.assign_region(||"literal tbl mock", 
+            |mut region|{
+                let mut offset = 0usize;
+
+                for col in [self.tag, self.block_index, self.byte_index, self.char, self.last_flag, self.padding_flag]{
+                    region.assign_advice(||"flush for non lookup", col, offset, ||Value::known(F::zero()))?;
+                }
+                offset += 1;
+                // TODO: ensure the index in literal table is 0 or 1 indexed
+                for (i, char) in literals.iter().copied().enumerate() {
+                    for (col, val) in [
+                        (self.tag, F::from(ZstdTag::ZstdBlockLiteralsRawBytes as u64)),
+                        (self.block_index, F::one()),
+                        (self.byte_index, F::from(i as u64 +1)),
+                        (self.char, F::from(char)),
+                        (self.last_flag, F::zero()),
+                        (self.padding_flag, F::zero()),
+                    ]{
+                        region.assign_advice(||"flush mock table", col, offset, ||Value::known(val))?;
+                    }
+                    offset += 1;
+                }
+
+                for col in [self.byte_index, self.char, self.padding_flag]{
+                    region.assign_advice(||"flush dummy row for border", col, offset, ||Value::known(F::zero()))?;
+                }
+                region.assign_advice(||"set dummy border", self.tag, offset, ||Value::known(F::from(ZstdTag::ZstdBlockLiteralsRawBytes as u64)))?;
+                region.assign_advice(||"set dummy border", self.block_index, offset, ||Value::known(F::from(2 as u64)))?;
+                region.assign_advice(||"set dummy border", self.last_flag, offset, ||Value::known(F::one()))?;
+
+                Ok(())
+            }
+        )
+    }
 
     /// construct table for rows: [tag, blk_index, byte_index, char, last, padding]
     pub fn construct(cols: [Column<Advice>;6]) -> Self {
@@ -594,26 +667,26 @@ impl<F: Field> SeqExecConfig<F> {
 
     }
 
-    /// assign a single block from current offset
-    /// and return the offset below the last used row
+    /// assign a single block from current offset / byte decompression
+    /// progress and return the offset / progress below the last used row
     pub fn assign_block<'a>(
         &self,
         region: &mut Region<F>,
         mut offset: usize,
         mut decoded_len: usize,
         mut decoded_rlc: F,
-        block_ind: u64,
-        literals: &[u64],
         seq_info: &SequenceInfo,
         seq_exec_infos: impl Iterator<Item=&'a SequenceExec>,
+        literals: &[u64],
         // all of the decompressed bytes, not only current block
         decompressed_bytes: &[u8],
     ) -> Result<(usize, usize, F), Error>{
 
+        let block_ind = seq_info.block_idx;
         for SequenceExec(inst_ind, exec_info) in seq_exec_infos {
 
             let base_rows = [
-                (self.block_index, F::from(block_ind)),
+                (self.block_index, F::from(block_ind as u64)),
                 (self.seq_index, F::from(*inst_ind as u64)),
                 (
                     self.s_last_lit_cp_phase, 
@@ -697,6 +770,80 @@ impl<F: Field> SeqExecConfig<F> {
 
         Ok((offset, decoded_len, decoded_rlc))
     }  
+
+    /// assign the top row 
+    pub fn init_top_row(
+        &self,
+        region: &mut Region<F>,
+        from_offset: Option<usize>,
+    ) -> Result<usize, Error>{
+        let offset = from_offset.unwrap_or_default();
+
+        for col in [
+            self.decoded_byte,
+            self.decoded_len,
+            self.decoded_rlc,
+            self.block_index,
+            self.seq_index,
+            self.s_back_ref_phase,
+            self.s_lit_cp_phase,
+            self.s_back_ref_phase,
+            self.backref_pos,
+            self.literal_pos,
+            self.backref_progress,
+        ] {
+            region.assign_advice(||"top row fluash", col, offset, ||Value::known(F::zero()))?;
+        }
+
+        Ok(offset+1)
+    }
+
+    #[cfg(test)]
+    pub fn mock_assign(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        n_seq: usize,
+        seq_exec_infos: &[SequenceExec],
+        literals: &[u8],
+        // all of the decompressed bytes, not only current block
+        decompressed_bytes: &[u8],
+        enabled_rows: usize,
+    ) -> Result<(), Error>{
+
+        let literals = literals.iter().copied().map(|b|b as u64).collect::<Vec<_>>();
+
+        layouter.assign_region(
+            || "output region",
+            |mut region|{
+
+                let offset = self.init_top_row(&mut region, None)?;
+                let (offset, decoded_len, decoded_rlc) = self.assign_block(
+                    &mut region, 
+                    offset, 
+                    0, 
+                    F::zero(), 
+                    &SequenceInfo {
+                        block_idx: 1,
+                        num_sequences: n_seq,
+                        ..Default::default()
+                    }, 
+                    seq_exec_infos.iter(), 
+                    &literals,
+                    decompressed_bytes
+                )?;
+                self.paddings(&mut region, 
+                    offset, 
+                    enabled_rows, 
+                    decoded_len, 
+                    decoded_rlc, 
+                    2
+                )?;
+
+                Ok(())
+            }
+        )
+    }
+
 }
 
 
@@ -710,6 +857,7 @@ mod tests {
         plonk::Circuit,
     };
     use super::*;
+    use witgen::AddressTableRow;
     use zkevm_circuits::util::MockChallenges;
 
     #[derive(Clone, Debug)]
@@ -717,11 +865,21 @@ mod tests {
         outputs: Vec<u8>,
         literal: Vec<u8>,
         seq_conf: SequenceInfo,
+        insts: Vec<AddressTableRow>,
         exec_trace: Vec<SequenceExec>,
     }
 
+    #[derive(Clone)]
+    struct SeqExecMockConfig {
+        config: SeqExecConfig<Fr>,
+        inst_tbl: SeqInstTable<Fr>,
+        literal_tbl: LiteralTable,
+        seq_cfg: SequenceConfig,
+        chng_mock: MockChallenges,
+    }
+
     impl Circuit<Fr> for SeqExecMock {
-        type Config = (SeqExecConfig<Fr>, MockChallenges);
+        type Config = SeqExecMockConfig;
         type FloorPlanner = SimpleFloorPlanner;
         fn without_witnesses(&self) -> Self {
             unimplemented!()
@@ -745,20 +903,39 @@ mod tests {
             let chng_mock = MockChallenges::construct(meta);
             let chng = chng_mock.exprs(meta);
 
-            (SeqExecConfig::configure(
-                meta,
-                &chng,
-                &literal_tbl,
-                &inst_tbl,
-                &seq_cfg,
-            ), chng_mock)
+            let config = SeqExecConfig::configure(meta, &chng, &literal_tbl, &inst_tbl, &seq_cfg);
+
+            Self::Config{
+                config,
+                literal_tbl,
+                inst_tbl,
+                seq_cfg,
+                chng_mock,
+            }
         }
     
         fn synthesize(
             &self,
-            (config, _): Self::Config,
+            config: Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
+
+            config.literal_tbl.mock_assign(&mut layouter, 
+                self.literal.iter().copied()
+                .map(|b|b as u64).collect::<Vec<_>>().as_slice())?;
+
+            config.seq_cfg.mock_assign(&mut layouter, &self.seq_conf)?;
+
+            config.inst_tbl.mock_assign(&mut layouter, &self.insts, 15)?;
+
+            config.config.mock_assign(
+                &mut layouter, 
+                self.insts.len(), 
+                &self.exec_trace, 
+                &self.literal, 
+                &self.outputs, 
+                50,
+            )?;
 
             Ok(())
         }
@@ -803,6 +980,7 @@ mod tests {
                 block_idx: 1,
                 ..Default::default()
             },
+            insts: Vec::new(),
             exec_trace: Vec::new(),
         };
 
