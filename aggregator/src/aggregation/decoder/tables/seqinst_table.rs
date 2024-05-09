@@ -153,6 +153,38 @@ impl<F: Field> LookupTable<F> for SeqInstTable<F> {
     }    
 }
 
+#[derive(Clone, Debug)]
+struct ChipContext<F: Field> {
+    literal_is_zero_chip: IsZeroChip<F>,
+    ref_offset_1_is_zero_chip: IsZeroChip<F>,
+    seq_index_chip: IsEqualChip<F>,
+    offset_is_1_chip: IsEqualChip<F>,
+    offset_is_2_chip: IsEqualChip<F>,
+    offset_is_3_chip: IsEqualChip<F>,
+}
+
+impl<F: Field> ChipContext<F> {
+    fn construct(config: &SeqInstTable<F>) -> Self {
+
+        let literal_is_zero_chip = IsZeroChip::construct(config.literal_is_zero.clone());
+        let ref_offset_1_is_zero_chip = IsZeroChip::construct(config.ref_offset_1_is_zero.clone());
+        let seq_index_chip = IsEqualChip::construct(config.seq_index_is_n_seq.clone());
+        let offset_is_1_chip = IsEqualChip::construct(config.offset_is_1.clone());
+        let offset_is_2_chip = IsEqualChip::construct(config.offset_is_2.clone());
+        let offset_is_3_chip = IsEqualChip::construct(config.offset_is_3.clone());
+
+        Self {
+            literal_is_zero_chip,
+            ref_offset_1_is_zero_chip,
+            seq_index_chip,
+            offset_is_1_chip,
+            offset_is_2_chip,
+            offset_is_3_chip,
+        }
+
+    }
+}
+
 impl<F: Field> SeqInstTable<F> {
 
     /// The sequence count should be lookuped by parsed bitstream,
@@ -529,259 +561,283 @@ impl<F: Field> SeqInstTable<F> {
         }
     }
 
-    pub fn assign<'a>(
+    /// assign a heading / padding row before a each block
+    pub fn assign_heading_row<'a>(
         &self,
-        layouter: &mut impl Layouter<F>,
-        table_rows: impl Iterator<Item=&'a AddressTableRow> + Clone,
-        enabled_rows: usize,
+        region: &mut Region<F>,
+        offset: usize,
+        block_ind: u64,
+        n_seq: usize,
+        chip_ctx: &ChipContext<F>,
+        offset_table: &[u64;3],
+    ) -> Result<usize, Error>{
+
+        region.assign_fixed(
+            ||"enable row",
+            self.q_enabled, offset,
+            || Value::known(F::one()),
+        )?;                    
+
+        for col in [
+            self.rep_offset_1,
+            self.rep_offset_2,
+            self.rep_offset_3,
+            self.match_len,
+            self.match_offset,
+            self.literal_len,
+            self.acc_literal_len,
+            self.offset,
+            self.seq_index,
+        ] {
+            region.assign_advice(
+                ||"padding values", 
+                col, offset, ||Value::known(F::zero())
+            )?;
+        }
+
+        for (col, val) in [
+            (self.rep_offset_1, offset_table[0]),
+            (self.rep_offset_2, offset_table[1]),
+            (self.rep_offset_3, offset_table[2]),
+            (self.block_index, block_ind),
+            (self.n_seq, n_seq as u64)
+        ]{
+            region.assign_advice(
+                ||"header block fill", 
+                col, offset, 
+                ||Value::known(F::from(val))
+            )?;                        
+        }
+
+        chip_ctx.literal_is_zero_chip.assign(region, offset, Value::known(F::zero()))?;
+        chip_ctx.ref_offset_1_is_zero_chip.assign(region, offset, Value::known(F::from(offset_table[0])))?;
+
+        for (chip, val) in [
+            (&chip_ctx.offset_is_1_chip, F::from(1u64)),
+            (&chip_ctx.offset_is_2_chip, F::from(2u64)),
+            (&chip_ctx.offset_is_3_chip, F::from(3u64)),
+            (&chip_ctx.seq_index_chip, F::from(n_seq as u64)),
+        ]{
+            chip.assign(region, offset, Value::known(F::zero()), Value::known(val))?;
+        }
+
+        region.assign_advice(||"set beginning flag",
+            self.s_beginning,
+            offset,
+            ||Value::known(F::one()),
+        )?;
+
+        Ok(offset+1)
+
+    }
+
+    /// padding for the rest row
+    pub fn padding_rows<'a>(
+        &self,
+        region: &mut Region<F>,
+        mut offset: usize,
+        till_offset: usize,
+        mut blk_index: u64,
+        chip_ctx: &ChipContext<F>,
+        offset_table: &[u64;3],
     ) -> Result<(), Error>{
 
-        let literal_is_zero_chip = IsZeroChip::construct(self.literal_is_zero.clone());
-        let ref_offset_1_is_zero_chip = IsZeroChip::construct(self.ref_offset_1_is_zero.clone());
-        let seq_index_chip = IsEqualChip::construct(self.seq_index_is_n_seq.clone());
-        let offset_is_1_chip = IsEqualChip::construct(self.offset_is_1.clone());
-        let offset_is_2_chip = IsEqualChip::construct(self.offset_is_2.clone());
-        let offset_is_3_chip = IsEqualChip::construct(self.offset_is_3.clone());
+        // pad the rest rows until final row
+        while offset < till_offset {
+            offset = self.assign_heading_row(
+                region,
+                offset,
+                blk_index,
+                0,
+                chip_ctx,
+                offset_table,
+            )?;
 
+            blk_index += 1;
+        }
+
+        Ok(())
+    }
+
+    /// assign a single block from current offset
+    /// and return the offset below the last used row
+    pub fn assign_block<'a>(
+        &self,
+        region: &mut Region<F>,
+        mut offset: usize,
+        block_ind: u64,
+        n_seq: usize,
+        table_rows: impl Iterator<Item=&'a AddressTableRow>,
+        chip_ctx: &ChipContext<F>,
+        offset_table: &mut [u64;3],
+    ) -> Result<usize, Error>{
+
+        let mut seq_index = 0u64;
+        let mut acc_literal_len = 0u64;
+
+        for table_row in table_rows {
+
+            seq_index += 1;
+
+            region.assign_fixed(
+                ||"enable row",
+                self.q_enabled, offset,
+                || Value::known(F::one()),
+            )?;
+
+            let offset_val = match table_row.cooked_match_offset {
+                0 => panic!("invalid cooked offset"),
+                1 => if table_row.literal_length == 0 {
+                    offset_table[1]
+                } else {
+                    offset_table[0]
+                },
+                2 => if table_row.literal_length == 0 {
+                    offset_table[2]
+                } else {
+                    offset_table[1]
+                },
+                3 => if table_row.literal_length == 0 {
+                    offset_table[0] - 1
+                } else {
+                    offset_table[2]
+                },
+                val => val - 3,
+            };
+            acc_literal_len += table_row.literal_length;
+
+            assert_eq!(offset_val, table_row.actual_offset);
+            offset_table[0] = table_row.repeated_offset1;
+            offset_table[1] = table_row.repeated_offset2;
+            offset_table[2] = table_row.repeated_offset3;
+
+            for (name, col, val) in [
+                ("beginning flag", self.s_beginning, F::zero()),
+                ("offset table 1", self.rep_offset_1, F::from(offset_table[0])),
+                ("offset table 2", self.rep_offset_2, F::from(offset_table[1])),
+                ("offset table 3", self.rep_offset_3, F::from(offset_table[2])),
+                ("mlen", self.match_len, F::from(table_row.match_length)),
+                ("moff", self.match_offset, F::from(table_row.cooked_match_offset)),
+                ("llen", self.literal_len, F::from(table_row.literal_length)),
+                ("llen_acc", self.acc_literal_len, F::from(acc_literal_len)),
+                ("offset", self.offset, F::from(offset_val)),
+                ("seq ind", self.seq_index, F::from(seq_index)),
+                ("block ind", self.block_index, F::from(block_ind)),
+                ("n_seq", self.n_seq, F::from(n_seq as u64)),
+            ] {
+                region.assign_advice(
+                    ||name, col, offset, ||Value::known(val)
+                )?;
+            }
+
+            for (chip, val) in [
+                (&chip_ctx.literal_is_zero_chip, F::from(table_row.literal_length)),
+                (&chip_ctx.ref_offset_1_is_zero_chip, F::from(offset_table[0])),
+            ] {
+                chip.assign(region, offset, Value::known(val))?;
+            }
+
+            for (chip, val_l, val_r) in [
+                (&chip_ctx.offset_is_1_chip, F::from(table_row.cooked_match_offset), F::from(1u64)),
+                (&chip_ctx.offset_is_2_chip, F::from(table_row.cooked_match_offset), F::from(2u64)),
+                (&chip_ctx.offset_is_3_chip, F::from(table_row.cooked_match_offset), F::from(3u64)),
+                (&chip_ctx.seq_index_chip, F::from(seq_index), F::from(n_seq as u64)),
+            ]{
+                chip.assign(
+                    region, 
+                    offset, 
+                    Value::known(val_l), 
+                    Value::known(val_r)
+                )?;
+            }
+            offset += 1;
+        }
+
+        assert_eq!(n_seq as u64, seq_index);
+
+        Ok(offset)
+    }
+
+    /// assign the top row 
+    pub fn init_top_row(
+        &self,
+        region: &mut Region<F>,
+        from_offset: Option<usize>,
+    ) -> Result<usize, Error>{
+        let offset = from_offset.unwrap_or_default();
+        // top row constraint
+        for (col, val) in [
+            (self.rep_offset_1, F::from(1u64)),
+            (self.rep_offset_2, F::from(4u64)),
+            (self.rep_offset_3, F::from(8u64)),
+        ] {
+            region.assign_advice_from_constant(||"top row", col, offset, val)?;
+        }
+
+        for col in [
+            self.block_index,
+            self.seq_index,
+            self.acc_literal_len,
+        ] {
+            region.assign_advice(||"top row flush", col, offset, ||Value::known(F::zero()))?;
+        }
+
+        for (col, val) in [
+            (self.block_index, F::one()),
+            (self.seq_index, F::zero()),
+        ] {
+            region.assign_advice_from_constant(||"begin row constraint", col, offset+1, val)?;
+        }
+
+        Ok(offset+1)
+    }
+
+    #[cfg(test)]
+    pub fn mock_assign(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        table_rows: &[AddressTableRow],
+        enabled_rows: usize,
+    ) -> Result<(), Error>{
+        let chip_ctx = ChipContext::construct(self);
         layouter.assign_region(
             || "addr table",
             |mut region|{
-
-                let fill_header_padding = |
-                    region: &mut Region<F>,
-                    header_offset,
-                    end_offset,
-                    block_ind: u64,
-                    n_seq: u64,
-                    offset_table: [u64;3],
-                |->Result<(), Error>{
-
-                    region.assign_fixed(
-                        ||"enable row",
-                        self.q_enabled, header_offset,
-                        || Value::known(F::one()),
-                    )?;                    
-
-                    for col in [
-                        self.rep_offset_1,
-                        self.rep_offset_2,
-                        self.rep_offset_3,
-                        self.match_len,
-                        self.match_offset,
-                        self.literal_len,
-                        self.acc_literal_len,
-                        self.offset,
-                        self.seq_index,
-                    ] {
-                        region.assign_advice(
-                            ||"padding values", 
-                            col, header_offset, ||Value::known(F::zero())
-                        )?;
-                    }
-                    literal_is_zero_chip.assign(region, header_offset, Value::known(F::zero()))?;
-
-                    for (col, val) in [
-                        (self.rep_offset_1, offset_table[0]),
-                        (self.rep_offset_2, offset_table[1]),
-                        (self.rep_offset_3, offset_table[2]),
-                        (self.block_index, block_ind),
-                    ]{
-                        region.assign_advice(
-                            ||"header block fill", 
-                            col, header_offset, 
-                            ||Value::known(F::from(val))
-                        )?;                        
-                    }
-                    assert_eq!(end_offset-header_offset, n_seq as usize);
-
-                    for (i, offset) in (header_offset..=end_offset).enumerate() {
-                        region.assign_advice(
-                            ||"fill n_seq", 
-                            self.n_seq, offset, 
-                            ||Value::known(F::from(n_seq))
-                        )?;
-                        seq_index_chip.assign(
-                            region,
-                            offset,
-                            Value::known(F::from(i as u64)),
-                            Value::known(F::from(n_seq)),
-                        )?;   
-                    }
-                    ref_offset_1_is_zero_chip.assign(region, header_offset, Value::known(F::from(offset_table[0])))?;
-
-                    for (chip, val) in [
-                        (&offset_is_1_chip, F::from(1u64)),
-                        (&offset_is_2_chip, F::from(2u64)),
-                        (&offset_is_3_chip, F::from(3u64)),
-                        (&seq_index_chip, F::from(n_seq)),
-                    ]{
-                        chip.assign(region, header_offset, Value::known(F::zero()), Value::known(val))?;
-                    }
-
-                    region.assign_advice(||"set beginning flag",
-                        self.s_beginning,
-                        header_offset,
-                        ||Value::known(F::one()),
-                    )?;
-                    Ok(())
-                };
-
-                // top row constraint
-                for (col, val) in [
-                    (self.block_index, F::zero()),
-                    (self.seq_index, F::zero()),
-                    (self.rep_offset_1, F::from(1u64)),
-                    (self.rep_offset_2, F::from(4u64)),
-                    (self.rep_offset_3, F::from(8u64)),
-                ] {
-                    region.assign_advice_from_constant(||"top row", col, 0, val)?;
-                }
-
-                for col in [
-                    self.acc_literal_len,
-                ] {
-                    region.assign_advice(||"top row flush", col, 0, ||Value::known(F::zero()))?;
-                }
-
-
-                let mut offset = 1;
-                let mut block_ind = 0u64;
-                let mut n_seq = 0u64;
-                #[allow(clippy::type_complexity)]
-                let mut block_head_fill_f : Box<
-                    dyn FnOnce(&mut Region<F>, u64, usize) -> Result<(), Error>
-                >
-                    = Box::new(|_, _, _|Ok(()));
-
-                // sanity check, also calculate the reference
-                let mut seq_index = 1u64;
                 let mut offset_table : [u64;3]= [1,4,8];
-                let mut acc_literal_len = 0u64;
+                let offset = self.init_top_row(&mut region, None)?;
+                let offset = self.assign_heading_row(
+                    &mut region, 
+                    offset, 
+                    1, 
+                    table_rows.len(), 
+                    &chip_ctx, 
+                    &mut offset_table,
+                )?;
+                let offset = self.assign_block(
+                    &mut region, 
+                    offset, 
+                    1, 
+                    table_rows.len(), 
+                    table_rows.iter(), 
+                    &chip_ctx, 
+                    &mut offset_table,
+                )?;
+                assert!(offset < enabled_rows);
 
-                for table_row in table_rows.clone() {
-
-                    // now AddressTableRow has no block index
-                    // so we just suppose it is 1
-                    let cur_block = 1u64;
-
-                    // when meet first new block, we insert a
-                    // header row first, but the calling has to
-                    // be postpone since we need to collect the
-                    // n_seq later
-                    if block_ind != cur_block {
-                        block_head_fill_f(&mut region, n_seq, offset)?;
-                        // left one row for header
-                        block_ind = cur_block;
-                        seq_index = 1;
-                        acc_literal_len = 0;
-                        block_head_fill_f = Box::new(move |region, n_seq, cur_offset|
-                            fill_header_padding(
-                                region,
-                                offset,
-                                cur_offset-1,
-                                cur_block,
-                                n_seq,
-                                offset_table,
-                            )
-                        );
-                        offset += 1;
-                    }
-
-                    region.assign_fixed(
-                        ||"enable row",
-                        self.q_enabled, offset,
-                        || Value::known(F::one()),
-                    )?;
-
-                    let offset_val = match table_row.cooked_match_offset {
-                        0 => panic!("invalid cooked offset"),
-                        1 => if table_row.literal_length == 0 {
-                            offset_table[1]
-                        } else {
-                            offset_table[0]
-                        },
-                        2 => if table_row.literal_length == 0 {
-                            offset_table[2]
-                        } else {
-                            offset_table[1]
-                        },
-                        3 => if table_row.literal_length == 0 {
-                            offset_table[0] - 1
-                        } else {
-                            offset_table[2]
-                        },
-                        val => val - 3,
-                    };
-                    n_seq = table_row.instruction_idx + 1;
-                    acc_literal_len += table_row.literal_length;
-
-                    assert_eq!(offset_val, table_row.actual_offset);
-                    offset_table[0] = table_row.repeated_offset1;
-                    offset_table[1] = table_row.repeated_offset2;
-                    offset_table[2] = table_row.repeated_offset3;
-
-                    for (name, col, val) in [
-                        ("beginning flag", self.s_beginning, F::zero()),
-                        ("offset table 1", self.rep_offset_1, F::from(offset_table[0])),
-                        ("offset table 2", self.rep_offset_2, F::from(offset_table[1])),
-                        ("offset table 3", self.rep_offset_3, F::from(offset_table[2])),
-                        ("mlen", self.match_len, F::from(table_row.match_length)),
-                        ("moff", self.match_offset, F::from(table_row.cooked_match_offset)),
-                        ("llen", self.literal_len, F::from(table_row.literal_length)),
-                        ("llen_acc", self.acc_literal_len, F::from(acc_literal_len)),
-                        ("offset", self.offset, F::from(offset_val)),
-                        ("seq ind", self.seq_index, F::from(seq_index)),
-                        ("block ind", self.block_index, F::from(block_ind)),
-                    ] {
-                        region.assign_advice(
-                            ||name, col, offset, ||Value::known(val)
-                        )?;
-                    }
-
-                    for (chip, val) in [
-                        (&literal_is_zero_chip, F::from(table_row.literal_length)),
-                        (&ref_offset_1_is_zero_chip, F::from(offset_table[0])),
-                    ] {
-                        chip.assign(&mut region, offset, Value::known(val))?;
-                    }
-
-                    for (chip, val_l, val_r) in [
-                        (&offset_is_1_chip, F::from(table_row.cooked_match_offset), F::from(1u64)),
-                        (&offset_is_2_chip, F::from(table_row.cooked_match_offset), F::from(2u64)),
-                        (&offset_is_3_chip, F::from(table_row.cooked_match_offset), F::from(3u64)),
-                        //(&seq_index_chip, F::from(seq_index), F::from(n_seq)),
-                    ]{
-                        chip.assign(
-                            &mut region, 
-                            offset, 
-                            Value::known(val_l), 
-                            Value::known(val_r)
-                        )?;
-                    }
-                    offset += 1;
-                    seq_index += 1;  
-                }
-                // final call for last post-poned head filling func
-                block_head_fill_f(&mut region, n_seq, offset)?;
-
-                // pad the rest rows until final row
-                for (offset, blk_index) in (offset..enabled_rows)
-                    .zip(std::iter::successors(Some(block_ind+1), |ind|Some(ind+1))){
-                    
-                    fill_header_padding(
-                        &mut region,
-                        offset,
-                        offset,
-                        blk_index,
-                        0,
-                        offset_table,
-                    )?;
-                }
+                self.padding_rows(
+                    &mut region,
+                    offset, 
+                    enabled_rows,
+                    2, 
+                    &chip_ctx, 
+                    &offset_table,
+                )?;
 
                 Ok(())
             }
         )
     }
+
 }
 
 
@@ -820,9 +876,9 @@ mod tests {
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
 
-            config.assign(
+            config.mock_assign(
                 &mut layouter,
-                self.0.iter(),
+                &self.0,
                 15,
             )?;
 
