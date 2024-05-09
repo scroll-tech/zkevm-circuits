@@ -3286,7 +3286,7 @@ impl BitwiseOpTable {
             || "BitwiseOp table",
             |mut region| {
                 let mut offset = 0;
-                for op in [BitwiseOp::AND, BitwiseOp::OR, BitwiseOp::XOR] {
+                for op in [BitwiseOp::AND/*, BitwiseOp::OR, BitwiseOp::XOR*/] {
                     for [lhs, rhs, out] in (0..256).flat_map(move |lhs| {
                         (0..256).map(move |rhs| {
                             [

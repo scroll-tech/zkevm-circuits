@@ -680,7 +680,7 @@ fn process_sequences<F: Field>(
     // Literal Length Table (LLT)
     let (n_fse_bytes_llt, bit_boundaries_llt, table_llt) = FseAuxiliaryTableData::reconstruct(
         src,
-        0,
+        block_idx,
         FseTableKind::LLT,
         byte_offset,
         literal_lengths_mode < 2,
@@ -697,11 +697,17 @@ fn process_sequences<F: Field>(
         6
     };
 
+    // witgen_debug
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    // write!(handle, "bit_boundaries_llt: {:?}", bit_boundaries_llt).unwrap();
+    // writeln!(handle).unwrap();
+
     // Cooked Match Offset Table (CMOT)
     let byte_offset = byte_offset + n_fse_bytes_llt;
     let (n_fse_bytes_cmot, bit_boundaries_cmot, table_cmot) = FseAuxiliaryTableData::reconstruct(
         src,
-        0,
+        block_idx,
         FseTableKind::MOT,
         byte_offset,
         offsets_mode < 2,
@@ -722,7 +728,7 @@ fn process_sequences<F: Field>(
     let byte_offset = byte_offset + n_fse_bytes_cmot;
     let (n_fse_bytes_mlt, bit_boundaries_mlt, table_mlt) = FseAuxiliaryTableData::reconstruct(
         src,
-        0,
+        block_idx,
         FseTableKind::MLT,
         byte_offset,
         match_lengths_mode < 2,
@@ -794,19 +800,20 @@ fn process_sequences<F: Field>(
         let mut from_pos: (i64, i64) = (1, 0);
         let mut to_pos: (i64, i64) = (0, 0);
         let kind = table.table_kind;
-        let mut next_symbol: u64 = 0;
+        let mut next_symbol: i32 = -1;
         let mut is_repeating_bit_boundary: HashMap<usize, bool> = HashMap::new();
 
         let multiplier =
             (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
         let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
+        let mut last_symbol: i32 = 0;
 
         let bitstream_rows = bit_boundaries
             .iter()
             .enumerate()
-            .map(|(bit_boundary_idx, (bit_idx, value))| {
+            .map(|(bit_boundary_idx, (bit_idx, value_read, value_decoded))| {
                 // Calculate byte and bit positions. Increment allocators.
-                from_pos = if next_symbol == 0 { (1, -1) } else { to_pos };
+                from_pos = if next_symbol == -1 { (1, -1) } else { to_pos };
 
                 from_pos.1 += 1;
                 if from_pos.1 == 8 {
@@ -833,6 +840,8 @@ fn process_sequences<F: Field>(
                 // Decide Fse decoding results
                 if bit_boundary_idx < 1 {
                     // Accuracy log bits
+                    next_symbol += 1;
+                    assert_eq!(value_read, value_decoded, "no varbit packing for AL bits");
                     (
                         0,
                         n_emitted,
@@ -840,7 +849,8 @@ fn process_sequences<F: Field>(
                         from_pos.1 as usize,
                         to_pos.0 as usize,
                         to_pos.1 as usize,
-                        *value,
+                        *value_read,
+                        *value_decoded,
                         current_tag_value_acc,
                         current_tag_rlc_acc,
                         n_acc,
@@ -853,14 +863,16 @@ fn process_sequences<F: Field>(
                 } else if !is_repeating_bit_boundary.contains_key(&bit_boundary_idx) {
                     if n_acc >= (table.table_size as usize) {
                         // Trailing bits
+                        assert_eq!(value_read, value_decoded, "no varbit packing for trailing bits");
                         (
-                            0,
+                            last_symbol as u64,
                             n_emitted,
                             from_pos.0 as usize,
                             from_pos.1 as usize,
                             to_pos.0 as usize,
                             to_pos.1 as usize,
-                            *value,
+                            *value_read,
+                            *value_decoded,
                             current_tag_value_acc,
                             current_tag_rlc_acc,
                             n_acc,
@@ -872,10 +884,12 @@ fn process_sequences<F: Field>(
                         )
                     } else {
                         // Regular decoding state
-                        decoded = next_symbol;
+                        assert!(next_symbol >= 0);
+                        decoded = next_symbol as u64;
                         n_emitted += 1;
+                        last_symbol = next_symbol;
                         next_symbol += 1;
-                        match *value {
+                        match *value_decoded {
                             0 => {
                                 // When a symbol has a value==0, it signifies a case of prob=-1 (or
                                 // probability "less than 1"), where
@@ -888,7 +902,7 @@ fn process_sequences<F: Field>(
                                 loop {
                                     let repeating_bits =
                                         bit_boundaries[repeating_bit_boundary_idx].1;
-                                    next_symbol += repeating_bits; // skip symbols
+                                    next_symbol += repeating_bits as i32; // skip symbols
                                     is_repeating_bit_boundary
                                         .insert(repeating_bit_boundary_idx, true);
 
@@ -900,7 +914,7 @@ fn process_sequences<F: Field>(
                                 }
                             }
                             _ => {
-                                n_acc += (*value - 1) as usize;
+                                n_acc += (*value_decoded - 1) as usize;
                             }
                         }
 
@@ -911,7 +925,8 @@ fn process_sequences<F: Field>(
                             from_pos.1 as usize,
                             to_pos.0 as usize,
                             to_pos.1 as usize,
-                            *value,
+                            *value_read,
+                            *value_decoded,
                             current_tag_value_acc,
                             current_tag_rlc_acc,
                             n_acc,
@@ -924,14 +939,18 @@ fn process_sequences<F: Field>(
                     }
                 } else {
                     // Repeating bits
+                    let symbol = last_symbol as u64 + value_decoded;
+                    last_symbol = symbol as i32;
+                    assert_eq!(value_read, value_decoded, "no varbit packing for repeat-bits flag");
                     (
-                        0,
+                        symbol,
                         n_emitted,
                         from_pos.0 as usize,
                         from_pos.1 as usize,
                         to_pos.0 as usize,
                         to_pos.1 as usize,
-                        *value,
+                        *value_read,
+                        *value_decoded,
                         current_tag_value_acc,
                         current_tag_rlc_acc,
                         n_acc,
@@ -950,6 +969,7 @@ fn process_sequences<F: Field>(
                 usize,
                 usize,
                 usize,
+                u64,
                 u64,
                 Value<F>,
                 Value<F>,
@@ -975,10 +995,10 @@ fn process_sequences<F: Field>(
                     tag_len,
                     tag_idx: row.2 as u64,
                     tag_value,
-                    tag_value_acc: row.7,
+                    tag_value_acc: row.8,
                     is_tag_change: j == 0,
                     tag_rlc,
-                    tag_rlc_acc: row.8,
+                    tag_rlc_acc: row.9,
                 },
                 encoded_data: EncodedData {
                     byte_idx: (start_offset + row.2) as u64,
@@ -1003,14 +1023,14 @@ fn process_sequences<F: Field>(
                     decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
                 },
                 fse_data: FseDecodingRow {
-                    table_kind: row.10,
-                    table_size: row.11,
+                    table_kind: row.11,
+                    table_size: row.12,
                     symbol: row.0,
                     num_emitted: row.1 as u64,
-                    value_decoded: row.6,
-                    probability_acc: row.9 as u64,
-                    is_repeat_bits_loop: row.12,
-                    is_trailing_bits: row.13,
+                    value_decoded: row.7,
+                    probability_acc: row.10 as u64,
+                    is_repeat_bits_loop: row.13,
+                    is_trailing_bits: row.14,
                 },
             });
         }
@@ -1077,6 +1097,7 @@ fn process_sequences<F: Field>(
     let tag_rlc_iter =
         &src[byte_offset..end_offset]
             .iter()
+            .rev()
             .scan(Value::known(F::zero()), |acc, &byte| {
                 *acc = *acc * randomness + Value::known(F::from(byte as u64));
                 Some(*acc)
@@ -1117,7 +1138,7 @@ fn process_sequences<F: Field>(
         encoded_data: EncodedData {
             byte_idx: (byte_offset + current_byte_idx) as u64,
             encoded_len,
-            value_byte: src[byte_offset + current_byte_idx],
+            value_byte: src[byte_offset + current_byte_idx - 1],
             value_rlc,
             reverse: true,
             reverse_len: n_sequence_data_bytes as u64,
@@ -1182,8 +1203,28 @@ fn process_sequences<F: Field>(
 
     let mut is_init = true;
     let mut nb = nb_switch[mode][order_idx];
+    let bitstream_end_bit_idx = n_sequence_data_bytes * N_BITS_PER_BYTE;
 
-    while current_bit_idx + nb <= n_sequence_data_bytes * N_BITS_PER_BYTE {
+    // witgen_debug
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+
+    while current_bit_idx + nb <= bitstream_end_bit_idx {
+        let is_tail = current_bit_idx == bitstream_end_bit_idx;
+        if is_tail { 
+            assert!(nb == 0, "Can only read 0 bit at the very tail end of bitstream.");
+            // The byte idx has already been incremented to > n_sequence_bytes.
+            // But continuously reading 0 bits from the very tail end of the last byte is allowed.
+            // In this case, the byte_idx is restored to the last byte of the bitstream bytes.
+            if current_byte_idx > n_sequence_data_bytes {
+                current_byte_idx -= 1;
+            }
+        }
+
+        // witgen_debug
+        // write!(handle, "current_byte_idx: {:?}, current_bit_idx: {:?}, nb: {:?}", current_byte_idx, current_bit_idx, nb).unwrap();
+        // writeln!(handle).unwrap();
+
         let bitstring_value =
             be_bits_to_value(&sequence_bitstream[current_bit_idx..(current_bit_idx + nb)]);
 
@@ -1252,12 +1293,20 @@ fn process_sequences<F: Field>(
                     curr_instruction[2],
                 );
 
+                // witgen_debug
+                // write!(handle, "NewInstruction - idx: {:?}, Offset: {:?}, ML: {:?}, LLT: {:?}", raw_sequence_instructions.len(), new_instruction.0, new_instruction.1, new_instruction.2).unwrap();
+                // writeln!(handle);
+
                 raw_sequence_instructions.push(new_instruction);
             }
         }
 
         // bitstream witness row data
-        let from_bit_idx = current_bit_idx.rem_euclid(8);
+        let from_bit_idx = if !is_tail {
+            current_bit_idx.rem_euclid(8)
+        } else {
+            7
+        };
         let to_bit_idx = if nb > 0 {
             from_bit_idx + (nb - 1)
         } else {
@@ -1286,8 +1335,8 @@ fn process_sequences<F: Field>(
                 // TODO(ray): This is a special case of the sequences data being a part of the
                 // "last block", hence the overflow. I have just re-used the "last" byte from the
                 // source data in such a case.
-                value_byte: if byte_offset + current_byte_idx < src.len() {
-                    src[byte_offset + current_byte_idx]
+                value_byte: if byte_offset + current_byte_idx - 1 < src.len() {
+                    src[byte_offset + current_byte_idx - 1]
                 } else {
                     src.last().cloned().unwrap()
                 },
@@ -1317,6 +1366,7 @@ fn process_sequences<F: Field>(
                 },
                 values: [0, 0, 0],
                 baseline: curr_baseline as u64,
+                is_nil: false,
             },
             decoded_data: last_row.decoded_data.clone(),
             fse_data: FseDecodingRow::default(), /* TODO: Clarify alternating FSE/data segments
@@ -1325,7 +1375,85 @@ fn process_sequences<F: Field>(
                                                   * is_state_skipped: false, */
         });
 
-        for _ in 0..nb {
+        let multi_byte_boundaries: [usize; 2] = [15, 23];
+        let mut skipped_bits = 0usize;
+
+        for boundary in multi_byte_boundaries {
+            if to_bit_idx >= boundary {
+                for _ in 0..N_BITS_PER_BYTE {
+                    (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+                }
+                if current_byte_idx > last_byte_idx && current_byte_idx <= n_sequence_data_bytes {
+                    next_tag_value_acc = tag_value_iter.next().unwrap();
+                    next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+                    last_byte_idx = current_byte_idx;
+                }
+                skipped_bits += N_BITS_PER_BYTE;
+    
+                witness_rows.push(ZstdWitnessRow {
+                    state: ZstdState {
+                        tag: ZstdTag::ZstdBlockSequenceData,
+                        tag_next: if last_block { ZstdTag::Null } else { ZstdTag::BlockHeader },
+                        block_idx,
+                        max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceData),
+                        tag_len: n_sequence_data_bytes as u64,
+                        tag_idx: current_byte_idx as u64,
+                        tag_value,
+                        tag_value_acc: next_tag_value_acc,
+                        is_tag_change: false,
+                        tag_rlc,
+                        tag_rlc_acc: next_tag_rlc_acc,
+                    },
+                    encoded_data: EncodedData {
+                        byte_idx: (byte_offset + current_byte_idx) as u64,
+                        encoded_len,
+                        // witgen_debug, idx overflow
+                        // TODO(ray): This is a special case of the sequences data being a part of the
+                        // "last block", hence the overflow. I have just re-used the "last" byte from the
+                        // source data in such a case.
+                        value_byte: if byte_offset + current_byte_idx - 1 < src.len() {
+                            src[byte_offset + current_byte_idx - 1]
+                        } else {
+                            src.last().cloned().unwrap()
+                        },
+                        value_rlc,
+                        reverse: true,
+                        reverse_len: n_sequence_data_bytes as u64,
+                        reverse_idx: (n_sequence_data_bytes - (current_byte_idx - 1)) as u64,
+                        aux_1,
+                        aux_2: Value::known(F::zero()),
+                    },
+                    bitstream_read_data: BitstreamReadRow {
+                        bit_start_idx: 0,
+                        bit_end_idx: 0,
+                        bit_value: 0,
+                        is_zero_bit_read: false,
+                        is_seq_init: false,
+                        seq_idx,
+                        states: if mode > 0 {
+                            [order_idx == 0, order_idx == 1, order_idx == 2]
+                        } else {
+                            [false, false, false]
+                        },
+                        symbols: if mode > 0 {
+                            [false, false, false]
+                        } else {
+                            [order_idx == 2, order_idx == 1, order_idx == 0]
+                        },
+                        values: [0, 0, 0],
+                        baseline: curr_baseline as u64,
+                        is_nil: true,
+                    },
+                    decoded_data: last_row.decoded_data.clone(),
+                    fse_data: FseDecodingRow::default(), /* TODO: Clarify alternating FSE/data segments
+                                                          * TODO(ray): pls check where to get this field
+                                                          * from.
+                                                          * is_state_skipped: false, */
+                })
+            }
+        }
+        
+        for _ in 0..(nb - skipped_bits) {
             (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
         }
         if current_byte_idx > last_byte_idx && current_byte_idx <= n_sequence_data_bytes {
@@ -1485,7 +1613,7 @@ fn process_sequences<F: Field>(
     (
         end_offset,
         witness_rows,
-        [table_llt, table_mlt, table_cmot],
+        [table_llt, table_cmot, table_mlt],
         address_table_rows,
         recovered_inputs,
         sequence_info,
@@ -1705,7 +1833,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     // for (idx, row) in witness_rows.iter().enumerate() {
     //     write!(
     //         handle,
-    //         "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",
+    //         "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",
     //         idx,
     //         row.state.tag, row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
     //         row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
@@ -1720,6 +1848,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     //         row.fse_data.is_repeat_bits_loop, row.fse_data.is_trailing_bits,
     //         row.bitstream_read_data.bit_start_idx,
     //         row.bitstream_read_data.bit_end_idx, row.bitstream_read_data.bit_value,
+    //         row.bitstream_read_data.is_nil,
     //         row.bitstream_read_data.is_zero_bit_read
     //     ).unwrap();
 

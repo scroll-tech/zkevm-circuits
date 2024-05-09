@@ -108,7 +108,7 @@ pub struct BitstringTable {
 
 impl BitstringTable {
     /// Construct the bitstring accumulation table.
-    pub fn configure(meta: &mut ConstraintSystem<Fr>, u8_table: U8Table) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<Fr>, q_enable: Column<Fixed>, u8_table: U8Table) -> Self {
         let config = Self {
             q_first: meta.fixed_column(),
             byte_idx_1: meta.advice_column(),
@@ -129,289 +129,294 @@ impl BitstringTable {
             is_padding: meta.advice_column(),
         };
 
-        // witgen_debug
-        // meta.create_gate("BitstringTable: bit_index == 0", |meta| {
-        //     let condition = and::expr([
-        //         meta.query_fixed(config.q_start, Rotation::cur()),
-        //         not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
-        //     ]);
+        meta.create_gate("BitstringTable: bit_index == 0", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_fixed(config.q_start, Rotation::cur()),
+                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     let bits = (0..24)
-        //         .map(|i| meta.query_advice(config.bit, Rotation(i)))
-        //         .collect::<Vec<Expression<Fr>>>();
+            let bits = (0..24)
+                .map(|i| meta.query_advice(config.bit, Rotation(i)))
+                .collect::<Vec<Expression<Fr>>>();
 
-        //     let (byte_idx_1, byte_idx_2, byte_idx_3) = (
-        //         meta.query_advice(config.byte_idx_1, Rotation::cur()),
-        //         meta.query_advice(config.byte_idx_2, Rotation::cur()),
-        //         meta.query_advice(config.byte_idx_3, Rotation::cur()),
-        //     );
-        //     let (byte_1, byte_2, byte_3) = (
-        //         meta.query_advice(config.byte_1, Rotation::cur()),
-        //         meta.query_advice(config.byte_2, Rotation::cur()),
-        //         meta.query_advice(config.byte_3, Rotation::cur()),
-        //     );
+            let (byte_1, byte_2, byte_3) = (
+                meta.query_advice(config.byte_1, Rotation::cur()),
+                meta.query_advice(config.byte_2, Rotation::cur()),
+                meta.query_advice(config.byte_3, Rotation::cur()),
+            );
 
-        //     cb.require_equal(
-        //         "byte1 is the binary accumulation of 0 <= bit_index <= 7",
-        //         byte_1,
-        //         select::expr(
-        //             meta.query_advice(config.is_reverse, Rotation::cur()),
-        //             bits[7].expr()
-        //                 + bits[6].expr() * 2.expr()
-        //                 + bits[5].expr() * 4.expr()
-        //                 + bits[4].expr() * 8.expr()
-        //                 + bits[3].expr() * 16.expr()
-        //                 + bits[2].expr() * 32.expr()
-        //                 + bits[1].expr() * 64.expr()
-        //                 + bits[0].expr() * 128.expr(),
-        //             bits[0].expr()
-        //                 + bits[1].expr() * 2.expr()
-        //                 + bits[2].expr() * 4.expr()
-        //                 + bits[3].expr() * 8.expr()
-        //                 + bits[4].expr() * 16.expr()
-        //                 + bits[5].expr() * 32.expr()
-        //                 + bits[6].expr() * 64.expr()
-        //                 + bits[7].expr() * 128.expr(),
-        //         ),
-        //     );
+            cb.require_equal(
+                "byte1 is the binary accumulation of 0 <= bit_index <= 7",
+                byte_1,
+                select::expr(
+                    meta.query_advice(config.is_reverse, Rotation::cur()),
+                    bits[7].expr()
+                        + bits[6].expr() * 2.expr()
+                        + bits[5].expr() * 4.expr()
+                        + bits[4].expr() * 8.expr()
+                        + bits[3].expr() * 16.expr()
+                        + bits[2].expr() * 32.expr()
+                        + bits[1].expr() * 64.expr()
+                        + bits[0].expr() * 128.expr(),
+                    bits[0].expr()
+                        + bits[1].expr() * 2.expr()
+                        + bits[2].expr() * 4.expr()
+                        + bits[3].expr() * 8.expr()
+                        + bits[4].expr() * 16.expr()
+                        + bits[5].expr() * 32.expr()
+                        + bits[6].expr() * 64.expr()
+                        + bits[7].expr() * 128.expr(),
+                ),
+            );
 
-        //     cb.require_equal(
-        //         "byte2 is the binary accumulation of 8 <= bit_index <= 15",
-        //         byte_2,
-        //         select::expr(
-        //             meta.query_advice(config.is_reverse, Rotation::cur()),
-        //             bits[15].expr()
-        //                 + bits[14].expr() * 2.expr()
-        //                 + bits[13].expr() * 4.expr()
-        //                 + bits[12].expr() * 8.expr()
-        //                 + bits[11].expr() * 16.expr()
-        //                 + bits[10].expr() * 32.expr()
-        //                 + bits[9].expr() * 64.expr()
-        //                 + bits[8].expr() * 128.expr(),
-        //             bits[8].expr()
-        //                 + bits[9].expr() * 2.expr()
-        //                 + bits[10].expr() * 4.expr()
-        //                 + bits[11].expr() * 8.expr()
-        //                 + bits[12].expr() * 16.expr()
-        //                 + bits[13].expr() * 32.expr()
-        //                 + bits[14].expr() * 64.expr()
-        //                 + bits[15].expr() * 128.expr(),
-        //         ),
-        //     );
+            cb.require_equal(
+                "byte2 is the binary accumulation of 8 <= bit_index <= 15",
+                byte_2,
+                select::expr(
+                    meta.query_advice(config.is_reverse, Rotation::cur()),
+                    bits[15].expr()
+                        + bits[14].expr() * 2.expr()
+                        + bits[13].expr() * 4.expr()
+                        + bits[12].expr() * 8.expr()
+                        + bits[11].expr() * 16.expr()
+                        + bits[10].expr() * 32.expr()
+                        + bits[9].expr() * 64.expr()
+                        + bits[8].expr() * 128.expr(),
+                    bits[8].expr()
+                        + bits[9].expr() * 2.expr()
+                        + bits[10].expr() * 4.expr()
+                        + bits[11].expr() * 8.expr()
+                        + bits[12].expr() * 16.expr()
+                        + bits[13].expr() * 32.expr()
+                        + bits[14].expr() * 64.expr()
+                        + bits[15].expr() * 128.expr(),
+                ),
+            );
 
-        //     cb.require_equal(
-        //         "byte3 is the binary accumulation of 16 <= bit_index <= 23",
-        //         byte_3,
-        //         select::expr(
-        //             meta.query_advice(config.is_reverse, Rotation::cur()),
-        //             bits[23].expr()
-        //                 + bits[22].expr() * 2.expr()
-        //                 + bits[21].expr() * 4.expr()
-        //                 + bits[20].expr() * 8.expr()
-        //                 + bits[19].expr() * 16.expr()
-        //                 + bits[18].expr() * 32.expr()
-        //                 + bits[17].expr() * 64.expr()
-        //                 + bits[16].expr() * 128.expr(),
-        //             bits[16].expr()
-        //                 + bits[17].expr() * 2.expr()
-        //                 + bits[18].expr() * 4.expr()
-        //                 + bits[19].expr() * 8.expr()
-        //                 + bits[20].expr() * 16.expr()
-        //                 + bits[21].expr() * 32.expr()
-        //                 + bits[22].expr() * 64.expr()
-        //                 + bits[23].expr() * 128.expr(),
-        //         ),
-        //     );
+            cb.require_equal(
+                "byte3 is the binary accumulation of 16 <= bit_index <= 23",
+                byte_3,
+                select::expr(
+                    meta.query_advice(config.is_reverse, Rotation::cur()),
+                    bits[23].expr()
+                        + bits[22].expr() * 2.expr()
+                        + bits[21].expr() * 4.expr()
+                        + bits[20].expr() * 8.expr()
+                        + bits[19].expr() * 16.expr()
+                        + bits[18].expr() * 32.expr()
+                        + bits[17].expr() * 64.expr()
+                        + bits[16].expr() * 128.expr(),
+                    bits[16].expr()
+                        + bits[17].expr() * 2.expr()
+                        + bits[18].expr() * 4.expr()
+                        + bits[19].expr() * 8.expr()
+                        + bits[20].expr() * 16.expr()
+                        + bits[21].expr() * 32.expr()
+                        + bits[22].expr() * 64.expr()
+                        + bits[23].expr() * 128.expr(),
+                ),
+            );
 
-        //     cb.require_boolean(
-        //         "is_reverse is boolean",
-        //         meta.query_advice(config.is_reverse, Rotation::cur()),
-        //     );
+            cb.require_boolean(
+                "is_reverse is boolean",
+                meta.query_advice(config.is_reverse, Rotation::cur()),
+            );
 
-        //     // from_start initialises at 1
-        //     cb.require_equal(
-        //         "if bit_index == 0: from_start == 1",
-        //         meta.query_advice(config.from_start, Rotation::cur()),
-        //         1.expr(),
-        //     );
+            // from_start initialises at 1
+            /*
+            cb.require_equal(
+                "if bit_index == 0: from_start == 1",
+                meta.query_advice(config.from_start, Rotation::cur()),
+                1.expr(),
+            );
+            */
 
-        //     cb.gate(condition)
-        // });
+            cb.gate(condition)
+        });
 
-        // witgen_debug
-        // meta.create_gate("BitstringTable: bit_index > 0", |meta| {
-        //     let condition = and::expr([
-        //         not::expr(meta.query_fixed(config.q_start, Rotation::cur())),
-        //         not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
-        //     ]);
+        meta.create_gate("BitstringTable: bit_index > 0", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(config.q_start, Rotation::cur())),
+                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     // Columns that do not change in the chunk of 3 contigious bytes.
-        //     for col in [
-        //         config.byte_idx_1,
-        //         config.byte_idx_2,
-        //         config.byte_idx_3,
-        //         config.byte_1,
-        //         config.byte_2,
-        //         config.byte_3,
-        //         config.bitstring_value,
-        //         config.is_reverse,
-        //         config.is_padding,
-        //     ] {
-        //         cb.require_equal(
-        //             "unchanged columns from 0 < bit_idx <= 23",
-        //             meta.query_advice(col, Rotation::cur()),
-        //             meta.query_advice(col, Rotation::prev()),
-        //         );
-        //     }
+            // Columns that do not change in the chunk of 3 contigious bytes.
+            for col in [
+                config.byte_idx_1,
+                config.byte_idx_2,
+                config.byte_idx_3,
+                config.byte_1,
+                config.byte_2,
+                config.byte_3,
+                config.bitstring_value,
+                config.is_reverse,
+                config.is_padding,
+            ] {
+                cb.require_equal(
+                    "unchanged columns from 0 < bit_idx <= 23",
+                    meta.query_advice(col, Rotation::cur()),
+                    meta.query_advice(col, Rotation::prev()),
+                );
+            }
 
-        //     // from_start transitions from 1 to 0 only once, i.e. delta is boolean
-        //     let delta = meta.query_advice(config.from_start, Rotation::prev())
-        //         - meta.query_advice(config.from_start, Rotation::cur());
-        //     cb.require_boolean("from_start delta is boolean", delta);
+            // from_start transitions from 1 to 0 only once, i.e. delta is boolean
+            let delta = meta.query_advice(config.from_start, Rotation::prev())
+                - meta.query_advice(config.from_start, Rotation::cur());
+            cb.require_boolean("from_start delta is boolean", delta);
 
-        //     cb.gate(condition)
-        // });
+            cb.gate(condition)
+        });
 
-        // witgen_debug
-        // meta.create_gate("BitstringTable: bitstring_value accumulation", |meta| {
-        //     let condition = not::expr(meta.query_advice(config.is_padding, Rotation::cur()));
+        meta.create_gate("BitstringTable: bitstring_value accumulation", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     let is_start = meta.query_fixed(config.q_start, Rotation::cur());
-        //     let is_end = meta.query_fixed(config.q_start, Rotation::next());
+            let is_start = meta.query_fixed(config.q_start, Rotation::cur());
+            let is_end = meta.query_fixed(config.q_start, Rotation::next());
 
-        //     // bit value is boolean.
-        //     cb.require_boolean(
-        //         "bit is boolean",
-        //         meta.query_advice(config.bit, Rotation::cur()),
-        //     );
+            // bit value is boolean.
+            cb.require_boolean(
+                "bit is boolean",
+                meta.query_advice(config.bit, Rotation::cur()),
+            );
 
-        //     // Columns from_start and until_end are boolean.
-        //     cb.require_boolean(
-        //         "from_start is boolean",
-        //         meta.query_advice(config.from_start, Rotation::cur()),
-        //     );
-        //     cb.require_boolean(
-        //         "until_end is boolean",
-        //         meta.query_advice(config.until_end, Rotation::cur()),
-        //     );
+            // Columns from_start and until_end are boolean.
+            cb.require_boolean(
+                "from_start is boolean",
+                meta.query_advice(config.from_start, Rotation::cur()),
+            );
+            cb.require_boolean(
+                "until_end is boolean",
+                meta.query_advice(config.until_end, Rotation::cur()),
+            );
 
-        //     // until_end transitions from 0 to 1 only once, i.e. delta is boolean
-        //     let delta = meta.query_advice(config.until_end, Rotation::next())
-        //         - meta.query_advice(config.until_end, Rotation::cur());
+            // until_end transitions from 0 to 1 only once, i.e. delta is boolean
+            let delta = meta.query_advice(config.until_end, Rotation::next())
+                - meta.query_advice(config.until_end, Rotation::cur());
 
-        //     cb.condition(is_end.expr(), |cb| {
-        //         cb.require_equal(
-        //             "if bit_index == 23: until_end == 1",
-        //             meta.query_advice(config.until_end, Rotation::cur()),
-        //             1.expr(),
-        //         );
-        //     });
-        //     cb.condition(not::expr(is_end.expr()), |cb| {
-        //         cb.require_boolean("until_end delta is boolean", delta);
-        //     });
+            /*
+            cb.condition(is_end.expr(), |cb| {
+                cb.require_equal(
+                    "if bit_index == 23: until_end == 1",
+                    meta.query_advice(config.until_end, Rotation::cur()),
+                    1.expr(),
+                );
+            });
+            */
+            cb.condition(not::expr(is_end.expr()), |cb| {
+                cb.require_boolean("until_end delta is boolean", delta);
+            });
 
-        //     // Constraints at meaningful bits.
-        //     let is_set = and::expr([
-        //         meta.query_advice(config.from_start, Rotation::cur()),
-        //         meta.query_advice(config.until_end, Rotation::cur()),
-        //     ]);
-        //     cb.condition(is_start.expr() * is_set.expr(), |cb| {
-        //         cb.require_equal(
-        //             "if is_start && is_set: bit == bitstring_value_acc",
-        //             meta.query_advice(config.bit, Rotation::cur()),
-        //             meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-        //         );
-        //         cb.require_equal(
-        //             "if is_start && is_set: bitstring_len == 1",
-        //             meta.query_advice(config.bitstring_len, Rotation::cur()),
-        //             1.expr(),
-        //         );
-        //     });
-        //     cb.condition(not::expr(is_start) * is_set, |cb| {
-        //         cb.require_equal(
-        //             "is_set: bitstring_value_acc == bitstring_value_acc::prev * 2 + bit",
-        //             meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-        //             meta.query_advice(config.bitstring_value_acc, Rotation::prev()) * 2.expr()
-        //                 + meta.query_advice(config.bit, Rotation::cur()),
-        //         );
-        //         cb.require_equal(
-        //             "is_set: bitstring_len == bitstring_len::prev + 1",
-        //             meta.query_advice(config.bitstring_len, Rotation::cur()),
-        //             meta.query_advice(config.bitstring_len, Rotation::prev()) + 1.expr(),
-        //         );
-        //     });
+            // Constraints at meaningful bits.
+            let is_set = and::expr([
+                meta.query_advice(config.from_start, Rotation::cur()),
+                meta.query_advice(config.until_end, Rotation::cur()),
+            ]);
+            cb.condition(is_start.expr() * is_set.expr(), |cb| {
+                cb.require_equal(
+                    "if is_start && is_set: bit == bitstring_value_acc",
+                    meta.query_advice(config.bit, Rotation::cur()),
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "if is_start && is_set: bitstring_len == 1",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                    1.expr(),
+                );
+            });
+            cb.condition(not::expr(is_start) * is_set, |cb| {
+                cb.require_equal(
+                    "is_set: bitstring_value_acc == bitstring_value_acc::prev * 2 + bit",
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
+                    meta.query_advice(config.bitstring_value_acc, Rotation::prev()) * 2.expr()
+                        + meta.query_advice(config.bit, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "is_set: bitstring_len == bitstring_len::prev + 1",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                    meta.query_advice(config.bitstring_len, Rotation::prev()) + 1.expr(),
+                );
+            });
 
-        //     // Constraints at bits to be ignored (at the start).
-        //     let is_ignored_start = not::expr(meta.query_advice(config.until_end, Rotation::cur()));
-        //     cb.condition(is_ignored_start, |cb| {
-        //         cb.require_zero(
-        //             "while until_end == 0: bitstring_len == 0",
-        //             meta.query_advice(config.bitstring_len, Rotation::cur()),
-        //         );
-        //         cb.require_zero(
-        //             "while until_end == 0: bitstring_value_acc == 0",
-        //             meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-        //         );
-        //     });
+            // Constraints at bits to be ignored (at the start).
+            let is_ignored_start = not::expr(meta.query_advice(config.until_end, Rotation::cur()));
+            cb.condition(is_ignored_start, |cb| {
+                cb.require_zero(
+                    "while until_end == 0: bitstring_len == 0",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "while until_end == 0: bitstring_value_acc == 0",
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
+                );
+            });
 
-        //     // Constraints at bits to be ignored (towards the end).
-        //     let is_ignored_end = not::expr(meta.query_advice(config.from_start, Rotation::cur()));
-        //     cb.condition(is_ignored_end, |cb| {
-        //         cb.require_equal(
-        //             "bitstring_len unchanged at the last ignored bits",
-        //             meta.query_advice(config.bitstring_len, Rotation::cur()),
-        //             meta.query_advice(config.bitstring_len, Rotation::prev()),
-        //         );
-        //         cb.require_equal(
-        //             "bitstring_value_acc unchanged at the last ignored bits",
-        //             meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
-        //             meta.query_advice(config.bitstring_value_acc, Rotation::prev()),
-        //         );
-        //     });
+            // Constraints at bits to be ignored (towards the end).
+            let is_ignored_end = not::expr(meta.query_advice(config.from_start, Rotation::cur()));
+            cb.condition(is_ignored_end, |cb| {
+                cb.require_equal(
+                    "bitstring_len unchanged at the last ignored bits",
+                    meta.query_advice(config.bitstring_len, Rotation::cur()),
+                    meta.query_advice(config.bitstring_len, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "bitstring_value_acc unchanged at the last ignored bits",
+                    meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
+                    meta.query_advice(config.bitstring_value_acc, Rotation::prev()),
+                );
+            });
 
-        //     cb.gate(condition)
-        // });
+            cb.gate(condition)
+        });
 
-        // witgen_debug
-        // meta.create_gate("BitstringTable: first row", |meta| {
-        //     let condition = meta.query_fixed(config.q_first, Rotation::cur());
+        meta.create_gate("BitstringTable: first row", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_fixed(config.q_first, Rotation::cur()),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     cb.require_zero(
-        //         "cannot start with padding",
-        //         meta.query_advice(config.is_padding, Rotation::cur()),
-        //     );
+            cb.require_zero(
+                "cannot start with padding",
+                meta.query_advice(config.is_padding, Rotation::cur()),
+            );
 
-        //     cb.gate(condition)
-        // });
+            cb.gate(condition)
+        });
 
-        // witgen_debug
-        // meta.create_gate("BitstringTable: padding", |meta| {
-        //     let condition = not::expr(meta.query_fixed(config.q_first, Rotation::cur()));
+        meta.create_gate("BitstringTable: padding", |meta| {
+            let condition = and::expr([
+                not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
+                meta.query_fixed(q_enable, Rotation::cur()),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     let (is_padding_curr, is_padding_prev) = (
-        //         meta.query_advice(config.is_padding, Rotation::cur()),
-        //         meta.query_advice(config.is_padding, Rotation::prev()),
-        //     );
+            let (is_padding_curr, is_padding_prev) = (
+                meta.query_advice(config.is_padding, Rotation::cur()),
+                meta.query_advice(config.is_padding, Rotation::prev()),
+            );
 
-        //     // padding is boolean
-        //     cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
+            // padding is boolean
+            cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
 
-        //     // padding transitions from 0 to 1 only once.
-        //     let delta = is_padding_curr - is_padding_prev;
-        //     cb.require_boolean("is_padding delta is boolean", delta);
+            // padding transitions from 0 to 1 only once.
+            let delta = is_padding_curr - is_padding_prev;
+            cb.require_boolean("is_padding delta is boolean", delta);
 
-        //     cb.gate(condition)
-        // });
+            cb.gate(condition)
+        });
 
         // witgen_debug
         // For every bitstring accumulation, the byte indices must be in the order in which
@@ -427,21 +432,22 @@ impl BitstringTable {
         // index. We need this check only for subsequent bitstrings after q_first=true.
         //
         // TODO: for a multi-block setup, the difference may be greater than 255.
-        // meta.lookup("BitstringTable: byte_idx_1 is increasing", |meta| {
-        //     let condition = and::expr([
-        //         meta.query_fixed(config.q_start, Rotation::cur()),
-        //         not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
-        //         not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
-        //     ]);
+        meta.lookup("BitstringTable: byte_idx_1 is increasing", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_fixed(config.q_start, Rotation::cur()),
+                not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
+                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+            ]);
 
-        //     let (byte_idx_1_curr, byte_idx_1_prev) = (
-        //         meta.query_advice(config.byte_idx_1, Rotation::cur()),
-        //         meta.query_advice(config.byte_idx_1, Rotation::prev()),
-        //     );
-        //     let byte_idx_delta = byte_idx_1_curr - byte_idx_1_prev;
+            let (byte_idx_1_curr, byte_idx_1_prev) = (
+                meta.query_advice(config.byte_idx_1, Rotation::cur()),
+                meta.query_advice(config.byte_idx_1, Rotation::prev()),
+            );
+            let byte_idx_delta = byte_idx_1_curr - byte_idx_1_prev;
 
-        //     vec![(condition * byte_idx_delta, u8_table.into())]
-        // });
+            vec![(condition * byte_idx_delta, u8_table.into())]
+        });
 
         debug_assert!(meta.degree() <= 9);
 
@@ -456,13 +462,30 @@ impl BitstringTable {
         witness_rows: &[ZstdWitnessRow<Fr>],
         k: u32,
     ) -> Result<(), Error> {
-        let mut offset: usize = 0;
         assert!(!witness_rows.is_empty());
 
         layouter.assign_region(
             || "Bitstring Accumulation Table",
             |mut region| {
+                let mut offset: usize = 0;
                 region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(Fr::one()))?;
+
+                for i in 0..(((1 << k) - 30) / 24) {
+                    for bit_idx in 0..24 {
+                        region.assign_fixed(
+                            || "bit_index",
+                            self.bit_index,
+                            24 * i + bit_idx,
+                            || Value::known(Fr::from(bit_idx as u64)),
+                        )?;
+                    }
+                    region.assign_fixed(
+                        || "q_start",
+                        self.q_start,
+                        24 * i,
+                        || Value::known(Fr::one()),
+                    )?;
+                }
 
                 // Multi-block assignment
                 for block in block_info_arr {
@@ -522,7 +545,7 @@ impl BitstringTable {
                         })
                         .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
 
-                    for (byte_offset, rows) in [
+                    for (_byte_offset, rows) in [
                         (fse_offset, fse_rows),
                         (sequence_data_offset, sequence_data_rows),
                     ]
@@ -642,20 +665,6 @@ impl BitstringTable {
                                     offset + bit_idx,
                                     || Value::known(Fr::from(curr_row.5 as u64)),
                                 )?;
-
-                                // Assign fixed columns
-                                region.assign_fixed(
-                                    || "bit_index",
-                                    self.bit_index,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(bit_idx as u64)),
-                                )?;
-                                region.assign_fixed(
-                                    || "q_start",
-                                    self.q_start,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from((bit_idx == 0) as u64)),
-                                )?;
                             }
 
                             offset += 24;
@@ -663,7 +672,15 @@ impl BitstringTable {
                     }
                 }
 
-                for idx in offset..(2u64.pow(k - 1) as usize) {
+                for idx in 0..offset {
+                    region.assign_advice(
+                        || "is_padding",
+                        self.is_padding,
+                        idx,
+                        || Value::known(Fr::zero()),
+                    )?;
+                }
+                for idx in offset..((1 << k) - 30) {
                     region.assign_advice(
                         || "is_padding",
                         self.is_padding,
