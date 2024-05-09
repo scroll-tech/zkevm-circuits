@@ -16,7 +16,7 @@ use zkevm_circuits::{
     util::Challenges,
 };
 use crate::aggregation::decoder::witgen;
-use witgen::{AddressTableRow, ZstdTag};
+use witgen::{AddressTableRow, ZstdTag, SequenceInfo, SequenceExec, SequenceExecInfo};
 use super::tables;
 use tables::SeqInstTable;
 
@@ -544,19 +544,271 @@ impl<F: Field> SeqExecConfig<F> {
         }
     }
 
-    /// TODO:
-    pub fn assign<'a>(
+    /// fill the rest region with padding rows
+    pub fn paddings<'a>(
         &self,
-        layouter: &mut impl Layouter<F>,
-        table_rows: impl Iterator<Item=&'a AddressTableRow> + Clone,
-        enabled_rows: usize,
+        region: &mut Region<F>,        
+        offset: usize,
+        till_offset: usize,
+        decoded_len: usize,
+        decoded_rlc: F,
+        padded_block_ind: u64,
     ) -> Result<(), Error>{
 
-        layouter.assign_region(
-            || "output region",
-            |mut region|{
-                Ok(())
+        for offset in offset..=till_offset {
+            // flush one more row for rotation next()
+            if offset != till_offset {
+                region.assign_fixed(
+                    ||"enable padding row",
+                    self.q_enabled, 
+                    offset, 
+                    ||Value::known(F::one())
+                )?;
             }
-        )
-    }    
+
+            for (col, val) in [
+                (self.block_index, F::from(padded_block_ind)),
+                (self.decoded_len, F::from(decoded_len as u64)),
+                (self.decoded_rlc, decoded_rlc),
+            ]{
+                region.assign_advice(||"set padding rows", 
+                    col, 
+                    offset,
+                    ||Value::known(val),
+                )?;
+            }
+
+
+            for col in [
+
+            ] {
+                region.assign_advice(||"flush padding rows", 
+                    col, 
+                    offset,
+                    ||Value::known(F::zero()),
+                )?;
+            }
+        }
+
+        Ok(())
+
+    }
+
+    /// assign a single block from current offset
+    /// and return the offset below the last used row
+    pub fn assign_block<'a>(
+        &self,
+        region: &mut Region<F>,
+        mut offset: usize,
+        mut decoded_len: usize,
+        mut decoded_rlc: F,
+        block_ind: u64,
+        literals: &[u64],
+        seq_info: &SequenceInfo,
+        seq_exec_infos: impl Iterator<Item=&'a SequenceExec>,
+        // all of the decompressed bytes, not only current block
+        decompressed_bytes: &[u8],
+    ) -> Result<(usize, usize, F), Error>{
+
+        for SequenceExec(inst_ind, exec_info) in seq_exec_infos {
+
+            let base_rows = [
+                (self.block_index, F::from(block_ind)),
+                (self.seq_index, F::from(*inst_ind as u64)),
+                (
+                    self.s_last_lit_cp_phase, 
+                    if *inst_ind > seq_info.num_sequences { 
+                        F::one()
+                    }else {
+                        F::zero()
+                    },
+                ),
+            ];
+
+            let (is_literal, r) = match exec_info {
+                SequenceExecInfo::LiteralCopy(r) => (true, r),
+                SequenceExecInfo::BackRef(r) => (false, r),
+            };
+
+            for (i, pos) in r.clone().enumerate() {
+                decoded_len += 1;
+                // TODO: set rlc    
+
+                let decodes = [
+                    (
+                        self.decoded_len,
+                        F::from(decoded_len as u64),
+
+                    ),
+                    (
+                        self.decoded_byte, 
+                        F::from(
+                            if is_literal {
+                                literals[pos as usize]
+                            } else {
+                                decompressed_bytes[pos as usize] as u64
+                            }
+                        ),
+                    ),
+                    (
+                        self.decoded_rlc,
+                        decoded_rlc,
+                    )
+                ];
+
+                for (col, val) in base_rows.clone()
+                    .into_iter()
+                    .chain(decodes)
+                    .chain(
+                        if is_literal {
+                            [
+                                (self.s_lit_cp_phase, F::one()),
+                                (self.s_back_ref_phase, F::zero()),
+                                (self.literal_pos, F::from(pos as u64)),
+                                (self.backref_pos, F::zero()),
+                                (self.backref_progress, F::zero()),
+                            ]
+                        } else {
+                            [
+                                (self.s_lit_cp_phase, F::one()),
+                                (self.s_back_ref_phase, F::zero()),
+                                (self.literal_pos, F::from(pos as u64)),
+                                (self.backref_pos, F::from((pos - i) as u64)),
+                                (self.backref_progress, F::from(i as u64)),
+                            ]
+                        }
+                    ){
+                        region.assign_advice(
+                            ||"set output region", 
+                            col, offset,
+                            ||Value::known(val),
+                        )?;
+
+                    }
+                region.assign_fixed(
+                    ||"enable row",
+                    self.q_enabled, 
+                    offset, 
+                    ||Value::known(F::one())
+                )?;
+                offset += 1;
+            }
+        }
+
+        Ok((offset, decoded_len, decoded_rlc))
+    }  
+}
+
+
+#[cfg(test)]
+mod tests {
+
+    use halo2_proofs::{
+        circuit::SimpleFloorPlanner,
+        dev::MockProver,
+        halo2curves::bn256::Fr,
+        plonk::Circuit,
+    };
+    use super::*;
+    use zkevm_circuits::util::MockChallenges;
+
+    #[derive(Clone, Debug)]
+    struct SeqExecMock {
+        outputs: Vec<u8>,
+        literal: Vec<u8>,
+        seq_conf: SequenceInfo,
+        exec_trace: Vec<SequenceExec>,
+    }
+
+    impl Circuit<Fr> for SeqExecMock {
+        type Config = (SeqExecConfig<Fr>, MockChallenges);
+        type FloorPlanner = SimpleFloorPlanner;
+        fn without_witnesses(&self) -> Self {
+            unimplemented!()
+        }
+    
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+
+            let const_col = meta.fixed_column();
+            meta.enable_constant(const_col);
+
+            let literal_tbl = LiteralTable::construct(
+                [0;6].map(|_|meta.advice_column())
+            );
+
+            let seq_cfg = SequenceConfig::construct(
+                [0;3].map(|_|meta.advice_column())
+            );
+
+            let inst_tbl = SeqInstTable::configure(meta);
+
+            let chng_mock = MockChallenges::construct(meta);
+            let chng = chng_mock.exprs(meta);
+
+            (SeqExecConfig::configure(
+                meta,
+                &chng,
+                &literal_tbl,
+                &inst_tbl,
+                &seq_cfg,
+            ), chng_mock)
+        }
+    
+        fn synthesize(
+            &self,
+            (config, _): Self::Config,
+            mut layouter: impl Layouter<Fr>,
+        ) -> Result<(), Error> {
+
+            Ok(())
+        }
+    }
+
+    fn build_table_row(samples: &[[u64;5]]) -> Vec<AddressTableRow> {
+        let mut ret = Vec::<AddressTableRow>::new();
+
+        for sample in samples {
+            let mut new_item = AddressTableRow {
+                cooked_match_offset: sample[0],
+                literal_length: sample[1],
+                repeated_offset1: sample[2],
+                repeated_offset2: sample[3],
+                repeated_offset3: sample[4],
+                actual_offset: sample[2],
+                ..Default::default()
+            };
+    
+            if let Some(old_item) = ret.last() {
+                new_item.instruction_idx = old_item.instruction_idx + 1;
+                new_item.literal_length_acc = old_item.literal_length_acc + sample[1];
+            } else {
+                new_item.literal_length_acc = sample[1];
+            }
+            
+            ret.push(new_item);
+        }
+
+        ret
+    }
+
+    #[test]
+    fn seq_exec_to_output_region(){
+
+        // example comes from zstd's spec
+        let circuit = SeqExecMock{
+            outputs: Vec::new(),
+            literal: Vec::new(),
+            seq_conf: SequenceInfo {
+                num_sequences: 2,
+                block_idx: 1,
+                ..Default::default()
+            },
+            exec_trace: Vec::new(),
+        };
+
+        let k = 12;
+        let mock_prover = MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
+
+    }
 }
