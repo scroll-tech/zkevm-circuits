@@ -442,6 +442,40 @@ pub struct AddressTableRow {
     pub actual_offset: u64,
 }
 
+impl AddressTableRow {
+
+    /// a debug helper, input datas in the form of example in
+    /// zstd spec: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#repeat-offsets
+    /// i.e. [offset, literal, rep_1, rep_2, rep_3]
+    #[cfg(test)]
+    pub fn mock_samples(samples: &[[u64;5]]) -> Vec<Self> {
+        let mut ret = Vec::<Self>::new();
+    
+        for sample in samples {
+            let mut new_item = Self {
+                cooked_match_offset: sample[0],
+                literal_length: sample[1],
+                repeated_offset1: sample[2],
+                repeated_offset2: sample[3],
+                repeated_offset3: sample[4],
+                actual_offset: sample[2],
+                ..Default::default()
+            };
+    
+            if let Some(old_item) = ret.last() {
+                new_item.instruction_idx = old_item.instruction_idx + 1;
+                new_item.literal_length_acc = old_item.literal_length_acc + sample[1];
+            } else {
+                new_item.literal_length_acc = sample[1];
+            }
+            
+            ret.push(new_item);
+        }
+    
+        ret
+    }    
+}
+
 /// Data for BL and Number of Bits for a state in LLT, CMOT and MLT
 #[derive(Clone, Debug)]
 pub struct SequenceFixedStateActionTable {

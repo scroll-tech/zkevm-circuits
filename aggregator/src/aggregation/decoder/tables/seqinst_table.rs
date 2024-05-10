@@ -840,7 +840,6 @@ impl<F: Field> SeqInstTable<F> {
 
 }
 
-
 #[cfg(test)]
 mod tests {
 
@@ -886,39 +885,12 @@ mod tests {
         }
     }
 
-    fn build_table_row(samples: &[[u64;5]]) -> Vec<AddressTableRow> {
-        let mut ret = Vec::<AddressTableRow>::new();
-
-        for sample in samples {
-            let mut new_item = AddressTableRow {
-                cooked_match_offset: sample[0],
-                literal_length: sample[1],
-                repeated_offset1: sample[2],
-                repeated_offset2: sample[3],
-                repeated_offset3: sample[4],
-                actual_offset: sample[2],
-                ..Default::default()
-            };
-    
-            if let Some(old_item) = ret.last() {
-                new_item.instruction_idx = old_item.instruction_idx + 1;
-                new_item.literal_length_acc = old_item.literal_length_acc + sample[1];
-            } else {
-                new_item.literal_length_acc = sample[1];
-            }
-            
-            ret.push(new_item);
-        }
-
-        ret
-    }
-
     #[test]
     fn seqinst_table_gates(){
 
         // example comes from zstd's spec
         let circuit = SeqTable(
-            build_table_row(
+            AddressTableRow::mock_samples(
                 &[
                     [1114, 11, 1111, 1, 4],
                     [1, 22, 1111, 1, 4],
