@@ -209,6 +209,8 @@ type AggregateBlockResult<F> = (
     Vec<u64>,
     Vec<u64>,
     [FseAuxiliaryTableData; 3], // 3 sequence section FSE tables
+    Vec<AddressTableRow>,
+    Vec<SequenceExec>,
 );
 fn process_block<F: Field>(
     src: &[u8],
@@ -224,7 +226,7 @@ fn process_block<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     let last_row = rows.last().expect("last row expected to exist");
-    let (_byte_offset, rows, literals, lstream_len, aux_data, sequence_info, fse_aux_tables) =
+    let (_byte_offset, rows, literals, lstream_len, aux_data, sequence_info, fse_aux_tables, address_table_rows, sequence_exec_info) =
         match block_info.block_type {
             BlockType::ZstdCompressedBlock => process_block_zstd(
                 src,
@@ -248,6 +250,8 @@ fn process_block<F: Field>(
         lstream_len,
         aux_data,
         fse_aux_tables,
+        address_table_rows,
+        sequence_exec_info,
     )
 }
 
@@ -362,6 +366,8 @@ type BlockProcessingResult<F> = (
     Vec<u64>,
     SequenceInfo,
     [FseAuxiliaryTableData; 3], // 3 sequence section FSE tables
+    Vec<AddressTableRow>,
+    Vec<SequenceExec>,
 );
 
 type LiteralsBlockResult<F> = (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>);
@@ -516,6 +522,8 @@ fn process_block_zstd<F: Field>(
         ],
         sequence_info,
         fse_aux_tables,
+        address_table_rows,
+        sequence_exec_info,
     )
 }
 
@@ -1804,6 +1812,10 @@ pub type MultiBlockProcessResult<F> = (
     Vec<FseAuxiliaryTableData>,
     Vec<BlockInfo>,
     Vec<SequenceInfo>,
+    // TODO: handle multi-block.
+    Vec<Vec<AddressTableRow>>,
+    // TODO: handle multi-block.
+    Vec<Vec<SequenceExec>>,
 );
 
 /// Process a slice of bytes into decompression circuit witness rows
@@ -1814,6 +1826,10 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     let mut fse_aux_tables: Vec<FseAuxiliaryTableData> = vec![];
     let mut block_info_arr: Vec<BlockInfo> = vec![];
     let mut sequence_info_arr: Vec<SequenceInfo> = vec![];
+    // TODO: handle multi-block
+    let mut address_table_arr: Vec<Vec<AddressTableRow>> = vec![];
+    // TODO: handle multi-block
+    let mut sequence_exec_info_arr: Vec<Vec<SequenceExec>> = vec![];
     let byte_offset = 0;
 
     // witgen_debug
@@ -1840,6 +1856,8 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             lstream_lens,
             pipeline_data,
             new_fse_aux_tables,
+            address_table_rows,
+            sequence_exec_info,
         ) = process_block::<F>(
             src,
             block_idx,
@@ -1858,6 +1876,8 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
 
         block_info_arr.push(block_info);
         sequence_info_arr.push(sequence_info);
+        address_table_arr.push(address_table_rows);
+        sequence_exec_info_arr.push(sequence_exec_info);
 
         if block_info.is_last_block {
             // TODO: Recover this assertion after the sequence section decoding is completed.
@@ -1908,6 +1928,9 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
         fse_aux_tables,
         block_info_arr,
         sequence_info_arr,
+        // TODO: handle multi-block.
+        address_table_arr,
+        sequence_exec_info_arr,
     )
 }
 
@@ -2045,6 +2068,8 @@ mod tests {
             _fse_aux_tables,
             block_info_arr,
             sequence_info_arr,
+            _,
+            _,
         ) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
 
         Ok(())
