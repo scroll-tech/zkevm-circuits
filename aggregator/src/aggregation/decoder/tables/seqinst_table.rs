@@ -104,11 +104,16 @@ pub struct SeqInstTable<F: Field> {
     rep_offset_2: Column<Advice>,
     rep_offset_3: Column<Advice>,
 
-    // helper cols for "zero testing". i.e for a cell with
-    // value v, the value in corresponding helper h is 1/v
-    // (if v is not zero) or 0 (if v is zero), and we constraint
-    // v * (1- v * h) == 0. We would have a boolean flag 
-    // from h * v
+    // 3 mode on update ref table, corresponding to
+    // 1: offset = 1 (if lt_len != 0)
+    ref_update_mode_1: Column<Advice>,
+    // 2: offset = 2 or offset = 1 (if lt_len == 0)
+    ref_update_mode_2: Column<Advice>,
+    // 3: offset = 3 or offset = 2 (if lt_len == 0)
+    ref_update_mode_3: Column<Advice>,
+    // 4: special case of offset = 3 (if lt_len == 0)
+    ref_update_mode_4: Column<Advice>,
+
 
     // detect if literal_len is zero
     literal_is_zero: IsZeroConfig<F>,
@@ -119,7 +124,7 @@ pub struct SeqInstTable<F: Field> {
     offset_is_1: IsEqualConfig<F>,
     offset_is_2: IsEqualConfig<F>,
     offset_is_3: IsEqualConfig<F>,
-     
+    
     // detect if rep_offset_1 is 0 (indicate the data
     // is corrupt)
     ref_offset_1_is_zero: IsZeroConfig<F>,
@@ -267,6 +272,10 @@ impl<F: Field> SeqInstTable<F> {
         let rep_offset_1 = meta.advice_column();
         let rep_offset_2 = meta.advice_column();
         let rep_offset_3 = meta.advice_column();
+        let ref_update_mode_1 = meta.advice_column();
+        let ref_update_mode_2 = meta.advice_column();
+        let ref_update_mode_3 = meta.advice_column();
+        let ref_update_mode_4 = meta.advice_column();
 
         let [literal_is_zero, ref_offset_1_is_zero] = 
         [literal_len, rep_offset_1].map(|col|{
@@ -387,18 +396,52 @@ impl<F: Field> SeqInstTable<F> {
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
+        meta.create_gate("offset update mode", |meta|{
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal("ref update mode 1", 
+                and::expr([
+                    not::expr(literal_is_zero.expr()),
+                    offset_is_1.expr(),
+                ]), 
+                meta.query_advice(ref_update_mode_1, Rotation::cur()),
+            );
+
+            cb.require_equal("ref update mode 2", 
+                select::expr(
+                    literal_is_zero.expr(),
+                    offset_is_1.expr(),
+                    offset_is_2.expr(),
+                ),
+                meta.query_advice(ref_update_mode_2, Rotation::cur()),
+            );
+
+            cb.require_equal("ref update mode 3", 
+                select::expr(
+                    literal_is_zero.expr(),
+                    offset_is_2.expr(),
+                    offset_is_3.expr(),
+                ),
+                meta.query_advice(ref_update_mode_3, Rotation::cur()),
+            );
+
+            cb.require_equal("ref update mode 4", 
+                and::expr([
+                    literal_is_zero.expr(),
+                    offset_is_3.expr(),
+                ]),
+                meta.query_advice(ref_update_mode_4, Rotation::cur()),
+            );            
+
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+        });
+
         // offset is in-section (not s_beginning)
         meta.create_gate("offset reference", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
             let offset_val = meta.query_advice(offset, Rotation::cur());
             let offset = meta.query_advice(match_offset, Rotation::cur());
-
-            let s_is_offset_ref = or::expr([
-                offset_is_1.expr(),
-                offset_is_2.expr(),
-                offset_is_3.expr(),
-            ]);
 
             let [rep_offset_1_prev, rep_offset_2_prev, rep_offset_3_prev]
              = [
@@ -414,43 +457,31 @@ impl<F: Field> SeqInstTable<F> {
                 rep_offset_3,
             ].map(|col|meta.query_advice(col, Rotation::cur()));
 
-            // in ref offset case, the actual offset val come from
-            // ref offset table (exception case rasised if literal len 
-            // is zero)
-            let offset_ref_val_on_literal_zero = 
-                offset_is_3.expr() * (rep_offset_1_prev.expr() - 1.expr())
-                + offset_is_1.expr() * rep_offset_2_prev.expr()
-                + offset_is_2.expr() * rep_offset_3_prev.expr();
-            let offset_ref_val = 
-                offset_is_1.expr() * rep_offset_1_prev.expr()
-                + offset_is_2.expr() * rep_offset_2_prev.expr()
-                + offset_is_3.expr() * rep_offset_3_prev.expr();
+            let ref_update_mode_1 = meta.query_advice(ref_update_mode_1, Rotation::cur());
+            let ref_update_mode_2 = meta.query_advice(ref_update_mode_2, Rotation::cur());
+            let ref_update_mode_3 = meta.query_advice(ref_update_mode_3, Rotation::cur());
+            let ref_update_mode_4 = meta.query_advice(ref_update_mode_4, Rotation::cur());
+            let s_is_offset_ref = ref_update_mode_1.expr()
+                + ref_update_mode_2.expr()
+                + ref_update_mode_3.expr()
+                + ref_update_mode_4.expr();
 
-            let offset_ref_val = select::expr(
-                literal_is_zero.expr(),
-                offset_ref_val_on_literal_zero,
-                offset_ref_val,
-            );
-
-            cb.require_equal("offset value", 
-                select::expr(
-                    s_is_offset_ref.expr(),
-                    offset_ref_val,
-                    offset.expr() - 3.expr(),
-                ), 
-                offset_val.expr()
-            );
             // and ref in offset_1 is updated by current value 
             cb.require_equal("set offset 0 to offset val", 
                 offset_val.expr(), 
                 rep_offset_1.expr(),
             );
 
-            // following we updated table for rep_offset_2/3
+            // following we ref updated table
 
             // for no-ref ref offset table 2/3 is
-            // updated with a "shift" nature
+            // updated with a "shift" nature, and 1 is cooked_offset - 3
             cb.condition(not::expr(s_is_offset_ref.expr()),|cb|{
+                cb.require_equal("offset is cooked_val - 3", 
+                    offset.expr() - 3.expr(),
+                    rep_offset_1.expr(),
+                );
+
                 cb.require_equal("shift 1 -> 2", 
                     rep_offset_1_prev.expr(), 
                     rep_offset_2.expr(),
@@ -461,15 +492,14 @@ impl<F: Field> SeqInstTable<F> {
                 );              
             });
 
-            // in ref offset case (offset is 1-3), the table is
-            // updated by more complificant fashion
+            // update mode 1 (offset == 1 and lit_len != 0)
             cb.condition(
-                and::expr([
-                    not::expr(literal_is_zero.expr()),
-                    offset_is_1.expr(),
-                ]),
+                ref_update_mode_1.expr(),
                 |cb|{
-
+                    cb.require_equal("copy offset 1 for ref 1", 
+                        rep_offset_1_prev.expr(), 
+                        rep_offset_1.expr(),
+                    );
                     cb.require_equal("copy offset 2 for ref 1",
                         rep_offset_2_prev.expr(), 
                         rep_offset_2.expr(),
@@ -480,14 +510,14 @@ impl<F: Field> SeqInstTable<F> {
                     );
                 }
             );
+            // update mode 2 (offset == 2 / offet == 1 while lit_len != 0)
             cb.condition(
-                select::expr(
-                    literal_is_zero.expr(),
-                    offset_is_1.expr(),
-                    offset_is_2.expr(),
-                ), 
+                ref_update_mode_2.expr(), 
                 |cb|{
-
+                    cb.require_equal("swap 1&2 for ref 2", 
+                        rep_offset_2_prev.expr(), 
+                        rep_offset_1.expr(),
+                    );
                     cb.require_equal("swap 1&2 for ref 2", 
                         rep_offset_1_prev.expr(), 
                         rep_offset_2.expr(),
@@ -498,16 +528,14 @@ impl<F: Field> SeqInstTable<F> {
                     );
                 }
             );
+            // update mode 3 (offset == 3 / offet == 2 while lit_len != 0)
             cb.condition(
-                select::expr(
-                    literal_is_zero.expr(),
-                    // this equal to "or" since they are exclusive
-                    // this trick is used to save a degree
-                    offset_is_2.expr() + offset_is_3.expr(),
-                    offset_is_3.expr(),
-                ),
+                ref_update_mode_3.expr(),
                 |cb|{
-
+                    cb.require_equal("rotate 3-1 for ref 3", 
+                        rep_offset_3_prev.expr(), 
+                        rep_offset_1.expr(),
+                    );
                     cb.require_equal("rotate 3-1 for ref 3", 
                         rep_offset_1_prev.expr(), 
                         rep_offset_2.expr(),
@@ -518,18 +546,35 @@ impl<F: Field> SeqInstTable<F> {
                     ); 
                 }
             );
-
-            cb.condition(literal_is_zero.expr(), |cb|{
-                cb.require_zero("data must not corrupt", 
-                    ref_offset_1_is_zero.expr(),
-                )
-            });
+            // update mode 4 (offset == 3 while lit_len == 0)
+            cb.condition(
+                ref_update_mode_4.expr(),
+                |cb|{
+                    cb.require_zero("data must not corrupt", 
+                        ref_offset_1_is_zero.expr(),
+                    );              
+                    cb.require_equal("take ref 1 and minus 1 for ref 4", 
+                        rep_offset_1_prev.expr() - 1.expr(), 
+                        rep_offset_1.expr(),
+                    );
+                    cb.require_equal("rotate 3-1 for ref 4", 
+                        rep_offset_1_prev.expr(), 
+                        rep_offset_2.expr(),
+                    );
+                    cb.require_equal("rotate 3-1 for ref 4", 
+                        rep_offset_2_prev.expr(), 
+                        rep_offset_3.expr(),
+                    ); 
+                }
+            );
 
             cb.gate(
                 meta.query_fixed(q_enabled, Rotation::cur())* 
                 not::expr(meta.query_advice(s_beginning, Rotation::cur())),
             )
         });
+
+        assert!(meta.degree() <= 5, "degree {} exceed", meta.degree());
 
         // the beginning of following rows must be constrainted
         meta.enable_equality(block_index);
@@ -558,6 +603,10 @@ impl<F: Field> SeqInstTable<F> {
             literal_is_zero,
             seq_index_is_n_seq,
             ref_offset_1_is_zero,
+            ref_update_mode_1,
+            ref_update_mode_2,
+            ref_update_mode_3,
+            ref_update_mode_4,
         }
     }
 
@@ -588,6 +637,10 @@ impl<F: Field> SeqInstTable<F> {
             self.acc_literal_len,
             self.offset,
             self.seq_index,
+            self.ref_update_mode_1,
+            self.ref_update_mode_2,
+            self.ref_update_mode_3,
+            self.ref_update_mode_4,
         ] {
             region.assign_advice(
                 ||"padding values", 
@@ -685,28 +738,16 @@ impl<F: Field> SeqInstTable<F> {
                 || Value::known(F::one()),
             )?;
 
-            let offset_val = match table_row.cooked_match_offset {
+            let ref_update_mode = match table_row.cooked_match_offset {
                 0 => panic!("invalid cooked offset"),
-                1 => if table_row.literal_length == 0 {
-                    offset_table[1]
-                } else {
-                    offset_table[0]
-                },
-                2 => if table_row.literal_length == 0 {
-                    offset_table[2]
-                } else {
-                    offset_table[1]
-                },
-                3 => if table_row.literal_length == 0 {
-                    offset_table[0] - 1
-                } else {
-                    offset_table[2]
-                },
-                val => val - 3,
+                1 => if table_row.literal_length == 0 {2} else {1},
+                2 => if table_row.literal_length == 0 {3} else {2},
+                3 => if table_row.literal_length == 0 {4} else {3},
+                _ => 0,
             };
+
             acc_literal_len += table_row.literal_length;
 
-            assert_eq!(offset_val, table_row.actual_offset);
             offset_table[0] = table_row.repeated_offset1;
             offset_table[1] = table_row.repeated_offset2;
             offset_table[2] = table_row.repeated_offset3;
@@ -720,10 +761,14 @@ impl<F: Field> SeqInstTable<F> {
                 ("moff", self.match_offset, F::from(table_row.cooked_match_offset)),
                 ("llen", self.literal_len, F::from(table_row.literal_length)),
                 ("llen_acc", self.acc_literal_len, F::from(acc_literal_len)),
-                ("offset", self.offset, F::from(offset_val)),
+                ("offset", self.offset, F::from(table_row.actual_offset)),
                 ("seq ind", self.seq_index, F::from(seq_index)),
                 ("block ind", self.block_index, F::from(block_ind)),
                 ("n_seq", self.n_seq, F::from(n_seq as u64)),
+                ("ref update mode", self.ref_update_mode_1, if ref_update_mode == 1 { F::one()} else {F::zero()}),
+                ("ref update mode", self.ref_update_mode_2, if ref_update_mode == 2 { F::one()} else {F::zero()}),
+                ("ref update mode", self.ref_update_mode_3, if ref_update_mode == 3 { F::one()} else {F::zero()}),
+                ("ref update mode", self.ref_update_mode_4, if ref_update_mode == 4 { F::one()} else {F::zero()}),
             ] {
                 region.assign_advice(
                     ||name, col, offset, ||Value::known(val)
