@@ -14,8 +14,11 @@ below describle three parts that implementation involves.
 ## EVM circuit
   - `MCopyGadget` is responsible for mcopy gadget constraints in evm circuit side. concrete constraints list as below
     - stack read lookups for `dst_offset`, `src_offset`, `length`
-    - constrain memory source and destination address expansion correctly
-    - 
+    - constrain memory source and destination address expansion correctly, this is by `MemoryExpansionGadget` sub gadget constructed with `memory_src_address` plus `memory_dest_address`.
+    - constrain `memory_copier_gas` and total gas cost transition, for mcopy, there are both constant gas cost and dynamic gas cost.
+    - lookup copy table when actual copy length > 0,copy circuit is responsible for validating copy table is set correctly. special case for  length == 0, the copy event resulting in rw counter increasing number (`copy_rwc_inc`) should be zero.
+    - `memory_word_size` transition: memory expansion gadget calculates the greater `memory_word_size` (max(src_addr_expansion, dest_addr_expansion)) expansion and transition to it. 
+    - other trivial constraint & state transition, refer to code  `MCopyGadget` gadget code details.
 
 ## Copy Circuit
   - TODO
