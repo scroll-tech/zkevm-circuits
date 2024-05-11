@@ -19,10 +19,20 @@ below describle three parts that implementation involves.
     - lookup copy table when actual copy length > 0,copy circuit is responsible for validating copy table is set correctly. special case for  length == 0, the copy event resulting in rw counter increasing number (`copy_rwc_inc`) should be zero.
     - `memory_word_size` transition: memory expansion gadget calculates the greater `memory_word_size` (max(src_addr_expansion, dest_addr_expansion)) expansion and transition to it. 
     - other trivial constraint & state transition, refer to code  `MCopyGadget` gadget code details.
+  - error case:
+    - TODO:
+    - todo:
+
 
 ## Copy Circuit
-  - TODO
-  - TODO
+  to support mcopy, copy circuit make some changes. here don't intend to describle how entire copy circuit works but only focus on changes regarding mcopy.
+  - add new column `is_memory_copy`indicating if current event is mcopy(memory --> memory copy) case. constrain it is boolean type.
+  - add new gadget `is_id_unchange` indicating if current row and next row have same id, in other words, checking src_id == dst_id. it is used for `is_memory_copy` constraint.
+  - TODO: rw_counter
+  - TODO: is_memory_copy
+  - TODO: 
+
+
 
 
 
