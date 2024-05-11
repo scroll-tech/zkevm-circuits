@@ -395,15 +395,23 @@ pub struct BitstreamReadRow {
     /// Idx of sequence instruction
     pub seq_idx: usize,
     /// The states (LLT, MLT, MOT) at this row
-    pub states: [bool; 3],
+    pub states: [u64; 3],
     /// The symbols emitted at this state (LLT, MLT, MOT)
-    pub symbols: [bool; 3],
+    pub symbols: [u64; 3],
     /// The values computed for literal length, match length and match offset.
     pub values: [u64; 3],
     /// The baseline value associated with this state.
     pub baseline: u64,
     /// Whether current byte is completely covered in a multi-byte packing scheme
     pub is_nil: bool,
+    /// Indicate which exact state is the bitstring value is for
+    /// 1. MOT Code to Value
+    /// 2. MLT Code to Value
+    /// 3. LLT Code to Value
+    /// 4. LLT FSE update
+    /// 5. MLT FSE update
+    /// 6. MOT FSE update
+    pub is_update_state: u64,
 }
 
 /// Sequence data is interleaved with 6 bitstreams. Each producing a different type of value.

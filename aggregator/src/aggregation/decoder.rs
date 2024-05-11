@@ -67,8 +67,6 @@ pub struct DecoderConfig {
     sequences_header_decoder: SequencesHeaderDecoder,
     /// Config for reading and decoding bitstreams.
     bitstream_decoder: BitstreamDecoder,
-
-    // witgen_debug
     /// Config established while recovering the FSE table.
     fse_decoder: FseDecoder,
     /// Config required while applying the FSE tables on the Sequences data.
@@ -92,7 +90,7 @@ pub struct DecoderConfig {
     // /// Helper table in the "output" region for accumulating the result of executing sequences.
     // /// TODO(enable): sequence_execution_table: SequenceExecutionTable,
 
-    // /// Fixed lookups table.
+    /// Fixed lookups table.
     fixed_table: FixedTable,
 }
 
@@ -190,11 +188,8 @@ struct BlockConfig {
     is_block: Column<Advice>,
     /// Number of sequences decoded from the sequences section header in the block.
     num_sequences: Column<Advice>,
-
-    // witgen_debug
     /// Helper gadget to know if the number of sequences is 0.
     is_empty_sequences: IsEqualConfig<Fr>,
-
     /// For sequence decoding, the tag=ZstdBlockSequenceHeader bytes tell us the Compression_Mode
     /// utilised for Literals Lengths, Match Offsets and Match Lengths. We expect only 2
     /// possibilities:
@@ -216,7 +211,6 @@ impl BlockConfig {
             is_last_block: meta.advice_column(),
             is_block: meta.advice_column(),
             num_sequences,
-            // witgen_debug
             is_empty_sequences: IsEqualChip::configure(
                 meta,
                 |meta| meta.query_fixed(q_enable, Rotation::cur()),
@@ -273,8 +267,6 @@ impl BlockConfig {
             ),
         )
     }
-
-    // witgen_debug
     fn is_empty_sequences(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -521,10 +513,12 @@ impl BitstreamDecoder {
             is_nb0: meta.advice_column(),
             start_unchanged: IsEqualChip::configure(
                 meta,
-                |meta| and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                ]),
+                |meta| {
+                    and::expr([
+                        meta.query_fixed(q_enable, Rotation::cur()),
+                        not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                    ])
+                },
                 |meta| meta.query_advice(bit_index_start, Rotation::prev()),
                 |meta| meta.query_advice(bit_index_start, Rotation::cur()),
             ),
@@ -737,17 +731,17 @@ impl FseDecoder {
             * invert_of_2
     }
 
-    fn is_mlt(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+    fn is_mot(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         let table_kind = meta.query_advice(self.table_kind, rotation);
         (table_kind.expr() - FseTableKind::LLT.expr())
-            * (FseTableKind::MOT.expr() - table_kind.expr())
+            * (FseTableKind::MLT.expr() - table_kind.expr())
     }
 
-    fn is_mot(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+    fn is_mlt(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
         let table_kind = meta.query_advice(self.table_kind, rotation);
         let invert_of_2 = Fr::from(2).invert().expect("infallible");
         (table_kind.expr() - FseTableKind::LLT.expr())
-            * (table_kind.expr() - FseTableKind::MLT.expr())
+            * (table_kind.expr() - FseTableKind::MOT.expr())
             * invert_of_2
     }
 
@@ -973,8 +967,6 @@ impl DecoderConfig {
             meta.advice_column(),
             meta.advice_column(),
         );
-
-        // witgen_debug
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, q_enable, range8, range16);
         let bitstring_table = BitstringTable::configure(meta, q_enable, u8_table);
@@ -992,8 +984,6 @@ impl DecoderConfig {
         // Peripheral configs
         let tag_config = TagConfig::configure(meta, q_enable);
         let block_config = BlockConfig::configure(meta, q_enable);
-
-        // witgen_debug
         let sequences_header_decoder =
             SequencesHeaderDecoder::configure(meta, byte, q_enable, u8_table);
         let bitstream_decoder = BitstreamDecoder::configure(meta, q_enable, q_first, u8_table);
@@ -1049,7 +1039,6 @@ impl DecoderConfig {
 
             // TODO(enable): sequence_instruction_table,
             // TODO(enable): sequence_execution_table,
-
             fixed_table,
         };
 
@@ -2190,7 +2179,9 @@ impl DecoderConfig {
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
-                    not::expr(meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur())),
+                    not::expr(
+                        meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
+                    ),
                 ]);
 
                 let mut cb = BaseConstraintBuilder::default();
@@ -2518,7 +2509,9 @@ impl DecoderConfig {
                     not::expr(
                         meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur()),
                     ),
-                    not::expr(meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur())),
+                    not::expr(
+                        meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
+                    ),
                 ]);
 
                 let (table_size, probability_acc, value_read, value_decoded, num_bits) = (
@@ -2657,558 +2650,558 @@ impl DecoderConfig {
             },
         );
 
-        // witgen_debug
-        // meta.lookup_any(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (interleaved order)",
-        //     |meta| {
-        //         // We want to check for the interleaved order within the SequencesData section
-        //         // whenever we are reading a bitstring. We skip the first row of the
-        //         // tag (is_change=true) since that is guaranteed to be the sentinel
-        //         // bitstring. We also skip the row where we don't read a bitstring
-        //         // (is_nil=true).
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
-        //             config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-        //         ]);
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (interleaved order)",
+            |meta| {
+                // We want to check for the interleaved order within the SequencesData section
+                // whenever we are reading a bitstring. We skip the first row of the
+                // tag (is_change=true) since that is guaranteed to be the sentinel
+                // bitstring. We also skip the row where we don't read a bitstring
+                // (is_nil=true).
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                ]);
 
-        //         let (table_kind_prev, table_kind_curr, is_init_state, is_update_state) = (
-        //             meta.query_advice(config.fse_decoder.table_kind, Rotation::prev()),
-        //             meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
-        //             meta.query_advice(config.sequences_data_decoder.is_init_state, Rotation::cur()),
-        //             meta.query_advice(
-        //                 config.sequences_data_decoder.is_update_state,
-        //                 Rotation::cur(),
-        //             ),
-        //         );
+                let (table_kind_prev, table_kind_curr, is_init_state, is_update_state) = (
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::prev()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    meta.query_advice(config.sequences_data_decoder.is_init_state, Rotation::cur()),
+                    meta.query_advice(
+                        config.sequences_data_decoder.is_update_state,
+                        Rotation::cur(),
+                    ),
+                );
 
-        //         [
-        //             FixedLookupTag::SeqDataInterleavedOrder.expr(),
-        //             table_kind_prev,
-        //             table_kind_curr,
-        //             is_init_state,
-        //             is_update_state,
-        //             0.expr(), // unused
-        //             0.expr(), // unused
-        //         ]
-        //         .into_iter()
-        //         .zip_eq(config.fixed_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+                [
+                    FixedLookupTag::SeqDataInterleavedOrder.expr(),
+                    table_kind_prev,
+                    table_kind_curr,
+                    is_init_state,
+                    is_update_state,
+                    0.expr(), // unused
+                    0.expr(), // unused
+                ]
+                .into_iter()
+                .zip_eq(config.fixed_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
-        // witgen_debug
-        // meta.create_gate(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (sequences)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
-        //             config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-        //         ]);
+        meta.create_gate(
+            "DecoderConfig: tag ZstdBlockSequenceData (sequences)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                ]);
 
-        //         let mut cb = BaseConstraintBuilder::default();
+                let mut cb = BaseConstraintBuilder::default();
 
-        //         // - Init "state" at init-state (literal length)
-        //         // - Init "state" at init-state (match offset)
-        //         // - Init "state" at init-state (match length)
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_llt(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_init_state(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 cb.require_equal(
-        //                     "llt: state == 0x00 + readBits(nb)",
-        //                     config
-        //                         .sequences_data_decoder
-        //                         .state_llt(meta, Rotation::cur()),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //             },
-        //         );
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_mot(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_init_state(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 cb.require_equal(
-        //                     "mot: state == 0x00 + readBits(nb)",
-        //                     config
-        //                         .sequences_data_decoder
-        //                         .state_mot(meta, Rotation::cur()),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //             },
-        //         );
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_mlt(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_init_state(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 cb.require_equal(
-        //                     "mlt: state == 0x00 + readBits(nb)",
-        //                     config
-        //                         .sequences_data_decoder
-        //                         .state_mlt(meta, Rotation::cur()),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //             },
-        //         );
+                // - Init "state" at init-state (literal length)
+                // - Init "state" at init-state (match offset)
+                // - Init "state" at init-state (match length)
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_llt(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_init_state(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        cb.require_equal(
+                            "llt: state == 0x00 + readBits(nb)",
+                            config
+                                .sequences_data_decoder
+                                .state_llt(meta, Rotation::cur()),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                    },
+                );
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_mot(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_init_state(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        cb.require_equal(
+                            "mot: state == 0x00 + readBits(nb)",
+                            config
+                                .sequences_data_decoder
+                                .state_mot(meta, Rotation::cur()),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                    },
+                );
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_mlt(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_init_state(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        cb.require_equal(
+                            "mlt: state == 0x00 + readBits(nb)",
+                            config
+                                .sequences_data_decoder
+                                .state_mlt(meta, Rotation::cur()),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                    },
+                );
 
-        //         // - Update "value" at code-to-value (match offset)
-        //         // - Update "value" at code-to-value (match length)
-        //         // - Update "value" at code-to-value (literal length)
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_mot(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_code_to_value(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 let (baseline, bitstring_value) = (
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.baseline,
-        //                         Rotation::cur(),
-        //                     ),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //                 cb.require_equal(
-        //                     "value(mot) update",
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.values[2],
-        //                         Rotation::cur(),
-        //                     ),
-        //                     baseline + bitstring_value,
-        //                 );
-        //             },
-        //         );
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_mlt(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_code_to_value(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 let (baseline, bitstring_value) = (
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.baseline,
-        //                         Rotation::cur(),
-        //                     ),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //                 cb.require_equal(
-        //                     "value(mlt) update",
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.values[1],
-        //                         Rotation::cur(),
-        //                     ),
-        //                     baseline + bitstring_value,
-        //                 );
-        //             },
-        //         );
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_llt(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_code_to_value(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 let (baseline, bitstring_value) = (
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.baseline,
-        //                         Rotation::cur(),
-        //                     ),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //                 cb.require_equal(
-        //                     "value(llt) update",
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.values[0],
-        //                         Rotation::cur(),
-        //                     ),
-        //                     baseline + bitstring_value,
-        //                 );
-        //             },
-        //         );
+                // - Update "value" at code-to-value (match offset)
+                // - Update "value" at code-to-value (match length)
+                // - Update "value" at code-to-value (literal length)
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_mot(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_code_to_value(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        let (baseline, bitstring_value) = (
+                            meta.query_advice(
+                                config.sequences_data_decoder.baseline,
+                                Rotation::cur(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                        cb.require_equal(
+                            "value(mot) update",
+                            meta.query_advice(
+                                config.sequences_data_decoder.values[2],
+                                Rotation::cur(),
+                            ),
+                            baseline + bitstring_value,
+                        );
+                    },
+                );
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_mlt(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_code_to_value(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        let (baseline, bitstring_value) = (
+                            meta.query_advice(
+                                config.sequences_data_decoder.baseline,
+                                Rotation::cur(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                        cb.require_equal(
+                            "value(mlt) update",
+                            meta.query_advice(
+                                config.sequences_data_decoder.values[1],
+                                Rotation::cur(),
+                            ),
+                            baseline + bitstring_value,
+                        );
+                    },
+                );
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_llt(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_code_to_value(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        let (baseline, bitstring_value) = (
+                            meta.query_advice(
+                                config.sequences_data_decoder.baseline,
+                                Rotation::cur(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                        cb.require_equal(
+                            "value(llt) update",
+                            meta.query_advice(
+                                config.sequences_data_decoder.values[0],
+                                Rotation::cur(),
+                            ),
+                            baseline + bitstring_value,
+                        );
+                    },
+                );
 
-        //         // - Update "state" at update-state (literal length)
-        //         //      - This also means we have started decoding another sequence.
-        //         // - Update "state" at update-state (match length)
-        //         // - Update "state" at update-state (match offset)
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_llt(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_update_state(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 let (baseline, bitstring_value) = (
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.baseline,
-        //                         Rotation::cur(),
-        //                     ),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //                 cb.require_equal(
-        //                     "llt: state == baseline + readBits(nb)",
-        //                     config
-        //                         .sequences_data_decoder
-        //                         .state_llt(meta, Rotation::cur()),
-        //                     baseline + bitstring_value,
-        //                 );
-        //                 cb.require_equal(
-        //                     "seq_idx increments",
-        //                     meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),
-        //                     meta.query_advice(config.sequences_data_decoder.idx, Rotation::prev())
-        //                         + 1.expr(),
-        //                 );
-        //             },
-        //         );
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_mlt(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_update_state(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 let (baseline, bitstring_value) = (
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.baseline,
-        //                         Rotation::cur(),
-        //                     ),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //                 cb.require_equal(
-        //                     "mlt: state == baseline + readBits(nb)",
-        //                     config
-        //                         .sequences_data_decoder
-        //                         .state_mlt(meta, Rotation::cur()),
-        //                     baseline + bitstring_value,
-        //                 );
-        //             },
-        //         );
-        //         cb.condition(
-        //             and::expr([
-        //                 config.fse_decoder.is_mot(meta, Rotation::cur()),
-        //                 config
-        //                     .sequences_data_decoder
-        //                     .is_update_state(meta, Rotation::cur()),
-        //             ]),
-        //             |cb| {
-        //                 let (baseline, bitstring_value) = (
-        //                     meta.query_advice(
-        //                         config.sequences_data_decoder.baseline,
-        //                         Rotation::cur(),
-        //                     ),
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bitstring_value,
-        //                         Rotation::cur(),
-        //                     ),
-        //                 );
-        //                 cb.require_equal(
-        //                     "mot: state == baseline + readBits(nb)",
-        //                     config
-        //                         .sequences_data_decoder
-        //                         .state_mot(meta, Rotation::cur()),
-        //                     baseline + bitstring_value,
-        //                 );
-        //             },
-        //         );
+                // - Update "state" at update-state (literal length)
+                //      - This also means we have started decoding another sequence.
+                // - Update "state" at update-state (match length)
+                // - Update "state" at update-state (match offset)
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_llt(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_update_state(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        let (baseline, bitstring_value) = (
+                            meta.query_advice(
+                                config.sequences_data_decoder.baseline,
+                                Rotation::cur(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                        cb.require_equal(
+                            "llt: state == baseline + readBits(nb)",
+                            config
+                                .sequences_data_decoder
+                                .state_llt(meta, Rotation::cur()),
+                            baseline + bitstring_value,
+                        );
+                        cb.require_equal(
+                            "seq_idx increments",
+                            meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),                     
+                            meta.query_advice(config.sequences_data_decoder.idx, Rotation::prev())
+                                    + 1.expr(),
+                        );
+                    },
+                );
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_mlt(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_update_state(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        let (baseline, bitstring_value) = (
+                            meta.query_advice(
+                                config.sequences_data_decoder.baseline,
+                                Rotation::cur(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                        cb.require_equal(
+                            "mlt: state == baseline + readBits(nb)",
+                            config
+                                .sequences_data_decoder
+                                .state_mlt(meta, Rotation::cur()),
+                            baseline + bitstring_value,
+                        );
+                    },
+                );
+                cb.condition(
+                    and::expr([
+                        config.fse_decoder.is_mot(meta, Rotation::cur()),
+                        config
+                            .sequences_data_decoder
+                            .is_update_state(meta, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        let (baseline, bitstring_value) = (
+                            meta.query_advice(
+                                config.sequences_data_decoder.baseline,
+                                Rotation::cur(),
+                            ),
+                            meta.query_advice(
+                                config.bitstream_decoder.bitstring_value,
+                                Rotation::cur(),
+                            ),
+                        );
+                        cb.require_equal(
+                            "mot: state == baseline + readBits(nb)",
+                            config
+                                .sequences_data_decoder
+                                .state_mot(meta, Rotation::cur()),
+                            baseline + bitstring_value,
+                        );
+                    },
+                );
 
-        //         // TODO: make sure columns don't change if not at the appropriate condition.
+                // TODO: make sure columns don't change if not at the appropriate condition.
 
-        //         cb.gate(condition)
-        //     },
-        // );
+                cb.gate(condition)
+            },
+        );
 
-        // witgen_debug
-        // meta.create_gate(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (last row)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             meta.query_advice(config.tag_config.is_change, Rotation::next()),
-        //         ]);
+        meta.create_gate(
+            "DecoderConfig: tag ZstdBlockSequenceData (last row)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(config.q_enable, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_change, Rotation::next()),
+                ]);
 
-        //         let mut cb = BaseConstraintBuilder::default();
+                let mut cb = BaseConstraintBuilder::default();
 
-        //         // last operation is: code-to-value for LLT.
-        //         cb.require_zero(
-        //             "last operation (sequences data): is_init",
-        //             meta.query_advice(config.sequences_data_decoder.is_init_state, Rotation::cur()),
-        //         );
-        //         cb.require_zero(
-        //             "last operation (sequences data): is_update_state",
-        //             meta.query_advice(
-        //                 config.sequences_data_decoder.is_update_state,
-        //                 Rotation::cur(),
-        //             ),
-        //         );
-        //         cb.require_equal(
-        //             "last operation (sequences data): table_kind",
-        //             meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
-        //             FseTableKind::LLT.expr(),
-        //         );
+                // last operation is: code-to-value for LLT.
+                cb.require_zero(
+                    "last operation (sequences data): is_init",
+                    meta.query_advice(config.sequences_data_decoder.is_init_state, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "last operation (sequences data): is_update_state",
+                    meta.query_advice(
+                        config.sequences_data_decoder.is_update_state,
+                        Rotation::cur(),
+                    ),
+                );
+                cb.require_equal(
+                    "last operation (sequences data): table_kind",
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    FseTableKind::LLT.expr(),
+                );
 
-        //         // idx == block.num_sequences.
-        //         cb.require_equal(
-        //             "last row: idx = num_sequences",
-        //             meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),
-        //             meta.query_advice(config.block_config.num_sequences, Rotation::cur()),
-        //         );
+                // idx == block.num_sequences.
+                cb.require_equal(
+                    "last row: idx = num_sequences",
+                    meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),
+                    meta.query_advice(config.block_config.num_sequences, Rotation::cur()),
+                );
 
-        //         // tag::next == is_last_block ? Null : BlockHeader.
-        //         cb.require_equal(
-        //             "last row: tag::next",
-        //             meta.query_advice(config.tag_config.tag_next, Rotation::cur()),
-        //             select::expr(
-        //                 meta.query_advice(config.block_config.is_last_block, Rotation::cur()),
-        //                 ZstdTag::Null.expr(),
-        //                 ZstdTag::BlockHeader.expr(),
-        //             ),
-        //         );
+                // tag::next == is_last_block ? Null : BlockHeader.
+                cb.require_equal(
+                    "last row: tag::next",
+                    meta.query_advice(config.tag_config.tag_next, Rotation::cur()),
+                    select::expr(
+                        meta.query_advice(config.block_config.is_last_block, Rotation::cur()),
+                        ZstdTag::Null.expr(),
+                        ZstdTag::BlockHeader.expr(),
+                    ),
+                );
 
-        //         // bitstream was consumed completely (byte-aligned):
-        //         // - if not_nil(cur) -> bit_index_end == 7
-        //         // - if nil(cur) and not_nil(prev) -> bit_index_end == 15
-        //         // - if nil(cur) and nil(prev) -> not_nil(-2) and bit_index_end == 23
-        //         let (is_nil_curr, is_nil_prev, is_nil_prev_prev) = (
-        //             config.bitstream_decoder.is_nil(meta, Rotation::cur()),
-        //             config.bitstream_decoder.is_nil(meta, Rotation::prev()),
-        //             config.bitstream_decoder.is_nil(meta, Rotation(-2)),
-        //         );
-        //         cb.condition(not::expr(is_nil_curr.expr()), |cb| {
-        //             cb.require_equal(
-        //                 "is_not_nil: bit_index_end==7",
-        //                 meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
-        //                 7.expr(),
-        //             );
-        //         });
-        //         cb.condition(
-        //             and::expr([is_nil_curr.expr(), not::expr(is_nil_prev.expr())]),
-        //             |cb| {
-        //                 cb.require_equal(
-        //                     "is_nil and is_not_nil(prev): bit_index_end==15",
-        //                     meta.query_advice(
-        //                         config.bitstream_decoder.bit_index_end,
-        //                         Rotation::prev(),
-        //                     ),
-        //                     15.expr(),
-        //                 );
-        //             },
-        //         );
-        //         cb.condition(and::expr([is_nil_curr, is_nil_prev]), |cb| {
-        //             cb.require_zero("is_nil and is_nil(prev): is_not_nil(-2)", is_nil_prev_prev);
-        //             cb.require_equal(
-        //                 "is_nil and is_nil(prev): bit_index_end==23",
-        //                 meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation(-2)),
-        //                 23.expr(),
-        //             );
-        //         });
+                // bitstream was consumed completely (byte-aligned):
+                // - if not_nil(cur) -> bit_index_end == 7
+                // - if nil(cur) and not_nil(prev) -> bit_index_end == 15
+                // - if nil(cur) and nil(prev) -> not_nil(-2) and bit_index_end == 23
+                let (is_nil_curr, is_nil_prev, is_nil_prev_prev) = (
+                    config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+                    config.bitstream_decoder.is_nil(meta, Rotation::prev()),
+                    config.bitstream_decoder.is_nil(meta, Rotation(-2)),
+                );
+                cb.condition(not::expr(is_nil_curr.expr()), |cb| {
+                    cb.require_equal(
+                        "is_not_nil: bit_index_end==7",
+                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                        7.expr(),
+                    );
+                });
+                cb.condition(
+                    and::expr([is_nil_curr.expr(), not::expr(is_nil_prev.expr())]),
+                    |cb| {
+                        cb.require_equal(
+                            "is_nil and is_not_nil(prev): bit_index_end==15",
+                            meta.query_advice(
+                                config.bitstream_decoder.bit_index_end,
+                                Rotation::prev(),
+                            ),
+                            15.expr(),
+                        );
+                    },
+                );
+                cb.condition(and::expr([is_nil_curr, is_nil_prev]), |cb| {
+                    cb.require_zero("is_nil and is_nil(prev): is_not_nil(-2)", is_nil_prev_prev);
+                    cb.require_equal(
+                        "is_nil and is_nil(prev): bit_index_end==23",
+                        meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation(-2)),
+                        23.expr(),
+                    );
+                });
 
-        //         cb.gate(condition)
-        //     },
-        // );
+                cb.gate(condition)
+            },
+        );
 
-        // witgen_debug
-        // meta.create_gate(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (is_nil)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             config.bitstream_decoder.is_nil(meta, Rotation::cur()),
-        //         ]);
+        meta.create_gate(
+            "DecoderConfig: tag ZstdBlockSequenceData (is_nil)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(config.q_enable, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+                ]);
 
-        //         let mut cb = BaseConstraintBuilder::default();
+                let mut cb = BaseConstraintBuilder::default();
 
-        //         // If we encounter an is_nil=true scenario in the tag=SequencesData region, we make
-        //         // sure that certain columns remain unchanged, specifically: SequencesDataDecoder
-        //         // and FseDecoder.
-        //         for column in [
-        //             config.fse_decoder.table_kind,
-        //             config.fse_decoder.table_size,
-        //             config.sequences_data_decoder.idx,
-        //             config.sequences_data_decoder.is_init_state,
-        //             config.sequences_data_decoder.is_update_state,
-        //             config.sequences_data_decoder.states[0],
-        //             config.sequences_data_decoder.states[1],
-        //             config.sequences_data_decoder.states[2],
-        //             config.sequences_data_decoder.symbols[0],
-        //             config.sequences_data_decoder.symbols[1],
-        //             config.sequences_data_decoder.symbols[2],
-        //             config.sequences_data_decoder.values[0],
-        //             config.sequences_data_decoder.values[1],
-        //             config.sequences_data_decoder.values[2],
-        //         ] {
-        //             cb.require_equal(
-        //                 "sequencesData: is_nil=true columns unchanged",
-        //                 meta.query_advice(column, Rotation::cur()),
-        //                 meta.query_advice(column, Rotation::prev()),
-        //             );
-        //         }
+                // If we encounter an is_nil=true scenario in the tag=SequencesData region, we make
+                // sure that certain columns remain unchanged, specifically: SequencesDataDecoder
+                // and FseDecoder.
+                for column in [
+                    config.fse_decoder.table_kind,
+                    config.fse_decoder.table_size,
+                    config.sequences_data_decoder.idx,
+                    config.sequences_data_decoder.is_init_state,
+                    config.sequences_data_decoder.is_update_state,
+                    config.sequences_data_decoder.states[0],
+                    config.sequences_data_decoder.states[1],
+                    config.sequences_data_decoder.states[2],
+                    config.sequences_data_decoder.symbols[0],
+                    config.sequences_data_decoder.symbols[1],
+                    config.sequences_data_decoder.symbols[2],
+                    config.sequences_data_decoder.values[0],
+                    config.sequences_data_decoder.values[1],
+                    config.sequences_data_decoder.values[2],
+                ] {
+                    cb.require_equal(
+                        "sequencesData: is_nil=true columns unchanged",
+                        meta.query_advice(column, Rotation::cur()),
+                        meta.query_advice(column, Rotation::prev()),
+                    );
+                }
 
-        //         cb.gate(condition)
-        //     },
-        // );
+                cb.gate(condition)
+            },
+        );
 
-        // witgen_debug
-        // meta.lookup_any(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (ROM sequence codes)",
-        //     |meta| {
-        //         // When we read a bitstring in tag=ZstdBlockSequenceData that is:
-        //         // - not init state
-        //         // - not update state
-        //         //
-        //         // We know that we are trying to get the "value" from the "code" for literal length
-        //         // or match offset or match length. Hence we do a lookup to the ROM table (Sequence
-        //         // Codes).
-        //         //
-        //         // The "value" is calculated as:
-        //         // - value == baseline + bitstring_value(nb)
-        //         //
-        //         // which is used in the next lookup to the SequenceInstructionTable.
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-        //             config
-        //                 .sequences_data_decoder
-        //                 .is_code_to_value(meta, Rotation::cur()),
-        //         ]);
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (ROM sequence codes)",
+            |meta| {
+                // When we read a bitstring in tag=ZstdBlockSequenceData that is:
+                // - not the first row (sentinel row)
+                // - not init state
+                // - not update state
+                //
+                // We know that we are trying to get the "value" from the "code" for literal length
+                // or match offset or match length. Hence we do a lookup to the ROM table (Sequence
+                // Codes).
+                //
+                // The "value" is calculated as:
+                // - value == baseline + bitstring_value(nb)
+                //
+                // which is used in the next lookup to the SequenceInstructionTable.
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_code_to_value(meta, Rotation::cur()),
+                ]);
 
-        //         let (table_kind, code, baseline, nb) = (
-        //             meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
-        //             config.sequences_data_decoder.symbol(
-        //                 meta,
-        //                 &config.fse_decoder,
-        //                 Rotation::cur(),
-        //             ),
-        //             meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
-        //             config
-        //                 .bitstream_decoder
-        //                 .bitstring_len(meta, Rotation::cur()),
-        //         );
+                let (table_kind, code, baseline, nb) = (
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    config.sequences_data_decoder.symbol(
+                        meta,
+                        &config.fse_decoder,
+                        Rotation::cur(),
+                    ),
+                    meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                    config
+                        .bitstream_decoder
+                        .bitstring_len(meta, Rotation::cur()),
+                );
 
-        //         [
-        //             FixedLookupTag::SeqCodeToValue.expr(),
-        //             table_kind,
-        //             code,
-        //             baseline,
-        //             nb,
-        //             0.expr(), // unused
-        //             0.expr(), // unused
-        //         ]
-        //         .into_iter()
-        //         .zip_eq(config.fixed_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+                [
+                    FixedLookupTag::SeqCodeToValue.expr(),
+                    table_kind,
+                    code,
+                    baseline,
+                    nb,
+                    0.expr(), // unused
+                    0.expr(), // unused
+                ]
+                .into_iter()
+                .zip_eq(config.fixed_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
-        // witgen_debug
-        // meta.lookup_any(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (init state pow2 table)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             config
-        //                 .sequences_data_decoder
-        //                 .is_init_state(meta, Rotation::cur()),
-        //             config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-        //         ]);
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (init state pow2 table)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_init_state(meta, Rotation::cur()),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                ]);
 
-        //         let (nb, table_size) = (
-        //             config
-        //                 .bitstream_decoder
-        //                 .bitstring_len_unchecked(meta, Rotation::cur()),
-        //             meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
-        //         );
+                let (nb, table_size) = (
+                    config
+                        .bitstream_decoder
+                        .bitstring_len_unchecked(meta, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
+                );
 
-        //         // When state is initialised, we must read AL number of bits.
-        //         // Since table_size == 1 << AL, we do a lookup to the pow2 table.
-        //         [nb, table_size]
-        //             .into_iter()
-        //             .zip_eq(config.pow2_table.table_exprs(meta))
-        //             .map(|(arg, table)| (condition.expr() * arg, table))
-        //             .collect()
-        //     },
-        // );
+                // When state is initialised, we must read AL number of bits.
+                // Since table_size == 1 << AL, we do a lookup to the pow2 table.
+                [nb, table_size]
+                    .into_iter()
+                    .zip_eq(config.pow2_table.table_exprs(meta))
+                    .map(|(arg, table)| (condition.expr() * arg, table))
+                    .collect()
+            },
+        );
 
-        // witgen_debug
-        // meta.lookup_any(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (init state fse table)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-        //             config
-        //                 .sequences_data_decoder
-        //                 .is_init_state(meta, Rotation::cur()),
-        //         ]);
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (init state fse table)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_init_state(meta, Rotation::cur()),
+                ]);
 
-        //         let (block_idx, table_kind, table_size) = (
-        //             meta.query_advice(config.block_config.block_idx, Rotation::cur()),
-        //             meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
-        //             meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
-        //         );
-        //         let is_predefined_mode =
-        //             config
-        //                 .block_config
-        //                 .is_predefined(meta, &config.fse_decoder, Rotation::cur());
+                let (block_idx, table_kind, table_size) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
+                );
+                let is_predefined_mode =
+                    config
+                        .block_config
+                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
 
-        //         [
-        //             0.expr(), // q_first
-        //             1.expr(), // q_start
-        //             block_idx,
-        //             table_kind,
-        //             table_size,
-        //             is_predefined_mode, // is_predefined
-        //             0.expr(),           // is_padding
-        //         ]
-        //         .into_iter()
-        //         .zip_eq(config.fse_table.table_exprs_metadata(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+                [
+                    0.expr(), // q_first
+                    1.expr(), // q_start
+                    block_idx,
+                    table_kind,
+                    table_size,
+                    is_predefined_mode, // is_predefined
+                    0.expr(),           // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.fse_table.table_exprs_metadata(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         // TODO(enable): lookup(SeqInstTable) at code-to-value for seq_values_lookup
         // meta.lookup_any(
@@ -3249,116 +3242,130 @@ impl DecoderConfig {
         //     },
         // );
 
-        // witgen_debug
-        // meta.lookup_any(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (FseTable)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
-        //             config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-        //             config
-        //                 .sequences_data_decoder
-        //                 .is_update_state(meta, Rotation::cur()),
-        //         ]);
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (FseTable)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(config.q_enable, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    not::expr(
+                        config
+                            .sequences_data_decoder
+                            .is_init_state(meta, Rotation::cur()),
+                    ),
+                    config
+                        .sequences_data_decoder
+                        .is_update_state(meta, Rotation::cur()),
+                ]);
 
-        //         let state = config.sequences_data_decoder.state_at_prev(
-        //             meta,
-        //             &config.fse_decoder,
-        //             Rotation::cur(),
-        //         );
-        //         let symbol = config.sequences_data_decoder.symbol_at_prev(
-        //             meta,
-        //             &config.fse_decoder,
-        //             Rotation::cur(),
-        //         );
-        //         let (block_idx, table_kind, table_size, baseline, nb) = (
-        //             meta.query_advice(config.block_config.block_idx, Rotation::cur()),
-        //             meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
-        //             meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
-        //             meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
-        //             config
-        //                 .bitstream_decoder
-        //                 .bitstring_len(meta, Rotation::cur()),
-        //         );
-        //         let is_predefined_mode =
-        //             config
-        //                 .block_config
-        //                 .is_predefined(meta, &config.fse_decoder, Rotation::cur());
+                let state = config.sequences_data_decoder.state_at_prev(
+                    meta,
+                    &config.fse_decoder,
+                    Rotation::cur(),
+                );
+                let symbol = config.sequences_data_decoder.symbol_at_prev(
+                    meta,
+                    &config.fse_decoder,
+                    Rotation::cur(),
+                );
+                let (block_idx, table_kind, table_size, baseline, nb) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
+                    meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                    config
+                        .bitstream_decoder
+                        .bitstring_len(meta, Rotation::cur()),
+                );
+                let is_predefined_mode =
+                    config
+                        .block_config
+                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
 
-        //         [
-        //             0.expr(), // q_first
-        //             block_idx,
-        //             table_kind,
-        //             table_size,
-        //             is_predefined_mode, // is_predefined
-        //             state,
-        //             symbol,
-        //             baseline,
-        //             nb,
-        //             0.expr(), // is_skipped_state
-        //             0.expr(), // is_padding
-        //         ]
-        //         .into_iter()
-        //         .zip_eq(config.fse_table.table_exprs_by_state(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+                [
+                    0.expr(), // q_first
+                    block_idx,
+                    table_kind,
+                    table_size,
+                    is_predefined_mode, // is_predefined
+                    state,
+                    symbol,
+                    baseline,
+                    nb,
+                    0.expr(), // is_skipped_state
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.fse_table.table_exprs_by_state(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
         ///////////////////////////////////////////////////////////////////////////////////////////
         //////////////////////////////////// ZstdTag::Null ////////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
-        // witgen_debug
-        // meta.create_gate("DecoderConfig: tag=Null", |meta| {
-        //     let condition = meta.query_advice(config.tag_config.is_null, Rotation::cur());
+        meta.create_gate("DecoderConfig: tag=Null", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(config.q_enable, Rotation::cur()),
+                meta.query_advice(config.tag_config.is_null, Rotation::cur()),
+                not::expr(meta.query_advice(config.tag_config.is_null, Rotation::prev())),
+            ]);
 
-        //     let mut cb = BaseConstraintBuilder::default();
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     // tag=Null also is the start of padding.
-        //     cb.require_zero(
-        //         "is_null: is_padding_prev=false",
-        //         meta.query_advice(config.is_padding, Rotation::prev()),
-        //     );
-        //     cb.require_equal(
-        //         "is_null: is_padding=true",
-        //         meta.query_advice(config.is_padding, Rotation::cur()),
-        //         1.expr(),
-        //     );
+            // tag=Null also is the start of padding.
+            cb.require_zero(
+                "is_null: is_padding_prev=false",
+                meta.query_advice(config.is_padding, Rotation::prev()),
+            );
+            cb.require_equal(
+                "is_null: is_padding=true",
+                meta.query_advice(config.is_padding, Rotation::cur()),
+                1.expr(),
+            );
 
-        //     // tag::is_change=true which ensures the encoded_rlc is computed here. This also
-        //     // implies that the previous tag in fact ended correctly.
-        //     cb.require_equal(
-        //         "is_null: is_tag_change=true",
-        //         meta.query_advice(config.tag_config.is_change, Rotation::cur()),
-        //         1.expr(),
-        //     );
+            // tag::is_change=true which ensures the encoded_rlc is computed here. This also
+            // implies that the previous tag in fact ended correctly.
+            cb.require_equal(
+                "is_null: is_tag_change=true",
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                1.expr(),
+            );
 
-        //     // is_null=true implies we have reached the end of the encoded data. This can happen in
-        //     // the following scenarios:
-        //     // - end of block (is_last=true) with tag=SequenceData
-        //     // - end of block (is_last=true) with tag=SequenceHeader and num_sequences=0
-        //     cb.require_equal(
-        //         "is_null: block::is_last=true on the previous row",
-        //         meta.query_advice(config.block_config.is_last_block, Rotation::prev()),
-        //         1.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "is_null: tag::prev check",
-        //         meta.query_advice(config.tag_config.tag, Rotation::prev()),
-        //         select::expr(
-        //             config
-        //                 .block_config
-        //                 .is_empty_sequences(meta, Rotation::prev()),
-        //             ZstdTag::ZstdBlockSequenceHeader.expr(),
-        //             ZstdTag::ZstdBlockSequenceData.expr(),
-        //         ),
-        //     );
+            // is_null=true implies we have reached the end of the encoded data. This can happen in
+            // the following scenarios:
+            // - end of block (is_last=true) with tag=SequenceData
+            // - end of block (is_last=true) with tag=SequenceHeader and num_sequences=0
+            // - the last tag ended OK
+            cb.require_equal(
+                "is_null: block::is_last=true on the previous row",
+                meta.query_advice(config.block_config.is_last_block, Rotation::prev()),
+                1.expr(),
+            );
+            cb.require_equal(
+                "is_null: tag::prev check",
+                meta.query_advice(config.tag_config.tag, Rotation::prev()),
+                select::expr(
+                    config
+                        .block_config
+                        .is_empty_sequences(meta, Rotation::prev()),
+                    ZstdTag::ZstdBlockSequenceHeader.expr(),
+                    ZstdTag::ZstdBlockSequenceData.expr(),
+                ),
+            );
+            cb.require_equal(
+                "is_null: tag_idx::prev == tag_len::prev",
+                meta.query_advice(config.tag_config.tag_idx, Rotation::prev()),
+                meta.query_advice(config.tag_config.tag_len, Rotation::prev()),
+            );
 
-        //     cb.gate(condition)
-        // });
+            cb.gate(condition)
+        });
 
         debug_assert!(meta.degree() <= 9);
 
@@ -3367,11 +3374,9 @@ impl DecoderConfig {
         ///////////////////////////////////////////////////////////////////////////////////////////
         meta.create_gate("DecoderConfig: Bitstream Decoder (is_nil)", |meta| {
             // Bitstream decoder when we skip reading a bitstring at a row.
-
-            // witgen_debug
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                config.bitstream_decoder.is_nil(meta, Rotation::cur()),  
+                config.bitstream_decoder.is_nil(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -3389,12 +3394,11 @@ impl DecoderConfig {
                 meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::next()),
             );
 
-            // witgen_debug
-            // cb.require_equal(
-            //     "if is_nil: byte_idx' == byte_idx",
-            //     meta.query_advice(config.byte_idx, Rotation::next()),
-            //     meta.query_advice(config.byte_idx, Rotation::cur()),
-            // );
+            cb.require_equal(
+                "if is_nil: byte_idx' == byte_idx + 1",
+                meta.query_advice(config.byte_idx, Rotation::next()),
+                meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+            );
 
             cb.require_zero(
                 "if is_nil is True then is_nb0 is False",
@@ -3414,12 +3418,11 @@ impl DecoderConfig {
 
         meta.create_gate("DecoderConfig: Bitstream Decoder (is_nb0)", |meta| {
             // Bitstream decoder when we read nb=0 bits from the bitstream.
-
-            // witgen_debug
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 config.bitstream_decoder.is_nb0(meta, Rotation::cur()),
-                not::expr(is_next_null(meta)), // Exclude last block's bitstream tail row. Transition to Null.
+                not::expr(is_next_null(meta)), /* Exclude last block's bitstream tail row.
+                                                * Transition to Null. */
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -3730,7 +3733,7 @@ impl DecoderConfig {
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
                 ]),
             ]);
-            
+
             let mut cb = BaseConstraintBuilder::default();
 
             // If the following conditions are met:
@@ -3766,106 +3769,104 @@ impl DecoderConfig {
             cb.gate(condition)
         });
 
-        // witgen_debug
-        // meta.lookup_any(
-        //     "DecoderConfig: Bitstream Decoder (bitstring start)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
-        //             not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
-        //             sum::expr([
-        //                 meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-        //                 meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             ]),
-        //         ]);
+        meta.lookup_any(
+            "DecoderConfig: Bitstream Decoder (bitstring start)",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    ]),
+                ]);
 
-        //         let (byte_idx0, byte_idx1, byte_idx2) = (
-        //             meta.query_advice(config.byte_idx, Rotation(0)),
-        //             meta.query_advice(config.byte_idx, Rotation(1)),
-        //             meta.query_advice(config.byte_idx, Rotation(2)),
-        //         );
-        //         let (byte0, byte1, byte2) = (
-        //             meta.query_advice(config.byte, Rotation(0)),
-        //             meta.query_advice(config.byte, Rotation(1)),
-        //             meta.query_advice(config.byte, Rotation(2)),
-        //         );
-        //         let (bit_index_start, _bit_index_end, bitstring_value) = (
-        //             meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
-        //             meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
-        //             meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
-        //         );
-        //         let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+                let (byte_idx0, byte_idx1, byte_idx2) = (
+                    meta.query_advice(config.byte_idx, Rotation(0)),
+                    meta.query_advice(config.byte_idx, Rotation(1)),
+                    meta.query_advice(config.byte_idx, Rotation(2)),
+                );
+                let (byte0, byte1, byte2) = (
+                    meta.query_advice(config.byte, Rotation(0)),
+                    meta.query_advice(config.byte, Rotation(1)),
+                    meta.query_advice(config.byte, Rotation(2)),
+                );
+                let (bit_index_start, _bit_index_end, bitstring_value) = (
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
 
-        //         [
-        //             byte_idx0,
-        //             byte_idx1,
-        //             byte_idx2,
-        //             byte0,
-        //             byte1,
-        //             byte2,
-        //             bitstring_value,
-        //             1.expr(), // bitstring_len at start
-        //             bit_index_start,
-        //             1.expr(), // from_start
-        //             1.expr(), // until_end
-        //             is_reverse,
-        //             0.expr(), // is_padding
-        //         ]
-        //         .into_iter()
-        //         .zip_eq(config.bitstring_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+                [
+                    byte_idx0,
+                    byte_idx1,
+                    byte_idx2,
+                    byte0,
+                    byte1,
+                    byte2,
+                    bitstring_value,
+                    1.expr(), // bitstring_len at start
+                    bit_index_start,
+                    1.expr(), // from_start
+                    1.expr(), // until_end
+                    is_reverse,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.bitstring_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
-        // witgen_debug
-        // meta.lookup_any("DecoderConfig: Bitstream Decoder (bitstring end)", |meta| {
-        //     let condition = and::expr([
-        //         not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
-        //         not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
-        //         sum::expr([
-        //             meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //         ]),
-        //     ]);
+        meta.lookup_any("DecoderConfig: Bitstream Decoder (bitstring end)", |meta| {
+            let condition = and::expr([
+                not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                sum::expr([
+                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                ]),
+            ]);
 
-        //     let (byte_idx0, byte_idx1, byte_idx2) = (
-        //         meta.query_advice(config.byte_idx, Rotation(0)),
-        //         meta.query_advice(config.byte_idx, Rotation(1)),
-        //         meta.query_advice(config.byte_idx, Rotation(2)),
-        //     );
-        //     let (byte0, byte1, byte2) = (
-        //         meta.query_advice(config.byte, Rotation(0)),
-        //         meta.query_advice(config.byte, Rotation(1)),
-        //         meta.query_advice(config.byte, Rotation(2)),
-        //     );
-        //     let (bit_index_start, bit_index_end, bitstring_value) = (
-        //         meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
-        //         meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
-        //         meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
-        //     );
-        //     let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+            let (byte_idx0, byte_idx1, byte_idx2) = (
+                meta.query_advice(config.byte_idx, Rotation(0)),
+                meta.query_advice(config.byte_idx, Rotation(1)),
+                meta.query_advice(config.byte_idx, Rotation(2)),
+            );
+            let (byte0, byte1, byte2) = (
+                meta.query_advice(config.byte, Rotation(0)),
+                meta.query_advice(config.byte, Rotation(1)),
+                meta.query_advice(config.byte, Rotation(2)),
+            );
+            let (bit_index_start, bit_index_end, bitstring_value) = (
+                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+            );
+            let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
 
-        //     [
-        //         byte_idx0,
-        //         byte_idx1,
-        //         byte_idx2,
-        //         byte0,
-        //         byte1,
-        //         byte2,
-        //         bitstring_value,
-        //         bit_index_end.expr() - bit_index_start + 1.expr(), // bitstring_len at end
-        //         bit_index_end,
-        //         1.expr(), // from_start
-        //         1.expr(), // until_end
-        //         is_reverse,
-        //         0.expr(), // is_padding
-        //     ]
-        //     .into_iter()
-        //     .zip_eq(config.bitstring_table.table_exprs(meta))
-        //     .map(|(arg, table)| (condition.expr() * arg, table))
-        //     .collect()
-        // });
+            [
+                byte_idx0,
+                byte_idx1,
+                byte_idx2,
+                byte0,
+                byte1,
+                byte2,
+                bitstring_value,
+                bit_index_end.expr() - bit_index_start + 1.expr(), // bitstring_len at end
+                bit_index_end,
+                1.expr(), // from_start
+                1.expr(), // until_end
+                is_reverse,
+                0.expr(), // is_padding
+            ]
+            .into_iter()
+            .zip_eq(config.bitstring_table.table_exprs(meta))
+            .map(|(arg, table)| (condition.expr() * arg, table))
+            .collect()
+        });
 
         debug_assert!(meta.degree() <= 9);
 
@@ -3896,14 +3897,11 @@ impl DecoderConfig {
         /////////////////////////////////////////
         //////// Load Auxiliary Tables  /////////
         /////////////////////////////////////////
-
-        // witgen_debug
         self.range8.load(layouter)?;
         self.range16.load(layouter)?;
         self.fixed_table.load(layouter)?;
         self.pow2_table.load(layouter)?;
 
-        // witgen_debug
         /////////////////////////////////////////////////////////
         //////// Assign FSE and Bitstream Accumulation  /////////
         /////////////////////////////////////////////////////////
@@ -3959,7 +3957,6 @@ impl DecoderConfig {
             ));
         }
 
-        // witgen_debug
         self.literals_header_table
             .assign(layouter, literal_headers)?;
 
@@ -3974,7 +3971,12 @@ impl DecoderConfig {
                 /////////////////////////////////////////
                 region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(Fr::one()))?;
                 for i in 0..((1 << k) - self.unusable_rows()) {
-                    region.assign_fixed(|| "q_enable", self.q_enable, i, || Value::known(Fr::one()))?;
+                    region.assign_fixed(
+                        || "q_enable",
+                        self.q_enable,
+                        i,
+                        || Value::known(Fr::one()),
+                    )?;
                 }
                 let mut last_byte_idx = 0u64;
                 let mut last_bit_start_idx = 0u64;
@@ -4036,8 +4038,6 @@ impl DecoderConfig {
                     /////////////////////////////////////////
                     ///// Assign Bitstream Decoder  /////////
                     /////////////////////////////////////////
-
-                    // witgen_debug
                     region.assign_advice(
                         || "bit_index_start",
                         self.bitstream_decoder.bit_index_start,
@@ -4114,7 +4114,6 @@ impl DecoderConfig {
                         Value::known(Fr::from(row.bitstream_read_data.bit_value as u64)),
                         Value::known(Fr::from(3u64)),
                     )?;
-                    
 
                     /////////////////////////////////////////
                     ////////// Assign Tag Config  ///////////
@@ -4312,7 +4311,7 @@ impl DecoderConfig {
                             )?;
                         }
                         let is_empty_sequences =
-                        IsEqualChip::construct(self.block_config.is_empty_sequences.clone());
+                            IsEqualChip::construct(self.block_config.is_empty_sequences.clone());
                         is_empty_sequences.assign(
                             &mut region,
                             i,
@@ -4328,7 +4327,7 @@ impl DecoderConfig {
                         || "sequence_data_decoder.idx",
                         self.sequences_data_decoder.idx,
                         i,
-                        || Value::known(Fr::from((row.bitstream_read_data.seq_idx + 1) as u64)),
+                        || Value::known(Fr::from((row.bitstream_read_data.seq_idx) as u64)),
                     )?;
                     region.assign_advice(
                         || "sequence_data_decoder.is_init_state",
@@ -4339,7 +4338,6 @@ impl DecoderConfig {
 
                     let seq_states = row.bitstream_read_data.states;
                     let seq_symbols = row.bitstream_read_data.symbols;
-                    let is_update_state = seq_states[0] || seq_states[1] || seq_states[2];
                     let tables = ["LLT", "MLT", "MOT"];
 
                     for idx in 0..3 {
@@ -4347,26 +4345,26 @@ impl DecoderConfig {
                             || format!("sequence_data_decoder.states: {:?}", tables[idx]),
                             self.sequences_data_decoder.states[idx],
                             i,
-                            || Value::known(Fr::from(seq_states[idx] as u64)),
+                            || Value::known(Fr::from(seq_states[idx])),
                         )?;
                         region.assign_advice(
                             || format!("sequence_data_decoder.symbols: {:?}", tables[idx]),
                             self.sequences_data_decoder.symbols[idx],
                             i,
-                            || Value::known(Fr::from(seq_symbols[idx] as u64)),
+                            || Value::known(Fr::from(seq_symbols[idx])),
                         )?;
                         region.assign_advice(
                             || format!("sequence_data_decoder.values: {:?}", tables[idx]),
                             self.sequences_data_decoder.values[idx],
                             i,
-                            || Value::known(Fr::from(row.bitstream_read_data.values[idx] as u64)),
+                            || Value::known(Fr::from(row.bitstream_read_data.values[idx])),
                         )?;
                     }
                     region.assign_advice(
                         || "sequence_data_decoder.is_update_state",
                         self.sequences_data_decoder.is_update_state,
                         i,
-                        || Value::known(Fr::from(is_update_state as u64)),
+                        || Value::known(Fr::from(row.bitstream_read_data.is_update_state)),
                     )?;
                     region.assign_advice(
                         || "sequence_data_decoder.baseline",
@@ -4394,8 +4392,6 @@ impl DecoderConfig {
                     ////////////////////////////////////////////////
                     ///////// Assign FSE Decoding Fields  //////////
                     ////////////////////////////////////////////////
-                    
-                    // witgen_debug
                     region.assign_advice(
                         || "fse_decoder.table_kind",
                         self.fse_decoder.table_kind,
@@ -4482,49 +4478,24 @@ impl DecoderConfig {
                     )?;
                     let byte0_lt_0x80 =
                         LtChip::construct(self.sequences_header_decoder.byte0_lt_0x80);
-                    byte0_lt_0x80.assign(
-                        &mut region,
-                        idx,
-                        Fr::zero(),
-                        Fr::from(0x80),
-                    )?;
+                    byte0_lt_0x80.assign(&mut region, idx, Fr::zero(), Fr::from(0x80))?;
                     let byte0_lt_0xff =
                         LtChip::construct(self.sequences_header_decoder.byte0_lt_0xff);
-                    byte0_lt_0xff.assign(
-                        &mut region,
-                        idx,
-                        Fr::zero(),
-                        Fr::from(0xff),
-                    )?;
+                    byte0_lt_0xff.assign(&mut region, idx, Fr::zero(), Fr::from(0xff))?;
 
                     // Bitstream decoder gadgets
                     let bit_index_end_cmp_7 = ComparatorChip::construct(
                         self.bitstream_decoder.bit_index_end_cmp_7.clone(),
                     );
-                    bit_index_end_cmp_7.assign(
-                        &mut region,
-                        idx,
-                        Fr::zero(),
-                        Fr::from(7u64),
-                    )?;
+                    bit_index_end_cmp_7.assign(&mut region, idx, Fr::zero(), Fr::from(7u64))?;
                     let bit_index_end_cmp_15 = ComparatorChip::construct(
                         self.bitstream_decoder.bit_index_end_cmp_15.clone(),
                     );
-                    bit_index_end_cmp_15.assign(
-                        &mut region,
-                        idx,
-                        Fr::zero(),
-                        Fr::from(15u64),
-                    )?;
+                    bit_index_end_cmp_15.assign(&mut region, idx, Fr::zero(), Fr::from(15u64))?;
                     let bit_index_end_cmp_23 = ComparatorChip::construct(
                         self.bitstream_decoder.bit_index_end_cmp_23.clone(),
                     );
-                    bit_index_end_cmp_23.assign(
-                        &mut region,
-                        idx,
-                        Fr::zero(),
-                        Fr::from(23u64),
-                    )?;
+                    bit_index_end_cmp_23.assign(&mut region, idx, Fr::zero(), Fr::from(23u64))?;
                     let bitstring_value_eq_3 =
                         IsEqualChip::construct(self.bitstream_decoder.bitstring_value_eq_3.clone());
                     bitstring_value_eq_3.assign(
@@ -4577,7 +4548,7 @@ impl DecoderConfig {
         Ok(())
     }
 
-    pub fn unusable_rows (&self) -> usize {
+    pub fn unusable_rows(&self) -> usize {
         30
     }
 }
@@ -4612,7 +4583,13 @@ mod tests {
     }
 
     impl Circuit<Fr> for DecoderConfigTester {
-        type Config = (DecoderConfig, U8Table, BitwiseOpTable, PowOfRandTable, Challenges);
+        type Config = (
+            DecoderConfig,
+            U8Table,
+            BitwiseOpTable,
+            PowOfRandTable,
+            Challenges,
+        );
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -4643,7 +4620,13 @@ mod tests {
                 },
             );
 
-            (config, u8_table, bitwise_op_table, pow_rand_table, challenges)
+            (
+                config,
+                u8_table,
+                bitwise_op_table,
+                pow_rand_table,
+                challenges,
+            )
         }
 
         #[allow(clippy::type_complexity)]
@@ -4724,10 +4707,7 @@ mod tests {
         };
 
         let k = 18;
-        let decoder_config_tester = DecoderConfigTester { 
-            compressed, 
-            k,
-        };
+        let decoder_config_tester = DecoderConfigTester { compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();
     }

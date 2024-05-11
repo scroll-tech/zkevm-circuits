@@ -27,13 +27,13 @@ impl FixedLookupValues for RomSeqDataInterleavedOrder {
                 Value::known(Fr::zero()),           // table_kind_prev
                 Value::known(Fr::from(LLT as u64)), // table_kind_curr
                 Value::known(Fr::one()),            // is_init_state
-                Value::known(Fr::zero()),           // is_update_state
+                Value::known(Fr::one()),           // is_update_state
                 Value::known(Fr::zero()),
                 Value::known(Fr::zero()),
             ]],
             [
-                (LLT, MOT, true, false), // init state (MOT)
-                (MOT, MLT, true, false), // init state (MLT)
+                (LLT, MOT, true, true), // init state (MOT)
+                (MOT, MLT, true, true), // init state (MLT)
                 (MLT, MOT, false, false),
                 (MOT, MLT, false, false),
                 (MLT, LLT, false, false),

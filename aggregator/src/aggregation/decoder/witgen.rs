@@ -1204,6 +1204,11 @@ fn process_sequences<F: Field>(
     let mut is_init = true;
     let mut nb = nb_switch[mode][order_idx];
     let bitstream_end_bit_idx = n_sequence_data_bytes * N_BITS_PER_BYTE;
+    let mut table_kind = 0u64;
+    let mut table_size = 0u64;
+    let mut last_states: [u64; 3] = [0, 0, 0];
+    let mut last_symbols: [u64; 3] = [0, 0, 0];
+    let mut current_decoding_state = 0u64;
 
     // witgen_debug
     let stdout = io::stdout();
@@ -1228,9 +1233,6 @@ fn process_sequences<F: Field>(
         let bitstring_value =
             be_bits_to_value(&sequence_bitstream[current_bit_idx..(current_bit_idx + nb)]);
 
-        let new_decoded = (data_tags[mode * 3 + order_idx], bitstring_value);
-        decoded_bitstring_values.push(new_decoded);
-
         let mut curr_baseline = 0;
         if mode > 0 {
             // For the initial baseline determination, ML and CMO positions are flipped.
@@ -1238,13 +1240,37 @@ fn process_sequences<F: Field>(
                 order_idx = [0, 2, 1][order_idx];
             }
 
+            if order_idx < 1 {
+                seq_idx += 1;
+            }
+
+            let new_decoded = (data_tags[mode * 3 + order_idx], bitstring_value);
+            decoded_bitstring_values.push(new_decoded);
+
+            current_decoding_state = (mode * 3 + order_idx) as u64;
+
+            table_kind = match new_decoded.0 {
+                SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => table_cmot.table_kind as u64,
+                SequenceDataTag::MatchLengthFse | SequenceDataTag::MatchLengthValue => table_mlt.table_kind as u64,
+                SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => table_llt.table_kind as u64,
+                _ => unreachable!(),
+            };
+            table_size = match new_decoded.0 {
+                SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => table_cmot.table_size,
+                SequenceDataTag::MatchLengthFse | SequenceDataTag::MatchLengthValue => table_mlt.table_size,
+                SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => table_llt.table_size,
+                _ => unreachable!(),
+            };
+
             // FSE state update step
             curr_baseline = state_baselines[order_idx];
             let new_state = (curr_baseline as u64) + bitstring_value;
+            last_states[order_idx] = new_state;
             let new_state_params = f_tables[order_idx]
                 .get(&new_state)
                 .expect("State should exist.");
             let state_symbol = new_state_params.0;
+            last_symbols[order_idx] = state_symbol;
 
             let value_idx = 3 - order_idx - 1;
 
@@ -1265,40 +1291,29 @@ fn process_sequences<F: Field>(
             if is_init {
                 order_idx = [0, 2, 1][order_idx];
             }
-
-            order_idx += 1;
-
-            if order_idx > 2 {
-                is_init = false;
-                mode = 0; // switch to data mode
-                order_idx = 0;
-                seq_idx += 1;
-            }
         } else {
+            let new_decoded = (data_tags[mode * 3 + order_idx], bitstring_value);
+            decoded_bitstring_values.push(new_decoded);
+
+            current_decoding_state = (mode * 3 + order_idx) as u64;
+
+            table_kind = match new_decoded.0 {
+                SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => table_cmot.table_kind as u64,
+                SequenceDataTag::MatchLengthFse | SequenceDataTag::MatchLengthValue => table_mlt.table_kind as u64,
+                SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => table_llt.table_kind as u64,
+                _ => unreachable!(),
+            };
+            table_size = match new_decoded.0 {
+                SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => table_cmot.table_size,
+                SequenceDataTag::MatchLengthFse | SequenceDataTag::MatchLengthValue => table_mlt.table_size,
+                SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => table_llt.table_size,
+                _ => unreachable!(),
+            };
+
             // Value decoding step
             curr_baseline = decoding_baselines[order_idx];
             let new_value = (curr_baseline as u64) + bitstring_value;
             curr_instruction[order_idx] = new_value as usize;
-
-            order_idx += 1;
-
-            if order_idx > 2 {
-                mode = 1; // switch to FSE mode
-                order_idx = 0;
-
-                // Add the instruction
-                let new_instruction = (
-                    curr_instruction[0],
-                    curr_instruction[1],
-                    curr_instruction[2],
-                );
-
-                // witgen_debug
-                // write!(handle, "NewInstruction - idx: {:?}, Offset: {:?}, ML: {:?}, LLT: {:?}", raw_sequence_instructions.len(), new_instruction.0, new_instruction.1, new_instruction.2).unwrap();
-                // writeln!(handle);
-
-                raw_sequence_instructions.push(new_instruction);
-            }
         }
 
         // bitstream witness row data
@@ -1354,25 +1369,23 @@ fn process_sequences<F: Field>(
                 is_zero_bit_read: (nb == 0),
                 is_seq_init: is_init,
                 seq_idx,
-                states: if mode > 0 {
-                    [order_idx == 0, order_idx == 1, order_idx == 2]
-                } else {
-                    [false, false, false]
-                },
-                symbols: if mode > 0 {
-                    [false, false, false]
-                } else {
-                    [order_idx == 2, order_idx == 1, order_idx == 0]
-                },
-                values: [0, 0, 0],
+                states: last_states.clone(),
+                symbols: last_symbols.clone(),
+                values: [
+                    curr_instruction[2] as u64,
+                    curr_instruction[1] as u64,
+                    curr_instruction[0] as u64,
+                ],
                 baseline: curr_baseline as u64,
                 is_nil: false,
+                is_update_state: (current_decoding_state >= 3) as u64,
             },
             decoded_data: last_row.decoded_data.clone(),
-            fse_data: FseDecodingRow::default(), /* TODO: Clarify alternating FSE/data segments
-                                                  * TODO(ray): pls check where to get this field
-                                                  * from.
-                                                  * is_state_skipped: false, */
+            fse_data: FseDecodingRow { 
+                table_kind, 
+                table_size,
+                ..Default::default()
+            }
         });
 
         let multi_byte_boundaries: [usize; 2] = [15, 23];
@@ -1430,26 +1443,51 @@ fn process_sequences<F: Field>(
                         is_zero_bit_read: false,
                         is_seq_init: false,
                         seq_idx,
-                        states: if mode > 0 {
-                            [order_idx == 0, order_idx == 1, order_idx == 2]
-                        } else {
-                            [false, false, false]
-                        },
-                        symbols: if mode > 0 {
-                            [false, false, false]
-                        } else {
-                            [order_idx == 2, order_idx == 1, order_idx == 0]
-                        },
-                        values: [0, 0, 0],
+                        states: last_states.clone(),
+                        symbols: last_symbols.clone(),
+                        values: [
+                            curr_instruction[2] as u64,
+                            curr_instruction[1] as u64,
+                            curr_instruction[0] as u64,
+                        ],
                         baseline: curr_baseline as u64,
                         is_nil: true,
+                        is_update_state: 0u64,
                     },
                     decoded_data: last_row.decoded_data.clone(),
-                    fse_data: FseDecodingRow::default(), /* TODO: Clarify alternating FSE/data segments
-                                                          * TODO(ray): pls check where to get this field
-                                                          * from.
-                                                          * is_state_skipped: false, */
+                    fse_data: FseDecodingRow { 
+                        table_kind, 
+                        table_size,
+                        ..Default::default()
+                    }
                 })
+            }
+        }
+
+        order_idx += 1;
+        if mode > 0 {
+            if order_idx > 2 {
+                is_init = false;
+                mode = 0; // switch to data mode
+                order_idx = 0;
+            }
+        } else {
+            if order_idx > 2 {
+                mode = 1; // switch to FSE mode
+                order_idx = 0;
+
+                // Add the instruction
+                let new_instruction = (
+                    curr_instruction[0],
+                    curr_instruction[1],
+                    curr_instruction[2],
+                );
+
+                // witgen_debug
+                // write!(handle, "NewInstruction - idx: {:?}, Offset: {:?}, ML: {:?}, LLT: {:?}", raw_sequence_instructions.len(), new_instruction.0, new_instruction.1, new_instruction.2).unwrap();
+                // writeln!(handle);
+
+                raw_sequence_instructions.push(new_instruction);
             }
         }
         
@@ -1476,21 +1514,22 @@ fn process_sequences<F: Field>(
     let mut literal_len_acc: usize = 0;
     let mut repeated_offset: [usize; 3] = [1, 4, 8];
 
-    for idx in 0..witness_rows.len() {
-        if witness_rows[idx].state.tag == ZstdTag::ZstdBlockSequenceData
-            && !witness_rows[idx].bitstream_read_data.is_seq_init
-        {
-            let seq_idx = witness_rows[idx].bitstream_read_data.seq_idx;
-            if seq_idx > 0 {
-                witness_rows[idx].bitstream_read_data.values = [
-                    // literal length, match length and match offset.
-                    raw_sequence_instructions[seq_idx - 1].2 as u64,
-                    raw_sequence_instructions[seq_idx - 1].1 as u64,
-                    raw_sequence_instructions[seq_idx - 1].0 as u64,
-                ];
-            }
-        }
-    }
+    // witgen_debug
+    // for idx in 0..witness_rows.len() {
+    //     if witness_rows[idx].state.tag == ZstdTag::ZstdBlockSequenceData
+    //         && !witness_rows[idx].bitstream_read_data.is_seq_init
+    //     {
+    //         let seq_idx = witness_rows[idx].bitstream_read_data.seq_idx;
+    //         if seq_idx > 0 {
+    //             witness_rows[idx].bitstream_read_data.values = [
+    //                 // literal length, match length and match offset.
+    //                 raw_sequence_instructions[seq_idx - 1].2 as u64,
+    //                 raw_sequence_instructions[seq_idx - 1].1 as u64,
+    //                 raw_sequence_instructions[seq_idx - 1].0 as u64,
+    //             ];
+    //         }
+    //     }
+    // }
 
     for (idx, inst) in raw_sequence_instructions.iter().enumerate() {
         let actual_offset = if inst.0 > 3 {
@@ -1833,7 +1872,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     // for (idx, row) in witness_rows.iter().enumerate() {
     //     write!(
     //         handle,
-    //         "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",
+    //         "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",
     //         idx,
     //         row.state.tag, row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
     //         row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
@@ -1849,7 +1888,14 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     //         row.bitstream_read_data.bit_start_idx,
     //         row.bitstream_read_data.bit_end_idx, row.bitstream_read_data.bit_value,
     //         row.bitstream_read_data.is_nil,
-    //         row.bitstream_read_data.is_zero_bit_read
+    //         row.bitstream_read_data.is_zero_bit_read,
+    //         row.bitstream_read_data.is_seq_init,
+    //         row.bitstream_read_data.seq_idx,
+    //         row.bitstream_read_data.states,
+    //         row.bitstream_read_data.symbols,
+    //         row.bitstream_read_data.values,
+    //         row.bitstream_read_data.baseline,
+    //         row.bitstream_read_data.is_update_state,
     //     ).unwrap();
 
     //     writeln!(handle).unwrap();

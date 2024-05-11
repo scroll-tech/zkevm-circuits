@@ -108,7 +108,11 @@ pub struct BitstringTable {
 
 impl BitstringTable {
     /// Construct the bitstring accumulation table.
-    pub fn configure(meta: &mut ConstraintSystem<Fr>, q_enable: Column<Fixed>, u8_table: U8Table) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<Fr>,
+        q_enable: Column<Fixed>,
+        u8_table: U8Table,
+    ) -> Self {
         let config = Self {
             q_first: meta.fixed_column(),
             byte_idx_1: meta.advice_column(),
@@ -490,16 +494,14 @@ impl BitstringTable {
                 // Multi-block assignment
                 for block in block_info_arr {
                     // Fse decoding rows
-                    let fse_offset = witness_rows
+                    let fse_position = witness_rows
                         .iter()
-                        .find(|&r| {
+                        .position(|r| {
                             r.state.block_idx == (block.block_idx as u64)
                                 && r.state.tag == ZstdTag::ZstdBlockSequenceFseCode
                         })
-                        .unwrap()
-                        .encoded_data
-                        .byte_idx;
-                    let fse_rows = witness_rows
+                        .unwrap();
+                    let mut fse_rows = witness_rows
                         .iter()
                         .filter(|&r| {
                             r.state.block_idx == (block.block_idx as u64)
@@ -516,18 +518,37 @@ impl BitstringTable {
                             )
                         })
                         .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
+                    // Append 2 more witness rows to accommodate the 3-bytes chunk for the last
+                    // FseCode row.
+                    let fse_rows_len = fse_rows.len();
+                    fse_rows.extend_from_slice(
+                        witness_rows
+                            .iter()
+                            .skip(fse_position + fse_rows_len)
+                            .take(2)
+                            .map(|r| {
+                                (
+                                    r.encoded_data.byte_idx as usize,
+                                    r.encoded_data.value_byte as u64,
+                                    r.bitstream_read_data.bit_start_idx,
+                                    r.bitstream_read_data.bit_end_idx,
+                                    r.bitstream_read_data.bit_value,
+                                    r.state.tag.is_reverse() as u64,
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    );
 
                     // Sequence data rows
-                    let sequence_data_offset = witness_rows
+                    let sequence_data_position = witness_rows
                         .iter()
-                        .find(|&r| {
+                        .position(|r| {
                             r.state.block_idx == (block.block_idx as u64)
                                 && r.state.tag == ZstdTag::ZstdBlockSequenceData
                         })
-                        .unwrap()
-                        .encoded_data
-                        .byte_idx;
-                    let sequence_data_rows = witness_rows
+                        .unwrap();
+                    let mut sequence_data_rows = witness_rows
                         .iter()
                         .filter(|&r| {
                             r.state.block_idx == (block.block_idx as u64)
@@ -544,13 +565,29 @@ impl BitstringTable {
                             )
                         })
                         .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
+                    // Append 2 more witness rows to accommodate the 3-bytes chunk for the last
+                    // FseCode row.
+                    let sequence_data_rows_len = sequence_data_rows.len();
+                    sequence_data_rows.extend_from_slice(
+                        witness_rows
+                            .iter()
+                            .skip(sequence_data_position + sequence_data_rows_len)
+                            .take(2)
+                            .map(|r| {
+                                (
+                                    r.encoded_data.byte_idx as usize,
+                                    r.encoded_data.value_byte as u64,
+                                    r.bitstream_read_data.bit_start_idx,
+                                    r.bitstream_read_data.bit_end_idx,
+                                    r.bitstream_read_data.bit_value,
+                                    r.state.tag.is_reverse() as u64,
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    );
 
-                    for (_byte_offset, rows) in [
-                        (fse_offset, fse_rows),
-                        (sequence_data_offset, sequence_data_rows),
-                    ]
-                    .into_iter()
-                    {
+                    for rows in [fse_rows, sequence_data_rows].into_iter() {
                         for grouped_rows in rows.windows(3) {
                             let curr_row = grouped_rows[0].clone();
 
@@ -688,7 +725,7 @@ impl BitstringTable {
                         || Value::known(Fr::one()),
                     )?;
                 }
-                
+
                 Ok(())
             },
         )
