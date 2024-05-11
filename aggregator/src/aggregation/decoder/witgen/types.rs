@@ -111,6 +111,7 @@ pub struct SequenceInfo {
 pub enum SequenceExecInfo {
     LiteralCopy(std::ops::Range<usize>),
     BackRef(std::ops::Range<usize>),
+    LastLiteralCopy,
 }
 
 /// The type to describe an execution: (instruction_id, exec_info)

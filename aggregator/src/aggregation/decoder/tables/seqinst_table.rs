@@ -561,8 +561,8 @@ impl<F: Field> SeqInstTable<F> {
         }
     }
 
-    /// assign a heading / padding row before a each block
-    pub fn assign_heading_row<'a>(
+    // assign a heading / padding row before a each block
+    fn assign_heading_row<'a>(
         &self,
         region: &mut Region<F>,
         offset: usize,
@@ -631,8 +631,8 @@ impl<F: Field> SeqInstTable<F> {
 
     }
 
-    /// padding for the rest row
-    pub fn padding_rows<'a>(
+    // padding for the rest row
+    fn padding_rows<'a>(
         &self,
         region: &mut Region<F>,
         mut offset: usize,
@@ -659,9 +659,9 @@ impl<F: Field> SeqInstTable<F> {
         Ok(())
     }
 
-    /// assign a single block from current offset
-    /// and return the offset below the last used row
-    pub fn assign_block<'a>(
+    // assign a single block from current offset
+    // and return the offset below the last used row
+    fn assign_block<'a>(
         &self,
         region: &mut Region<F>,
         mut offset: usize,
@@ -758,8 +758,8 @@ impl<F: Field> SeqInstTable<F> {
         Ok(offset)
     }
 
-    /// assign the top row 
-    pub fn init_top_row(
+    // assign the top row 
+    fn init_top_row(
         &self,
         region: &mut Region<F>,
         from_offset: Option<usize>,

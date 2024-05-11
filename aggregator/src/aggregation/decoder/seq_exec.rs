@@ -307,6 +307,8 @@ impl<F: Field> SeqExecConfig<F> {
         meta.create_gate("phases", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
+            let s_lit_cp_phase_next = meta.query_advice(s_lit_cp_phase, Rotation::next());
+            let s_back_ref_phase_next = meta.query_advice(s_back_ref_phase, Rotation::next());
             let s_lit_cp_phase_prev = meta.query_advice(s_lit_cp_phase, Rotation::prev());
             let s_back_ref_phase_prev = meta.query_advice(s_back_ref_phase, Rotation::prev());
             let s_lit_cp_phase = meta.query_advice(s_lit_cp_phase, Rotation::cur());
@@ -342,10 +344,10 @@ impl<F: Field> SeqExecConfig<F> {
                 );
             });
 
-            let is_padding_prev = 1.expr() - s_lit_cp_phase_prev.expr() - s_back_ref_phase_prev.expr();
-            cb.condition(is_padding_prev.expr(), |cb|{
+            let is_padding_next = 1.expr() - s_lit_cp_phase_next.expr() - s_back_ref_phase_next.expr();
+            cb.condition(is_padding.expr(), |cb|{
                 cb.require_equal("padding never change once actived", 
-                    is_padding_prev.expr(), 
+                    is_padding_next.expr(), 
                     is_padding.expr(),
                 );
             });
@@ -361,12 +363,15 @@ impl<F: Field> SeqExecConfig<F> {
             let s_last_lit_cp_phase_prev = meta.query_advice(s_last_lit_cp_phase, Rotation::prev());
             let s_last_lit_cp_phase = meta.query_advice(s_last_lit_cp_phase, Rotation::cur());
             cb.require_boolean("last lit_cp phase is boolean", s_last_lit_cp_phase.expr());
+
             cb.condition(and::expr([
                 s_last_lit_cp_phase.expr(),
-                is_inst_begin.expr(),
+                not::expr(s_last_lit_cp_phase_prev.expr()),
             ]), |cb|{
-                cb.require_zero("phase can only be actived in inst border", 
-                    s_last_lit_cp_phase_prev.expr());
+                cb.require_equal("phase can only be actived in inst border", 
+                    is_inst_begin.expr(),
+                    1.expr(),
+                );
             });
 
             cb.condition(and::expr([
@@ -473,24 +478,55 @@ impl<F: Field> SeqExecConfig<F> {
             )
         });        
 
-        meta.create_gate("padding", |meta|{
+        meta.create_gate("output and paddings", |meta|{
             let mut cb = BaseConstraintBuilder::default();
+
+            let decoded_len_prev = meta.query_advice(decoded_len, Rotation::prev());
+            let decoded_rlc_prev = meta.query_advice(decoded_rlc, Rotation::prev());
+            let decoded_len = meta.query_advice(decoded_len, Rotation::cur());
+            let decoded_rlc = meta.query_advice(decoded_rlc, Rotation::cur());
+            let decoded_byte = meta.query_advice(decoded_byte, Rotation::cur());
+
+            cb.require_equal(
+                "decoded len increase 1 in next row until paddings", 
+                select::expr(
+                    is_padding.expr(),
+                    decoded_len_prev.expr(),
+                    decoded_len_prev.expr() + 1.expr(),
+                ),
+                decoded_len.expr(),
+            );
+            cb.condition(
+                is_padding.expr(),
+                |cb|cb.require_zero(
+                    "while padding, byte is always zero", 
+                    decoded_byte.expr(),
+                ),
+            );
+
+            cb.require_equal("rlc accumulate", 
+                decoded_rlc_prev.expr() * 
+                (decoded_len.expr() - decoded_len_prev.expr())
+                * challenges.evm_word() + decoded_byte.expr(), 
+                decoded_rlc.expr(),
+            );
 
             cb.gate(meta.query_fixed(q_head, Rotation::cur()))
         });
 
-        meta.create_gate("header", |meta|{
-            let mut cb = BaseConstraintBuilder::default();
+        // meta.create_gate("header", |meta|{
+        //     let mut cb = BaseConstraintBuilder::default();
 
-            cb.gate(meta.query_fixed(q_head, Rotation::cur()))
-        });
+        //     cb.gate(meta.query_fixed(q_head, Rotation::cur()))
+        // });
 
-        meta.lookup_any("lookup the instruction from inst table", |meta|{
+        meta.lookup_any("the instruction from inst table", |meta|{
 
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
 
             let block_index = meta.query_advice(block_index, Rotation::prev());
             let seq_index = meta.query_advice(seq_index, Rotation::prev());
+            let not_last_lit_cp = not::expr(meta.query_advice(s_last_lit_cp_phase, Rotation::prev()));
             let literal_pos_at_inst_end = meta.query_advice(literal_pos, Rotation::prev());
             let backref_pos_at_inst_end = meta.query_advice(backref_pos, Rotation::prev());
             let backref_len_at_inst_end = meta.query_advice(backref_progress, Rotation::prev());
@@ -505,11 +541,16 @@ impl<F: Field> SeqExecConfig<F> {
                 ]
             ).map(|(lookup_col, src_expr)|{
                 let lookup_expr = meta.query_advice(lookup_col, Rotation::cur());
-                (src_expr * is_inst_begin.expr() * q_enabled.expr(), lookup_expr)
+                let src_expr = src_expr 
+                * is_inst_begin.expr()
+                * not_last_lit_cp.expr()
+                * q_enabled.expr();
+                assert!(src_expr.degree() <= 5);
+                (src_expr, lookup_expr)
             }).collect()
         });
 
-        meta.lookup_any("lookup lit cp char", |meta|{
+        meta.lookup_any("lit cp char", |meta|{
             let enabled = meta.query_fixed(q_enabled, Rotation::cur())
                 * meta.query_advice(s_lit_cp_phase, Rotation::cur());
 
@@ -531,7 +572,7 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
-        meta.lookup_any("lookup back ref char", |meta|{
+        meta.lookup_any("back ref char", |meta|{
             let enabled = meta.query_fixed(q_enabled, Rotation::cur())
                 * meta.query_advice(s_back_ref_phase, Rotation::cur());
 
@@ -557,7 +598,7 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
-        meta.lookup_any("lookup actual literal byte", |meta|{
+        meta.lookup_any("actual literal byte", |meta|{
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
             let block_index = meta.query_advice(block_index, Rotation::prev());
             let literal_pos_at_block_end = meta.query_advice(literal_pos, Rotation::prev());
@@ -576,7 +617,7 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
-        meta.lookup_any("lookup instruction counts", |meta|{
+        meta.lookup_any("instruction counts", |meta|{
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
             let block_index = meta.query_advice(block_index, Rotation::prev());
             let seq_index_at_block_end = 
@@ -624,7 +665,7 @@ impl<F: Field> SeqExecConfig<F> {
         offset: usize,
         till_offset: usize,
         decoded_len: usize,
-        decoded_rlc: F,
+        decoded_rlc: Value<F>,
         padded_block_ind: u64,
     ) -> Result<(), Error>{
 
@@ -640,20 +681,27 @@ impl<F: Field> SeqExecConfig<F> {
             }
 
             for (col, val) in [
-                (self.block_index, F::from(padded_block_ind)),
-                (self.decoded_len, F::from(decoded_len as u64)),
+                (self.block_index, Value::known(F::from(padded_block_ind))),
+                (self.decoded_len, Value::known(F::from(decoded_len as u64))),
                 (self.decoded_rlc, decoded_rlc),
             ]{
                 region.assign_advice(||"set padding rows", 
                     col, 
                     offset,
-                    ||Value::known(val),
+                    ||val,
                 )?;
             }
 
 
             for col in [
-
+                self.decoded_byte,
+                self.s_last_lit_cp_phase,
+                self.s_lit_cp_phase,
+                self.s_back_ref_phase,
+                self.backref_pos,
+                self.backref_progress,
+                self.literal_pos,
+                self.seq_index,
             ] {
                 region.assign_advice(||"flush padding rows", 
                     col, 
@@ -672,18 +720,24 @@ impl<F: Field> SeqExecConfig<F> {
     pub fn assign_block<'a>(
         &self,
         region: &mut Region<F>,
+        chng: Value<F>,
         mut offset: usize,
         mut decoded_len: usize,
-        mut decoded_rlc: F,
+        mut decoded_rlc: Value<F>,
         seq_info: &SequenceInfo,
         seq_exec_infos: impl Iterator<Item=&'a SequenceExec>,
         literals: &[u64],
         // all of the decompressed bytes, not only current block
         decompressed_bytes: &[u8],
-    ) -> Result<(usize, usize, F), Error>{
+    ) -> Result<(usize, usize, Value<F>), Error>{
 
         let block_ind = seq_info.block_idx;
-        for SequenceExec(inst_ind, exec_info) in seq_exec_infos {
+        let mut cur_literal_cp = 0usize;
+        let last_exec = SequenceExec(seq_info.num_sequences+1, SequenceExecInfo::LastLiteralCopy);
+
+        for SequenceExec(inst_ind, exec_info) in seq_exec_infos
+            .map(|v|v) // a trick to handle the lifetime issue
+            .chain(std::iter::once(&last_exec)) {
 
             let base_rows = [
                 (self.block_index, F::from(block_ind as u64)),
@@ -699,13 +753,34 @@ impl<F: Field> SeqExecConfig<F> {
             ];
 
             let (is_literal, r) = match exec_info {
-                SequenceExecInfo::LiteralCopy(r) => (true, r),
-                SequenceExecInfo::BackRef(r) => (false, r),
+                SequenceExecInfo::LiteralCopy(r) => {
+                    assert_eq!(cur_literal_cp, r.start);
+                    cur_literal_cp = r.end;
+                    (true, r.clone())
+                },
+                SequenceExecInfo::BackRef(r) => (false, r.clone()),
+                SequenceExecInfo::LastLiteralCopy => 
+                    (true, cur_literal_cp..literals.len()),
             };
 
             for (i, pos) in r.clone().enumerate() {
-                decoded_len += 1;
-                // TODO: set rlc    
+                decoded_len += 1;   
+                let out_byte = F::from(
+                    if is_literal {
+                        literals[pos as usize]
+                    } else {
+                        decompressed_bytes[pos as usize] as u64
+                    }
+                );
+                decoded_rlc = decoded_rlc * chng + Value::known(out_byte);
+
+                println!("set row at {}, output {}:{:x}", offset, decoded_len, out_byte.get_lower_32());
+
+                region.assign_advice(
+                    ||"set output region", 
+                    self.decoded_rlc, offset,
+                    ||decoded_rlc,
+                )?;
 
                 let decodes = [
                     (
@@ -715,18 +790,8 @@ impl<F: Field> SeqExecConfig<F> {
                     ),
                     (
                         self.decoded_byte, 
-                        F::from(
-                            if is_literal {
-                                literals[pos as usize]
-                            } else {
-                                decompressed_bytes[pos as usize] as u64
-                            }
-                        ),
+                        out_byte,
                     ),
-                    (
-                        self.decoded_rlc,
-                        decoded_rlc,
-                    )
                 ];
 
                 for (col, val) in base_rows.clone()
@@ -734,18 +799,20 @@ impl<F: Field> SeqExecConfig<F> {
                     .chain(decodes)
                     .chain(
                         if is_literal {
+                            println!("literal cp {}-{}-{}", pos+1, 0, 0);
                             [
                                 (self.s_lit_cp_phase, F::one()),
                                 (self.s_back_ref_phase, F::zero()),
-                                (self.literal_pos, F::from(pos as u64)),
+                                (self.literal_pos, F::from(pos as u64+1)),
                                 (self.backref_pos, F::zero()),
                                 (self.backref_progress, F::zero()),
                             ]
                         } else {
+                            println!("backref cp {}-{}-{}", cur_literal_cp, pos - i, i);
                             [
                                 (self.s_lit_cp_phase, F::one()),
                                 (self.s_back_ref_phase, F::zero()),
-                                (self.literal_pos, F::from(pos as u64)),
+                                (self.literal_pos, F::from(cur_literal_cp as u64)),
                                 (self.backref_pos, F::from((pos - i) as u64)),
                                 (self.backref_progress, F::from(i as u64)),
                             ]
@@ -758,6 +825,7 @@ impl<F: Field> SeqExecConfig<F> {
                         )?;
 
                     }
+
                 region.assign_fixed(
                     ||"enable row",
                     self.q_enabled, 
@@ -802,6 +870,7 @@ impl<F: Field> SeqExecConfig<F> {
     pub fn mock_assign(
         &self,
         layouter: &mut impl Layouter<F>,
+        chng: &Challenges<Value<F>>,
         n_seq: usize,
         seq_exec_infos: &[SequenceExec],
         literals: &[u8],
@@ -818,10 +887,11 @@ impl<F: Field> SeqExecConfig<F> {
 
                 let offset = self.init_top_row(&mut region, None)?;
                 let (offset, decoded_len, decoded_rlc) = self.assign_block(
-                    &mut region, 
-                    offset, 
+                    &mut region,
+                    chng.evm_word(),
+                    offset,
                     0, 
-                    F::zero(), 
+                    Value::known(F::zero()), 
                     &SequenceInfo {
                         block_idx: 1,
                         num_sequences: n_seq,
@@ -928,8 +998,11 @@ mod tests {
 
             config.inst_tbl.mock_assign(&mut layouter, &self.insts, 15)?;
 
+            let chng_val = config.chng_mock.values(&mut layouter);
+
             config.config.mock_assign(
                 &mut layouter, 
+                &chng_val,
                 self.insts.len(), 
                 &self.exec_trace, 
                 &self.literal, 
@@ -969,14 +1042,14 @@ mod tests {
     }
 
     #[test]
-    fn seq_exec_to_output_region(){
+    fn seq_exec_literal_only(){
 
-        // example comes from zstd's spec
+        // no instructions, we only copy literals to output
         let circuit = SeqExecMock{
-            outputs: Vec::new(),
-            literal: Vec::new(),
+            outputs: Vec::from("abcd".as_bytes()),
+            literal: Vec::from("abcd".as_bytes()),
             seq_conf: SequenceInfo {
-                num_sequences: 2,
+                num_sequences: 0,
                 block_idx: 1,
                 ..Default::default()
             },
