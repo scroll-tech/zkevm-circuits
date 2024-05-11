@@ -561,6 +561,8 @@ pub fn constrain_is_memory_copy<F: Field>(
     let is_memory_next = meta.query_advice(is_memory, NEXT_ROW);
     let is_last = meta.query_advice(is_last_col, CURRENT);
 
+    // at any case, `is_memory_copy` is bool type.
+    cb.require_boolean("is_memory_copy is always bool", is_memory_copy.clone());
     cb.condition(not::expr(is_last.clone()), |cb| {
         cb.require_equal(
             "is_memory_copy == is_memory_cur * is_memory_next * is_id_unchange",
