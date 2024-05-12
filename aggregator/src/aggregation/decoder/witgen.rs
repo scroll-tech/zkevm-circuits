@@ -1644,7 +1644,7 @@ fn process_sequences<F: Field>(
         let r = current_literal_pos..literals.len();
         seq_exec_info.push(
             SequenceExec(
-                sequence_info.num_sequences+1,
+                sequence_info.num_sequences,
                 SequenceExecInfo::LiteralCopy(r.clone()),
             )
         );        

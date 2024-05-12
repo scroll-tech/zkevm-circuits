@@ -226,7 +226,7 @@ pub struct SeqExecConfig<F: Field> {
     // the copied index in literal section 
     literal_pos: Column<Advice>,
     // the back-ref pos 
-    backref_pos: Column<Advice>,
+    backref_offset: Column<Advice>,   
     // counting the progress of back ref bytes
     backref_progress: Column<Advice>,    
 
@@ -266,9 +266,9 @@ impl<F: Field> SeqExecConfig<F> {
         let s_last_lit_cp_phase = meta.advice_column();
         let s_lit_cp_phase = meta.advice_column();
         let s_back_ref_phase = meta.advice_column();
+        let backref_offset = meta.advice_column();
         let backref_progress = meta.advice_column();
         let literal_pos = meta.advice_column();
-        let backref_pos = meta.advice_column();
 
         // need to constraint the final block index so
         // we ensure all blocks has been handled
@@ -400,28 +400,49 @@ impl<F: Field> SeqExecConfig<F> {
         });
 
         debug_assert!(meta.degree() <= 9);
-        meta.create_gate("lit cp phase pos", |meta|{
+        meta.create_gate("phase pos", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
             let literal_pos_prev = meta.query_advice(literal_pos, Rotation::prev());
             let literal_pos = meta.query_advice(literal_pos, Rotation::cur());
-
             let s_lit_cp_phase = meta.query_advice(s_lit_cp_phase, Rotation::cur());
 
-            let in_block_prog = select::expr(
-                s_lit_cp_phase.expr(),
-                literal_pos_prev.expr() + 1.expr(),
-                literal_pos_prev.expr(),
-            );
             cb.require_equal("lit cp is increment in one block", 
                 select::expr(
                     is_block_begin.expr(),
                     // so we start at 1 if first row is lit cp
                     // or 0 if not
                     s_lit_cp_phase.expr(),
-                    in_block_prog.expr(),
+                    literal_pos_prev.expr() + s_lit_cp_phase.expr(),
                 ), 
                 literal_pos.expr(),
+            );
+
+            let backref_progress_prev = meta.query_advice(backref_progress, Rotation::prev());
+            let backref_progress = meta.query_advice(backref_progress, Rotation::cur());
+
+            let s_back_ref_phase = meta.query_advice(s_back_ref_phase, Rotation::cur());
+
+            cb.require_equal("backref progress is increment in one inst", 
+                select::expr(
+                    is_inst_begin.expr(),
+                    // so we start at 1 if first row is lit cp
+                    // or 0 if not
+                    s_back_ref_phase.expr(),
+                    backref_progress_prev.expr() + s_back_ref_phase.expr(),
+                ), 
+                backref_progress.expr(),
+            );
+
+            let backref_offset_prev = meta.query_advice(backref_offset, Rotation::prev());
+            let backref_offset = meta.query_advice(backref_offset, Rotation::cur());
+
+            cb.condition(
+                not::expr(is_inst_begin.expr()),
+                |cb|cb.require_equal("backref offset kee the same in one inst", 
+                backref_offset.expr(),
+                    backref_offset_prev.expr(),
+                )
             );
 
             cb.gate(
@@ -430,60 +451,7 @@ impl<F: Field> SeqExecConfig<F> {
         });
 
         debug_assert!(meta.degree() <= 9);
-        meta.create_gate("backref phase pos", |meta|{
-            let mut cb = BaseConstraintBuilder::default();
 
-            let backref_progress_prev = meta.query_advice(backref_progress, Rotation::prev());
-            let backref_progress = meta.query_advice(backref_progress, Rotation::cur());
-
-            let s_back_ref_phase = meta.query_advice(s_back_ref_phase, Rotation::cur());
-
-            let back_ref_prog = select::expr(
-                s_back_ref_phase.expr(),
-                backref_progress_prev.expr() + 1.expr(),
-                backref_progress_prev.expr(),
-            );
-                        
-            cb.require_equal("backref progress is increment in one inst", 
-                select::expr(
-                    is_inst_begin.expr(),
-                    // so we start at 1 if first row is lit cp
-                    // or 0 if not
-                    s_back_ref_phase.expr(),
-                    back_ref_prog.expr(),
-                ), 
-                backref_progress.expr(),
-            );
-
-            let backref_pos_prev = meta.query_advice(backref_pos, Rotation::prev());
-            let backref_pos = meta.query_advice(backref_pos, Rotation::cur());
-
-            cb.condition(
-                not::expr(is_inst_begin.expr()), |cb|{
-                    cb.require_equal("backref position keep the same in one instruction", 
-                        backref_pos_prev.expr(), 
-                        backref_pos.expr(),
-                    );
-                }
-            );
-
-            cb.require_equal("backref progress keep the same in back ref phase", 
-                select::expr(
-                    is_inst_begin.expr(),
-                    // so we start at 1 if first row is lit cp
-                    // or 0 if not
-                    s_back_ref_phase.expr(),
-                    back_ref_prog.expr(),
-                ), 
-                backref_pos.expr(),
-            );
-
-            cb.gate(
-                meta.query_fixed(q_enabled, Rotation::cur())
-            )
-        });        
-
-        debug_assert!(meta.degree() <= 9);
         meta.create_gate("output and paddings", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -535,14 +503,14 @@ impl<F: Field> SeqExecConfig<F> {
             let seq_index = meta.query_advice(seq_index, Rotation::prev());
             let not_last_lit_cp = not::expr(meta.query_advice(s_last_lit_cp_phase, Rotation::prev()));
             let literal_pos_at_inst_end = meta.query_advice(literal_pos, Rotation::prev());
-            let backref_pos_at_inst_end = meta.query_advice(backref_pos, Rotation::prev());
+            let backref_offset_at_inst_end = meta.query_advice(backref_offset, Rotation::prev());
             let backref_len_at_inst_end = meta.query_advice(backref_progress, Rotation::prev());
 
             inst_table.instructions().into_iter().zip(
                 [
                     block_index,
                     seq_index,
-                    backref_pos_at_inst_end,
+                    backref_offset_at_inst_end,
                     literal_pos_at_inst_end,
                     backref_len_at_inst_end
                 ]
@@ -586,7 +554,7 @@ impl<F: Field> SeqExecConfig<F> {
                 * meta.query_advice(s_back_ref_phase, Rotation::cur());
 
             let block_index = meta.query_advice(block_index, Rotation::cur());
-            let backref_pos = meta.query_advice(backref_pos, Rotation::cur());
+            let backref_pos = meta.query_advice(backref_offset, Rotation::cur());
             let cp_byte = meta.query_advice(decoded_byte, Rotation::cur());
             let decode_pos = meta.query_advice(decoded_len, Rotation::cur());
             let ref_pos = decode_pos.expr() - backref_pos.expr();
@@ -663,7 +631,7 @@ impl<F: Field> SeqExecConfig<F> {
             s_back_ref_phase,
             backref_progress,
             literal_pos,
-            backref_pos,
+            backref_offset,
             is_padding,
             is_inst_begin,
             is_block_begin,
@@ -710,7 +678,7 @@ impl<F: Field> SeqExecConfig<F> {
                 self.s_last_lit_cp_phase,
                 self.s_lit_cp_phase,
                 self.s_back_ref_phase,
-                self.backref_pos,
+                self.backref_offset,
                 self.backref_progress,
                 self.literal_pos,
                 self.seq_index,
@@ -745,15 +713,24 @@ impl<F: Field> SeqExecConfig<F> {
 
         let block_ind = seq_info.block_idx;
         let mut cur_literal_cp = 0usize;
+        let mut inst_begin_offset = offset;
+        let mut cur_inst : Option<usize> = None;
 
         for SequenceExec(inst_ind, exec_info) in seq_exec_infos {
 
+            let inst_ind = *inst_ind + 1;
+            if let Some(old_ind) = cur_inst.replace(inst_ind) {
+                if old_ind != inst_ind {
+                    inst_begin_offset = offset;
+                }
+            }
+
             let base_rows = [
                 (self.block_index, F::from(block_ind as u64)),
-                (self.seq_index, F::from(*inst_ind as u64)),
+                (self.seq_index, F::from(inst_ind as u64)),
                 (
                     self.s_last_lit_cp_phase, 
-                    if *inst_ind > seq_info.num_sequences { 
+                    if inst_ind > seq_info.num_sequences { 
                         F::one()
                     }else {
                         F::zero()
@@ -789,6 +766,27 @@ impl<F: Field> SeqExecConfig<F> {
                     ||decoded_rlc,
                 )?;
 
+                // all of the "pos" is 1-index for lookup since the 
+                // bytes_output is 1-indexed
+                let pos = pos + 1;
+                let ref_offset = if is_literal {
+                    None
+                } else {
+                    Some(decoded_len - pos)
+                };
+                // for back-ref part, we refill the backref_pos in the whole
+                // instruction
+                if !is_literal && i == 0{
+                    println!("fill-back match offset {} in {}..{}", pos, inst_begin_offset, offset);
+                    for back_offset in inst_begin_offset..offset {
+                        region.assign_advice(
+                            ||"set output region", 
+                            self.backref_offset, back_offset,
+                            ||Value::known(F::from(ref_offset.expect("backref set") as u64)),
+                        )?;                        
+                    }
+                }
+
                 let decodes = [
                     (
                         self.decoded_len,
@@ -799,6 +797,10 @@ impl<F: Field> SeqExecConfig<F> {
                         self.decoded_byte, 
                         out_byte,
                     ),
+                    (
+                        self.backref_offset,
+                        F::from(ref_offset.unwrap_or_default() as u64),
+                    ),
                 ];
 
                 for (col, val) in base_rows.clone()
@@ -806,22 +808,20 @@ impl<F: Field> SeqExecConfig<F> {
                     .chain(decodes)
                     .chain(
                         if is_literal {
-                            println!("literal cp {}-{}-{}", pos+1, 0, 0);
+                            println!("inst {}: literal cp {}-{}", inst_ind, pos, 0);
                             [
                                 (self.s_lit_cp_phase, F::one()),
                                 (self.s_back_ref_phase, F::zero()),
-                                (self.literal_pos, F::from(pos as u64+1)),
-                                (self.backref_pos, F::zero()),
+                                (self.literal_pos, F::from(pos as u64)),
                                 (self.backref_progress, F::zero()),
                             ]
                         } else {
-                            println!("backref cp {}-{}-{}", cur_literal_cp, pos - i, i);
+                            println!("inst {}: backref cp {}-{}", inst_ind, cur_literal_cp, i+1);
                             [
-                                (self.s_lit_cp_phase, F::one()),
-                                (self.s_back_ref_phase, F::zero()),
+                                (self.s_lit_cp_phase, F::zero()),
+                                (self.s_back_ref_phase, F::one()),
                                 (self.literal_pos, F::from(cur_literal_cp as u64)),
-                                (self.backref_pos, F::from((pos - i) as u64)),
-                                (self.backref_progress, F::from(i as u64)),
+                                (self.backref_progress, F::from(i as u64 + 1)),
                             ]
                         }
                     ){
@@ -865,7 +865,7 @@ impl<F: Field> SeqExecConfig<F> {
             self.s_back_ref_phase,
             self.s_lit_cp_phase,
             self.s_back_ref_phase,
-            self.backref_pos,
+            self.backref_offset,
             self.literal_pos,
             self.backref_progress,
         ] {
@@ -994,7 +994,7 @@ mod tests {
                 let r = current_literal_pos..literals.len();
                 exec_trace.push(
                     SequenceExec(
-                        seq_conf.num_sequences+1,
+                        seq_conf.num_sequences,
                         SequenceExecInfo::LiteralCopy(r.clone()),
                     )
                 );        
@@ -1108,13 +1108,35 @@ mod tests {
 
         // no instructions, we only copy literals to output
         let circuit = SeqExecMock::mock_generate(
-            Vec::from("abcde".as_bytes()),
+            Vec::from("abcdef".as_bytes()),
             AddressTableRow::mock_samples_full([
-                [1u64,4,1,1,4,8],
+                [1,4,1,1,4,8],
+                [9,1,3,6,1,4],
+                [3,0,4,5,6,1],
             ]),
         );
 
-        assert_eq!(circuit.outputs, Vec::from("abcdde".as_bytes()));
+        assert_eq!(circuit.outputs, Vec::from("abcddeabcdeabf".as_bytes()));
+
+        let k = 12;
+        let mock_prover = MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
+
+    }
+
+    #[test]
+    fn seq_exec_no_tail_cp(){
+
+        // no instructions, we only copy literals to output
+        let circuit = SeqExecMock::mock_generate(
+            Vec::from("abcde".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1,4,1,1,4,8],
+                [9,1,3,6,1,4],
+            ]),
+        );
+
+        assert_eq!(circuit.outputs, Vec::from("abcddeabc".as_bytes()));
 
         let k = 12;
         let mock_prover = MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
