@@ -438,9 +438,7 @@ impl<F: Field> SeqInstTable<F> {
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
-        debug_assert!(meta.degree() <= 9);
         // offset is in-section (not s_beginning)
-        // TODO(veifan): degree > 9
         meta.create_gate("offset reference", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -469,6 +467,9 @@ impl<F: Field> SeqInstTable<F> {
                 + ref_update_mode_2.expr()
                 + ref_update_mode_3.expr()
                 + ref_update_mode_4.expr();
+
+            // should not need this since all ref update modes are exclusive
+            // cb.require_boolean("is offset is boolean", s_is_offset_ref.expr());
 
             // and ref in offset_1 is updated by current value 
             cb.require_equal("set offset 0 to offset val", 

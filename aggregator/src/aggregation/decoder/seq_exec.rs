@@ -745,11 +745,8 @@ impl<F: Field> SeqExecConfig<F> {
 
         let block_ind = seq_info.block_idx;
         let mut cur_literal_cp = 0usize;
-        let last_exec = SequenceExec(seq_info.num_sequences+1, SequenceExecInfo::LastLiteralCopy);
 
-        for SequenceExec(inst_ind, exec_info) in seq_exec_infos
-            .map(|v|v) // a trick to handle the lifetime issue
-            .chain(std::iter::once(&last_exec)) {
+        for SequenceExec(inst_ind, exec_info) in seq_exec_infos {
 
             let base_rows = [
                 (self.block_index, F::from(block_ind as u64)),
@@ -771,8 +768,6 @@ impl<F: Field> SeqExecConfig<F> {
                     (true, r.clone())
                 },
                 SequenceExecInfo::BackRef(r) => (false, r.clone()),
-                SequenceExecInfo::LastLiteralCopy => 
-                    (true, cur_literal_cp..literals.len()),
             };
 
             for (i, pos) in r.clone().enumerate() {
@@ -847,6 +842,8 @@ impl<F: Field> SeqExecConfig<F> {
                 offset += 1;
             }
         }
+
+        debug_assert_eq!(cur_literal_cp, literals.len());
 
         Ok((offset, decoded_len, decoded_rlc))
     }  
@@ -945,10 +942,73 @@ mod tests {
     #[derive(Clone, Debug)]
     struct SeqExecMock {
         outputs: Vec<u8>,
-        literal: Vec<u8>,
+        literals: Vec<u8>,
         seq_conf: SequenceInfo,
         insts: Vec<AddressTableRow>,
         exec_trace: Vec<SequenceExec>,
+    }
+
+    impl SeqExecMock {
+        // use the code in witgen to generate exec trace
+        pub fn mock_generate(literals: Vec<u8>, insts: Vec<AddressTableRow>) -> Self {
+            let seq_conf = SequenceInfo {
+                block_idx: 1,
+                num_sequences: insts.len(),
+                ..Default::default()
+            };
+
+            let mut exec_trace = Vec::new();
+            let mut outputs = Vec::new();
+
+            let mut current_literal_pos: usize = 0;
+            for inst in &insts {
+                let new_literal_pos = current_literal_pos + (inst.literal_length as usize);
+                if new_literal_pos > current_literal_pos {
+                    let r = current_literal_pos..new_literal_pos;
+                    exec_trace.push(
+                        SequenceExec(
+                            inst.instruction_idx as usize,
+                            SequenceExecInfo::LiteralCopy(r.clone()),
+                        )
+                    );
+                    outputs.extend_from_slice(&literals[r]);
+                }
+        
+                let match_pos = outputs.len() - (inst.actual_offset as usize);
+                if inst.match_length > 0 {
+                    let r = match_pos..(inst.match_length as usize + match_pos);
+                    exec_trace.push(
+                        SequenceExec(
+                            inst.instruction_idx as usize,
+                            SequenceExecInfo::BackRef(r.clone()),
+                        )
+                    );
+                    let matched_bytes = Vec::from(&outputs[r]);
+                    outputs.extend(matched_bytes);
+                }
+                current_literal_pos = new_literal_pos;
+            }
+        
+            // Add remaining literal bytes
+            if current_literal_pos < literals.len() {
+                let r = current_literal_pos..literals.len();
+                exec_trace.push(
+                    SequenceExec(
+                        seq_conf.num_sequences+1,
+                        SequenceExecInfo::LiteralCopy(r.clone()),
+                    )
+                );        
+                outputs.extend_from_slice(&literals[r]);
+            }
+
+            Self {
+                outputs,
+                literals,
+                seq_conf,
+                insts,
+                exec_trace,
+            }
+        }
     }
 
     #[derive(Clone)]
@@ -1003,7 +1063,7 @@ mod tests {
         ) -> Result<(), Error> {
 
             config.literal_tbl.mock_assign(&mut layouter, 
-                self.literal.iter().copied()
+                self.literals.iter().copied()
                 .map(|b|b as u64).collect::<Vec<_>>().as_slice())?;
 
             config.seq_cfg.mock_assign(&mut layouter, &self.seq_conf)?;
@@ -1017,7 +1077,7 @@ mod tests {
                 &chng_val,
                 self.insts.len(), 
                 &self.exec_trace, 
-                &self.literal, 
+                &self.literals, 
                 &self.outputs, 
                 50,
             )?;
@@ -1026,52 +1086,40 @@ mod tests {
         }
     }
 
-    fn build_table_row(samples: &[[u64;5]]) -> Vec<AddressTableRow> {
-        let mut ret = Vec::<AddressTableRow>::new();
-
-        for sample in samples {
-            let mut new_item = AddressTableRow {
-                cooked_match_offset: sample[0],
-                literal_length: sample[1],
-                repeated_offset1: sample[2],
-                repeated_offset2: sample[3],
-                repeated_offset3: sample[4],
-                actual_offset: sample[2],
-                ..Default::default()
-            };
-    
-            if let Some(old_item) = ret.last() {
-                new_item.instruction_idx = old_item.instruction_idx + 1;
-                new_item.literal_length_acc = old_item.literal_length_acc + sample[1];
-            } else {
-                new_item.literal_length_acc = sample[1];
-            }
-            
-            ret.push(new_item);
-        }
-
-        ret
-    }
-
     #[test]
     fn seq_exec_literal_only(){
 
         // no instructions, we only copy literals to output
-        let circuit = SeqExecMock{
-            outputs: Vec::from("abcd".as_bytes()),
-            literal: Vec::from("abcd".as_bytes()),
-            seq_conf: SequenceInfo {
-                num_sequences: 0,
-                block_idx: 1,
-                ..Default::default()
-            },
-            insts: Vec::new(),
-            exec_trace: Vec::new(),
-        };
+        let circuit = SeqExecMock::mock_generate(
+            Vec::from("abcd".as_bytes()),
+            Vec::new(),
+        );
+
+        assert_eq!(circuit.outputs, Vec::from("abcd".as_bytes()));
 
         let k = 12;
         let mock_prover = MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
         mock_prover.verify().unwrap();
 
     }
+
+    #[test]
+    fn seq_exec_simple(){
+
+        // no instructions, we only copy literals to output
+        let circuit = SeqExecMock::mock_generate(
+            Vec::from("abcde".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1u64,4,1,1,4,8],
+            ]),
+        );
+
+        assert_eq!(circuit.outputs, Vec::from("abcdde".as_bytes()));
+
+        let k = 12;
+        let mock_prover = MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
+
+    }
+
 }
