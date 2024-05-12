@@ -25,6 +25,7 @@ pub fn read_variable_bit_packing(src: &[u8], offset: u32, r: u64) -> Result<(u32
 
     // if there is no need for variable bit-packing, i.e. if the range is 0..=(2^k - 1)
     if r + 1 == max {
+        reader.skip(offset)?;
         let value = reader.read::<u64>(size)?;
         return Ok((size, value, value));
     }
@@ -51,6 +52,7 @@ pub fn read_variable_bit_packing(src: &[u8], offset: u32, r: u64) -> Result<(u32
     //
     // - value    : the value denoted by size-bits.
     // - lo_value : the value denoted by the low (size-1)-bits.
+    reader.skip(offset)?;
     let value = reader.read::<u64>(size)?;
     let lo_value = value & ((1 << (size - 1)) - 1);
 

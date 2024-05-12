@@ -192,7 +192,7 @@ impl LiteralTable {
 
 /// SeqExecConfig handling the sequences in each block and output the
 /// decompressed bytes
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SeqExecConfig<F: Field> {
     // active flag, one active row parse
     q_enabled: Column<Fixed>,
@@ -304,6 +304,8 @@ impl<F: Field> SeqExecConfig<F> {
             )
         });
 
+        debug_assert!(meta.degree() <= 9);
+
         meta.create_gate("phases", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -357,6 +359,7 @@ impl<F: Field> SeqExecConfig<F> {
             )
         });
 
+        debug_assert!(meta.degree() <= 9);
         meta.create_gate("last literal cp phase", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -396,6 +399,7 @@ impl<F: Field> SeqExecConfig<F> {
             )
         });
 
+        debug_assert!(meta.degree() <= 9);
         meta.create_gate("lit cp phase pos", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -425,6 +429,7 @@ impl<F: Field> SeqExecConfig<F> {
             )
         });
 
+        debug_assert!(meta.degree() <= 9);
         meta.create_gate("backref phase pos", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -478,6 +483,7 @@ impl<F: Field> SeqExecConfig<F> {
             )
         });        
 
+        debug_assert!(meta.degree() <= 9);
         meta.create_gate("output and paddings", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -514,6 +520,7 @@ impl<F: Field> SeqExecConfig<F> {
             cb.gate(meta.query_fixed(q_head, Rotation::cur()))
         });
 
+        debug_assert!(meta.degree() <= 9);
         // meta.create_gate("header", |meta|{
         //     let mut cb = BaseConstraintBuilder::default();
 
@@ -550,6 +557,7 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
+        debug_assert!(meta.degree() <= 9);
         meta.lookup_any("lit cp char", |meta|{
             let enabled = meta.query_fixed(q_enabled, Rotation::cur())
                 * meta.query_advice(s_lit_cp_phase, Rotation::cur());
@@ -572,6 +580,7 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
+        debug_assert!(meta.degree() <= 9);
         meta.lookup_any("back ref char", |meta|{
             let enabled = meta.query_fixed(q_enabled, Rotation::cur())
                 * meta.query_advice(s_back_ref_phase, Rotation::cur());
@@ -598,6 +607,7 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
+        debug_assert!(meta.degree() <= 9);
         meta.lookup_any("actual literal byte", |meta|{
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
             let block_index = meta.query_advice(block_index, Rotation::prev());
@@ -617,6 +627,7 @@ impl<F: Field> SeqExecConfig<F> {
             }).collect()
         });
 
+        debug_assert!(meta.degree() <= 9);
         meta.lookup_any("instruction counts", |meta|{
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
             let block_index = meta.query_advice(block_index, Rotation::prev());
@@ -636,7 +647,8 @@ impl<F: Field> SeqExecConfig<F> {
                 (src_expr * is_block_begin.expr() * q_enabled.expr(), lookup_expr)
             }).collect()
         });
-
+        
+        debug_assert!(meta.degree() <= 9);
         Self {
             q_enabled,
             q_head,

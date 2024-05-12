@@ -7,7 +7,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Value, Region, Layouter},
-    plonk::{Advice, Any, Column, ConstraintSystem, Error, Fixed},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Fixed, VirtualCells, Expression},
     poly::Rotation,
 };
 use zkevm_circuits::{
@@ -67,7 +67,7 @@ use witgen::AddressTableRow;
 /// |           |            |           |        |         |            |            |            |     0     |
 /// 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SeqInstTable<F: Field> {
 
     // active flag, one active row parse
@@ -207,12 +207,12 @@ impl<F: Field> SeqInstTable<F> {
     /// |     1   |    3      |   1   |   4   |
     /// |    ...  |   ...     |   ... |  ...  |
     /// |     1   |   999     |   1   |   0   |
-    pub fn seq_count_lookup(&self) -> [Column<Any>;4]{
-        [
-            self.q_enabled.into(),
-            self.block_index.into(),
-            self.s_beginning.into(),
-            self.n_seq.into(),
+    pub fn seq_count_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>{
+        vec![
+            meta.query_fixed(self.q_enabled, Rotation::cur()),
+            meta.query_advice(self.block_index, Rotation::cur()),
+            meta.query_advice(self.s_beginning, Rotation::cur()),
+            meta.query_advice(self.n_seq, Rotation::cur()),
         ]
     }
 
@@ -231,15 +231,15 @@ impl<F: Field> SeqInstTable<F> {
     /// |     1   |    2      |     0     |    1    |   3     |  52    |  13   |
     /// |     1   |   ...     |     0     |   ...   |  ...    |  ...   |  ...  |
     /// 
-    pub fn seq_values_lookup(&self) -> [Column<Any>;7]{
-        [
-            self.q_enabled.into(),
-            self.block_index.into(),
-            self.s_beginning.into(),
-            self.seq_index.into(),
-            self.literal_len.into(),
-            self.match_offset.into(),
-            self.match_len.into(),
+    pub fn seq_values_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_fixed(self.q_enabled, Rotation::cur()),
+            meta.query_advice(self.block_index, Rotation::cur()),
+            meta.query_advice(self.s_beginning, Rotation::cur()),
+            meta.query_advice(self.seq_index, Rotation::cur()),
+            meta.query_advice(self.literal_len, Rotation::cur()),
+            meta.query_advice(self.match_offset, Rotation::cur()),
+            meta.query_advice(self.match_len, Rotation::cur()),
         ]
     }
 
@@ -336,6 +336,8 @@ impl<F: Field> SeqInstTable<F> {
                 meta.query_fixed(q_enabled, Rotation::next())
             )
         });
+        
+        debug_assert!(meta.degree() <= 9);
 
         // block index must be increment at seq border, so section for each
         // block index can occur once
@@ -436,7 +438,9 @@ impl<F: Field> SeqInstTable<F> {
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
+        debug_assert!(meta.degree() <= 9);
         // offset is in-section (not s_beginning)
+        // TODO(veifan): degree > 9
         meta.create_gate("offset reference", |meta|{
             let mut cb = BaseConstraintBuilder::default();
 
@@ -837,7 +841,6 @@ impl<F: Field> SeqInstTable<F> {
         Ok(offset+1)
     }
 
-    #[cfg(test)]
     pub fn mock_assign(
         &self,
         layouter: &mut impl Layouter<F>,

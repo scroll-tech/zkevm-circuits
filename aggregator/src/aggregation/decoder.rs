@@ -29,7 +29,7 @@ use zkevm_circuits::{
 };
 
 use self::{
-    tables::{BitstringTable, FixedTable, FseTable, LiteralsHeaderTable, SeqInstTable},
+    tables::{BitstringTable, FixedTable, FseTable, LiteralsHeaderTable, SeqInstTable as SequenceInstructionTable},
     util::value_bits_le,
     witgen::{
         FseTableKind, ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG,
@@ -37,10 +37,12 @@ use self::{
     },
 };
 
-use seq_exec::{LiteralTable, SequenceConfig, SeqExecConfig};
+use seq_exec::{LiteralTable, SequenceConfig, SeqExecConfig as SequenceExecutionConfig};
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig {
+    /// TODO(check): const col.
+    const_col: Column<Fixed>,
     /// Fixed column to mark all the usable rows.
     q_enable: Column<Fixed>,
     /// Fixed column to mark the first row in the layout.
@@ -85,10 +87,10 @@ pub struct DecoderConfig {
     fse_table: FseTable,
 
     // witgen_debug
-    // /// Helper table for sequences as instructions.
-    // /// TODO(enable): sequence_instruction_table: SequenceInstructionTable,
+    /// Helper table for sequences as instructions.
+    sequence_instruction_table: SequenceInstructionTable<Fr>,
     // /// Helper table in the "output" region for accumulating the result of executing sequences.
-    // /// TODO(enable): sequence_execution_table: SequenceExecutionTable,
+    // sequence_execution_config: SequenceExecutionConfig<Fr>,
 
     /// Fixed lookups table.
     fixed_table: FixedTable,
@@ -979,7 +981,9 @@ impl DecoderConfig {
             pow2_table,
             bitwise_op_table,
         );
-        // TODO(enable): let sequence_instruction_table = SequenceInstructionTable::configure(meta);
+        let sequence_instruction_table = SequenceInstructionTable::configure(meta);
+
+        debug_assert!(meta.degree() <= 9);
 
         // Peripheral configs
         let tag_config = TagConfig::configure(meta, q_enable);
@@ -990,8 +994,7 @@ impl DecoderConfig {
         let fse_decoder = FseDecoder::configure(meta, q_enable);
         let sequences_data_decoder = SequencesDataDecoder::configure(meta);
 
-        // // TODO enable later:
-        // let _sequence_execution_table = SeqExecConfig::configure(
+        // let sequence_execution_config = SequenceExecutionConfig::configure(
         //     meta,
         //     challenges,
         //     &LiteralTable::construct([
@@ -1010,8 +1013,13 @@ impl DecoderConfig {
         //     ]),
         // );
 
+        debug_assert!(meta.degree() <= 9);
+
         // Main config
+        let const_col = meta.fixed_column();
+        meta.enable_constant(const_col);
         let config = Self {
+            const_col,
             q_enable,
             q_first,
             byte_idx,
@@ -1037,8 +1045,8 @@ impl DecoderConfig {
             bitstring_table,
             fse_table,
 
-            // TODO(enable): sequence_instruction_table,
-            // TODO(enable): sequence_execution_table,
+            sequence_instruction_table,
+            // sequence_execution_config,
             fixed_table,
         };
 
@@ -2034,30 +2042,30 @@ impl DecoderConfig {
             cb.gate(condition)
         });
 
-        // TODO: lookup(SeqInstTable) for seq_count_lookup
-        // meta.lookup_any(
-        //     "DecoderConfig: tag ZstdBlockSequenceHeader (sequence count)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             is_zb_sequence_header(meta),
-        //             meta.query_advice(config.tag_config.is_change, Rotation::cur()),
-        //         ]);
-        //         let (block_idx, num_sequences) = (
-        //             meta.query_advice(config.block_config.block_idx, Rotation::cur()),
-        //             meta.query_advice(config.block_config.num_sequences, Rotation::cur()),
-        //         );
-        //         [
-        //             1.expr(), // q_enabled
-        //             block_idx,
-        //             1.expr(), // s_beginning
-        //             num_sequences,
-        //         ]
-        //         .into_iter()
-        //         .zip_eq(config.sequence_instruction_table.seq_count_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceHeader (sequence count)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(config.q_enable, Rotation::cur()),
+                    is_zb_sequence_header(meta),
+                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                ]);
+                let (block_idx, num_sequences) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.block_config.num_sequences, Rotation::cur()),
+                );
+                [
+                    1.expr(), // q_enabled
+                    block_idx,
+                    1.expr(), // s_beginning
+                    num_sequences,
+                ]
+                .into_iter()
+                .zip_eq(config.sequence_instruction_table.seq_count_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -3203,44 +3211,45 @@ impl DecoderConfig {
             },
         );
 
-        // TODO(enable): lookup(SeqInstTable) at code-to-value for seq_values_lookup
-        // meta.lookup_any(
-        //     "DecoderConfig: tag ZstdBlockSequenceData (sequence instructions table)",
-        //     |meta| {
-        //         // At the row where we compute the code-to-value of LLT, we have the values for
-        //         // all of match offset, match length and literal length.
-        //         let condition = and::expr([
-        //             meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-        //             config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-        //             config.fse_decoder.is_llt(meta, Rotation::cur()),
-        //             config
-        //                 .sequences_data_decoder
-        //                 .is_code_to_value(meta, Rotation::cur()),
-        //         ]);
-        //         let (block_idx, sequence_idx) = (
-        //             meta.query_advice(config.block_config.block_idx, Rotation::cur()),
-        //             meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),
-        //         );
-        //         let (literal_length_value, match_offset_value, match_length_value) = (
-        //             meta.query_advice(config.sequences_data_decoder.values[0], Rotation::cur()),
-        //             meta.query_advice(config.sequences_data_decoder.values[2], Rotation::cur()),
-        //             meta.query_advice(config.sequences_data_decoder.values[1], Rotation::cur()),
-        //         );
-        //         [
-        //             1.expr(), // q_enabled
-        //             block_idx,
-        //             0.expr(), // s_beginning
-        //             sequence_idx,
-        //             literal_length_value,
-        //             match_offset_value,
-        //             match_length_value,
-        //         ]
-        //         .into_iter()
-        //         .zip_eq(config.sequence_instruction_table.seq_values_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockSequenceData (sequence instructions table)",
+            |meta| {
+                // At the row where we compute the code-to-value of LLT, we have the values for
+                // all of match offset, match length and literal length.
+                let condition = and::expr([
+                    meta.query_fixed(config.q_enable, Rotation::cur()),
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    config.fse_decoder.is_llt(meta, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_code_to_value(meta, Rotation::cur()),
+                ]);
+                let (block_idx, sequence_idx) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),
+                );
+                let (literal_length_value, match_offset_value, match_length_value) = (
+                    meta.query_advice(config.sequences_data_decoder.values[0], Rotation::cur()),
+                    meta.query_advice(config.sequences_data_decoder.values[2], Rotation::cur()),
+                    meta.query_advice(config.sequences_data_decoder.values[1], Rotation::cur()),
+                );
+                [
+                    1.expr(), // q_enabled
+                    block_idx,
+                    0.expr(), // s_beginning
+                    sequence_idx,
+                    literal_length_value,
+                    match_offset_value,
+                    match_length_value,
+                ]
+                .into_iter()
+                .zip_eq(config.sequence_instruction_table.seq_values_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         meta.lookup_any(
             "DecoderConfig: tag ZstdBlockSequenceData (FseTable)",
@@ -3876,11 +3885,15 @@ impl DecoderConfig {
     pub fn assign<F: Field>(
         &self,
         layouter: &mut impl Layouter<Fr>,
+        raw_bytes: &[u8],
+        _compressed_bytes: &[u8],
         witness_rows: Vec<ZstdWitnessRow<Fr>>,
         _aux_data: Vec<u64>,
         fse_aux_tables: Vec<FseAuxiliaryTableData>,
         block_info_arr: Vec<BlockInfo>,
         sequence_info_arr: Vec<SequenceInfo>,
+        address_table_arr: Vec<Vec<AddressTableRow>>,
+        sequence_exec_info_arr: Vec<Vec<SequenceExec>>,
         challenges: &Challenges<Value<Fr>>,
         k: u32,
         // witgen_debug
@@ -3890,6 +3903,11 @@ impl DecoderConfig {
 
         assert!(block_info_arr.len() > 0, "Must have at least 1 block");
         assert!(sequence_info_arr.len() > 0, "Must have at least 1 block");
+
+        assert!(address_table_arr.len() == 1, "TODO: multi-block");
+        assert!(sequence_exec_info_arr.len() == 1, "TODO: multi-block");
+        let address_table_rows = &address_table_arr[0];
+        let sequence_exec_info = &sequence_exec_info_arr[0];
 
         let mut curr_block_info = block_info_arr[0];
         let mut curr_sequence_info = sequence_info_arr[0];
@@ -3956,9 +3974,31 @@ impl DecoderConfig {
                 ),
             ));
         }
-
         self.literals_header_table
             .assign(layouter, literal_headers)?;
+
+        /////////////////////////////////////////
+        //// Assign Sequence-related Configs ////
+        /////////////////////////////////////////
+        // TODO: this currently only supports single zstd block.
+        self.sequence_instruction_table.mock_assign(
+            layouter,
+            address_table_rows,
+            (1 << k) - self.unusable_rows(),
+        )?;
+        // TODO: this currently only supports single zstd block.
+        let literal_bytes = witness_rows.iter().filter(|row| row.state.tag == ZstdTag::ZstdBlockLiteralsRawBytes).map(|row| row.encoded_data.value_byte).collect::<Vec<_>>();
+        // self.sequence_execution_config.mock_assign(
+        //     layouter,
+        //     challenges,
+        //     // TODO: handle multi-block.
+        //     curr_sequence_info.num_sequences,
+        //     sequence_exec_info,
+        //     &literal_bytes,
+        //     raw_bytes,
+        //     (1 << k) - self.unusable_rows(),
+        // )?;
+
 
         /////////////////////////////////////////
         ///// Assign Decompression Region  //////
@@ -4578,6 +4618,7 @@ mod tests {
 
     #[derive(Clone, Debug, Default)]
     struct DecoderConfigTester {
+        raw: Vec<u8>,
         compressed: Vec<u8>,
         k: u32,
     }
@@ -4645,6 +4686,8 @@ mod tests {
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
+                address_table_arr,
+                sequence_exec_info_arr,
             ) = process(&self.compressed, challenges.keccak_input());
 
             u8_table.load(&mut layouter)?;
@@ -4652,11 +4695,15 @@ mod tests {
             pow_rand_table.assign(&mut layouter, &challenges, 1 << (self.k - 1))?;
             config.assign::<Fr>(
                 &mut layouter,
+                &self.raw,
+                &self.compressed,
                 witness_rows,
                 aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
+                address_table_arr,
+                sequence_exec_info_arr,
                 &challenges,
                 self.k,
             )?;
@@ -4707,7 +4754,7 @@ mod tests {
         };
 
         let k = 18;
-        let decoder_config_tester = DecoderConfigTester { compressed, k };
+        let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();
     }
