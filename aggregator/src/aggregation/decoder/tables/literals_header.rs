@@ -126,39 +126,40 @@ impl LiteralsHeaderTable {
         });
 
         // witgen_debug
-        // meta.create_gate(
-        //     "LiteralsHeaderTable: subsequent rows after q_first=true",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
-        //         ]);
+        meta.create_gate(
+            "LiteralsHeaderTable: subsequent rows after q_first=true",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
+                ]);
 
-        //         let mut cb = BaseConstraintBuilder::default();
+                let mut cb = BaseConstraintBuilder::default();
 
-        //         // padding transitions from 0 -> 1 only once.
-        //         let is_padding_cur = meta.query_advice(config.is_padding, Rotation::cur());
-        //         let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
-        //         let is_padding_delta = is_padding_cur.expr() - is_padding_prev;
+                // padding transitions from 0 -> 1 only once.
+                let is_padding_cur = meta.query_advice(config.is_padding, Rotation::cur());
+                let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
+                let is_padding_delta = is_padding_cur.expr() - is_padding_prev;
 
-        //         cb.require_boolean("is_padding is boolean", is_padding_cur.expr());
-        //         cb.require_boolean("is_padding delta is boolean", is_padding_delta);
+                cb.require_boolean("is_padding is boolean", is_padding_cur.expr());
+                cb.require_boolean("is_padding delta is boolean", is_padding_delta);
 
-        //         // block_idx increments.
-        //         //
-        //         // This also ensures that we are not populating conflicting literal headers for the
-        //         // same block_idx in this layout.
-        //         cb.condition(not::expr(is_padding_cur), |cb| {
-        //             cb.require_equal(
-        //                 "block_idx increments",
-        //                 meta.query_advice(config.block_idx, Rotation::cur()),
-        //                 meta.query_advice(config.block_idx, Rotation::prev()) + 1.expr(),
-        //             );
-        //         });
+                // witgen_debug
+                // block_idx increments.
+                //
+                // This also ensures that we are not populating conflicting literal headers for the
+                // same block_idx in this layout.
+                // cb.condition(not::expr(is_padding_cur), |cb| {
+                //     cb.require_equal(
+                //         "block_idx increments",
+                //         meta.query_advice(config.block_idx, Rotation::cur()),
+                //         meta.query_advice(config.block_idx, Rotation::prev()) + 1.expr(),
+                //     );
+                // });
 
-        //         cb.gate(condition)
-        //     },
-        // );
+                cb.gate(condition)
+            },
+        );
 
         meta.lookup("LiteralsHeaderTable: byte0 >> 3", |meta| {
             let condition = and::expr([
