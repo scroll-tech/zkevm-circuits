@@ -1479,15 +1479,95 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         let (proofs, codes) = self.get_pre_state(std::iter::once(&geth_trace))?;
         let proofs = self.complete_prestate(&eth_block, proofs).await?;
-        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
-        let builder = self.gen_inputs_from_state(
-            state_db,
-            code_db,
-            &eth_block,
-            &[geth_trace],
-            Default::default(),
-            Default::default(),
-        )?;
+
+        let retrace = true;
+        let builder = if retrace {
+            let trace_config = TraceConfig {
+                chain_id: self.chain_id,
+                history_hashes: vec![eth_block.parent_hash.to_word()],
+                block_constants: BlockConstants {
+                    coinbase: eth_block.author.unwrap(),
+                    timestamp: eth_block.timestamp,
+                    number: eth_block.number.unwrap(),
+                    difficulty: eth_block.difficulty,
+                    gas_limit: eth_block.gas_limit,
+                    base_fee: eth_block.base_fee_per_gas.unwrap(),
+                },
+                accounts: proofs
+                    .into_iter()
+                    .map(|proof| {
+                        let acc = Account {
+                            address: proof.address,
+                            nonce: proof.nonce,
+                            balance: proof.balance,
+                            code: codes
+                                .get(&proof.address)
+                                .cloned()
+                                .unwrap_or_default()
+                                .into(),
+                            storage: proof
+                                .storage_proof
+                                .into_iter()
+                                .map(|proof| (proof.key, proof.value))
+                                .collect(),
+                        };
+                        (proof.address, acc)
+                    })
+                    .collect(),
+                transactions: vec![geth_types::Transaction::from(&tx)],
+                logger_config: Default::default(),
+                chain_config: None,
+                #[cfg(feature = "scroll")]
+                l1_queue_index: 0,
+            };
+
+            #[cfg(feature = "scroll")]
+            let builder = {
+                let block_trace = external_tracer::l2trace(&trace_config)?;
+                let mut builder = CircuitInputBuilder::new_from_l2_trace(
+                    self.circuits_params,
+                    block_trace,
+                    false,
+                    false,
+                )?;
+                builder
+                    .finalize_building()
+                    .expect("could not finalize building block");
+                builder
+            };
+
+            #[cfg(not(feature = "scroll"))]
+            let builder = {
+                let geth_traces = external_tracer::trace(&trace_config)?;
+                let geth_data = geth_types::GethData {
+                    chain_id: trace_config.chain_id,
+                    history_hashes: trace_config.history_hashes.clone(),
+                    geth_traces: geth_traces.clone(),
+                    accounts: trace_config.accounts.values().cloned().collect(),
+                    eth_block: eth_block.clone(),
+                };
+                let block_data = crate::mock::BlockData::new_from_geth_data_with_params(
+                    geth_data,
+                    self.circuits_params,
+                );
+                let mut builder = block_data.new_circuit_input_builder();
+                builder.handle_block(&eth_block, &geth_traces)?;
+                builder
+            };
+
+            builder
+        } else {
+            let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
+            self.gen_inputs_from_state(
+                state_db,
+                code_db,
+                &eth_block,
+                &[geth_trace],
+                Default::default(),
+                Default::default(),
+            )?
+        };
+
         Ok(builder)
     }
 }
