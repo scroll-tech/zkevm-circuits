@@ -19,20 +19,22 @@ below describle three parts that implementation involves.
     - lookup copy table when actual copy length > 0,copy circuit is responsible for validating copy table is set correctly. special case for  length == 0, the copy event resulting in rw counter increasing number (`copy_rwc_inc`) should be zero.
     - `memory_word_size` transition: memory expansion gadget calculates the greater `memory_word_size` (max(src_addr_expansion, dest_addr_expansion)) expansion and transition to it. 
     - other trivial constraint & state transition, refer to code  `MCopyGadget` gadget code details.
+
+
   - error case:
-    - TODO:
-    - todo:
+    mcopy may encouter the following two error cases:
+    - stack underflow:
+    - OOG memory copy:
+    - todo
 
 
 ## Copy Circuit
   to support mcopy, copy circuit make some changes. here don't intend to describle how entire copy circuit works but only focus on changes regarding mcopy.
   - add new column `is_memory_copy`indicating if current event is mcopy(memory --> memory copy) case. constrain it is boolean type.
   - add new gadget `is_id_unchange` indicating if current row and next row have same id, in other words, checking src_id == dst_id. it is used for `is_memory_copy` constraint.
-  - TODO: rw_counter
-  - TODO: is_memory_copy
+  - `rw_counter`
+    - for non memory copy cases, remain the same. 
+    - for memory copy cases, constrain rw_counter increasing or remain same every two steps( two consecutive read steps or write steps). the `rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff`, rwc_diff can be 0 (not reach memory word end, rw_counter remain the same) or 1 (reach memory word end, rw_counter increase by 1).
+  - constraint `is_memory_copy` value, `is_memory_copy` is always bool.  it is true only when src_id == dst_id and copy src_type == dst_type == `CopyDataType::Memory` 
   - TODO: 
-
-
-
-
 
