@@ -589,6 +589,7 @@ dependencies = [
  "ethers-core",
  "ethers-providers",
  "ethers-signers",
+ "external-tracer",
  "gadgets",
  "halo2_proofs",
  "hex",
