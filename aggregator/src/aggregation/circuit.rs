@@ -440,7 +440,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         blob_data_exports.num_valid_chunks.cell(),
                     )?;
 
-                    // the following constraint is not satisfied
                     for (chunk_data_digest, expected_chunk_data_digest) in blob_data_exports
                         .chunk_data_digests
                         .iter()
@@ -450,7 +449,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                             .iter()
                             .zip_eq(expected_chunk_data_digest.iter())
                         {
-                            println!("blob chunk tx: {:?} {:?}", c.value(), ec.value());
+                            log::trace!("blob chunk tx: {:?} {:?}", c.value(), ec.value());
                             region.constrain_equal(c.cell(), ec.cell())?;
                         }
                     }
