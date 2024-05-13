@@ -3906,7 +3906,7 @@ impl DecoderConfig {
 
         assert!(address_table_arr.len() == 1, "TODO: multi-block");
         assert!(sequence_exec_info_arr.len() == 1, "TODO: multi-block");
-        let address_table_rows = &address_table_arr[0];
+        //let address_table_rows = &address_table_arr[0];
         let sequence_exec_info = &sequence_exec_info_arr[0];
 
         let mut curr_block_info = block_info_arr[0];
@@ -3981,9 +3981,11 @@ impl DecoderConfig {
         //// Assign Sequence-related Configs ////
         /////////////////////////////////////////
         // TODO: this currently only supports single zstd block.
-        self.sequence_instruction_table.mock_assign(
+        self.sequence_instruction_table.assign(
             layouter,
-            address_table_rows,
+            address_table_arr.iter().map(
+                |rows|rows.iter()
+            ),
             (1 << k) - self.unusable_rows(),
         )?;
         // TODO: this currently only supports single zstd block.

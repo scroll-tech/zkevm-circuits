@@ -579,8 +579,6 @@ impl<F: Field> SeqInstTable<F> {
             )
         });
 
-        assert!(meta.degree() <= 5, "degree {} exceed", meta.degree());
-
         // the beginning of following rows must be constrainted
         meta.enable_equality(block_index);
         meta.enable_equality(seq_index);
@@ -631,6 +629,10 @@ impl<F: Field> SeqInstTable<F> {
             self.q_enabled, offset,
             || Value::known(F::one()),
         )?;                    
+
+        if block_ind < 100 {
+            println!("header row @{}, {}, {}, {:?}", offset, block_ind, n_seq, offset_table);
+        }
 
         for col in [
             self.rep_offset_1,
@@ -842,6 +844,60 @@ impl<F: Field> SeqInstTable<F> {
         Ok(offset+1)
     }
 
+    /// assign with multiple blocks, known the number of 
+    /// sequences in advance
+    pub fn assign<'a, R: ExactSizeIterator<Item = &'a AddressTableRow>>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        table_rows: impl IntoIterator<Item = R> + Clone,
+        enabled_rows: usize,
+    ) -> Result<(), Error>{
+        let chip_ctx = ChipContext::construct(self);
+        layouter.assign_region(
+            || "addr table",
+            |mut region|{
+                let mut offset_table : [u64;3]= [1,4,8];
+                let mut blk_id = 0u64;
+                let mut offset = self.init_top_row(&mut region, None)?;
+                for (i, rows_in_blk) in table_rows.clone()
+                    .into_iter().enumerate(){
+                    blk_id = (i+1) as u64;
+                    let n_seqs = rows_in_blk.len();
+                    offset = self.assign_heading_row(
+                        &mut region, 
+                        offset, 
+                        blk_id, 
+                        n_seqs, 
+                        &chip_ctx, 
+                        &mut offset_table,
+                    )?;
+                    offset = self.assign_block(
+                        &mut region, 
+                        offset, 
+                        blk_id, 
+                        n_seqs,
+                        rows_in_blk, 
+                        &chip_ctx, 
+                        &mut offset_table,
+                    )?;
+                    assert!(offset < enabled_rows);
+                }
+
+                self.padding_rows(
+                    &mut region,
+                    offset, 
+                    enabled_rows,
+                    blk_id+1, 
+                    &chip_ctx, 
+                    &offset_table,
+                )?;
+
+                Ok(())
+            }
+        )
+    }
+
+    #[cfg(test)]
     pub fn mock_assign(
         &self,
         layouter: &mut impl Layouter<F>,
