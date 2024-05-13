@@ -3,13 +3,15 @@ tags: scroll documentation
 ---
 
 # MCOPY
-mcopy opcode introduces in EIP5656(https://eips.ethereum.org/EIPS/eip-5656), which provides an efficient EVM instruction for copying memory areas. especially in the same call context. it pops three parameter `dst_offset`, `src_offset`, `length` from evm stack, copying memory slice [`src_offset`, `src_offset` + `length`] to destination memory slice [`dst_offset`, `dst_offset` + `length`].
+mcopy opcode introduces in EIP5656(https://eips.ethereum.org/EIPS/eip-5656), which provides an efficient EVM instruction for copying memory areas. 
+it is in the same call context. it pops three parameter `dst_offset`, `src_offset`, `length` from evm stack, copying memory slice [`src_offset`, `src_offset` + `length`] to destination memory slice [`dst_offset`, `dst_offset` + `length`].
 
 below describle three parts that implementation involves.
 ## buss mapping
   - generates stack read operations to get above mentioned parameters. `dst_offset`, `src_offset`, `length`.
   - generates copy event in helper `gen_copy_steps_for_memory_to_memory` because it is a dynamic copy case. the copy steps generating follows all read steps + all wrtie steps pattern while normal existing copy steps follows read step + write step + read step + write step... pattern. this is to avoid copy range overlaps issue(destination copy range overlaps source copy range in the same memory context). copy event's `src_type` and `dst_type` are the same `CopyDataType::Memory`, copy event's `src_id` and `dst_id` are also the same since source and destination copy happens in one call context.
-  -  for the error cases, like OOG. if OOG happens, hit error type: `OogError::MemoryCopy`.
+  - rw_counter of write steps start from half of total memory word count.
+  -  for the error cases, like OOG. if OOG happens, hit error type: `OogError::MemoryCopy`, evm circuit gadget will handle it. 
 
 ## EVM circuit
   - `MCopyGadget` is responsible for mcopy gadget constraints in evm circuit side. concrete constraints list as below
@@ -24,8 +26,12 @@ below describle three parts that implementation involves.
   - error case:
     mcopy may encouter the following two error cases:
     - stack underflow:
+      - if stack has less than three element will encounter this error. existing `ErrorStackGadget` handles it. have setted correct stack info for mcopy in helper `valid_stack_ptr_range`, which `ErrorStackGadget` takes use it to do the constraint.
     - OOG memory copy:
-    - todo
+      - there are two cases which result in this error: 1) remain gas left is indeed not sufficient. 2) source address(`src_add`) or destination address (`dst_address`) is u64 overflow.
+      - `ErrorOOGMemoryCopyGadget` gadget is reponsible for memory copy OOG cases, make OOG mcopy also take adantage of this gadget. 
+      - specially for mcopy, besdies existing constraints in `ErrorOOGMemoryCopyGadget` gadget. added source address(`src_add`) overflow case for mcopy in OOG condition constraint.
+      -  added mcopy opcode in `ErrorOOGMemoryCopyGadget` gadget assert as well.
 
 
 ## Copy Circuit
@@ -33,8 +39,9 @@ below describle three parts that implementation involves.
   - add new column `is_memory_copy`indicating if current event is mcopy(memory --> memory copy) case. constrain it is boolean type.
   - add new gadget `is_id_unchange` indicating if current row and next row have same id, in other words, checking src_id == dst_id. it is used for `is_memory_copy` constraint.
   - `rw_counter`
-    - for non memory copy cases, remain the same. 
+    - for non memory copy cases, remain the same: consecutive two rows (read step + write step) increase rw_counter by 1 or 0.   
     - for memory copy cases, constrain rw_counter increasing or remain same every two steps( two consecutive read steps or write steps). the `rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff`, rwc_diff can be 0 (not reach memory word end, rw_counter remain the same) or 1 (reach memory word end, rw_counter increase by 1).
   - constraint `is_memory_copy` value, `is_memory_copy` is always bool.  it is true only when src_id == dst_id and copy src_type == dst_type == `CopyDataType::Memory` 
-  - TODO: 
+  - rw_counter for write steps updated from half of total memory word count, since first half of all bytes are reading ops.
+  - rwc_inc_left has the similar updates as rw_counter.
 
