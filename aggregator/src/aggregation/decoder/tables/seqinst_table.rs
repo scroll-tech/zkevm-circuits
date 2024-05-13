@@ -628,11 +628,7 @@ impl<F: Field> SeqInstTable<F> {
             ||"enable row",
             self.q_enabled, offset,
             || Value::known(F::one()),
-        )?;                    
-
-        if block_ind < 100 {
-            println!("header row @{}, {}, {}, {:?}", offset, block_ind, n_seq, offset_table);
-        }
+        )?;
 
         for col in [
             self.rep_offset_1,
@@ -736,7 +732,7 @@ impl<F: Field> SeqInstTable<F> {
         let mut acc_literal_len = 0u64;
 
         for table_row in table_rows {
-
+            
             seq_index += 1;
 
             region.assign_fixed(
@@ -754,6 +750,8 @@ impl<F: Field> SeqInstTable<F> {
             };
 
             acc_literal_len += table_row.literal_length;
+            // sanity check
+            assert_eq!(acc_literal_len, table_row.literal_length_acc);
 
             offset_table[0] = table_row.repeated_offset1;
             offset_table[1] = table_row.repeated_offset2;

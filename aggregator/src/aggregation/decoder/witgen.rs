@@ -1543,18 +1543,50 @@ fn process_sequences<F: Field>(
         let actual_offset = if inst.0 > 3 {
             inst.0 - 3
         } else {
-            let mut repeat_idx = inst.0;
+            let repeat_idx = inst.0;
             if inst.2 == 0 {
-                repeat_idx += 1;
                 if repeat_idx > 3 {
-                    repeat_idx = 1;
+                    repeated_offset[1] - 1
+                } else {
+                    repeated_offset[repeat_idx]
                 }
+            } else {
+                repeated_offset[repeat_idx-1]
             }
-
-            repeated_offset[repeat_idx]
         } as u64;
 
         literal_len_acc += inst.2;
+
+        // Update repeated offset
+        if inst.0 > 3 {
+            repeated_offset[2] = repeated_offset[1];
+            repeated_offset[1] = repeated_offset[0];
+            repeated_offset[0] = inst.0 - 3;
+        } else {
+            let mut repeat_idx = inst.0;
+            if inst.2 == 0 {
+                repeat_idx += 1;
+            }
+
+            if repeat_idx == 2 {
+                let result = repeated_offset[1];
+                repeated_offset[1] = repeated_offset[0];
+                repeated_offset[0] = result;
+            } else if repeat_idx == 3 {
+                let result = repeated_offset[2];
+                repeated_offset[2] = repeated_offset[1];
+                repeated_offset[1] = repeated_offset[0];
+                repeated_offset[0] = result;
+            } else if repeat_idx == 4 {
+                let result = repeated_offset[0]-1;
+                assert!(result > 0, "corruptied data");
+                repeated_offset[2] = repeated_offset[1];
+                repeated_offset[1] = repeated_offset[0];
+                repeated_offset[0] = result;
+            } else {
+                // repeat 1
+            }
+        };
 
         address_table_rows.push(AddressTableRow {
             s_padding: 0,
@@ -1567,35 +1599,8 @@ fn process_sequences<F: Field>(
             repeated_offset2: repeated_offset[1] as u64,
             repeated_offset3: repeated_offset[2] as u64,
             actual_offset,
-        });
+        });        
 
-        // Update repeated offset
-        if inst.0 > 3 {
-            repeated_offset[2] = repeated_offset[1];
-            repeated_offset[1] = repeated_offset[0];
-            repeated_offset[0] = inst.0 - 3;
-        } else {
-            let mut repeat_idx = inst.0;
-            if inst.2 == 0 {
-                repeat_idx += 1;
-                if repeat_idx > 3 {
-                    repeat_idx = 1;
-                }
-            }
-
-            if repeat_idx == 2 {
-                let result = repeated_offset[1];
-                repeated_offset[1] = repeated_offset[0];
-                repeated_offset[0] = result;
-            } else if repeat_idx == 3 {
-                let result = repeated_offset[2];
-                repeated_offset[2] = repeated_offset[1];
-                repeated_offset[1] = repeated_offset[0];
-                repeated_offset[0] = result;
-            } else {
-                // repeat 1
-            }
-        };
     }
 
     // Executing sequence instructions to acquire the original input.
