@@ -187,7 +187,7 @@ mod test {
     fn test_ok(src_offset: Word, dest_offset: Word, length: usize) {
         let mut code = Bytecode::default();
         code.append(&bytecode! {
-            // prepare memory values by mstore
+            // prepare memory values(non zero values, zero value easily cause unpredictable fake pass) by mstore
             PUSH32(word!("0x0102030405060708090a0b0c0d0e0f000102030405060708090a"))
             PUSH2(0x20)
             MSTORE
