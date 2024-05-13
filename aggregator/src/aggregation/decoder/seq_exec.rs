@@ -875,6 +875,58 @@ impl<F: Field> SeqExecConfig<F> {
         Ok(offset+1)
     }
 
+    /// assign with multiple blocks
+    pub fn assign<'a>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        chng: &Challenges<Value<F>>,
+        // per-block inputs: (literal, seq_info, seq_exec_trace)
+        per_blk_inputs: impl IntoIterator<Item = (
+            &'a [u64],
+            &'a SequenceInfo,
+            &'a [SequenceExec],
+        )> + Clone,
+        // all of the decompressed bytes, not only current block
+        decompressed_bytes: &[u8],
+        enabled_rows: usize,
+    ) -> Result<(), Error>{
+
+        layouter.assign_region(
+            || "output region",
+            |mut region|{
+
+                let mut offset = self.init_top_row(&mut region, None)?;
+                let mut decoded_len = 0usize;
+                let mut decoded_rlc = Value::known(F::zero());
+                let mut blk_ind = 0;
+                for (literals, seq_info, exec_trace) in per_blk_inputs.clone() {
+                    blk_ind = seq_info.block_idx;
+                    (offset, decoded_len, decoded_rlc) = self.assign_block(
+                        &mut region,
+                        chng.evm_word(),
+                        offset,
+                        decoded_len, 
+                        decoded_rlc, 
+                        seq_info, 
+                        exec_trace.iter(), 
+                        literals,
+                        decompressed_bytes
+                    )?;
+                }
+
+                self.paddings(&mut region, 
+                    offset, 
+                    enabled_rows, 
+                    decoded_len, 
+                    decoded_rlc, 
+                    blk_ind as u64 + 1,
+                )?;
+
+                Ok(())
+            }
+        )        
+    }
+
     #[cfg(test)]
     pub fn mock_assign(
         &self,

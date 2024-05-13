@@ -90,7 +90,7 @@ pub struct DecoderConfig {
     /// Helper table for sequences as instructions.
     sequence_instruction_table: SequenceInstructionTable<Fr>,
     // /// Helper table in the "output" region for accumulating the result of executing sequences.
-    // sequence_execution_config: SequenceExecutionConfig<Fr>,
+    sequence_execution_config: SequenceExecutionConfig<Fr>,
 
     /// Fixed lookups table.
     fixed_table: FixedTable,
@@ -994,24 +994,24 @@ impl DecoderConfig {
         let fse_decoder = FseDecoder::configure(meta, q_enable);
         let sequences_data_decoder = SequencesDataDecoder::configure(meta);
 
-        // let sequence_execution_config = SequenceExecutionConfig::configure(
-        //     meta,
-        //     challenges,
-        //     &LiteralTable::construct([
-        //         tag_config.tag,
-        //         block_config.block_idx,
-        //         byte_idx,
-        //         byte,
-        //         tag_config.is_change,
-        //         is_padding,
-        //     ]),
-        //     &sequence_instruction_table,
-        //     &SequenceConfig::construct([
-        //         block_config.is_block,
-        //         block_config.block_idx,
-        //         block_config.num_sequences,
-        //     ]),
-        // );
+        let sequence_execution_config = SequenceExecutionConfig::configure(
+            meta,
+            challenges,
+            &LiteralTable::construct([
+                tag_config.tag,
+                block_config.block_idx,
+                byte_idx,
+                byte,
+                tag_config.is_change,
+                is_padding,
+            ]),
+            &sequence_instruction_table,
+            &SequenceConfig::construct([
+                block_config.is_block,
+                block_config.block_idx,
+                block_config.num_sequences,
+            ]),
+        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -1046,7 +1046,7 @@ impl DecoderConfig {
             fse_table,
 
             sequence_instruction_table,
-            // sequence_execution_config,
+            sequence_execution_config,
             fixed_table,
         };
 
@@ -3886,8 +3886,9 @@ impl DecoderConfig {
         &self,
         layouter: &mut impl Layouter<Fr>,
         raw_bytes: &[u8],
-        _compressed_bytes: &[u8],
+        compressed_bytes: &[u8],
         witness_rows: Vec<ZstdWitnessRow<Fr>>,
+        literal_datas: Vec<Vec<u64>>,
         _aux_data: Vec<u64>,
         fse_aux_tables: Vec<FseAuxiliaryTableData>,
         block_info_arr: Vec<BlockInfo>,
@@ -3989,17 +3990,21 @@ impl DecoderConfig {
             (1 << k) - self.unusable_rows(),
         )?;
         // TODO: this currently only supports single zstd block.
-        let literal_bytes = witness_rows.iter().filter(|row| row.state.tag == ZstdTag::ZstdBlockLiteralsRawBytes).map(|row| row.encoded_data.value_byte).collect::<Vec<_>>();
-        // self.sequence_execution_config.mock_assign(
-        //     layouter,
-        //     challenges,
-        //     // TODO: handle multi-block.
-        //     curr_sequence_info.num_sequences,
-        //     sequence_exec_info,
-        //     &literal_bytes,
-        //     raw_bytes,
-        //     (1 << k) - self.unusable_rows(),
-        // )?;
+        // let literal_bytes = witness_rows.iter().filter(|row| row.state.tag == ZstdTag::ZstdBlockLiteralsRawBytes).map(|row| row.encoded_data.value_byte).collect::<Vec<_>>();
+        self.sequence_execution_config.assign(
+            layouter,
+            challenges,
+            literal_datas.iter()
+            .zip(&sequence_info_arr)
+            .zip(&sequence_exec_info_arr)
+            .map(|((lit, seq_info), exec)|
+                (lit.as_slice(),
+                seq_info,
+                exec.as_slice(),
+            )),
+            raw_bytes,
+            (1 << k) - self.unusable_rows(),
+        )?;
 
 
         /////////////////////////////////////////
@@ -4683,14 +4688,28 @@ mod tests {
 
             let (
                 witness_rows,
-                _decoded_literals,
+                decoded_literals,
                 aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
                 address_table_arr,
-                sequence_exec_info_arr,
+                sequence_exec_result,
             ) = process(&self.compressed, challenges.keccak_input());
+
+            let (recovered_bytes, sequence_exec_info_arr) 
+                = sequence_exec_result.into_iter()
+                .fold((Vec::new(), Vec::new()), 
+                |(mut out_byte, mut out_exec), res|{
+                    out_byte.extend(res.recovered_bytes);
+                    out_exec.push(res.exec_trace);
+                    (out_byte, out_exec)
+                });
+
+            assert_eq!(
+                std::str::from_utf8(&recovered_bytes), 
+                std::str::from_utf8(&self.raw),
+            );
 
             u8_table.load(&mut layouter)?;
             bitwise_op_table.load(&mut layouter)?;
@@ -4700,6 +4719,7 @@ mod tests {
                 &self.raw,
                 &self.compressed,
                 witness_rows,
+                decoded_literals,
                 aux_data,
                 fse_aux_tables,
                 block_info_arr,
