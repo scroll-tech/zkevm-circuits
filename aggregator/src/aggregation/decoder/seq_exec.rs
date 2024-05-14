@@ -526,7 +526,7 @@ impl<F: Field> SeqExecConfig<F> {
         });
 
         debug_assert!(meta.degree() <= 9);
-        meta.lookup_any("lit cp char", |meta|{
+/*        meta.lookup_any("lit cp char", |meta|{
             let enabled = meta.query_fixed(q_enabled, Rotation::cur())
                 * meta.query_advice(s_lit_cp_phase, Rotation::cur());
 
@@ -546,37 +546,39 @@ impl<F: Field> SeqExecConfig<F> {
             ).map(|(lookup_expr, src_expr)|{
                 (src_expr * enabled.expr(), lookup_expr)
             }).collect()
-        });
+        });*/
 
         debug_assert!(meta.degree() <= 9);
         meta.lookup_any("back ref char", |meta|{
-            let enabled = meta.query_fixed(q_enabled, Rotation::cur())
-                * meta.query_advice(s_back_ref_phase, Rotation::cur());
+            let enabled = meta.query_fixed(q_enabled, Rotation::cur());
 
-            let block_index = meta.query_advice(block_index, Rotation::cur());
             let backref_pos = meta.query_advice(backref_offset, Rotation::cur());
             let cp_byte = meta.query_advice(decoded_byte, Rotation::cur());
             let decode_pos = meta.query_advice(decoded_len, Rotation::cur());
             let ref_pos = decode_pos.expr() - backref_pos.expr();
 
             let tbl_exprs = [
-                block_index.expr(),
+                enabled.expr(),
                 decode_pos.expr(),
                 cp_byte.expr(),
             ];
             tbl_exprs.into_iter().zip(
                 [
-                    block_index,
+                    1.expr(),
                     ref_pos,
                     cp_byte,                 
                 ]
-            ).map(|(lookup_expr, src_expr)|{
-                (src_expr * enabled.expr(), lookup_expr)
+            ).map(|(lookup_expr, src_expr)|{(
+                src_expr 
+                    * enabled.expr()
+                    * meta.query_advice(s_back_ref_phase, Rotation::cur()),
+                lookup_expr,
+            )
             }).collect()
         });
 
         debug_assert!(meta.degree() <= 9);
-        meta.lookup_any("actual literal byte", |meta|{
+/*        meta.lookup_any("actual literal byte", |meta|{
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
             let block_index = meta.query_advice(block_index, Rotation::prev());
             let literal_pos_at_block_end = meta.query_advice(literal_pos, Rotation::prev());
@@ -615,7 +617,7 @@ impl<F: Field> SeqExecConfig<F> {
                 (src_expr * is_block_begin.expr() * q_enabled.expr(), lookup_expr)
             }).collect()
         });
-        
+*/        
         debug_assert!(meta.degree() <= 9);
         Self {
             q_enabled,
@@ -777,7 +779,7 @@ impl<F: Field> SeqExecConfig<F> {
                 // for back-ref part, we refill the backref_pos in the whole
                 // instruction
                 if !is_literal && i == 0{
-                    println!("fill-back match offset {} in {}..{}", pos, inst_begin_offset, offset);
+                    println!("fill-back match offset {} in {}..{}", ref_offset.unwrap(), inst_begin_offset, offset);
                     for back_offset in inst_begin_offset..offset {
                         region.assign_advice(
                             ||"set output region", 
