@@ -1226,23 +1226,13 @@ fn process_sequences<F: Field>(
     let mut last_states: [u64; 3] = [0, 0, 0];
     let mut last_symbols: [u64; 3] = [0, 0, 0];
     let mut current_decoding_state = 0u64;
+    let mut tail_holding_bit = false;
 
     // witgen_debug
     let stdout = io::stdout();
     let mut handle = stdout.lock();
 
     while current_bit_idx + nb <= bitstream_end_bit_idx {
-        let is_tail = current_bit_idx == bitstream_end_bit_idx;
-        if is_tail { 
-            assert!(nb == 0, "Can only read 0 bit at the very tail end of bitstream.");
-            // The byte idx has already been incremented to > n_sequence_bytes.
-            // But continuously reading 0 bits from the very tail end of the last byte is allowed.
-            // In this case, the byte_idx is restored to the last byte of the bitstream bytes.
-            if current_byte_idx > n_sequence_data_bytes {
-                current_byte_idx -= 1;
-            }
-        }
-
         // witgen_debug
         // write!(handle, "current_byte_idx: {:?}, current_bit_idx: {:?}, nb: {:?}", current_byte_idx, current_bit_idx, nb).unwrap();
         // writeln!(handle).unwrap();
@@ -1334,16 +1324,16 @@ fn process_sequences<F: Field>(
         }
 
         // bitstream witness row data
-        let from_bit_idx = if !is_tail {
-            current_bit_idx.rem_euclid(8)
-        } else {
-            7
-        };
+        let from_bit_idx = current_bit_idx.rem_euclid(8);
         let to_bit_idx = if nb > 0 {
             from_bit_idx + (nb - 1)
         } else {
             from_bit_idx
         };
+
+        // witgen_debug
+        // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?}, is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, from_bit_idx, to_bit_idx, nb, false, (nb == 0)).unwrap();
+        // writeln!(handle).unwrap();
 
         // Add a witness row
         witness_rows.push(ZstdWitnessRow {
@@ -1420,6 +1410,10 @@ fn process_sequences<F: Field>(
                 }
                 skipped_bits += N_BITS_PER_BYTE;
     
+                // witgen_debug
+                // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?}, is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, 0, 0, 7, true, false).unwrap();
+                // writeln!(handle).unwrap();
+
                 witness_rows.push(ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::ZstdBlockSequenceData,
@@ -1454,8 +1448,8 @@ fn process_sequences<F: Field>(
                         aux_2: Value::known(F::zero()),
                     },
                     bitstream_read_data: BitstreamReadRow {
-                        bit_start_idx: 0,
-                        bit_end_idx: 0,
+                        bit_start_idx: 7,
+                        bit_end_idx: 7,
                         bit_value: 0,
                         is_zero_bit_read: false,
                         is_seq_init: false,
@@ -1508,22 +1502,37 @@ fn process_sequences<F: Field>(
             }
         }
         
-        for _ in 0..(nb - skipped_bits) {
-            (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+        let next_nb = if is_init {
+            // On the first step, ML and CMO are flipped
+            let true_idx = [0, 2, 1][order_idx];
+            nb_switch[mode][true_idx]
+        } else {
+            nb_switch[mode][order_idx]
+        };
+
+        if nb > 0 && next_nb > 0 {
+            for _ in 0..(nb - skipped_bits) {
+                (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+            }
+        } else if nb > 0 && next_nb == 0 {
+            tail_holding_bit = true; 
+            for _ in 0..(nb - skipped_bits - 1) {
+                (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+            }
+        } else if nb == 0 && next_nb > 0 {
+            if tail_holding_bit {
+                (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+                tail_holding_bit = false;
+            }
         }
+
         if current_byte_idx > last_byte_idx && current_byte_idx <= n_sequence_data_bytes {
             next_tag_value_acc = tag_value_iter.next().unwrap();
             next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
             last_byte_idx = current_byte_idx;
         }
 
-        if is_init {
-            // On the first step, ML and CMO are flipped
-            let true_idx = [0, 2, 1][order_idx];
-            nb = nb_switch[mode][true_idx];
-        } else {
-            nb = nb_switch[mode][order_idx];
-        }
+        nb = next_nb;
     }
 
     // Process raw sequence instructions
