@@ -1323,89 +1323,15 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     > {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
-        let (proofs, codes) = self.get_pre_state(geth_traces.iter())?;
 
-        let retrace = true;
-        let builder = if retrace {
-            let trace_config = TraceConfig {
-                chain_id: self.chain_id,
-                history_hashes,
-                block_constants: BlockConstants {
-                    coinbase: eth_block.author.unwrap(),
-                    timestamp: eth_block.timestamp,
-                    number: eth_block.number.unwrap(),
-                    difficulty: eth_block.difficulty,
-                    gas_limit: eth_block.gas_limit,
-                    base_fee: eth_block.base_fee_per_gas.unwrap(),
-                },
-                accounts: proofs
-                    .into_iter()
-                    .map(|proof| {
-                        let acc = Account {
-                            address: proof.address,
-                            nonce: proof.nonce,
-                            balance: proof.balance,
-                            code: codes
-                                .get(&proof.address)
-                                .cloned()
-                                .unwrap_or_default()
-                                .into(),
-                            storage: proof
-                                .storage_proof
-                                .into_iter()
-                                .map(|proof| (proof.key, proof.value))
-                                .collect(),
-                        };
-                        (proof.address, acc)
-                    })
-                    .collect(),
-                transactions: eth_block
-                    .transactions
-                    .iter()
-                    .map(geth_types::Transaction::from)
-                    .collect(),
-                logger_config: Default::default(),
-                chain_config: None,
-                #[cfg(feature = "scroll")]
-                l1_queue_index: 0,
-            };
+        let builder = if cfg!(feature = "retrace-tx") {
+            let trace_config = self
+                .get_trace_config(&eth_block, geth_traces.iter(), false)
+                .await?;
 
-            #[cfg(feature = "scroll")]
-            let builder = {
-                let block_trace = external_tracer::l2trace(&trace_config)?;
-                let mut builder = CircuitInputBuilder::new_from_l2_trace(
-                    self.circuits_params,
-                    block_trace,
-                    false,
-                    false,
-                )?;
-                builder
-                    .finalize_building()
-                    .expect("could not finalize building block");
-                builder
-            };
-
-            #[cfg(not(feature = "scroll"))]
-            let builder = {
-                let geth_traces = external_tracer::trace(&trace_config)?;
-                let geth_data = geth_types::GethData {
-                    chain_id: trace_config.chain_id,
-                    history_hashes: trace_config.history_hashes.clone(),
-                    geth_traces: geth_traces.clone(),
-                    accounts: trace_config.accounts.values().cloned().collect(),
-                    eth_block: eth_block.clone(),
-                };
-                let block_data = crate::mock::BlockData::new_from_geth_data_with_params(
-                    geth_data,
-                    self.circuits_params,
-                );
-                let mut builder = block_data.new_circuit_input_builder();
-                builder.handle_block(&eth_block, &geth_traces)?;
-                builder
-            };
-
-            builder
+            self.trace_to_builder(&eth_block, &trace_config)?
         } else {
+            let (proofs, codes) = self.get_pre_state(geth_traces.iter())?;
             let proofs = self.complete_prestate(&eth_block, proofs).await?;
             let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
             if eth_block.transactions.len() > self.circuits_params.max_txs {
@@ -1477,86 +1403,15 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         eth_block.transactions = vec![tx.clone()];
 
-        let (proofs, codes) = self.get_pre_state(std::iter::once(&geth_trace))?;
-        let proofs = self.complete_prestate(&eth_block, proofs).await?;
+        let builder = if cfg!(feature = "retrace-tx") {
+            let trace_config = self
+                .get_trace_config(&eth_block, iter::once(&geth_trace), true)
+                .await?;
 
-        let retrace = true;
-        let builder = if retrace {
-            let trace_config = TraceConfig {
-                chain_id: self.chain_id,
-                history_hashes: vec![eth_block.parent_hash.to_word()],
-                block_constants: BlockConstants {
-                    coinbase: eth_block.author.unwrap(),
-                    timestamp: eth_block.timestamp,
-                    number: eth_block.number.unwrap(),
-                    difficulty: eth_block.difficulty,
-                    gas_limit: eth_block.gas_limit,
-                    base_fee: eth_block.base_fee_per_gas.unwrap(),
-                },
-                accounts: proofs
-                    .into_iter()
-                    .map(|proof| {
-                        let acc = Account {
-                            address: proof.address,
-                            nonce: proof.nonce,
-                            balance: proof.balance,
-                            code: codes
-                                .get(&proof.address)
-                                .cloned()
-                                .unwrap_or_default()
-                                .into(),
-                            storage: proof
-                                .storage_proof
-                                .into_iter()
-                                .map(|proof| (proof.key, proof.value))
-                                .collect(),
-                        };
-                        (proof.address, acc)
-                    })
-                    .collect(),
-                transactions: vec![geth_types::Transaction::from(&tx)],
-                logger_config: Default::default(),
-                chain_config: None,
-                #[cfg(feature = "scroll")]
-                l1_queue_index: 0,
-            };
-
-            #[cfg(feature = "scroll")]
-            let builder = {
-                let block_trace = external_tracer::l2trace(&trace_config)?;
-                let mut builder = CircuitInputBuilder::new_from_l2_trace(
-                    self.circuits_params,
-                    block_trace,
-                    false,
-                    false,
-                )?;
-                builder
-                    .finalize_building()
-                    .expect("could not finalize building block");
-                builder
-            };
-
-            #[cfg(not(feature = "scroll"))]
-            let builder = {
-                let geth_traces = external_tracer::trace(&trace_config)?;
-                let geth_data = geth_types::GethData {
-                    chain_id: trace_config.chain_id,
-                    history_hashes: trace_config.history_hashes.clone(),
-                    geth_traces: geth_traces.clone(),
-                    accounts: trace_config.accounts.values().cloned().collect(),
-                    eth_block: eth_block.clone(),
-                };
-                let block_data = crate::mock::BlockData::new_from_geth_data_with_params(
-                    geth_data,
-                    self.circuits_params,
-                );
-                let mut builder = block_data.new_circuit_input_builder();
-                builder.handle_block(&eth_block, &geth_traces)?;
-                builder
-            };
-
-            builder
+            self.trace_to_builder(&eth_block, &trace_config)?
         } else {
+            let (proofs, codes) = self.get_pre_state(iter::once(&geth_trace))?;
+            let proofs = self.complete_prestate(&eth_block, proofs).await?;
             let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
             self.gen_inputs_from_state(
                 state_db,
@@ -1568,6 +1423,102 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             )?
         };
 
+        Ok(builder)
+    }
+
+    async fn get_trace_config(
+        &self,
+        eth_block: &EthBlock,
+        geth_traces: impl Iterator<Item = &GethExecTrace>,
+        complete_prestate: bool,
+    ) -> Result<TraceConfig, Error> {
+        let (proofs, codes) = self.get_pre_state(geth_traces)?;
+        let proofs = if complete_prestate {
+            self.complete_prestate(eth_block, proofs).await?
+        } else {
+            proofs
+        };
+        Ok(TraceConfig {
+            chain_id: self.chain_id,
+            history_hashes: vec![eth_block.parent_hash.to_word()],
+            block_constants: BlockConstants {
+                coinbase: eth_block.author.unwrap(),
+                timestamp: eth_block.timestamp,
+                number: eth_block.number.unwrap(),
+                difficulty: eth_block.difficulty,
+                gas_limit: eth_block.gas_limit,
+                base_fee: eth_block.base_fee_per_gas.unwrap(),
+            },
+            accounts: proofs
+                .into_iter()
+                .map(|proof| {
+                    let acc = Account {
+                        address: proof.address,
+                        nonce: proof.nonce,
+                        balance: proof.balance,
+                        code: codes
+                            .get(&proof.address)
+                            .cloned()
+                            .unwrap_or_default()
+                            .into(),
+                        storage: proof
+                            .storage_proof
+                            .into_iter()
+                            .map(|proof| (proof.key, proof.value))
+                            .collect(),
+                    };
+                    (proof.address, acc)
+                })
+                .collect(),
+            transactions: eth_block
+                .transactions
+                .iter()
+                .map(geth_types::Transaction::from)
+                .collect(),
+            logger_config: Default::default(),
+            chain_config: None,
+            #[cfg(feature = "scroll")]
+            l1_queue_index: 0,
+        })
+    }
+
+    #[cfg(feature = "scroll")]
+    fn trace_to_builder(
+        &self,
+        _eth_block: &EthBlock,
+        trace_config: &TraceConfig,
+    ) -> Result<CircuitInputBuilder, Error> {
+        let block_trace = external_tracer::l2trace(trace_config)?;
+        let mut builder = CircuitInputBuilder::new_from_l2_trace(
+            self.circuits_params,
+            block_trace,
+            false,
+            false,
+        )?;
+        builder
+            .finalize_building()
+            .expect("could not finalize building block");
+        Ok(builder)
+    }
+
+    #[cfg(not(feature = "scroll"))]
+    fn trace_to_builder(
+        &self,
+        eth_block: &EthBlock,
+        trace_config: &TraceConfig,
+    ) -> Result<CircuitInputBuilder, Error> {
+        let geth_traces = external_tracer::trace(trace_config)?;
+        let geth_data = geth_types::GethData {
+            chain_id: trace_config.chain_id,
+            history_hashes: trace_config.history_hashes.clone(),
+            geth_traces: geth_traces.clone(),
+            accounts: trace_config.accounts.values().cloned().collect(),
+            eth_block: eth_block.clone(),
+        };
+        let block_data =
+            crate::mock::BlockData::new_from_geth_data_with_params(geth_data, self.circuits_params);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder.handle_block(eth_block, &geth_traces)?;
         Ok(builder)
     }
 }

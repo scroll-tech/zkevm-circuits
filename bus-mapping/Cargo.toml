@@ -54,3 +54,4 @@ rpc-legacy-tracer = []
 # For the trace obtained from erigon node, refund field is missed
 # and must be rebuild
 fix-refund = ["rpc-legacy-tracer"]
+retrace-tx = []
