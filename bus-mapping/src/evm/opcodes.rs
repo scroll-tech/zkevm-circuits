@@ -42,6 +42,7 @@ mod extcodesize;
 mod gasprice;
 mod jumpi;
 mod logs;
+mod mcopy;
 mod mload;
 mod mstore;
 mod number;
@@ -116,6 +117,7 @@ use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
 use gasprice::GasPrice;
 use logs::Log;
+use mcopy::MCopy;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
@@ -235,6 +237,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         OpcodeId::BASEFEE => GetBlockHeaderField::<{ OpcodeId::BASEFEE }>::gen_associated_ops,
         OpcodeId::POP => StackPopOnlyOpcode::<1>::gen_associated_ops,
+        OpcodeId::MCOPY => MCopy::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
@@ -477,6 +480,7 @@ pub fn gen_associated_ops(
     } else {
         None
     };
+
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
         log::debug!(
             "geth error {:?} occurred in  {:?} at pc {:?}",

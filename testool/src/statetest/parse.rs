@@ -141,20 +141,23 @@ pub fn parse_code(compiler: &Compiler, as_str: &str) -> Result<Bytes> {
             bail!("do not know what to do with code(3) '{:?}'", as_str);
         }
     } else if let Some(yul) = tags.get(":yul") {
-        let (src, evm_version) = if yul.starts_with('{') {
-            (yul.to_string(), None)
+        let (src, optimize_level, evm_version) = if yul.starts_with('{') {
+            // 1 is default option: --optimize --yul-optimizations=:
+            (yul.to_string(), 1, None)
         } else {
             let re = Regex::new(r"\s").unwrap();
             let mut parts = re.splitn(yul, 2);
 
             let version = parts.next().unwrap();
             let src = parts.next().unwrap();
-
-            // TODO: what is this "optimise" mean?
-            let src = src.strip_prefix("optimise").unwrap_or(src).to_string();
-            (src, Some(version.to_string()))
+            if src.starts_with("optimise") {
+                let src = src.strip_prefix("optimise").unwrap_or(src).to_string();
+                (src, 0, Some(version.to_string()))
+            } else {
+                (src.to_string(), 1, Some(version.to_string()))
+            }
         };
-        compiler.yul(&src, evm_version.as_deref())?
+        compiler.yul(&src, optimize_level, evm_version.as_deref())?
     } else if let Some(solidity) = tags.get(":solidity") {
         debug!(target: "testool", "SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
         compiler.solidity(solidity, None)?
@@ -227,6 +230,7 @@ fn parse_call_bytes(compiler: &Compiler, tags: HashMap<String, String>) -> Resul
             .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", tags))?;
         Ok(compiler.yul(
             caps.name("code").unwrap().as_str(),
+            1,
             caps.name("version").map(|m| m.as_str()),
         )?)
     } else {
