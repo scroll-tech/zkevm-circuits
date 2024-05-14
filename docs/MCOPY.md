@@ -40,8 +40,11 @@ below describle three parts that implementation involves.
 
     - OOG memory copy:
       - there are two cases which result in this error: 1) remain gas left is indeed not sufficient. 2) source address(`src_add`) or destination address (`dst_address`) is u64 overflow.
+
       - `ErrorOOGMemoryCopyGadget` gadget is reponsible for memory copy OOG cases, make OOG mcopy also take adantage of this gadget. 
+
       - specially for mcopy, besdies existing constraints in `ErrorOOGMemoryCopyGadget` gadget. added source address(`src_add`) overflow case for mcopy in OOG condition constraint.
+
       - added mcopy opcode in `ErrorOOGMemoryCopyGadget` gadget opcode list as well.
 
 
@@ -56,6 +59,7 @@ below describle three parts that implementation involves.
     - for memory copy cases, constrain rw_counter increasing or remain same every two steps( two consecutive read steps or write steps). the `rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff`, rwc_diff can be 0 (not reach memory word end, rw_counter remain the same) or 1 (reach memory word end, rw_counter increase by 1).
 
     - rw_counter for write steps updated from half of total memory word count, since first half of all bytes are for reading ops.
+    
     - rwc_inc_left has the similar updates as rw_counter.
 
   - constraint `is_memory_copy` value, `is_memory_copy` is always bool.  it is true only when src_id == dst_id and copy src_type == dst_type == `CopyDataType::Memory`
