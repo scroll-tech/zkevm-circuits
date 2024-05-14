@@ -10,6 +10,7 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, VirtualCells, Error, Expression, Fixed, SecondPhase},
     poly::Rotation,
 };
+use itertools::Itertools;
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon}, 
     table::LookupTable,
@@ -26,8 +27,10 @@ use tables::SeqInstTable;
 
 #[derive(Clone)] 
 pub struct SequenceConfig {
+    // the enabled flag
+    q_enabled: Column<Fixed>,    
     // the `is_block` flag in `BlockConfig`
-    enabled: Column<Advice>,
+    flag: Column<Advice>,
     // the index of block which the literal section is in
     block_index: Column<Advice>,
     // Number of sequences decoded from the sequences section header in the block.
@@ -47,30 +50,31 @@ impl SequenceConfig {
             |mut region|{
                 let mut offset = 0usize;
 
-                for col in [self.enabled, self.block_index, self.num_sequences]{
+                for col in [self.flag, self.block_index, self.num_sequences]{
                     region.assign_advice(||"flush for non lookup", col, offset, ||Value::known(F::zero()))?;
                 }
 
                 offset += 1;
                 for (col, val) in [
-                    (self.enabled, F::one()),
+                    (self.flag, F::one()),
                     (self.block_index, F::from(seq_cfg.block_idx as u64)),
                     (self.num_sequences, F::from(seq_cfg.num_sequences as u64)),
                 ]{
                     region.assign_advice(||"flush mock table", col, offset, ||Value::known(val))?;
                 }
-
+                region.assign_fixed(||"enable mock table", self.q_enabled, offset, ||Value::known(F::one()))?;
                 Ok(())
             }
         )
     }
 
     /// construct table for rows: [enabled, blk_index, num_seq]
-    pub fn construct(cols: [Column<Advice>;3]) -> Self {
+    pub fn construct(cols: [Column<Any>;4]) -> Self {
         Self {
-            enabled: cols[0],
-            block_index: cols[1],
-            num_sequences: cols[2],
+            q_enabled: cols[0].try_into().unwrap(),
+            flag: cols[1].try_into().unwrap(),
+            block_index: cols[2].try_into().unwrap(),
+            num_sequences: cols[3].try_into().unwrap(),
         }
     }
 
@@ -78,9 +82,10 @@ impl SequenceConfig {
     pub fn lookup_tbl<F: Field>(
         &self,
         meta: &mut VirtualCells<'_, F>
-    ) -> [Expression<F>; 3]{
+    ) -> [Expression<F>; 4]{
         [
-            meta.query_advice(self.enabled, Rotation::cur()),
+            meta.query_fixed(self.q_enabled, Rotation::cur()),
+            meta.query_advice(self.flag, Rotation::cur()),
             meta.query_advice(self.block_index, Rotation::cur()),   
             meta.query_advice(self.num_sequences, Rotation::cur()),     
         ]
@@ -90,6 +95,8 @@ impl SequenceConfig {
 /// The literal table which execution circuit expect to lookup from
 #[derive(Clone)]
 pub struct LiteralTable {
+    // the enabled flag
+    q_enabled: Column<Fixed>,
     // the tag for current row in literal section
     tag: Column<Advice>,
     // the index of block which the literal section is in
@@ -124,6 +131,7 @@ impl LiteralTable {
                 offset += 1;
                 // TODO: ensure the index in literal table is 0 or 1 indexed
                 for (i, char) in literals.iter().copied().enumerate() {
+                    region.assign_fixed(||"enable mock table", self.q_enabled, offset, ||Value::known(F::one()))?;
                     for (col, val) in [
                         (self.tag, F::from(ZstdTag::ZstdBlockLiteralsRawBytes as u64)),
                         (self.block_index, F::one()),
@@ -149,15 +157,16 @@ impl LiteralTable {
         )
     }
 
-    /// construct table for rows: [tag, blk_index, byte_index, char, last, padding]
-    pub fn construct(cols: [Column<Advice>;6]) -> Self {
+    /// construct table for rows: [q_enable, tag, blk_index, byte_index, char, last, padding]
+    pub fn construct(cols: [Column<Any>;7]) -> Self {
         Self {
-            tag: cols[0],
-            block_index: cols[1],
-            byte_index: cols[2],
-            char: cols[3],
-            last_flag: cols[4],
-            padding_flag: cols[5],
+            q_enabled: cols[0].try_into().unwrap(),
+            tag: cols[1].try_into().unwrap(),
+            block_index: cols[2].try_into().unwrap(),
+            byte_index: cols[3].try_into().unwrap(),
+            char: cols[4].try_into().unwrap(),
+            last_flag: cols[5].try_into().unwrap(),
+            padding_flag: cols[6].try_into().unwrap(),
         }
     }
 
@@ -165,8 +174,9 @@ impl LiteralTable {
     pub fn lookup_tbl_for_lit_cp<F: Field>(
         &self,
         meta: &mut VirtualCells<'_, F>
-    ) -> [Expression<F>; 5]{
+    ) -> [Expression<F>; 6]{
         [
+            meta.query_fixed(self.q_enabled, Rotation::cur()),
             meta.query_advice(self.tag, Rotation::cur()),
             meta.query_advice(self.block_index, Rotation::cur()),   
             meta.query_advice(self.byte_index, Rotation::cur()),   
@@ -179,8 +189,9 @@ impl LiteralTable {
     pub fn lookup_tbl_for_lit_size<F: Field>(
         &self,
         meta: &mut VirtualCells<'_, F>
-    ) -> [Expression<F>; 5]{
+    ) -> [Expression<F>; 6]{
         [
+            meta.query_fixed(self.q_enabled, Rotation::cur()),
             meta.query_advice(self.tag, Rotation::cur()),
             meta.query_advice(self.block_index, Rotation::cur()),   
             meta.query_advice(self.byte_index, Rotation::cur()),   
@@ -526,7 +537,7 @@ impl<F: Field> SeqExecConfig<F> {
         });
 
         debug_assert!(meta.degree() <= 9);
-/*        meta.lookup_any("lit cp char", |meta|{
+        meta.lookup_any("lit cp char", |meta|{
             let enabled = meta.query_fixed(q_enabled, Rotation::cur())
                 * meta.query_advice(s_lit_cp_phase, Rotation::cur());
 
@@ -535,8 +546,9 @@ impl<F: Field> SeqExecConfig<F> {
             let cp_byte = meta.query_advice(decoded_byte, Rotation::cur());
 
             let tbl_exprs = literal_table.lookup_tbl_for_lit_cp(meta);
-            tbl_exprs.into_iter().zip(
+            tbl_exprs.into_iter().zip_eq(
                 [
+                    1.expr(),
                     ZstdTag::ZstdBlockLiteralsRawBytes.expr(),
                     block_index,
                     literal_pos,
@@ -546,7 +558,7 @@ impl<F: Field> SeqExecConfig<F> {
             ).map(|(lookup_expr, src_expr)|{
                 (src_expr * enabled.expr(), lookup_expr)
             }).collect()
-        });*/
+        });
 
         debug_assert!(meta.degree() <= 9);
         meta.lookup_any("back ref char", |meta|{
@@ -578,14 +590,15 @@ impl<F: Field> SeqExecConfig<F> {
         });
 
         debug_assert!(meta.degree() <= 9);
-/*        meta.lookup_any("actual literal byte", |meta|{
+        meta.lookup_any("actual literal byte", |meta|{
             let q_enabled = meta.query_fixed(q_enabled, Rotation::prev());
             let block_index = meta.query_advice(block_index, Rotation::prev());
             let literal_pos_at_block_end = meta.query_advice(literal_pos, Rotation::prev());
 
             let tbl_exprs = literal_table.lookup_tbl_for_lit_size(meta);
-            tbl_exprs.into_iter().zip(
+            tbl_exprs.into_iter().zip_eq(
                 [
+                    1.expr(),
                     ZstdTag::ZstdBlockLiteralsRawBytes.expr(),
                     block_index,
                     literal_pos_at_block_end,
@@ -607,8 +620,9 @@ impl<F: Field> SeqExecConfig<F> {
                 // in fact has one extra instruction
                 - meta.query_advice(s_last_lit_cp_phase, Rotation::prev());
 
-            seq_config.lookup_tbl(meta).into_iter().zip(
+            seq_config.lookup_tbl(meta).into_iter().zip_eq(
                 [
+                    1.expr(),
                     1.expr(),
                     block_index,
                     seq_index_at_block_end,
@@ -617,7 +631,7 @@ impl<F: Field> SeqExecConfig<F> {
                 (src_expr * is_block_begin.expr() * q_enabled.expr(), lookup_expr)
             }).collect()
         });
-*/        
+        
         debug_assert!(meta.degree() <= 9);
         Self {
             q_enabled,
@@ -760,7 +774,7 @@ impl<F: Field> SeqExecConfig<F> {
                 );
                 decoded_rlc = decoded_rlc * chng + Value::known(out_byte);
 
-                println!("set row at {}, output {}:{:x}", offset, decoded_len, out_byte.get_lower_32());
+                //println!("set row at {}, output {}:{:x}", offset, decoded_len, out_byte.get_lower_32());
 
                 region.assign_advice(
                     ||"set output region", 
@@ -779,7 +793,7 @@ impl<F: Field> SeqExecConfig<F> {
                 // for back-ref part, we refill the backref_pos in the whole
                 // instruction
                 if !is_literal && i == 0{
-                    println!("fill-back match offset {} in {}..{}", ref_offset.unwrap(), inst_begin_offset, offset);
+                    //println!("fill-back match offset {} in {}..{}", ref_offset.unwrap(), inst_begin_offset, offset);
                     for back_offset in inst_begin_offset..offset {
                         region.assign_advice(
                             ||"set output region", 
@@ -810,7 +824,7 @@ impl<F: Field> SeqExecConfig<F> {
                     .chain(decodes)
                     .chain(
                         if is_literal {
-                            println!("inst {}: literal cp {}-{}", inst_ind, pos, 0);
+                            //println!("inst {}: literal cp {}-{}", inst_ind, pos, 0);
                             [
                                 (self.s_lit_cp_phase, F::one()),
                                 (self.s_back_ref_phase, F::zero()),
@@ -818,7 +832,7 @@ impl<F: Field> SeqExecConfig<F> {
                                 (self.backref_progress, F::zero()),
                             ]
                         } else {
-                            println!("inst {}: backref cp {}-{}", inst_ind, cur_literal_cp, i+1);
+                            //println!("inst {}: backref cp {}-{}", inst_ind, cur_literal_cp, i+1);
                             [
                                 (self.s_lit_cp_phase, F::zero()),
                                 (self.s_back_ref_phase, F::one()),
@@ -1087,11 +1101,24 @@ mod tests {
             meta.enable_constant(const_col);
 
             let literal_tbl = LiteralTable::construct(
-                [0;6].map(|_|meta.advice_column())
+                [
+                    meta.fixed_column().into(),
+                    meta.advice_column().into(),
+                    meta.advice_column().into(),
+                    meta.advice_column().into(),
+                    meta.advice_column().into(),
+                    meta.advice_column().into(),
+                    meta.advice_column().into(),
+                ]
             );
 
             let seq_cfg = SequenceConfig::construct(
-                [0;3].map(|_|meta.advice_column())
+                [
+                    meta.fixed_column().into(),
+                    meta.advice_column().into(),
+                    meta.advice_column().into(),
+                    meta.advice_column().into(),
+                ]
             );
 
             let inst_tbl = SeqInstTable::configure(meta);

@@ -998,18 +998,20 @@ impl DecoderConfig {
             meta,
             challenges,
             &LiteralTable::construct([
-                tag_config.tag,
-                block_config.block_idx,
-                byte_idx,
-                byte,
-                tag_config.is_change,
-                is_padding,
+                q_enable.into(),
+                tag_config.tag.into(),
+                block_config.block_idx.into(),
+                tag_config.tag_idx.into(),
+                byte.into(),
+                tag_config.is_change.into(),
+                is_padding.into(),
             ]),
             &sequence_instruction_table,
             &SequenceConfig::construct([
-                block_config.is_block,
-                block_config.block_idx,
-                block_config.num_sequences,
+                q_enable.into(),
+                block_config.is_block.into(),
+                block_config.block_idx.into(),
+                block_config.num_sequences.into(),
             ]),
         );
 
@@ -4195,7 +4197,6 @@ impl DecoderConfig {
                         i,
                         || Value::known(Fr::from(row.state.tag_idx as u64)),
                     )?;
-
                     let is_sequence_data = row.state.tag == ZstdTag::ZstdBlockSequenceData;
                     region.assign_advice(
                         || "tag_config.is_sequence_data",
