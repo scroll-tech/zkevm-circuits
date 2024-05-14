@@ -3983,7 +3983,6 @@ impl DecoderConfig {
         /////////////////////////////////////////
         //// Assign Sequence-related Configs ////
         /////////////////////////////////////////
-        // TODO: this currently only supports single zstd block.
         self.sequence_instruction_table.assign(
             layouter,
             address_table_arr.iter().map(
@@ -3991,9 +3990,9 @@ impl DecoderConfig {
             ),
             (1 << k) - self.unusable_rows(),
         )?;
-        // TODO: this currently only supports single zstd block.
         // let literal_bytes = witness_rows.iter().filter(|row| row.state.tag == ZstdTag::ZstdBlockLiteralsRawBytes).map(|row| row.encoded_data.value_byte).collect::<Vec<_>>();
-        self.sequence_execution_config.assign(
+        // TODO: use equality constraint for the exported_len and exported_rlc cell
+        let (_exported_len, _exported_rlc) = self.sequence_execution_config.assign(
             layouter,
             challenges,
             literal_datas.iter()

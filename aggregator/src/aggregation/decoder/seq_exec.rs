@@ -6,7 +6,7 @@ use gadgets::{
     util::{and, or, not, select, Expr},
 };
 use halo2_proofs::{
-    circuit::{Value, Region, Layouter},
+    circuit::{Value, Region, Layouter, AssignedCell},
     plonk::{Advice, Any, Column, ConstraintSystem, VirtualCells, Error, Expression, Fixed, SecondPhase},
     poly::Rotation,
 };
@@ -207,8 +207,6 @@ impl LiteralTable {
 pub struct SeqExecConfig<F: Field> {
     // active flag, one active row parse
     q_enabled: Column<Fixed>,
-    // indicate the row above active region
-    q_head: Column<Fixed>,       
     // 1-index for each block, keep the same for each row
     // until all sequenced has been handled
     block_index: Column<Advice>,
@@ -253,6 +251,7 @@ pub struct SeqExecConfig<F: Field> {
     is_block_begin: Expression<F>,
 }
 
+type ExportedCell<F> = AssignedCell<F, F>;
 
 impl<F: Field> SeqExecConfig<F> {
 
@@ -266,7 +265,6 @@ impl<F: Field> SeqExecConfig<F> {
         seq_config: &SequenceConfig,
     ) -> Self {
         let q_enabled = meta.fixed_column();
-        let q_head = meta.fixed_column();
         let block_index = meta.advice_column();
         let seq_index = meta.advice_column();
         let decoded_len = meta.advice_column();
@@ -284,6 +282,9 @@ impl<F: Field> SeqExecConfig<F> {
         // need to constraint the final block index so
         // we ensure all blocks has been handled
         meta.enable_equality(block_index);
+        // need to export the final rlc and len
+        meta.enable_equality(decoded_rlc);
+        meta.enable_equality(decoded_len);
 
         // dummy init
         let mut is_inst_begin = 0.expr();
@@ -491,20 +492,17 @@ impl<F: Field> SeqExecConfig<F> {
 
             cb.require_equal("rlc accumulate", 
                 decoded_rlc_prev.expr() * 
-                (decoded_len.expr() - decoded_len_prev.expr())
-                * challenges.evm_word() + decoded_byte.expr(), 
+                select::expr(
+                    decoded_len.expr() - decoded_len_prev.expr(),
+                    challenges.evm_word(),
+                    1.expr(),
+                )
+                + decoded_byte.expr(), 
                 decoded_rlc.expr(),
             );
 
-            cb.gate(meta.query_fixed(q_head, Rotation::cur()))
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
-
-        debug_assert!(meta.degree() <= 9);
-        // meta.create_gate("header", |meta|{
-        //     let mut cb = BaseConstraintBuilder::default();
-
-        //     cb.gate(meta.query_fixed(q_head, Rotation::cur()))
-        // });
 
         meta.lookup_any("the instruction from inst table", |meta|{
 
@@ -635,7 +633,6 @@ impl<F: Field> SeqExecConfig<F> {
         debug_assert!(meta.degree() <= 9);
         Self {
             q_enabled,
-            q_head,
             block_index,
             seq_index,
             decoded_len,
@@ -663,7 +660,7 @@ impl<F: Field> SeqExecConfig<F> {
         decoded_len: usize,
         decoded_rlc: Value<F>,
         padded_block_ind: u64,
-    ) -> Result<(), Error>{
+    ) -> Result<(ExportedCell<F>, ExportedCell<F>), Error>{
 
         for offset in offset..=till_offset {
             // flush one more row for rotation next()
@@ -688,7 +685,6 @@ impl<F: Field> SeqExecConfig<F> {
                 )?;
             }
 
-
             for col in [
                 self.decoded_byte,
                 self.s_last_lit_cp_phase,
@@ -707,7 +703,19 @@ impl<F: Field> SeqExecConfig<F> {
             }
         }
 
-        Ok(())
+        let len_export = region.assign_advice(||"export len", 
+            self.decoded_len, 
+            till_offset,
+            ||Value::known(F::from(decoded_len as u64)),
+        )?;
+
+        let rlc_export = region.assign_advice(||"export rlc",
+            self.decoded_rlc, 
+            till_offset,
+            ||decoded_rlc,
+        )?;
+
+        Ok((len_export, rlc_export))
 
     }
 
@@ -888,10 +896,29 @@ impl<F: Field> SeqExecConfig<F> {
             region.assign_advice(||"top row fluash", col, offset, ||Value::known(F::zero()))?;
         }
 
+        for (col, val) in [
+            (self.decoded_len, F::zero()),
+            (self.decoded_rlc, F::zero()),
+            (self.block_index, F::zero()),
+        ] {
+            region.assign_advice_from_constant(||"top row constraint", 
+            col, 
+            offset, 
+            val)?;
+        }
+
+        region.assign_advice_from_constant(||"blk index begin constraint", 
+            self.block_index,
+            offset + 1, 
+            F::one(),
+        )?;
+
         Ok(offset+1)
     }
 
-    /// assign with multiple blocks
+    /// assign with multiple blocks and export the cell at 
+    /// final row (specified by `eanbled_rows`) for 
+    /// (decoded_len, decoded_rlc)
     pub fn assign<'a>(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -905,7 +932,7 @@ impl<F: Field> SeqExecConfig<F> {
         // all of the decompressed bytes, not only current block
         decompressed_bytes: &[u8],
         enabled_rows: usize,
-    ) -> Result<(), Error>{
+    ) -> Result<(ExportedCell<F>, ExportedCell<F>), Error>{
 
         layouter.assign_region(
             || "output region",
@@ -936,9 +963,7 @@ impl<F: Field> SeqExecConfig<F> {
                     decoded_len, 
                     decoded_rlc, 
                     blk_ind as u64 + 1,
-                )?;
-
-                Ok(())
+                )
             }
         )        
     }
