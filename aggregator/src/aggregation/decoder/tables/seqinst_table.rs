@@ -3,7 +3,7 @@ use eth_types::Field;
 use gadgets::{
     is_equal::*,
     is_zero::*,
-    util::{and, or, not, select, Expr},
+    util::{and, not, select, Expr},
 };
 use halo2_proofs::{
     circuit::{Value, Region, Layouter},

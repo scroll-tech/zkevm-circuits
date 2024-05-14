@@ -1,10 +1,6 @@
 
 use eth_types::Field;
-use gadgets::{
-    is_equal::*,
-    is_zero::*,
-    util::{and, or, not, select, Expr},
-};
+use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     circuit::{Value, Region, Layouter, AssignedCell},
     plonk::{Advice, Any, Column, ConstraintSystem, VirtualCells, Error, Expression, Fixed, SecondPhase},
@@ -13,7 +9,6 @@ use halo2_proofs::{
 use itertools::Itertools;
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon}, 
-    table::LookupTable,
     util::Challenges,
 };
 use crate::aggregation::decoder::witgen;
@@ -221,7 +216,7 @@ pub struct SeqExecConfig<F: Field> {
     // the rlc of decoded output byte
     decoded_rlc: Column<Advice>,
     /// An incremental accumulator of the number of bytes decoded so far.
-    decoded_len_acc: Column<Advice>,
+    // decoded_len_acc: Column<Advice>,
 
     // the flag indicate current seq is the special one 
     // (copying the rest bytes in literal section)
@@ -237,18 +232,8 @@ pub struct SeqExecConfig<F: Field> {
     // the back-ref pos 
     backref_offset: Column<Advice>,   
     // counting the progress of back ref bytes
-    backref_progress: Column<Advice>,    
-
-    // the flag indicate the execution has ended and rows
-    // are filled by padding data
-    is_padding: Expression<F>,
-    // the flag exp indicate current row is the beginning 
-    // of a new instruction, it is also the beginning of
-    // a literal copying 
-    is_inst_begin: Expression<F>,
-    // the flag indicate current row is the beginning of
-    // a new block
-    is_block_begin: Expression<F>,
+    backref_progress: Column<Advice>,
+    _marker: std::marker::PhantomData<F>,
 }
 
 type ExportedCell<F> = AssignedCell<F, F>;
@@ -270,8 +255,7 @@ impl<F: Field> SeqExecConfig<F> {
         let decoded_len = meta.advice_column();
         let decoded_byte = meta.advice_column();
         let decoded_rlc = meta.advice_column_in(SecondPhase);
-        // TODO: constraint the len acc
-        let decoded_len_acc = meta.advice_column();
+        //let decoded_len_acc = meta.advice_column();
         let s_last_lit_cp_phase = meta.advice_column();
         let s_lit_cp_phase = meta.advice_column();
         let s_back_ref_phase = meta.advice_column();
@@ -284,11 +268,18 @@ impl<F: Field> SeqExecConfig<F> {
         meta.enable_equality(block_index);
         // need to export the final rlc and len
         meta.enable_equality(decoded_rlc);
+        // the flag indicate current row is the beginning of
+        // a new block        
         meta.enable_equality(decoded_len);
 
-        // dummy init
+        // the flag indicate the execution has ended and rows
+        // are filled by padding data
         let mut is_inst_begin = 0.expr();
+        // the flag exp indicate current row is the beginning 
+        // of a new instruction, it is also the beginning of
+        // a literal copying 
         let mut is_block_begin = 0.expr();
+
         let mut is_padding = 0.expr();
 
         meta.create_gate("borders", |meta|{
@@ -638,16 +629,13 @@ impl<F: Field> SeqExecConfig<F> {
             decoded_len,
             decoded_byte,
             decoded_rlc,
-            decoded_len_acc,
             s_last_lit_cp_phase,
             s_lit_cp_phase,
             s_back_ref_phase,
             backref_progress,
             literal_pos,
             backref_offset,
-            is_padding,
-            is_inst_begin,
-            is_block_begin,
+            _marker: Default::default(),
         }
     }
 
