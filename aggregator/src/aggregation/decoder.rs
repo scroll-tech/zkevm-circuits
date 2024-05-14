@@ -1,5 +1,5 @@
-mod tables;
 mod seq_exec;
+mod tables;
 pub mod witgen;
 use witgen::*;
 
@@ -29,7 +29,10 @@ use zkevm_circuits::{
 };
 
 use self::{
-    tables::{BitstringTable, FixedTable, FseTable, LiteralsHeaderTable, SeqInstTable as SequenceInstructionTable},
+    tables::{
+        BitstringTable, FixedTable, FseTable, LiteralsHeaderTable,
+        SeqInstTable as SequenceInstructionTable,
+    },
     util::value_bits_le,
     witgen::{
         FseTableKind, ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG,
@@ -37,7 +40,7 @@ use self::{
     },
 };
 
-use seq_exec::{LiteralTable, SequenceConfig, SeqExecConfig as SequenceExecutionConfig};
+use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig {
@@ -959,9 +962,6 @@ impl DecoderConfig {
         // Fixed table
         let fixed_table = FixedTable::construct(meta);
 
-        // // TODO (enable later):
-        // let sequence_instruction_table = SeqInstTable::configure(meta);
-
         let (q_enable, q_first, byte_idx, byte, is_padding) = (
             meta.fixed_column(),
             meta.fixed_column(),
@@ -993,7 +993,6 @@ impl DecoderConfig {
         let bitstream_decoder = BitstreamDecoder::configure(meta, q_enable, q_first, u8_table);
         let fse_decoder = FseDecoder::configure(meta, q_enable);
         let sequences_data_decoder = SequencesDataDecoder::configure(meta);
-
         let sequence_execution_config = SequenceExecutionConfig::configure(
             meta,
             challenges,
@@ -4183,28 +4182,21 @@ impl DecoderConfig {
         /////////////////////////////////////////
         self.sequence_instruction_table.assign(
             layouter,
-            address_table_arr.iter().map(
-                |rows|rows.iter()
-            ),
+            address_table_arr.iter().map(|rows| rows.iter()),
             (1 << k) - self.unusable_rows(),
         )?;
-        // let literal_bytes = witness_rows.iter().filter(|row| row.state.tag == ZstdTag::ZstdBlockLiteralsRawBytes).map(|row| row.encoded_data.value_byte).collect::<Vec<_>>();
         // TODO: use equality constraint for the exported_len and exported_rlc cell
         let (_exported_len, _exported_rlc) = self.sequence_execution_config.assign(
             layouter,
             challenges,
-            literal_datas.iter()
-            .zip(&sequence_info_arr)
-            .zip(&sequence_exec_info_arr)
-            .map(|((lit, seq_info), exec)|
-                (lit.as_slice(),
-                seq_info,
-                exec.as_slice(),
-            )),
+            literal_datas
+                .iter()
+                .zip(&sequence_info_arr)
+                .zip(&sequence_exec_info_arr)
+                .map(|((lit, seq_info), exec)| (lit.as_slice(), seq_info, exec.as_slice())),
             raw_bytes,
             (1 << k) - self.unusable_rows(),
         )?;
-
 
         /////////////////////////////////////////
         ///// Assign Decompression Region  //////
@@ -4895,17 +4887,17 @@ mod tests {
                 sequence_exec_result,
             ) = process(&self.compressed, challenges.keccak_input());
 
-            let (recovered_bytes, sequence_exec_info_arr) 
-                = sequence_exec_result.into_iter()
-                .fold((Vec::new(), Vec::new()), 
-                |(mut out_byte, mut out_exec), res|{
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+                (Vec::new(), Vec::new()),
+                |(mut out_byte, mut out_exec), res| {
                     out_byte.extend(res.recovered_bytes);
                     out_exec.push(res.exec_trace);
                     (out_byte, out_exec)
-                });
+                },
+            );
 
             assert_eq!(
-                std::str::from_utf8(&recovered_bytes), 
+                std::str::from_utf8(&recovered_bytes),
                 std::str::from_utf8(&self.raw),
             );
 
