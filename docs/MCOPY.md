@@ -6,11 +6,13 @@ tags: scroll documentation
 mcopy opcode introduces in EIP5656(https://eips.ethereum.org/EIPS/eip-5656), which provides an efficient EVM instruction for copying memory areas. 
 it is in the same call context. it pops three parameters `dst_offset`, `src_offset`, `length` from evm stack, copying memory slice [`src_offset`, `src_offset` + `length`] to destination memory slice [`dst_offset`, `dst_offset` + `length`].
 certainly it can also encounter some errors when execution like other opcodes.
-
+the most complex copy case is destination copy range overlapping with source copy range. for example, `src_offset` = 0, `dst_offset` = 0x20, `length` = 0x40, 
+source copy range is [0, 0x40], destination copy range is [0x20, 0x60], the overlapping range is [0x20, 0x40].
+ 
 below describle three parts that implementation involves.
 ## buss mapping
   - generates stack read operations to get above mentioned parameters. `dst_offset`, `src_offset`, `length`.
-  
+
   - generates copy event in helper `gen_copy_steps_for_memory_to_memory` because it is a dynamic copy case. the copy steps generating follows all read steps + all wrtie steps pattern while normal existing copy steps follows read step + write step + read step + write step... pattern. this is to avoid copy range overlaps issue(destination copy range overlaps source copy range in the same memory context). copy event's `src_type` and `dst_type` are the same `CopyDataType::Memory`, copy event's `src_id` and `dst_id` are also the same since source and destination copy happens in one call context.
 
   - rw_counter of write steps start from half of total memory word count.
@@ -57,5 +59,4 @@ below describle three parts that implementation involves.
     - rwc_inc_left has the similar updates as rw_counter.
 
   - constraint `is_memory_copy` value, `is_memory_copy` is always bool.  it is true only when src_id == dst_id and copy src_type == dst_type == `CopyDataType::Memory`
-
 
