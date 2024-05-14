@@ -169,6 +169,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::POP => ExecutionState::POP,
                     OpcodeId::BYTE => ExecutionState::BYTE,
+                    OpcodeId::MCOPY => ExecutionState::MCOPY,
                     OpcodeId::MLOAD => ExecutionState::MEMORY,
                     OpcodeId::MSTORE => ExecutionState::MEMORY,
                     OpcodeId::MSTORE8 => ExecutionState::MEMORY,
