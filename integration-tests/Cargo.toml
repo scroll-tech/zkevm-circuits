@@ -28,7 +28,7 @@ rand_core = "0.6.4"
 mock = { path = "../mock" }
 
 [features]
-default = ["circuits"]
+default = ["circuits", "retrace-tx"]
 rpc = []
 circuit_input_builder = []
 circuits = []
