@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 eth-types = { path = "../eth-types" }
+external-tracer = { path="../external-tracer" }
 gadgets = { path = "../gadgets" }
 mpt-zktrie = {path = "../zktrie"}
 mock = { path = "../mock", optional = true }
@@ -53,3 +54,4 @@ rpc-legacy-tracer = []
 # For the trace obtained from erigon node, refund field is missed
 # and must be rebuild
 fix-refund = ["rpc-legacy-tracer"]
+retrace-tx = []

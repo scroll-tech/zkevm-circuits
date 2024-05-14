@@ -94,6 +94,8 @@ pub enum OpcodeId {
     MSIZE,
     /// `JUMPDEST`
     JUMPDEST,
+    /// `MCOPY`
+    MCOPY,
 
     // PUSHn
     /// `PUSH0`
@@ -424,6 +426,7 @@ impl OpcodeId {
             OpcodeId::PC => 0x58u8,
             OpcodeId::MSIZE => 0x59u8,
             OpcodeId::JUMPDEST => 0x5bu8,
+            OpcodeId::MCOPY => 0x5eu8,
             OpcodeId::PUSH0 => 0x5fu8,
             OpcodeId::PUSH1 => 0x60u8,
             OpcodeId::PUSH2 => 0x61u8,
@@ -605,6 +608,7 @@ impl OpcodeId {
             OpcodeId::MSIZE => GasCost::QUICK,
             OpcodeId::GAS => GasCost::QUICK,
             OpcodeId::JUMPDEST => GasCost::ONE,
+            OpcodeId::MCOPY => GasCost::FASTEST,
             OpcodeId::TLOAD => GasCost::WARM_ACCESS,
             OpcodeId::TSTORE => GasCost::WARM_ACCESS,
             OpcodeId::PUSH0 => GasCost::QUICK,
@@ -771,6 +775,7 @@ impl OpcodeId {
             OpcodeId::MSIZE => (1, 1024),
             OpcodeId::GAS => (1, 1024),
             OpcodeId::JUMPDEST => (0, 1024),
+            OpcodeId::MCOPY => (0, 1021),
             OpcodeId::TLOAD => (0, 1023),
             OpcodeId::TSTORE => (0, 1022),
             OpcodeId::PUSH0 => (1, 1024),
@@ -871,6 +876,7 @@ impl OpcodeId {
                 | OpcodeId::RETURNDATACOPY
                 | OpcodeId::CODECOPY
                 | OpcodeId::EXTCODECOPY
+                | OpcodeId::MCOPY
         )
     }
 
@@ -976,6 +982,7 @@ impl From<u8> for OpcodeId {
             0x5bu8 => OpcodeId::JUMPDEST,
             0x5cu8 => OpcodeId::TLOAD,
             0x5du8 => OpcodeId::TSTORE,
+            0x5eu8 => OpcodeId::MCOPY,
             0x5fu8 => OpcodeId::PUSH0,
             0x60u8 => OpcodeId::PUSH1,
             0x61u8 => OpcodeId::PUSH2,
@@ -1131,6 +1138,7 @@ impl FromStr for OpcodeId {
             "PC" => OpcodeId::PC,
             "MSIZE" => OpcodeId::MSIZE,
             "JUMPDEST" => OpcodeId::JUMPDEST,
+            "MCOPY" => OpcodeId::MCOPY,
             "PUSH0" => OpcodeId::PUSH0,
             "PUSH1" => OpcodeId::PUSH1,
             "PUSH2" => OpcodeId::PUSH2,
@@ -1242,7 +1250,6 @@ impl FromStr for OpcodeId {
             "BLOBBASEFEE" => OpcodeId::INVALID(0x4a),
             "TLOAD" => OpcodeId::TLOAD,
             "TSTORE" => OpcodeId::TSTORE,
-            "MCOPY" => OpcodeId::INVALID(0x5e),
             _ => {
                 // Parse an invalid opcode value as reported by geth
                 static RE: LazyLock<Regex> = LazyLock::new(|| {

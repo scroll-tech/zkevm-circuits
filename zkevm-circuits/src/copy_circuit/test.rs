@@ -120,6 +120,26 @@ fn gen_codecopy_data() -> CircuitInputBuilder {
     builder
 }
 
+fn gen_mcopy_data() -> CircuitInputBuilder {
+    let code = bytecode! {
+        PUSH3(0x803f1au64) // value
+        PUSH1(0x40u64) // offset
+        MSTORE
+        PUSH32(Word::from(0x3a)) // copy_size
+        PUSH32(Word::from(0x40)) // src_offset
+        PUSH32(Word::from(0x00)) // dest_offset
+        MCOPY
+        STOP
+    };
+    let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+    let block: GethData = test_ctx.into();
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+    builder
+}
+
 fn gen_returndatacopy_data() -> CircuitInputBuilder {
     let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
@@ -359,6 +379,14 @@ fn copy_circuit_valid_calldatacopy() {
 #[test]
 fn copy_circuit_valid_codecopy() {
     let builder = gen_codecopy_data();
+    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    assert_eq!(test_copy_circuit_from_block(block), Ok(()));
+}
+
+// unit test for mcopy in copy circuit side.
+#[test]
+fn copy_circuit_valid_mcopy() {
+    let builder = gen_mcopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     assert_eq!(test_copy_circuit_from_block(block), Ok(()));
 }

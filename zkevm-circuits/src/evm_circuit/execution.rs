@@ -112,6 +112,7 @@ mod jump;
 mod jumpdest;
 mod jumpi;
 mod logs;
+mod mcopy;
 mod memory;
 mod msize;
 mod mul_div_mod;
@@ -200,6 +201,7 @@ use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 
 use crate::evm_circuit::execution::error_oog_precompile::ErrorOOGPrecompileGadget;
+use mcopy::MCopyGadget;
 use memory::MemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
@@ -304,6 +306,7 @@ pub(crate) struct ExecutionConfig<F> {
     jumpi_gadget: Box<JumpiGadget<F>>,
     log_gadget: Box<LogGadget<F>>,
     memory_gadget: Box<MemoryGadget<F>>,
+    mcopy_gadget: Box<MCopyGadget<F>>,
     msize_gadget: Box<MsizeGadget<F>>,
     mul_div_mod_gadget: Box<MulDivModGadget<F>>,
     mulmod_gadget: Box<MulModGadget<F>>,
@@ -594,6 +597,7 @@ impl<F: Field> ExecutionConfig<F> {
             jumpi_gadget: configure_gadget!(),
             log_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
+            mcopy_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             mul_div_mod_gadget: configure_gadget!(),
             mulmod_gadget: configure_gadget!(),
@@ -1593,6 +1597,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
             ExecutionState::LOG => assign_exec_step!(self.log_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
+            ExecutionState::MCOPY => assign_exec_step!(self.mcopy_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
             ExecutionState::MULMOD => assign_exec_step!(self.mulmod_gadget),

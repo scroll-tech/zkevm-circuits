@@ -275,7 +275,7 @@ impl Compiler {
     }
 
     /// compiles YUL code, this is the exact script used in retesteth
-    pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+    pub fn yul(&self, src: &str, optimize_level: u32, evm_version: Option<&str>) -> Result<Bytes> {
         if let Some(bytecode) = self
             .cache
             .as_ref()
@@ -287,15 +287,11 @@ impl Compiler {
         if !self.compile {
             bail!("No way to compile Yul for '{}'", src)
         }
-        let mut cmd = vec![
-            "run",
-            "-i",
-            "--rm",
-            "solc",
-            "--strict-assembly",
-            "--optimize",
-            "--yul-optimizations=:",
-        ];
+        let mut cmd = vec!["run", "-i", "--rm", "solc", "--strict-assembly"];
+        if optimize_level == 1 {
+            cmd.push("--optimize");
+            cmd.push("--yul-optimizations=:");
+        }
         if let Some(evm_version) = evm_version {
             cmd.push("--evm-version");
             cmd.push(evm_version);
