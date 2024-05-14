@@ -21,6 +21,15 @@ max_steps = 1000
 ignore_tests = []
 
 [[suite]]
+id="EIP5656"
+paths = [
+    "tests/src/GeneralStateTestsFiller/Cancun/stEIP5656-MCOPY/*"
+]
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
 id="EIP2930"
 paths = [
     "tests/src/GeneralStateTestsFiller/stEIP2930/*"
@@ -96,7 +105,6 @@ paths = [
     "stExample/mergeTestFiller.yml",
     "Pyspecs",
     "stEIP4844-blobtransactions",
-    "stEIP5656-MCOPY",
 #   "EIP2930",
     #"stPreCompiledContracts",
     #"stZeroKnowledge"
