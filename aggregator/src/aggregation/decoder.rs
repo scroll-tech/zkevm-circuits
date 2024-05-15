@@ -1004,7 +1004,7 @@ impl DecoderConfig {
         let sequences_data_decoder = SequencesDataDecoder::configure(meta);
         let sequence_execution_config = SequenceExecutionConfig::configure(
             meta,
-            challenges,
+            challenges.keccak_input(),
             &LiteralTable::construct([
                 q_enable.into(),
                 tag_config.tag.into(),
@@ -4203,7 +4203,7 @@ impl DecoderConfig {
         )?;
         let (exported_len, exported_rlc) = self.sequence_execution_config.assign(
             layouter,
-            challenges,
+            challenges.keccak_input(),
             literal_datas
                 .iter()
                 .zip(&sequence_info_arr)
