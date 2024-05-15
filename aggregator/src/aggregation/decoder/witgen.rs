@@ -18,7 +18,7 @@ pub use types::{ZstdTag::*, *};
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
 
-const TAG_MAX_LEN: [(ZstdTag, u64); 8] = [
+const TAG_MAX_LEN: [(ZstdTag, u64); 9] = [
     (FrameHeaderDescriptor, 1),
     (FrameContentSize, 8),
     (BlockHeader, 3),
@@ -27,6 +27,7 @@ const TAG_MAX_LEN: [(ZstdTag, u64); 8] = [
     (ZstdBlockSequenceHeader, 4),
     (ZstdBlockSequenceFseCode, 128),
     (ZstdBlockSequenceData, 1048575), // (1 << 20) - 1
+    (Null, 0),
 ];
 
 pub fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
@@ -1131,7 +1132,6 @@ fn process_sequences<F: Field>(
     let tag_rlc_iter =
         &src[byte_offset..end_offset]
             .iter()
-            .rev()
             .scan(Value::known(F::zero()), |acc, &byte| {
                 *acc = *acc * randomness + Value::known(F::from(byte as u64));
                 Some(*acc)
@@ -1176,7 +1176,7 @@ fn process_sequences<F: Field>(
         encoded_data: EncodedData {
             byte_idx: (byte_offset + current_byte_idx) as u64,
             encoded_len,
-            value_byte: src[byte_offset + current_byte_idx - 1],
+            value_byte: src[end_offset - current_byte_idx],
             value_rlc,
             reverse: true,
             reverse_len: n_sequence_data_bytes as u64,
@@ -1407,8 +1407,8 @@ fn process_sequences<F: Field>(
                 // TODO(ray): This is a special case of the sequences data being a part of the
                 // "last block", hence the overflow. I have just re-used the "last" byte from the
                 // source data in such a case.
-                value_byte: if byte_offset + current_byte_idx - 1 < src.len() {
-                    src[byte_offset + current_byte_idx - 1]
+                value_byte: if end_offset - current_byte_idx < src.len() {
+                    src[end_offset - current_byte_idx]
                 } else {
                     src.last().cloned().unwrap()
                 },
@@ -1491,8 +1491,8 @@ fn process_sequences<F: Field>(
                         // the "last block", hence the overflow. I have just
                         // re-used the "last" byte from the source data in
                         // such a case.
-                        value_byte: if byte_offset + current_byte_idx - 1 < src.len() {
-                            src[byte_offset + current_byte_idx - 1]
+                        value_byte: if end_offset - current_byte_idx < src.len() {
+                            src[end_offset - current_byte_idx]
                         } else {
                             src.last().cloned().unwrap()
                         },
