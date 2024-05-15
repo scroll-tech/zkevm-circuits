@@ -1160,7 +1160,13 @@ mod tests {
             let chng_mock = MockChallenges::construct(meta);
             let chng = chng_mock.exprs(meta);
 
-            let config = SeqExecConfig::configure(meta, chng.keccak_input(), &literal_tbl, &inst_tbl, &seq_cfg);
+            let config = SeqExecConfig::configure(
+                meta,
+                chng.keccak_input(),
+                &literal_tbl,
+                &inst_tbl,
+                &seq_cfg,
+            );
 
             Self::Config {
                 config,

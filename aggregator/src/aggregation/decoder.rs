@@ -3495,14 +3495,14 @@ impl DecoderConfig {
             cb.condition(case2.expr(), |cb| {
                 cb.require_equal(
                     "nil(case2): wrap bit_index_start by 16",
-                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::next())
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur())
                         + 16.expr(),
-                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::prev()),
                 );
                 cb.require_equal(
                     "nil(case2): increment byte_idx",
-                    meta.query_advice(config.byte_idx, Rotation::next()),
-                    meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(config.byte_idx, Rotation::cur()),
+                    meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
                 );
             });
             cb.condition(and::expr([case2.expr(), is_next_nb0.expr()]), |cb| {
@@ -3530,7 +3530,7 @@ impl DecoderConfig {
             );
 
             // 3. bit_index_end(-1) == 23
-            // the next is_nil=true row will handle.
+            // the next is_nil=true row will handle is_next_nb=0.
             cb.condition(case3.expr(), |cb| {
                 cb.require_equal("nil(case3): next is_nil too", is_next_nil, 1.expr());
                 cb.require_equal(
@@ -3884,21 +3884,10 @@ impl DecoderConfig {
                             1.expr(),
                         );
                         cb.require_equal(
-                            "(case5): bit_index_start' == bit_index_start''",
+                            "(case5): wrap bit_index_start' within <= 7",
                             meta.query_advice(
                                 config.bitstream_decoder.bit_index_start,
                                 Rotation::next(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bit_index_start,
-                                Rotation(2),
-                            ),
-                        );
-                        cb.require_equal(
-                            "(case5): wrap bit_index_start'' within <= 7",
-                            meta.query_advice(
-                                config.bitstream_decoder.bit_index_start,
-                                Rotation(2),
                             ) + 16.expr(),
                             meta.query_advice(
                                 config.bitstream_decoder.bit_index_end,
@@ -3966,7 +3955,7 @@ impl DecoderConfig {
             // - we are on the same byte_idx
             // - bit_index_start' == bit_index_start
             //
-            // Then it means we are either not reading from the bitstream, or reading nb=0 bits
+            // it means we are either not reading from the bitstream, or reading nb=0 bits
             // from the bitstream.
             let (byte_idx_prev, byte_idx_curr) = (
                 meta.query_advice(config.byte_idx, Rotation::prev()),
@@ -3984,8 +3973,8 @@ impl DecoderConfig {
                     cb.require_equal(
                         "if byte_idx' == byte_idx and start' == start: is_nil=1 or is_nb0=1",
                         sum::expr([
-                            config.bitstream_decoder.is_nil(meta, Rotation::prev()),
-                            config.bitstream_decoder.is_nb0(meta, Rotation::prev()),
+                            config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+                            config.bitstream_decoder.is_nb0(meta, Rotation::cur()),
                         ]),
                         1.expr(),
                     );
@@ -4991,24 +4980,24 @@ mod tests {
                 acc * challenges.keccak_input() + Value::known(Fr::from(x as u64))
             });
 
-            println!("expected encoded len = {:#?}", expected_encoded_len);
+            println!("expected encoded len = {:?}", expected_encoded_len);
             println!(
-                "got      encoded len = {:#?}\n\n",
+                "got      encoded len = {:?}\n\n",
                 decoder_config_exports.encoded_len.value()
             );
-            println!("expected encoded rlc = {:#?}", expected_encoded_rlc);
+            println!("expected encoded rlc = {:?}", expected_encoded_rlc);
             println!(
-                "got      encoded rlc = {:#?}\n\n",
+                "got      encoded rlc = {:?}\n\n",
                 decoder_config_exports.encoded_rlc.value()
             );
-            println!("expected decoded len = {:#?}", expected_decoded_len);
+            println!("expected decoded len = {:?}", expected_decoded_len);
             println!(
-                "got      decoded len = {:#?}\n\n",
+                "got      decoded len = {:?}\n\n",
                 decoder_config_exports.decoded_len.value()
             );
-            println!("expected decoded rlc = {:#?}", expected_decoded_rlc);
+            println!("expected decoded rlc = {:?}", expected_decoded_rlc);
             println!(
-                "got      decoded rlc = {:#?}\n\n",
+                "got      decoded rlc = {:?}\n\n",
                 decoder_config_exports.decoded_rlc.value()
             );
 

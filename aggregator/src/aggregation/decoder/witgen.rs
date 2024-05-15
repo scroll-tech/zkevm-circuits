@@ -1465,6 +1465,11 @@ fn process_sequences<F: Field>(
                 // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?}, is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, 0, 0, 7, true, false).unwrap();
                 // writeln!(handle).unwrap();
 
+                let wrap_by = match to_bit_idx {
+                    15 => 8,
+                    16..=23 => 16,
+                    _ => unreachable!(),
+                };
                 witness_rows.push(ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::ZstdBlockSequenceData,
@@ -1504,8 +1509,8 @@ fn process_sequences<F: Field>(
                         aux_2: Value::known(F::zero()),
                     },
                     bitstream_read_data: BitstreamReadRow {
-                        bit_start_idx: 7,
-                        bit_end_idx: 7,
+                        bit_start_idx: to_bit_idx - wrap_by,
+                        bit_end_idx: to_bit_idx - wrap_by,
                         bit_value: 0,
                         is_zero_bit_read: false,
                         is_seq_init: false,
