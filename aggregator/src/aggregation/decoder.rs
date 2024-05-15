@@ -118,6 +118,8 @@ struct TagConfig {
     /// number of bytes required to encode this tag. For instance, the LiteralsHeader is variable
     /// sized, ranging from 1-5 bytes. The max_len for LiteralsHeader would be 5.
     max_len: Column<Advice>,
+    /// The running accumulator of RLC values of bytes in the tag.
+    tag_rlc_acc: Column<Advice>,
     /// The RLC of bytes in the tag.
     tag_rlc: Column<Advice>,
     /// Represents keccak randomness exponentiated by the tag len.
@@ -164,6 +166,7 @@ impl TagConfig {
                 |meta| meta.query_advice(tag_len, Rotation::cur()),
             ),
             max_len: meta.advice_column(),
+            tag_rlc_acc: meta.advice_column_in(SecondPhase),
             tag_rlc: meta.advice_column_in(SecondPhase),
             rpow_tag_len: meta.advice_column_in(SecondPhase),
             is_output: meta.advice_column(),
@@ -1374,17 +1377,21 @@ impl DecoderConfig {
                 meta.query_advice(config.tag_config.is_reverse, Rotation::prev());
             cb.condition(prev_tag_reverse, |cb| {
                 cb.require_equal(
-                    "tag_rlc::prev == byte::prev",
-                    meta.query_advice(config.tag_config.tag_rlc, Rotation::prev()),
+                    "tag_rlc_acc::prev == byte::prev",
+                    meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::prev()),
                     meta.query_advice(config.byte, Rotation::prev()),
                 );
             });
 
             // The tag_idx is initialised correctly.
             cb.require_equal(
-                "tag_idx::cur == 1",
+                "tag_idx::cur == 1 (if not padding)",
                 meta.query_advice(config.tag_config.tag_idx, Rotation::cur()),
-                1.expr(),
+                select::expr(
+                    meta.query_advice(config.is_padding, Rotation::cur()),
+                    0.expr(),
+                    1.expr(),
+                ),
             );
 
             // If the new tag is not processed from back-to-front, the RLC of the tag bytes
@@ -1392,8 +1399,8 @@ impl DecoderConfig {
             let curr_tag_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
             cb.condition(not::expr(curr_tag_reverse), |cb| {
                 cb.require_equal(
-                    "tag_rlc::cur == byte::cur",
-                    meta.query_advice(config.tag_config.tag_rlc, Rotation::cur()),
+                    "tag_rlc_acc::cur == byte::cur",
+                    meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::cur()),
                     meta.query_advice(config.byte, Rotation::cur()),
                 );
             });
@@ -1425,6 +1432,7 @@ impl DecoderConfig {
                 config.tag_config.tag,
                 config.tag_config.tag_next,
                 config.tag_config.tag_len,
+                config.tag_config.tag_rlc,
                 config.tag_config.max_len,
                 config.tag_config.rpow_tag_len,
                 config.tag_config.is_output,
@@ -1456,23 +1464,25 @@ impl DecoderConfig {
             // from back-to-front or not.
             let byte_prev = meta.query_advice(config.byte, Rotation::prev());
             let byte_curr = meta.query_advice(config.byte, Rotation::cur());
-            let tag_rlc_prev = meta.query_advice(config.tag_config.tag_rlc, Rotation::prev());
-            let tag_rlc_curr = meta.query_advice(config.tag_config.tag_rlc, Rotation::cur());
+            let tag_rlc_acc_prev =
+                meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::prev());
+            let tag_rlc_acc_curr =
+                meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::cur());
             let curr_tag_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
             cb.condition(not::expr(byte_idx_delta.expr()), |cb| {
                 cb.require_equal(
-                    "tag_rlc::cur == tag_rlc::prev",
-                    tag_rlc_curr.expr(),
-                    tag_rlc_prev.expr(),
+                    "tag_rlc_acc::cur == tag_rlc_acc::prev",
+                    tag_rlc_acc_curr.expr(),
+                    tag_rlc_acc_prev.expr(),
                 );
             });
             cb.condition(
                 and::expr([byte_idx_delta.expr(), curr_tag_reverse.expr()]),
                 |cb| {
                     cb.require_equal(
-                        "tag_rlc::prev == tag_rlc::cur * r + byte::prev",
-                        tag_rlc_prev.expr(),
-                        tag_rlc_curr.expr() * challenges.keccak_input() + byte_prev,
+                        "tag_rlc_acc::prev == tag_rlc_acc::cur * r + byte::prev",
+                        tag_rlc_acc_prev.expr(),
+                        tag_rlc_acc_curr.expr() * challenges.keccak_input() + byte_prev,
                     );
                 },
             );
@@ -1480,9 +1490,9 @@ impl DecoderConfig {
                 and::expr([byte_idx_delta.expr(), not::expr(curr_tag_reverse.expr())]),
                 |cb| {
                     cb.require_equal(
-                        "tag_rlc::cur == tag_rlc::prev * r + byte::cur",
-                        tag_rlc_curr.expr(),
-                        tag_rlc_prev.expr() * challenges.keccak_input() + byte_curr,
+                        "tag_rlc_acc::cur == tag_rlc_acc::prev * r + byte::cur",
+                        tag_rlc_acc_curr.expr(),
+                        tag_rlc_acc_prev.expr() * challenges.keccak_input() + byte_curr,
                     );
                 },
             );
@@ -4456,10 +4466,16 @@ impl DecoderConfig {
                         || Value::known(Fr::from(row.state.tag.is_reverse() as u64)),
                     )?;
                     region.assign_advice(
+                        || "tag_config.tag_rlc_acc",
+                        self.tag_config.tag_rlc_acc,
+                        i,
+                        || row.state.tag_rlc_acc,
+                    )?;
+                    region.assign_advice(
                         || "tag_config.tag_rlc",
                         self.tag_config.tag_rlc,
                         i,
-                        || row.state.tag_rlc_acc,
+                        || row.state.tag_rlc,
                     )?;
                     region.assign_advice(
                         || "tag_config.is_output",
@@ -4702,7 +4718,34 @@ impl DecoderConfig {
                     )?;
                 }
 
+                // The last encoded_rlc at this point indicates the encoded_rlc until the
+                // penultimate tag. We need to do one more round of RLC computation, to calculate
+                // the RLC taking into considering the ultimate tag as well.
+                let last_row = witness_rows.last().expect("last row exists");
+                let last_tag_len = last_row.state.tag_len as usize;
+                let last_tag_rlc = last_row.state.tag_rlc;
+                if last_tag_len >= pow_of_rand.len() {
+                    let mut last = *pow_of_rand.last().expect("Last pow_of_rand exists.");
+                    for _ in pow_of_rand.len()..=last_tag_len {
+                        last = last * challenges.keccak_input();
+                        pow_of_rand.push(last);
+                    }
+                }
+                let last_rpow_tag_len = pow_of_rand[last_tag_len];
+                let final_encoded_rlc = last_encoded_rlc * last_rpow_tag_len + last_tag_rlc;
+
+                /////////////////////////////////////////
+                ///////// Assign Padding Rows  //////////
+                /////////////////////////////////////////
                 for idx in witness_rows.len()..((1 << k) - self.unusable_rows()) {
+                    if idx == witness_rows.len() {
+                        region.assign_advice(
+                            || "is_tag_change",
+                            self.tag_config.is_change,
+                            idx,
+                            || Value::known(Fr::one()),
+                        )?;
+                    }
                     encoded_len_cell = Some(region.assign_advice(
                         || "byte_idx",
                         self.byte_idx,
@@ -4713,7 +4756,7 @@ impl DecoderConfig {
                         || "encoded_rlc",
                         self.encoded_rlc,
                         idx,
-                        || last_encoded_rlc,
+                        || final_encoded_rlc,
                     )?);
                     decoded_len_cell = Some(region.assign_advice(
                         || "decoded_len",
@@ -4953,19 +4996,16 @@ mod tests {
                 "got      encoded len = {:#?}\n\n",
                 decoder_config_exports.encoded_len.value()
             );
-
             println!("expected encoded rlc = {:#?}", expected_encoded_rlc);
             println!(
                 "got      encoded rlc = {:#?}\n\n",
                 decoder_config_exports.encoded_rlc.value()
             );
-
             println!("expected decoded len = {:#?}", expected_decoded_len);
             println!(
                 "got      decoded len = {:#?}\n\n",
                 decoder_config_exports.decoded_len.value()
             );
-
             println!("expected decoded rlc = {:#?}", expected_decoded_rlc);
             println!(
                 "got      decoded rlc = {:#?}\n\n",
