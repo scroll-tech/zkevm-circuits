@@ -667,7 +667,7 @@ fn process_sequences<F: Field>(
                     tag: ZstdTag::ZstdBlockSequenceHeader,
                     tag_next: if is_all_predefined_fse {
                         ZstdTag::ZstdBlockSequenceData
-                    } else { 
+                    } else {
                         ZstdTag::ZstdBlockSequenceFseCode
                     },
                     block_idx,
@@ -785,7 +785,7 @@ fn process_sequences<F: Field>(
             bit_boundaries_llt,
             n_fse_bytes_llt as u64,
             &table_llt,
-            match_lengths_mode + offsets_mode < 1,
+            offsets_mode + match_lengths_mode < 1,
         ),
         (
             1usize,
@@ -794,7 +794,7 @@ fn process_sequences<F: Field>(
             bit_boundaries_cmot,
             n_fse_bytes_cmot as u64,
             &table_cmot,
-            offsets_mode < 1,
+            match_lengths_mode < 1,
         ),
         (
             2usize,
