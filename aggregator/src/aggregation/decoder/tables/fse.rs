@@ -430,6 +430,16 @@ impl FseTable {
                 );
             });
 
+            // is the first symbol if:
+            // - prev row was prob=-1
+            let is_first_symbol = meta.query_advice(config.is_prob_less_than1, Rotation::prev());
+            cb.condition(is_first_symbol, |cb| {
+                cb.require_zero(
+                    "first symbol (prob >= 1): state == 0",
+                    meta.query_advice(config.state, Rotation::cur()),
+                );
+            });
+
             cb.gate(condition)
         });
 
@@ -686,6 +696,7 @@ impl FseTable {
                 not::expr(meta.query_fixed(config.sorted_table.q_first, Rotation::cur())),
                 not::expr(meta.query_fixed(config.sorted_table.q_start, Rotation::cur())),
                 not::expr(meta.query_advice(config.is_prob_less_than1, Rotation::cur())),
+                not::expr(meta.query_advice(config.is_prob_less_than1, Rotation::prev())),
                 not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
             ]);
 
