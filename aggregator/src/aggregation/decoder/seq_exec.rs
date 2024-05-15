@@ -1094,8 +1094,9 @@ mod tests {
                         inst.instruction_idx as usize,
                         SequenceExecInfo::BackRef(r.clone()),
                     ));
-                    let matched_bytes = Vec::from(&outputs[r]);
-                    outputs.extend(matched_bytes);
+                    for ref_pos in r {
+                        outputs.push(outputs[ref_pos]);
+                    }
                 }
                 current_literal_pos = new_literal_pos;
             }
@@ -1231,11 +1232,31 @@ mod tests {
             AddressTableRow::mock_samples_full([
                 [1, 4, 1, 1, 4, 8],
                 [9, 1, 3, 6, 1, 4],
-                [3, 0, 4, 5, 6, 1],
+                [3, 0, 4, 5, 6, 1], // ref offset 3 while literal == 0
             ]),
         );
 
         assert_eq!(circuit.outputs, Vec::from("abcddeabcdeabf".as_bytes()));
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
+    }
+
+    #[test]
+    fn seq_exec_rle_like() {
+        // no instructions, we only copy literals to output
+        let circuit = SeqExecMock::mock_generate(
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [5, 0, 6, 2, 6, 1], // an RLE like inst, match len exceed match offset
+            ]),
+        );
+
+        assert_eq!(circuit.outputs, Vec::from("abcddeabcbcbcbcf".as_bytes()));
 
         let k = 12;
         let mock_prover =
