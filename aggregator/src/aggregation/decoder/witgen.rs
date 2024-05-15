@@ -635,6 +635,7 @@ fn process_sequences<F: Field>(
     let multiplier =
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
+    let is_all_predefined_fse = literal_lengths_mode + offsets_mode + match_lengths_mode < 1;
 
     // Add witness rows for the sequence header
     let sequence_header_start_offset = byte_offset;
@@ -664,7 +665,11 @@ fn process_sequences<F: Field>(
             |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
                 state: ZstdState {
                     tag: ZstdTag::ZstdBlockSequenceHeader,
-                    tag_next: ZstdTag::ZstdBlockSequenceFseCode,
+                    tag_next: if is_all_predefined_fse {
+                        ZstdTag::ZstdBlockSequenceData
+                    } else { 
+                        ZstdTag::ZstdBlockSequenceFseCode
+                    },
                     block_idx,
                     max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceHeader),
                     tag_len: num_sequence_header_bytes as u64,
@@ -772,7 +777,7 @@ fn process_sequences<F: Field>(
 
     // Add witness rows for the FSE tables
     let mut last_row = header_rows.last().cloned().unwrap();
-    for (idx, start_offset, end_offset, bit_boundaries, tag_len, table) in [
+    for (idx, start_offset, end_offset, bit_boundaries, tag_len, table, is_fse_section_end) in [
         (
             0usize,
             fse_starting_byte_offset,
@@ -780,6 +785,7 @@ fn process_sequences<F: Field>(
             bit_boundaries_llt,
             n_fse_bytes_llt as u64,
             &table_llt,
+            match_lengths_mode + offsets_mode < 1,
         ),
         (
             1usize,
@@ -788,6 +794,7 @@ fn process_sequences<F: Field>(
             bit_boundaries_cmot,
             n_fse_bytes_cmot as u64,
             &table_cmot,
+            offsets_mode < 1,
         ),
         (
             2usize,
@@ -796,6 +803,7 @@ fn process_sequences<F: Field>(
             bit_boundaries_mlt,
             n_fse_bytes_mlt as u64,
             &table_mlt,
+            true,
         ),
     ] {
         if end_offset > start_offset {
@@ -1019,7 +1027,7 @@ fn process_sequences<F: Field>(
                 witness_rows.push(ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::ZstdBlockSequenceFseCode,
-                        tag_next: if idx > 1 {
+                        tag_next: if is_fse_section_end {
                             ZstdTag::ZstdBlockSequenceData
                         } else {
                             ZstdTag::ZstdBlockSequenceFseCode
