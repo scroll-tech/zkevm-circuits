@@ -243,7 +243,7 @@ impl LiteralsHeaderTable {
                         ),
                         (
                             self.size_format_bit1,
-                            (size_format & 2) as u64,
+                            ((size_format & 2) >> 1) as u64,
                             "size_format_bit1",
                         ),
                         (self.byte0_rs_3, byte0 >> 3, "byte0_rs_3"),

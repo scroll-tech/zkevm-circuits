@@ -1911,7 +1911,7 @@ impl DecoderConfig {
                     0.expr(),
                 );
                 let byte2 = select::expr(
-                    size_format_bit1.expr() * size_format_bit1.expr(),
+                    size_format_bit0.expr() * size_format_bit1.expr(),
                     meta.query_advice(config.byte, Rotation(2)),
                     0.expr(),
                 );
@@ -1923,7 +1923,7 @@ impl DecoderConfig {
                     size_format_bit0.expr() * not::expr(size_format_bit1.expr()),
                     meta.query_advice(config.tag_config.tag_len, Rotation(2)),
                     select::expr(
-                        size_format_bit1.expr() * size_format_bit0.expr(),
+                        size_format_bit0.expr() * size_format_bit1.expr(),
                         meta.query_advice(config.tag_config.tag_len, Rotation(3)),
                         meta.query_advice(config.tag_config.tag_len, Rotation(1)),
                     ),
@@ -5066,7 +5066,7 @@ mod tests {
             .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
             .collect::<Vec<Vec<u8>>>();
 
-        let raw = batches[0].clone();
+        let raw = batches[127].clone();
         let compressed = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
             let mut encoder =
@@ -5104,6 +5104,7 @@ mod tests {
             encoder.finish().expect("Encoder success")
         };
 
+        println!("len(encoded)={:6}\tlen(decoded)={:6}", compressed.len(), raw.len());
         let k = 18;
         let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
