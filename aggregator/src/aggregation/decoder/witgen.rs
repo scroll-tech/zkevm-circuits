@@ -75,6 +75,7 @@ fn process_frame_header<F: Field>(
     let fcs = {
         let fcs = fcs_bytes
             .iter()
+            .rev()
             .fold(0u64, |acc, &byte| acc * 256u64 + (byte as u64));
         match fcs_tag_len {
             2 => fcs + 256,
@@ -918,10 +919,12 @@ fn process_sequences<F: Field>(
                             next_symbol += 1;
                             match *value_decoded {
                                 0 => {
-                                    // When a symbol has a value==0, it signifies a case of prob=-1 (or
-                                    // probability "less than 1"), where
+                                    // When a symbol has a value==0, it signifies a case of prob=-1
+                                    // (or probability "less
+                                    // than 1"), where
                                     // such symbols are allocated states from the
-                                    // end and retreating. Exactly 1 state is allocated in this case.
+                                    // end and retreating. Exactly 1 state is allocated in this
+                                    // case.
                                     n_acc += 1;
                                 }
                                 1 => {
@@ -1696,27 +1699,20 @@ fn process_sequences<F: Field>(
 
         let match_pos = recovered_inputs.len() - (inst.actual_offset as usize);
         if inst.match_length > 0 {
-            if inst.match_length <= inst.actual_offset {
-                let r = match_pos..(inst.match_length as usize + match_pos);
-                seq_exec_info.push(SequenceExec(
-                    inst.instruction_idx as usize,
-                    SequenceExecInfo::BackRef(r.clone()),
-                ));
-                let matched_bytes = Vec::from(&recovered_inputs[r]);
-                recovered_inputs.extend_from_slice(matched_bytes.as_slice());
+            let r = match_pos..(inst.match_length as usize + match_pos);
+            seq_exec_info.push(SequenceExec(
+                inst.instruction_idx as usize,
+                SequenceExecInfo::BackRef(r.clone()),
+            ));
+            let matched_and_repeated_bytes = if inst.match_length <= inst.actual_offset {
+                Vec::from(&recovered_inputs[r])
             } else {
-                // TODO(FV): Add support for repeated byte slice
                 let l = inst.match_length as usize;
-                let r = match_pos..recovered_inputs.len();
-                seq_exec_info.push(SequenceExec(
-                    inst.instruction_idx as usize,
-                    SequenceExecInfo::BackRefRepeated(r.clone(), l.clone()),
-                ));
-                let matched_bytes = Vec::from(&recovered_inputs[r]);
-                let total_matched_bytes: Vec<u8> =
-                    matched_bytes.iter().cycle().take(l).copied().collect();
-                recovered_inputs.extend_from_slice(total_matched_bytes.as_slice());
-            }
+                let r_prime = match_pos..recovered_inputs.len();
+                let matched_bytes = Vec::from(&recovered_inputs[r_prime]);
+                matched_bytes.iter().cycle().take(l).copied().collect()
+            };
+            recovered_inputs.extend_from_slice(matched_and_repeated_bytes.as_slice());
         }
         current_literal_pos = new_literal_pos;
     }

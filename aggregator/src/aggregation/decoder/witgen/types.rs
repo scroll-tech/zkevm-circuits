@@ -109,8 +109,6 @@ pub struct SequenceInfo {
 pub enum SequenceExecInfo {
     LiteralCopy(std::ops::Range<usize>),
     BackRef(std::ops::Range<usize>),
-    // TODO(VF): Add support for repeated match byte slice
-    BackRefRepeated(std::ops::Range<usize>, usize),
 }
 
 /// The type to describe an execution: (instruction_id, exec_info)

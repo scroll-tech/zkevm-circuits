@@ -814,8 +814,6 @@ impl<F: Field> SeqExecConfig<F> {
                     (true, r.clone())
                 }
                 SequenceExecInfo::BackRef(r) => (false, r.clone()),
-                // TODO(VF): Add support for repeated match byte slice
-                SequenceExecInfo::BackRefRepeated(r, l) => (false, r.clone()),
             };
 
             for (i, pos) in r.clone().enumerate() {
@@ -1096,8 +1094,9 @@ mod tests {
                         inst.instruction_idx as usize,
                         SequenceExecInfo::BackRef(r.clone()),
                     ));
-                    let matched_bytes = Vec::from(&outputs[r]);
-                    outputs.extend(matched_bytes);
+                    for ref_pos in r {
+                        outputs.push(outputs[ref_pos]);
+                    }
                 }
                 current_literal_pos = new_literal_pos;
             }

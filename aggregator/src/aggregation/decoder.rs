@@ -16,7 +16,8 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Assigned, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells
+        Advice, Assigned, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        VirtualCells,
     },
     poly::Rotation,
 };
@@ -924,6 +925,7 @@ impl SequencesDataDecoder {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct AssignedDecoderConfigExports {
     /// The RLC of the zstd encoded bytes, i.e. blob bytes.
     pub encoded_rlc: AssignedCell<Fr, Fr>,
@@ -1607,21 +1609,21 @@ impl DecoderConfig {
 
             // FrameContentSize are LE bytes.
             let case4_value = meta.query_advice(config.byte, Rotation::cur());
-            let case3_value = meta.query_advice(config.byte, Rotation::cur()) * 256.expr()
-                + meta.query_advice(config.byte, Rotation::next());
-            let case2_value = meta.query_advice(config.byte, Rotation(0)) * 16777216.expr()
-                + meta.query_advice(config.byte, Rotation(1)) * 65536.expr()
-                + meta.query_advice(config.byte, Rotation(2)) * 256.expr()
-                + meta.query_advice(config.byte, Rotation(3));
-            let case1_value = meta.query_advice(config.byte, Rotation(0))
+            let case3_value = meta.query_advice(config.byte, Rotation::next()) * 256.expr()
+                + meta.query_advice(config.byte, Rotation::cur());
+            let case2_value = meta.query_advice(config.byte, Rotation(3)) * 16777216.expr()
+                + meta.query_advice(config.byte, Rotation(2)) * 65536.expr()
+                + meta.query_advice(config.byte, Rotation(1)) * 256.expr()
+                + meta.query_advice(config.byte, Rotation(0));
+            let case1_value = meta.query_advice(config.byte, Rotation(7))
                 * 72057594037927936u64.expr()
-                + meta.query_advice(config.byte, Rotation(1)) * 281474976710656u64.expr()
-                + meta.query_advice(config.byte, Rotation(2)) * 1099511627776u64.expr()
-                + meta.query_advice(config.byte, Rotation(3)) * 4294967296u64.expr()
-                + meta.query_advice(config.byte, Rotation(4)) * 16777216.expr()
-                + meta.query_advice(config.byte, Rotation(5)) * 65536.expr()
-                + meta.query_advice(config.byte, Rotation(6)) * 256.expr()
-                + meta.query_advice(config.byte, Rotation(7));
+                + meta.query_advice(config.byte, Rotation(6)) * 281474976710656u64.expr()
+                + meta.query_advice(config.byte, Rotation(5)) * 1099511627776u64.expr()
+                + meta.query_advice(config.byte, Rotation(4)) * 4294967296u64.expr()
+                + meta.query_advice(config.byte, Rotation(3)) * 16777216.expr()
+                + meta.query_advice(config.byte, Rotation(2)) * 65536.expr()
+                + meta.query_advice(config.byte, Rotation(1)) * 256.expr()
+                + meta.query_advice(config.byte, Rotation(0));
 
             let frame_content_size = select::expr(
                 case1,
@@ -4105,7 +4107,6 @@ impl DecoderConfig {
         k: u32,
         // witgen_debug
     ) -> Result<AssignedDecoderConfigExports, Error> {
-    // ) -> Result<(), Error> {
         let mut pow_of_rand: Vec<Value<Fr>> = vec![Value::known(Fr::ONE)];
 
         assert!(!block_info_arr.is_empty(), "Must have at least 1 block");
@@ -4190,7 +4191,6 @@ impl DecoderConfig {
             address_table_arr.iter().map(|rows| rows.iter()),
             (1 << k) - self.unusable_rows(),
         )?;
-        // TODO: use equality constraint for the exported_len and exported_rlc cell
         let (exported_len, exported_rlc) = self.sequence_execution_config.assign(
             layouter,
             challenges,
@@ -4213,10 +4213,11 @@ impl DecoderConfig {
                 //////// Capture Copy Constraint/Export Cells  /////////
                 ////////////////////////////////////////////////////////
                 let mut last_encoded_rlc: Value<Fr> = Value::known(Fr::zero());
-                let mut encoded_rlc_cell: Option<AssignedCell<Fr, Fr>> = None;
-                let mut byte_idx_cell: Option<AssignedCell<Fr, Fr>> = None;
                 let mut last_decoded_len: Value<Fr> = Value::known(Fr::zero());
-                let mut decoded_length_cell: Option<AssignedCell<Fr, Fr>> = None;
+
+                let mut encoded_len_cell: Option<AssignedCell<Fr, Fr>> = None;
+                let mut encoded_rlc_cell: Option<AssignedCell<Fr, Fr>> = None;
+                let mut decoded_len_cell: Option<AssignedCell<Fr, Fr>> = None;
 
                 /////////////////////////////////////////
                 /////////// Assign First Row  ///////////
@@ -4243,12 +4244,12 @@ impl DecoderConfig {
                         i,
                         || Value::known(Fr::zero()),
                     )?;
-                    region.assign_advice(
+                    encoded_len_cell = Some(region.assign_advice(
                         || "byte_idx",
                         self.byte_idx,
                         i,
                         || Value::known(Fr::from(row.encoded_data.byte_idx)),
-                    )?;
+                    )?);
                     last_byte_idx = row.encoded_data.byte_idx;
                     region.assign_advice(
                         || "byte",
@@ -4281,7 +4282,7 @@ impl DecoderConfig {
                         || row.encoded_data.value_rlc,
                     )?);
                     last_encoded_rlc = row.encoded_data.value_rlc;
-                    decoded_length_cell = Some(region.assign_advice(
+                    decoded_len_cell = Some(region.assign_advice(
                         || "decoded_len",
                         self.decoded_len,
                         i,
@@ -4702,7 +4703,7 @@ impl DecoderConfig {
                 }
 
                 for idx in witness_rows.len()..((1 << k) - self.unusable_rows()) {
-                    byte_idx_cell = Some(region.assign_advice(
+                    encoded_len_cell = Some(region.assign_advice(
                         || "byte_idx",
                         self.byte_idx,
                         idx,
@@ -4714,12 +4715,13 @@ impl DecoderConfig {
                         idx,
                         || last_encoded_rlc,
                     )?);
-                    decoded_length_cell = Some(region.assign_advice(
+                    decoded_len_cell = Some(region.assign_advice(
                         || "decoded_len",
                         self.decoded_len,
                         idx,
                         || last_decoded_len,
                     )?);
+
                     region.assign_advice(
                         || "tag_config.tag",
                         self.tag_config.tag,
@@ -4789,12 +4791,17 @@ impl DecoderConfig {
                     )?;
                 }
 
-                region.constrain_equal(exported_len.cell(), decoded_length_cell.as_ref().unwrap().cell())?;
+                // dbg: decoded length from SeqExecConfig and decoder config must match.
+                region.constrain_equal(exported_len.cell(), decoded_len_cell.unwrap().cell())?;
 
                 Ok(AssignedDecoderConfigExports {
-                    encoded_rlc: encoded_rlc_cell.unwrap(),
-                    encoded_len: byte_idx_cell.unwrap(),
+                    // length of encoded data (from DecoderConfig)
+                    encoded_len: encoded_len_cell.unwrap().clone(),
+                    // RLC of encoded data (from DecoderConfig)
+                    encoded_rlc: encoded_rlc_cell.unwrap().clone(),
+                    // length of decoded data (from SeqExecConfig)
                     decoded_len: exported_len.clone(),
+                    // RLC of decoded data (from SeqExecConfig)
                     decoded_rlc: exported_rlc.clone(),
                 })
             },
@@ -4811,7 +4818,7 @@ mod tests {
     use super::process;
     use crate::{DecoderConfig, DecoderConfigArgs};
     use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
@@ -4907,12 +4914,13 @@ mod tests {
             assert_eq!(
                 std::str::from_utf8(&recovered_bytes),
                 std::str::from_utf8(&self.raw),
+                "witgen recovered bytes do not match original raw bytes",
             );
 
             u8_table.load(&mut layouter)?;
             bitwise_op_table.load(&mut layouter)?;
             pow_rand_table.assign(&mut layouter, &challenges, 1 << (self.k - 1))?;
-            config.assign(
+            let decoder_config_exports = config.assign(
                 &mut layouter,
                 &self.raw,
                 &self.compressed,
@@ -4927,6 +4935,42 @@ mod tests {
                 &challenges,
                 self.k,
             )?;
+
+            let expected_encoded_len = Value::known(Fr::from(self.compressed.len() as u64));
+            let expected_encoded_rlc = self
+                .compressed
+                .iter()
+                .fold(Value::known(Fr::zero()), |acc, &x| {
+                    acc * challenges.keccak_input() + Value::known(Fr::from(x as u64))
+                });
+            let expected_decoded_len = Value::known(Fr::from(self.raw.len() as u64));
+            let expected_decoded_rlc = self.raw.iter().fold(Value::known(Fr::zero()), |acc, &x| {
+                acc * challenges.keccak_input() + Value::known(Fr::from(x as u64))
+            });
+
+            println!("expected encoded len = {:#?}", expected_encoded_len);
+            println!(
+                "got      encoded len = {:#?}\n\n",
+                decoder_config_exports.encoded_len.value()
+            );
+
+            println!("expected encoded rlc = {:#?}", expected_encoded_rlc);
+            println!(
+                "got      encoded rlc = {:#?}\n\n",
+                decoder_config_exports.encoded_rlc.value()
+            );
+
+            println!("expected decoded len = {:#?}", expected_decoded_len);
+            println!(
+                "got      decoded len = {:#?}\n\n",
+                decoder_config_exports.decoded_len.value()
+            );
+
+            println!("expected decoded rlc = {:#?}", expected_decoded_rlc);
+            println!(
+                "got      decoded rlc = {:#?}\n\n",
+                decoder_config_exports.decoded_rlc.value()
+            );
 
             Ok(())
         }
