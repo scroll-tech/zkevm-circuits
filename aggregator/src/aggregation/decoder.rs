@@ -2591,13 +2591,17 @@ impl DecoderConfig {
                     1.expr(),
                     value_decoded - 1.expr(),
                 );
+                let is_predefined_mode =
+                    config
+                        .block_config
+                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
 
                 [
                     0.expr(), // skip first row
                     block_idx,
                     fse_table_kind,
                     fse_table_size,
-                    0.expr(), // is_predefined
+                    is_predefined_mode,
                     fse_symbol,
                     norm_prob.expr(),
                     norm_prob.expr(),
@@ -5104,7 +5108,11 @@ mod tests {
             encoder.finish().expect("Encoder success")
         };
 
-        println!("len(encoded)={:6}\tlen(decoded)={:6}", compressed.len(), raw.len());
+        println!(
+            "len(encoded)={:6}\tlen(decoded)={:6}",
+            compressed.len(),
+            raw.len()
+        );
         let k = 18;
         let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
