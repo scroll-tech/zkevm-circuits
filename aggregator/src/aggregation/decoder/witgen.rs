@@ -1705,7 +1705,7 @@ fn process_sequences<F: Field>(
 
     println!("start recovering");
     for (i, inst) in address_table_rows.iter().enumerate() {
-        if i == 428 {
+        if i == 428 || i == 125 || i == 1737 {
             println!("instruction {:4} = {:#?}", i, inst);
             println!(
                 "i = {}, len(recovered_inputs) = {:?}",
