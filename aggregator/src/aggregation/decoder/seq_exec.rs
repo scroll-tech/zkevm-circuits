@@ -1248,6 +1248,26 @@ mod tests {
     }
 
     #[test]
+    fn seq_exec_rle_like() {
+        // no instructions, we only copy literals to output
+        let circuit = SeqExecMock::mock_generate(
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [5, 0, 6, 2, 6, 1], // an RLE like inst, match len exceed match offset
+            ]),
+        );
+
+        assert_eq!(circuit.outputs, Vec::from("abcddeabcbcbcbcf".as_bytes()));
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
+    }
+
+    #[test]
     fn seq_exec_no_tail_cp() {
         // no instructions, we only copy literals to output
         let circuit = SeqExecMock::mock_generate(
