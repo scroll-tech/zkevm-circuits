@@ -1,5 +1,4 @@
-use crate::keccak_circuit::util::extract_field;
-use eth_types::Field;
+use crate::{keccak_circuit::util::extract_field, util::Field};
 use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::Value,

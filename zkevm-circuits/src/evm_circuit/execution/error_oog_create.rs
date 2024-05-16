@@ -14,13 +14,14 @@ use crate::{
             or, select, CachedRegion, Cell, Word,
         },
     },
+    util::Field,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use eth_types::{
     evm_types::{
         GasCost, OpcodeId, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE,
     },
-    Field, ToLittleEndian, U256,
+    ToLittleEndian, U256,
 };
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};

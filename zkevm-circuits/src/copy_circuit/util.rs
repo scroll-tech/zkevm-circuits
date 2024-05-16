@@ -1,6 +1,5 @@
-use crate::evm_circuit::util::rlc;
+use crate::{evm_circuit::util::rlc, util::Field};
 use bus_mapping::circuit_input_builder::NumberOrHash;
-use eth_types::Field;
 use halo2_proofs::circuit::Value;
 
 /// Encode the type `NumberOrHash` into a field element

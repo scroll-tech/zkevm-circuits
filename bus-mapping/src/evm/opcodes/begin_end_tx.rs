@@ -11,8 +11,7 @@ use crate::{
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
     },
-    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
-    state_db::CodeDB,
+    precompile::{execute_precompiled, PrecompileCalls},
     Error,
 };
 use eth_types::{
@@ -20,6 +19,8 @@ use eth_types::{
         gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
         GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
     },
+    state_db::CodeDB,
+    utils::is_precompiled,
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -160,7 +161,6 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     }
 
     // Add caller, callee and coinbase (only for Shanghai) to access list.
-    #[cfg(feature = "shanghai")]
     let accessed_addresses = [
         call.caller_address,
         call.address,
@@ -171,8 +171,6 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             .unwrap()
             .coinbase,
     ];
-    #[cfg(not(feature = "shanghai"))]
-    let accessed_addresses = [call.caller_address, call.address];
     for address in accessed_addresses {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_access_list_account_write(
@@ -185,14 +183,11 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     }
 
     // Calculate gas cost of init code only for EIP-3860 of Shanghai.
-    #[cfg(feature = "shanghai")]
     let init_code_gas_cost = if state.tx.is_create() {
         (state.tx.input.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
     } else {
         0
     };
-    #[cfg(not(feature = "shanghai"))]
-    let init_code_gas_cost = 0;
 
     // Calculate intrinsic gas cost
     let call_data_gas_cost = tx_data_gas_cost(&state.tx.input);
@@ -211,7 +206,8 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     let callee_account = &state.sdb.get_account(&call.address).1.clone();
     let is_precompile = is_precompiled(&call.address);
     let callee_exists = !callee_account.is_empty();
-    if !callee_exists && call.value.is_zero() {
+    //if !callee_exists && call.value.is_zero() {
+    if callee_account.code_hash == CodeDB::empty_code_hash() {
         // The account is empty (codehash and nonce be 0) while storage is non empty.
         // It is an impossible case for any real world scenario.
         // The "clear" helps with testool.

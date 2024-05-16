@@ -6,12 +6,12 @@ use crate::{
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
     operation::{AccountField, AccountOp, CallContextField},
-    state_db::CodeDB,
     Error,
 };
 use eth_types::{
     bytecode::BytecodeElement,
     evm_types::{memory::MemoryWordRange, Memory},
+    state_db::CodeDB,
     Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256,
 };
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
@@ -239,6 +239,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             // handle keccak_table_lookup
             let keccak_input = if IS_CREATE2 {
                 let salt = stack_inputs[3];
+                log::trace!("create2 initcode {}", hex::encode(&initialization_code));
+                log::trace!("create2 caller {:?}", caller.address);
                 assert_eq!(
                     address,
                     get_create2_address(

@@ -1,14 +1,16 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    step::ExecutionState,
-    table::{FixedTableTag, Lookup},
-    util::{
-        common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, CachedRegion,
-        Cell,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        step::ExecutionState,
+        table::{FixedTableTag, Lookup},
+        util::{
+            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder,
+            CachedRegion, Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    util::Field,
 };
-use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -125,16 +127,6 @@ mod test {
         let fe_opcode = 0xfe_u8;
         test_root_ok(&[fe_opcode]);
         test_internal_ok(0x20, 0x30, &[fe_opcode]);
-    }
-
-    #[cfg(not(feature = "shanghai"))]
-    #[test]
-    fn invalid_opcode_push0_for_not_shanghai() {
-        // Should test with logs in `assign_exec_step`, otherwise it could also
-        // pass (since PushGadget).
-        let push0 = 0x5f;
-        test_root_ok(&[push0]);
-        test_internal_ok(0x20, 0x00, &[push0]);
     }
 
     // for scroll feature, treat selfdestruct_opcode as invalidcode. even this test construct oog

@@ -12,7 +12,7 @@ serde_json.workspace = true
 serde.workspace = true
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
 eth-types = { path = "../eth-types" }
-zkevm-circuits = { path = "../zkevm-circuits", default-features = false, features = ["test", "test-circuits","shanghai","debug-annotations"] }
+zkevm-circuits = { path = "../zkevm-circuits", default-features = false, features = ["test", "test-circuits", "debug-annotations"] }
 tokio.workspace = true
 url.workspace = true
 pretty_assertions.workspace = true
@@ -28,10 +28,12 @@ rand_core = "0.6.4"
 mock = { path = "../mock" }
 
 [features]
-default = ["circuits"]
+default = ["circuits", "retrace-tx"]
 rpc = []
 circuit_input_builder = []
 circuits = []
 mock_prover = []
 scroll= ["bus-mapping/scroll", "eth-types/scroll", "mock/scroll", "zkevm-circuits/scroll"]
 fix-refund = ["bus-mapping/fix-refund"]
+rpc-legacy-tracer = ["bus-mapping/rpc-legacy-tracer"]
+retrace-tx = ["bus-mapping/retrace-tx"]

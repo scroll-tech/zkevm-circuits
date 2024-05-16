@@ -6,9 +6,9 @@ use crate::{
         math_gadget::*,
         CachedRegion,
     },
-    util::Expr,
+    util::{Expr, Field},
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::plonk::Error;
 
 /// Construction of 256-bit word original and absolute values, which is useful

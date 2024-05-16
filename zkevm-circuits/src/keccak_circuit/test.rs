@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
 use super::*;
-use crate::util::unusable_rows;
-use eth_types::Field;
+use crate::util::{unusable_rows, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,

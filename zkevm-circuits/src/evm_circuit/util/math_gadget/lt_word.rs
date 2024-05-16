@@ -1,8 +1,11 @@
-use crate::evm_circuit::util::{
-    self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
-    CachedRegion,
+use crate::{
+    evm_circuit::util::{
+        self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
+        CachedRegion,
+    },
+    util::Field,
 };
-use eth_types::{Field, Word};
+use eth_types::Word;
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
@@ -70,6 +73,7 @@ mod tests {
     use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 
     use super::{test_util::*, *};
+    use crate::util::Field;
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 

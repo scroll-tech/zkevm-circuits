@@ -2,8 +2,8 @@
 
 use anyhow::{bail, Context, Result};
 use eth_types::{bytecode, Bytecode, Bytes, H256};
-use keccak256::plain::Keccak;
 use serde::{Deserialize, Serialize};
+use sha3::Digest;
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -61,9 +61,7 @@ impl Cache {
     }
 
     fn hash(src: &str) -> H256 {
-        let mut hash = Keccak::default();
-        hash.update(src.as_bytes());
-        H256::from_slice(&hash.digest())
+        H256::from_slice(&sha3::Keccak256::digest(src))
     }
 }
 
@@ -125,7 +123,7 @@ impl CompilerSettings {
         selection.insert("*".to_string(), vec!["evm.bytecode".to_string()]);
         output_selection.insert("*".to_string(), selection);
         CompilerSettings {
-            evm_version: evm_version.unwrap_or("berlin").to_string(),
+            evm_version: evm_version.unwrap_or("shanghai").to_string(),
             optimizer: Default::default(),
             output_selection,
         }
@@ -163,7 +161,6 @@ struct BytecodeResult {
 #[serde(rename_all = "camelCase")]
 struct CompilationError {
     component: String,
-    error_code: String,
     formatted_message: String,
     message: String,
     severity: Severity,
@@ -268,9 +265,54 @@ impl Compiler {
         Ok(bytecode)
     }
 
-    /// compiles YUL code
-    pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+    /// compiles YUL code. Sometimes this method cannot emit bytecode successfully.
+    /// For example, for selfdestruct, it can only output warning without bytecode.
+    #[deprecated]
+    #[allow(dead_code)]
+    pub fn yul2(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        log::error!("yul {evm_version:?}");
         self.solc(Language::Yul, src, evm_version)
+    }
+
+    /// compiles YUL code, this is the exact script used in retesteth
+    pub fn yul(&self, src: &str, optimize_level: u32, evm_version: Option<&str>) -> Result<Bytes> {
+        if let Some(bytecode) = self
+            .cache
+            .as_ref()
+            .and_then(|c| c.lock().unwrap().get(src).cloned())
+        {
+            return Ok(bytecode);
+        }
+
+        if !self.compile {
+            bail!("No way to compile Yul for '{}'", src)
+        }
+        let mut cmd = vec!["run", "-i", "--rm", "solc", "--strict-assembly"];
+        if optimize_level == 1 {
+            cmd.push("--optimize");
+            cmd.push("--yul-optimizations=:");
+        }
+        if let Some(evm_version) = evm_version {
+            cmd.push("--evm-version");
+            cmd.push(evm_version);
+        }
+        cmd.push("-");
+
+        let stdout = Self::exec(&cmd, src)?;
+        let placeholder = "Binary representation:\n";
+        let from_pos = stdout.find(placeholder);
+        let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
+        let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
+            let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
+            Bytes::from(hex::decode(hex)?)
+        } else {
+            bail!("Unable to compile: {}", src);
+        };
+        if let Some(ref cache) = self.cache {
+            cache.lock().unwrap().insert(src, bytecode.clone())?;
+        }
+
+        Ok(bytecode)
     }
 
     /// compiles Solidity code
@@ -290,14 +332,16 @@ impl Compiler {
             bail!("No way to compile {:?} for '{}'", language, src)
         }
         let compiler_input = CompilerInput::new_default(language, src, evm_version);
-
+        let stdin = serde_json::to_string(&compiler_input).unwrap();
         let stdout = Self::exec(
             &["run", "-i", "--rm", "solc", "--standard-json", "-"],
-            serde_json::to_string(&compiler_input).unwrap().as_str(),
+            stdin.as_str(),
         )?;
         let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)
             .map_err(|e| {
-                println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{stdout}\n-----")
+                println!(
+                    "---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{stdin}\n{stdout}\n-----"
+                )
             })
             .unwrap();
         let bytecode = compilation_result
@@ -352,7 +396,11 @@ mod test {
     }
 }
             "#,
+            None,
         )?;
+        // This test will fail, since recent solc will completely ignore the used `power` function
+        // and emit `STOP`
+        // FIXME
         assert_eq!(
             hex::encode(out),
             "6020565b8381101560195782820291506001810190506003565b5092915050565b"
@@ -362,7 +410,8 @@ mod test {
     #[test]
     #[cfg(not(feature = "ignore-test-docker"))]
     fn test_docker_solidity() -> anyhow::Result<()> {
-        let out = super::Compiler::new(true, None)?.solidity("contract A{}")?;
+        let out = super::Compiler::new(true, None)?.solidity("contract A{}", None)?;
+        // Recent solc emit different codes. FIXME
         assert_eq!(
             hex::encode(out),
             "6080604052348015600f57600080fd5b50603c80601d6000396000f3fe6080604052600080fdfea164736f6c637828302e382e31332d646576656c6f702e323032322e352e31312b636f6d6d69742e61626161356330650030"

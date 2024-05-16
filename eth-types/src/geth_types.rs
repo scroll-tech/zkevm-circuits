@@ -11,7 +11,7 @@ use ethers_core::types::{
     transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, Eip2930TransactionRequest,
     NameOrAddress, TransactionRequest, H256,
 };
-use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1::Fq};
+use halo2curves::{group::ff::PrimeField, secp256k1::Fq};
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};

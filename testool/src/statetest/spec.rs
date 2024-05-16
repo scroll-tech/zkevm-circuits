@@ -52,7 +52,7 @@ impl TryInto<Account> for AccountMatch {
     }
 }
 
-pub type StateTestResult = HashMap<Address, AccountMatch>;
+pub type StateTestResult = BTreeMap<Address, AccountMatch>;
 
 #[derive(PartialEq, Clone, Eq, Debug)]
 pub struct StateTest {
@@ -308,7 +308,7 @@ impl StateTest {
             data: data.into(),
             access_list: None,
             pre,
-            result: HashMap::new(),
+            result: BTreeMap::new(),
             exception: false,
         };
 

@@ -1,5 +1,12 @@
 use anyhow::Result;
 use eth_types::{Bytes, U256};
+use sha3::Digest;
+use std::cell::RefCell;
+
+thread_local! {
+    /// dirty hack to enable normalization
+    pub static ENABLE_NORMALIZE: RefCell<bool> = RefCell::new(true);
+}
 
 /// encodes an abi call (e.g. "f(uint) 1")
 pub fn encode_funccall(spec: &str) -> Result<Bytes> {
@@ -11,10 +18,16 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     let func = tokens[0];
     let args = &tokens[1..];
 
-    let func_name_params: Vec<_> = func.split([',', '(', ')']).collect();
+    let func_name_params: Vec<_> = func
+        .split([',', '(', ')'])
+        .filter(|s| !s.is_empty())
+        .collect();
     let func_name = func_name_params[0];
-    let func_params = &func_name_params[1..func_name_params.len() - 1];
-
+    let func_params = if func_name_params.len() == 1 {
+        vec![]
+    } else {
+        func_name_params[1..func_name_params.len()].to_vec()
+    };
     // transform func_params and args into the appropiate types
 
     let map_type = |t| match t {
@@ -27,7 +40,8 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     let encode_type = |t, v: &str| match t {
         ParamType::Uint(256) => {
             if let Some(hex) = v.strip_prefix("0x") {
-                U256::from_str_radix(hex, 16).map(Token::Uint)
+                let split_idx = if hex.len() > 64 { hex.len() - 64 } else { 0 };
+                U256::from_str_radix(&hex[split_idx..], 16).map(Token::Uint)
             } else {
                 U256::from_str_radix(v, 10).map(Token::Uint)
             }
@@ -66,8 +80,16 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         state_mutability: StateMutability::Payable,
         constant: Some(false),
     };
+    let bytes: Vec<u8> = if !ENABLE_NORMALIZE.with_borrow(|b| *b) {
+        let encoded_params = ethers_core::abi::encode(&args);
+        let short_signature: Vec<u8> = sha3::Keccak256::digest(tokens[0])[0..4].to_vec();
+        let bytes: Vec<u8> = short_signature.into_iter().chain(encoded_params).collect();
+        bytes
+    } else {
+        func.encode_input(&args)?
+    };
 
-    Ok(Bytes::from(func.encode_input(&args)?))
+    Ok(Bytes::from(bytes))
 }
 
 #[cfg(test)]
@@ -85,6 +107,7 @@ mod test {
             hex::encode(encode_funccall("f(uint) 0x04")?),
             "b3de648b0000000000000000000000000000000000000000000000000000000000000004"
         );
+        encode_funccall("doReenter()")?;
         Ok(())
     }
 }

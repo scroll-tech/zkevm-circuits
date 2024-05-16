@@ -17,11 +17,11 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{Expr, Field},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian, U256,
+    ToLittleEndian, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -36,8 +36,8 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     tx_id: Cell<F>,
     /// Extra stack pop for `EXTCODECOPY`
     external_address: Word<F>,
-    /// Source offset
-    src_offset: Word<F>,
+    /// Source offset and size to copy
+    src_memory_addr: MemoryExpandedAddressGadget<F>,
     /// Destination offset and size to copy
     dst_memory_addr: MemoryExpandedAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -55,17 +55,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.require_in_set(
-            "ErrorOutOfGasMemoryCopy opcode must be CALLDATACOPY, CODECOPY, EXTCODECOPY or RETURNDATACOPY",
+            "ErrorOutOfGasMemoryCopy opcode must be CALLDATACOPY, CODECOPY, EXTCODECOPY, MCOPY or RETURNDATACOPY",
             opcode.expr(),
             vec![
                 OpcodeId::CALLDATACOPY.expr(),
                 OpcodeId::CODECOPY.expr(),
                 OpcodeId::EXTCODECOPY.expr(),
                 OpcodeId::RETURNDATACOPY.expr(),
+                OpcodeId::MCOPY.expr(),
             ],
         );
 
-        let src_offset = cb.query_word_rlc();
         let external_address = cb.query_word_rlc();
         let is_warm = cb.query_bool();
         let tx_id = cb.query_cell();
@@ -88,9 +88,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         });
 
         let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
+        // src can also be possible to overflow for mcopy.
+        let src_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
 
         cb.stack_pop(dst_memory_addr.offset_rlc());
-        cb.stack_pop(src_offset.expr());
+        cb.stack_pop(src_memory_addr.offset_rlc());
         cb.stack_pop(dst_memory_addr.length_rlc());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
@@ -120,8 +122,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         );
 
         cb.require_equal(
+            // for mcopy, both dst_memory_addr and dst_memory_addr likely overflow.
             "Memory address is overflow or gas left is less than cost",
-            or::expr([dst_memory_addr.overflow(), insufficient_gas.expr()]),
+            or::expr([
+                dst_memory_addr.overflow(),
+                src_memory_addr.overflow(),
+                insufficient_gas.expr(),
+            ]),
             1.expr(),
         );
 
@@ -138,7 +145,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             is_warm,
             tx_id,
             external_address,
-            src_offset,
+            src_memory_addr,
             dst_memory_addr,
             memory_expansion,
             memory_copier_gas,
@@ -188,8 +195,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
         self.external_address
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
-        self.src_offset
-            .assign(region, offset, Some(src_offset.to_le_bytes()))?;
+        // self.src_offset
+        //     .assign(region, offset, Some(src_offset.to_le_bytes()))?;
+        self.src_memory_addr
+            .assign(region, offset, src_offset, copy_size)?;
         let memory_addr = self
             .dst_memory_addr
             .assign(region, offset, dst_offset, copy_size)?;
@@ -263,6 +272,14 @@ mod tests {
     const TESTING_DST_OFFSET_COPY_SIZE_PAIRS: &[(u64, u64)] =
         &[(0x20, 0), (0x40, 20), (0x2000, 0x200)];
 
+    // pair type (src_offset, dest_offset, copy_size)
+    const TESTING_MCOPY_PARIS: &[(u64, u64, u64)] = &[
+        (0x20, 80, 2),
+        (0x80, 0x60, 20),
+        (0x80, 100, 20),
+        (0xa0, 80, 99),
+    ];
+
     #[test]
     fn test_oog_memory_copy_for_common_opcodes() {
         for (opcode, (dst_offset, copy_size)) in TESTING_COMMON_OPCODES
@@ -285,6 +302,17 @@ mod tests {
         {
             let testing_data =
                 TestingData::new_for_extcodecopy(*is_warm, *dst_offset, *copy_size, None);
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        }
+    }
+
+    #[test]
+    fn test_oog_memory_copy_for_mcopy() {
+        for (src_offset, dest_offset, copy_size) in TESTING_MCOPY_PARIS {
+            let testing_data =
+                TestingData::new_for_mcopy(*src_offset, *dest_offset, *copy_size, None);
 
             test_root(&testing_data);
             test_internal(&testing_data);
@@ -384,6 +412,35 @@ mod tests {
                 } else {
                     gas_cost
                 }
+            });
+
+            Self { bytecode, gas_cost }
+        }
+
+        pub fn new_for_mcopy(
+            src_offset: u64,
+            dst_offset: u64,
+            copy_size: u64,
+            gas_cost: Option<u64>,
+        ) -> Self {
+            let bytecode = bytecode! {
+                PUSH32(copy_size)
+                PUSH32(src_offset)
+                PUSH32(dst_offset)
+                MCOPY
+            };
+
+            let gas_cost = gas_cost.unwrap_or_else(|| {
+                let cur_memory_word_size = (src_offset + 31) / 32;
+                let memory_word_size = (dst_offset + copy_size + 31) / 32;
+
+                OpcodeId::PUSH32.constant_gas_cost().0 * 3
+                    + memory_copier_gas_cost(
+                        cur_memory_word_size,
+                        memory_word_size,
+                        copy_size,
+                        GasCost::COPY.as_u64(),
+                    )
             });
 
             Self { bytecode, gas_cost }

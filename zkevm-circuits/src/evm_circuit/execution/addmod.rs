@@ -19,8 +19,9 @@ use crate::{
     util::Expr,
 };
 
+use crate::util::Field;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256, U512};
+use eth_types::{ToLittleEndian, U256, U512};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]

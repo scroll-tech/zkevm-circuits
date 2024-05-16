@@ -1,5 +1,5 @@
+use crate::util::Field;
 use bus_mapping::precompile::PrecompileCalls;
-use eth_types::Field;
 use gadgets::util::{and, not, Expr};
 use halo2_proofs::plonk::Expression;
 

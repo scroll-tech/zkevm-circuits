@@ -5,6 +5,7 @@
 #![allow(incomplete_features)]
 // Needed by DummyGadget in evm circuit
 #![feature(adt_const_params)]
+#![feature(trait_alias)]
 #![feature(slice_group_by)]
 #![feature(lazy_cell)]
 // Needed by some builder patterns in testing modules.

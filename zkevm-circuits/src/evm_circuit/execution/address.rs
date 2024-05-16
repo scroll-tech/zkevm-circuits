@@ -11,10 +11,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToAddress, ToLittleEndian};
+use eth_types::{ToAddress, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 use std::convert::TryInto;
 

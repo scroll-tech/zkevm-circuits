@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{step::ExecutionState, util::rlc},
     table::TxContextFieldTag,
-    util::{rlc_be_bytes, Challenges},
+    util::{rlc_be_bytes, Challenges, Field},
     witness::{
         rlp_fsm::{RlpStackOp, SmState},
         DataTable, Format,
@@ -22,8 +22,8 @@ use eth_types::{
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
-    AccessList, Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord,
-    Word, H256,
+    AccessList, Address, Error, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word,
+    H256,
 };
 use ethers_core::{
     types::TransactionRequest,

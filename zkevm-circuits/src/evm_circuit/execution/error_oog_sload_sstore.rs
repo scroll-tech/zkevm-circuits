@@ -16,11 +16,11 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{Expr, Field},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToScalar, U256,
+    ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 

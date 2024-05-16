@@ -46,8 +46,9 @@ impl Calldata {
     }
 }
 
-static YUL_FRAGMENT_PARSER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<code>\{[\S\s]*)"#).unwrap());
+static YUL_FRAGMENT_PARSER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<version2>\w+)*\s*(?P<code>\{[\S\s]*)"#).unwrap()
+});
 
 /// returns the element as an address
 pub fn parse_address(as_str: &str) -> Result<Address> {
@@ -109,7 +110,7 @@ pub fn parse_calldata(
 ) -> Result<Calldata> {
     let tags = decompose_tags(data);
     let label = tags.get(":label").cloned();
-    let bytes = parse_call_bytes(compiler, tags)?;
+    let bytes = parse_call_bytes(compiler, tags).unwrap();
     let access_list = parse_access_list(raw_access_list)?;
 
     Ok(Calldata::new(bytes, label, access_list))
@@ -140,13 +141,23 @@ pub fn parse_code(compiler: &Compiler, as_str: &str) -> Result<Bytes> {
             bail!("do not know what to do with code(3) '{:?}'", as_str);
         }
     } else if let Some(yul) = tags.get(":yul") {
-        let caps = YUL_FRAGMENT_PARSER
-            .captures(yul)
-            .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", as_str))?;
-        compiler.yul(
-            caps.name("code").unwrap().as_str(),
-            caps.name("version").map(|m| m.as_str()),
-        )?
+        let (src, optimize_level, evm_version) = if yul.starts_with('{') {
+            // 1 is default option: --optimize --yul-optimizations=:
+            (yul.to_string(), 1, None)
+        } else {
+            let re = Regex::new(r"\s").unwrap();
+            let mut parts = re.splitn(yul, 2);
+
+            let version = parts.next().unwrap();
+            let src = parts.next().unwrap();
+            if src.starts_with("optimise") {
+                let src = src.strip_prefix("optimise").unwrap_or(src).to_string();
+                (src, 0, Some(version.to_string()))
+            } else {
+                (src.to_string(), 1, Some(version.to_string()))
+            }
+        };
+        compiler.yul(&src, optimize_level, evm_version.as_deref())?
     } else if let Some(solidity) = tags.get(":solidity") {
         debug!(target: "testool", "SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
         compiler.solidity(solidity, None)?
@@ -162,6 +173,9 @@ pub fn parse_code(compiler: &Compiler, as_str: &str) -> Result<Bytes> {
 /// parse a hash entry
 pub fn parse_hash(value: &str) -> Result<H256> {
     let hex = value.strip_prefix("0x").unwrap_or(value);
+    if hex.is_empty() {
+        return Ok(H256::zero());
+    }
     Ok(H256::from_slice(&hex::decode(hex).context("parse_hash")?))
 }
 
@@ -196,26 +210,27 @@ fn parse_call_bytes(compiler: &Compiler, tags: HashMap<String, String>) -> Resul
         if notag.is_empty() {
             Ok(Bytes::default())
         } else if notag.starts_with('{') {
-            Ok(compiler.lll(notag)?)
+            Ok(compiler.lll(notag).unwrap())
         } else if let Some(hex) = notag.strip_prefix("0x") {
-            Ok(Bytes::from(hex::decode(hex)?))
+            Ok(Bytes::from(hex::decode(hex).unwrap()))
         } else {
             bail!("do not know what to do with calldata (1): '{tags:?}'");
         }
     } else if let Some(raw) = tags.get(":raw") {
         if let Some(hex) = raw.strip_prefix("0x") {
-            Ok(Bytes::from(hex::decode(hex)?))
+            Ok(Bytes::from(hex::decode(hex.replace(' ', "")).unwrap()))
         } else {
             bail!("bad encoded calldata (3) {:?}", tags)
         }
     } else if let Some(abi) = tags.get(":abi") {
-        Ok(abi::encode_funccall(abi)?)
+        Ok(abi::encode_funccall(abi).unwrap())
     } else if let Some(yul) = tags.get(":yul") {
         let caps = YUL_FRAGMENT_PARSER
             .captures(yul)
             .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", tags))?;
         Ok(compiler.yul(
             caps.name("code").unwrap().as_str(),
+            1,
             caps.name("version").map(|m| m.as_str()),
         )?)
     } else {

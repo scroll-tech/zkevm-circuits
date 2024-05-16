@@ -34,10 +34,9 @@ use crate::{
         split, split_uniform, transform, transform_to, Part,
     },
     table::{KeccakTable, LookupTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, Field, SubCircuit, SubCircuitConfig},
     witness,
 };
-use eth_types::Field;
 use gadgets::util::{and, not, select, sum, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},

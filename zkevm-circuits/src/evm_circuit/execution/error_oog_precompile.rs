@@ -11,10 +11,11 @@ use crate::{
         },
     },
     table::CallContextFieldTag,
+    util::Field,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::precompile::PrecompileCalls;
-use eth_types::{evm_types::GasCost, Field, ToScalar};
+use eth_types::{evm_types::GasCost, ToScalar};
 use gadgets::util::{sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 

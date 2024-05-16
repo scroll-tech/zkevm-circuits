@@ -23,7 +23,8 @@ impl Opcode for OOGMemoryCopy {
             OpcodeId::CALLDATACOPY,
             OpcodeId::CODECOPY,
             OpcodeId::EXTCODECOPY,
-            OpcodeId::RETURNDATACOPY
+            OpcodeId::RETURNDATACOPY,
+            OpcodeId::MCOPY,
         ]
         .contains(&geth_step.op));
 

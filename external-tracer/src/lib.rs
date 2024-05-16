@@ -77,34 +77,8 @@ impl LoggerConfig {
 /// Configuration structure for `params.ChainConfig`
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct ChainConfig {
-    /// Archimedes switch time (nil = no fork, 0 = already on)
-    pub archimedes_block: Option<u64>,
-    /// Shanghai switch time (nil = no fork, 0 = already on shanghai)
-    /// Scroll EVM use the name `ShanghaiBlock` instead
-    pub shanghai_time: Option<u64>,
-    /// TerminalTotalDifficulty is the amount of total difficulty reached by
-    /// the network that triggers the consensus upgrade.
-    pub terminal_total_difficulty: Option<u64>,
-    /// TerminalTotalDifficultyPassed is a flag specifying that the network already
-    /// passed the terminal total difficulty. Its purpose is to disable legacy sync
-    /// even without having seen the TTD locally (safer long term).
-    pub terminal_total_difficulty_passed: bool,
-}
+pub struct ChainConfig {}
 
-impl ChainConfig {
-    /// Create a chain config for Shanghai fork.
-    pub fn shanghai() -> Self {
-        Self {
-            archimedes_block: None,
-            shanghai_time: Some(0),
-            terminal_total_difficulty: Some(0),
-            terminal_total_difficulty_passed: true,
-        }
-    }
-}
-
-/// Creates a trace for the specified config
 #[cfg(not(feature = "scroll"))]
 pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     let trace_config = &serde_json::to_string_pretty(&config).unwrap();
@@ -125,17 +99,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
 /// Creates a l2-trace for the specified config
 #[cfg(feature = "scroll")]
 pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
-    let mut l2_config = config.clone();
-    if let Some(chain_config) = l2_config.chain_config.as_mut() {
-        chain_config.archimedes_block = Some(0);
-    } else {
-        l2_config.chain_config = Some(ChainConfig {
-            archimedes_block: Some(0),
-            shanghai_time: None,
-            terminal_total_difficulty: None,
-            terminal_total_difficulty_passed: false,
-        });
-    }
+    let l2_config = config.clone();
     let trace_config = &serde_json::to_string_pretty(&l2_config).unwrap();
     log::trace!("trace config: {}", trace_config);
     // Get the trace

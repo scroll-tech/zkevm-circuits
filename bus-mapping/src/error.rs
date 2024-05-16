@@ -192,6 +192,7 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: GethExecError) -> Ex
                 OpcodeId::CALLDATACOPY
                 | OpcodeId::CODECOPY
                 | OpcodeId::EXTCODECOPY
+                | OpcodeId::MCOPY
                 | OpcodeId::RETURNDATACOPY => OogError::MemoryCopy,
                 OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
                     OogError::AccountAccess

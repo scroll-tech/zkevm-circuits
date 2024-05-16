@@ -1,5 +1,6 @@
+use crate::util::Field;
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToScalar};
+use eth_types::{evm_types::GasCost, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{

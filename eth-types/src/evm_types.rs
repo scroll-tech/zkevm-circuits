@@ -9,11 +9,13 @@ pub mod memory;
 pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
+pub mod transient_storage;
 
 pub use memory::{Memory, MemoryAddress, MemoryRef};
 pub use opcode_ids::OpcodeId;
 pub use stack::{Stack, StackAddress};
 pub use storage::Storage;
+pub use transient_storage::TransientStorage;
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
@@ -72,7 +74,6 @@ pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 /// Gas stipend when CALL or CALLCODE is attached with value.
 pub const GAS_STIPEND_CALL_WITH_VALUE: u64 = 2300;
 
-#[cfg(feature = "shanghai")]
 mod gas_create {
     // For EIP-3860, there are 2 special gas cost constraints in geth
     // [gasCreate2Eip3860](https://github.com/ethereum/go-ethereum/blob/eb83e7c54021573eaceb14236af3a7a8c64f6027/core/vm/gas_table.go#L321)
@@ -92,15 +93,6 @@ mod gas_create {
     pub const CREATE_GAS_PER_CODE_WORD: u64 = INIT_CODE_WORD_GAS;
     /// Gas per code word for CREATE2.
     pub const CREATE2_GAS_PER_CODE_WORD: u64 = INIT_CODE_WORD_GAS + super::GasCost::COPY_SHA3.0;
-}
-#[cfg(not(feature = "shanghai"))]
-mod gas_create {
-    /// Maximum init code size (0x1FFFFFFFE0) if not EIP-3860.
-    pub use super::MAX_EXPANDED_MEMORY_ADDRESS as MAX_INIT_CODE_SIZE;
-    /// Gas per code word for CREATE if not EIP-3860.
-    pub const CREATE_GAS_PER_CODE_WORD: u64 = 0;
-    /// Gas per code word for CREATE2 if not EIP-3860.
-    pub const CREATE2_GAS_PER_CODE_WORD: u64 = super::GasCost::COPY_SHA3.0;
 }
 pub use gas_create::*;
 

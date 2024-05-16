@@ -25,10 +25,9 @@ use crate::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
         ModExpTable, PowOfRandTable, RwTable, SHA256Table, SigTable, TxTable,
     },
-    util::{SubCircuit, SubCircuitConfig},
+    util::{Field, SubCircuit, SubCircuitConfig},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
@@ -289,7 +288,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
-const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3647;
+const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3656;
 const FIXED_TABLE_ROWS: usize = FIXED_TABLE_ROWS_NO_BITWISE + 3 * 65536;
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {

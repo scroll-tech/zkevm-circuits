@@ -1,6 +1,8 @@
-use crate::{table::BytecodeFieldTag, util::get_push_size};
-use bus_mapping::state_db::CodeDB;
-use eth_types::{Field, ToWord, Word, U256};
+use crate::{
+    table::BytecodeFieldTag,
+    util::{get_push_size, Field},
+};
+use eth_types::{state_db::CodeDB, ToWord, Word, U256};
 use std::vec;
 
 /// Public data for the bytecode
@@ -60,7 +62,7 @@ pub fn unroll_with_codehash<F: Field>(code_hash: U256, bytes: Vec<u8>) -> Unroll
 use crate::table::PoseidonTable;
 /// re-export bytes wrapped in hash field
 /// specify byte in field for encoding bytecode
-pub use bus_mapping::util::POSEIDON_HASH_BYTES_IN_FIELD as HASHBLOCK_BYTES_IN_FIELD;
+pub use eth_types::utils::POSEIDON_HASH_BYTES_IN_FIELD as HASHBLOCK_BYTES_IN_FIELD;
 
 /// Get unrolled hash inputs as inputs to hash circuit
 pub fn unroll_to_hash_input<F: Field, const BYTES_IN_FIELD: usize, const INPUT_LEN: usize>(

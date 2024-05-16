@@ -42,6 +42,7 @@ mod extcodesize;
 mod gasprice;
 mod jumpi;
 mod logs;
+mod mcopy;
 mod mload;
 mod mstore;
 mod number;
@@ -59,6 +60,8 @@ mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
+mod tload;
+mod tstore;
 
 mod error_codestore;
 mod error_contract_address_collision;
@@ -114,6 +117,7 @@ use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
 use gasprice::GasPrice;
 use logs::Log;
+use mcopy::MCopy;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
@@ -127,6 +131,8 @@ use sstore::Sstore;
 use stackonlyop::StackPopOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
+use tload::Tload;
+use tstore::Tstore;
 
 pub use sstore::calc_expected_tx_refund;
 
@@ -231,6 +237,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         OpcodeId::BASEFEE => GetBlockHeaderField::<{ OpcodeId::BASEFEE }>::gen_associated_ops,
         OpcodeId::POP => StackPopOnlyOpcode::<1>::gen_associated_ops,
+        OpcodeId::MCOPY => MCopy::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
@@ -242,6 +249,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::MSIZE => Msize::gen_associated_ops,
         OpcodeId::GAS => Gas::gen_associated_ops,
         OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
+        OpcodeId::TLOAD => Tload::gen_associated_ops,
+        OpcodeId::TSTORE => Tstore::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
@@ -471,6 +480,7 @@ pub fn gen_associated_ops(
     } else {
         None
     };
+
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
         log::debug!(
             "geth error {:?} occurred in  {:?} at pc {:?}",

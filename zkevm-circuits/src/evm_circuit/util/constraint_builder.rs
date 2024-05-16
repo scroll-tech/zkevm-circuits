@@ -9,13 +9,10 @@ use crate::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::{build_tx_log_expression, Challenges, Expr},
+    util::{build_tx_log_expression, Challenges, Expr, Field},
 };
-use bus_mapping::{
-    state_db::EMPTY_CODE_HASH_LE,
-    util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY},
-};
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
+use bus_mapping::util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY};
+use eth_types::{state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToScalar, ToWord};
 use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
@@ -1103,6 +1100,58 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value_prev,
                 0.expr(),
                 committed_value,
+            ),
+            reversion_info,
+        );
+    }
+
+    // Account Transient Storage
+    pub(crate) fn account_transient_storage_read(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        tx_id: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account_transient_storage_read",
+            false.expr(),
+            RwTableTag::AccountTransientStorage,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                key,
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn account_transient_storage_write(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        tx_id: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.reversible_write(
+            "account_transient_storage_write",
+            RwTableTag::AccountTransientStorage,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                key,
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
             ),
             reversion_info,
         );

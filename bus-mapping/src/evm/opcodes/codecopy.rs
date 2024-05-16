@@ -90,6 +90,7 @@ mod codecopy_tests {
         bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
+        state_db::CodeDB,
         Word,
     };
     use mock::{
@@ -104,7 +105,6 @@ mod codecopy_tests {
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
-        state_db::CodeDB,
     };
 
     #[test]

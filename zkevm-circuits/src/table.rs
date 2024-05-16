@@ -8,7 +8,7 @@ use crate::{
     },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, rlc_be_bytes, Challenges},
+    util::{build_tx_log_address, rlc_be_bytes, Challenges, Field},
     witness::{
         Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen, Rw, RwMap,
         RwRow, Transaction,
@@ -22,7 +22,7 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use core::iter::once;
-use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
+use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
@@ -34,6 +34,7 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use sha3::Digest;
 use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
 use std::iter::repeat;
@@ -45,7 +46,6 @@ use halo2_proofs::plonk::SecondPhase;
 
 use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -209,7 +209,7 @@ pub struct TxTable {
     /// Tx ID
     pub tx_id: Column<Advice>,
     /// Tag (TxContextFieldTag)
-    pub tag: Column<Fixed>,
+    pub tag: Column<Advice>,
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
@@ -224,11 +224,10 @@ impl TxTable {
     /// Construct a new TxTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.fixed_column();
-        let tag = meta.fixed_column();
         Self {
             q_enable,
             tx_id: meta.advice_column(),
-            tag,
+            tag: meta.advice_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
             access_list_address: meta.advice_column(),
@@ -268,7 +267,7 @@ impl TxTable {
             offset: usize,
             q_enable: Column<Fixed>,
             advice_columns: &[Column<Advice>],
-            tag: &Column<Fixed>,
+            tag: &Column<Advice>,
             row: &[Value<F>; 5],
             msg: &str,
         ) -> Result<AssignedCell<F, F>, Error> {
@@ -291,7 +290,7 @@ impl TxTable {
                 offset,
                 || Value::known(F::one()),
             )?;
-            region.assign_fixed(
+            region.assign_advice(
                 || format!("tx table {msg} row {offset}"),
                 *tag,
                 offset,
@@ -444,7 +443,7 @@ impl<F: Field> LookupTable<F> for TxTable {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.tx_id, Rotation::cur()),
-            meta.query_fixed(self.tag, Rotation::cur()),
+            meta.query_advice(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
             meta.query_advice(self.value, Rotation::cur()),
             meta.query_advice(self.access_list_address, Rotation::cur()),
@@ -471,6 +470,8 @@ pub enum RwTableTag {
     Account,
     /// Account Storage operation
     AccountStorage,
+    /// Account Transient Storage operation
+    AccountTransientStorage,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -490,6 +491,7 @@ impl RwTableTag {
                 | RwTableTag::TxRefund
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
+                | RwTableTag::AccountTransientStorage
         )
     }
 }
@@ -760,7 +762,7 @@ impl RwTable {
     }
 }
 
-pub use mpt_zktrie::mpt_circuits::MPTProofType;
+pub use mpt_circuits::MPTProofType;
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
@@ -1027,7 +1029,7 @@ impl PoseidonTable {
         use crate::bytecode_circuit::bytecode_unroller::{
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
-        use bus_mapping::state_db::CodeDB;
+        use eth_types::state_db::CodeDB;
         use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
@@ -1485,9 +1487,7 @@ impl KeccakTable {
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
-        let mut keccak = Keccak::default();
-        keccak.update(input);
-        let output = keccak.digest();
+        let output = sha3::Keccak256::digest(input);
         let output_rlc = challenges.evm_word().map(|challenge| {
             rlc::value(
                 &Word::from_big_endian(output.as_slice()).to_le_bytes(),
@@ -1837,6 +1837,14 @@ impl CopyTable {
 
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
+        // for memory copy (mcopy) case, first half of ops are reading, the other half are
+        // writing parts, so for write ops, `rw_counter_write` starts from half too.
+        let mut rw_counter_write = rw_counter + rwc_inc_left / 2;
+        let mut rwc_inc_left_write = rwc_inc_left - rwc_inc_left / 2;
+
+        let is_memory_copy = copy_event.src_id == copy_event.dst_id
+            && copy_event.src_type.eq(&CopyDataType::Memory)
+            && copy_event.dst_type.eq(&CopyDataType::Memory);
 
         let mut reader = CopyThread {
             tag: copy_event.src_type,
@@ -1963,6 +1971,14 @@ impl CopyTable {
                 F::from(thread.addr)
             };
 
+            // rw_counter value in `rw_counter` copytable column.
+            let (rw_counter_in_column, rwc_inc_left_in_column) = if is_memory_copy && !is_read_step
+            {
+                (rw_counter_write, rwc_inc_left_write)
+            } else {
+                (rw_counter, rwc_inc_left)
+            };
+
             assignments.push((
                 thread.tag,
                 [
@@ -1972,8 +1988,11 @@ impl CopyTable {
                     (Value::known(F::from(thread.addr_end)), "src_addr_end"),
                     (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
                     (rlc_acc, "rlc_acc"),
-                    (Value::known(F::from(rw_counter)), "rw_counter"),
-                    (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
+                    (Value::known(F::from(rw_counter_in_column)), "rw_counter"),
+                    (
+                        Value::known(F::from(rwc_inc_left_in_column)),
+                        "rwc_inc_left",
+                    ),
                 ],
                 [
                     (Value::known(F::from(is_last)), "is_last"),
@@ -2001,8 +2020,14 @@ impl CopyTable {
             let is_row_end = is_access_list || (step_idx / 2) % 32 == 31;
             // Update the RW counter.
             if is_row_end && thread.is_rw {
-                rw_counter += 1;
-                rwc_inc_left -= 1;
+                // if write step in memory_copy case, and update rw_counter_write
+                if is_memory_copy && !is_read_step {
+                    rw_counter_write += 1;
+                    rwc_inc_left_write -= 1;
+                } else {
+                    rw_counter += 1;
+                    rwc_inc_left -= 1;
+                }
             }
         }
         assignments

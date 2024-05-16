@@ -1,7 +1,8 @@
+use crate::util::Field;
 use bus_mapping::precompile::{
     PrecompileAuxData, PrecompileCalls, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT,
 };
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToBigEndian, ToScalar, U256};
 use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
     circuit::Value,

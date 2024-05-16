@@ -13,9 +13,10 @@ use crate::{
             or, CachedRegion, Cell,
         },
     },
+    util::Field,
     witness::{Block, Call, ExecStep, Transaction},
 };
-use eth_types::{evm_types::OpcodeId, Field};
+use eth_types::evm_types::OpcodeId;
 use gadgets::util::{select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 

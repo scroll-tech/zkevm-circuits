@@ -12,8 +12,8 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{BlockContextFieldTag, TxFieldTag::BlockNumber},
+    util::Field,
 };
-use eth_types::Field;
 use gadgets::util::{not, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 

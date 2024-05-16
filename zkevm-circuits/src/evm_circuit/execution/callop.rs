@@ -21,16 +21,15 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{Expr, Field},
 };
 use bus_mapping::{
-    circuit_input_builder::CopyDataType,
-    evm::OpcodeId,
-    precompile::{is_precompiled, PrecompileCalls},
+    circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::PrecompileCalls,
 };
 use eth_types::{
     evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE},
-    Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
+    utils::is_precompiled,
+    ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;

@@ -1,6 +1,5 @@
 use super::{param::*, util::*};
-use crate::keccak_circuit::keccak_packed_multi::get_num_bits_per_base_chi_lookup;
-use eth_types::Field;
+use crate::{keccak_circuit::keccak_packed_multi::get_num_bits_per_base_chi_lookup, util::Field};
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{Error, TableColumn},

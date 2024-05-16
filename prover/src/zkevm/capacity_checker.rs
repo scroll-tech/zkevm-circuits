@@ -7,11 +7,12 @@ use super::circuit::{
     block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_witness_block,
     get_super_circuit_params,
 };
-use bus_mapping::{
-    circuit_input_builder::{self, CircuitInputBuilder},
+use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
+use eth_types::{
+    l2_types::BlockTrace,
     state_db::{CodeDB, StateDB},
+    ToWord, H256,
 };
-use eth_types::{l2_types::BlockTrace, ToWord, H256};
 use itertools::Itertools;
 use mpt_zktrie::state::ZktrieState;
 use serde_derive::{Deserialize, Serialize};

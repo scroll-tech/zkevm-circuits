@@ -27,22 +27,14 @@ use crate::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
         TxFieldTag as TxContextFieldTag,
     },
+    util::Field,
 };
 use array_init::array_init;
-use bus_mapping::{
-    circuit_input_builder::CopyDataType,
-    precompile::{is_precompiled, PrecompileCalls},
-};
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
+use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
+use eth_types::{utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
-
-// For Shanghai, EIP-3651 (Warm COINBASE) adds 1 write op for coinbase.
-#[cfg(feature = "shanghai")]
-const SHANGHAI_RW_DELTA: u8 = 1;
-#[cfg(not(feature = "shanghai"))]
-const SHANGHAI_RW_DELTA: u8 = 0;
 
 const PRECOMPILE_COUNT: usize = 9;
 
@@ -153,6 +145,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
+            // also constrain fee value of tx_l1_fee gadget is zero, such other gadgets can use it
+            // with certain value for l1 type.
+            cb.require_zero(
+                "l1fee is 0 for tx_l1_fee gadget",
+                tx_l1_fee.tx_l1_fee_word().expr(),
+            );
         });
         // the rw delta caused by l1 related handling
         let l1_rw_delta = select::expr(
@@ -254,15 +252,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let intrinsic_gas_cost = cb.query_cell();
         cb.condition(not::expr(is_precompile.expr()), |cb| {
             // Calculate gas cost of init code only for EIP-3860 of Shanghai.
-            #[cfg(feature = "shanghai")]
             let init_code_gas_cost = select::expr(
                 tx_is_create.expr(),
                 tx_call_data_word_length.quotient().expr()
                     * eth_types::evm_types::INIT_CODE_WORD_GAS.expr(),
                 0.expr(),
             );
-            #[cfg(not(feature = "shanghai"))]
-            let init_code_gas_cost = 0.expr();
 
             cb.require_equal(
                 "calculate intrinsic gas cost",
@@ -313,7 +308,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             coinbase.expr(),
         );
 
-        #[cfg(feature = "shanghai")]
         cb.account_access_list_write(
             tx_id.expr(),
             coinbase.expr(),
@@ -365,6 +359,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             tx_type.expr(),
             tx_gas.expr(),
+            &tx_gas_price,
             tx_l1_fee.tx_l1_fee_word(),
             &tx_value,
             transfer_with_gas_fee.sender_balance_prev(),
@@ -499,11 +494,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
                 rw_counter: Delta(
-                    22.expr()
+                    23.expr()
                         + l1_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
                         + tx_access_list.rw_delta_expr()
-                        + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr(),
                 ),
                 call_id: To(call_id.expr()),
@@ -632,11 +626,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
                     rw_counter: Delta(
-                        23.expr()
+                        24.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
                             + tx_access_list.rw_delta_expr()
-                            + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
@@ -694,11 +687,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - a TxL1FeeGadget
                     //   - a TransferWithGasFeeGadget
                     rw_counter: Delta(
-                        8.expr()
+                        9.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
                             + tx_access_list.rw_delta_expr()
-                            + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
@@ -768,11 +760,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
                     rw_counter: Delta(
-                        21.expr()
+                        22.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
                             + tx_access_list.rw_delta_expr()
-                            + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
@@ -930,10 +921,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_caller_warm = rws.next().tx_access_list_value_pair().1;
         let is_callee_warm = rws.next().tx_access_list_value_pair().1;
 
-        #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
-        #[cfg(not(feature = "shanghai"))]
-        let is_coinbase_warm = false;
 
         let account_code_hash = rws.next().account_codehash_pair().1;
         let transfer_assign_result = self.transfer_with_gas_fee.assign_from_rws(

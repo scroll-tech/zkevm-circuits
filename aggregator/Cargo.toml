@@ -27,13 +27,12 @@ snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
 revm-precompile.workspace = true
+revm-primitives.workspace = true
 c-kzg.workspace = true
 num-bigint.workspace = true
 
-revm-primitives = "3.1.0"
-
 [features]
-default = [ ]
-print-trace = [ "ark-std/print-trace" ]
+default = ["revm-precompile/c-kzg"]
+print-trace = ["ark-std/print-trace"]
 # This feature is useful for unit tests where we check the SAT of pi aggregation circuit
 disable_proof_aggregation = []

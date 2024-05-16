@@ -1,7 +1,8 @@
 //! utils for build state trie
 
 use eth_types::{
-    Address, Bytes, Word, H256, KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY, U256, U64,
+    state_db, Address, Bytes, Word, H256, KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY, U256,
+    U64,
 };
 use std::{
     convert::TryFrom,
@@ -9,8 +10,8 @@ use std::{
     sync::Once,
 };
 
-use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
-use hash_circuit::hash::Hashable;
+use halo2curves::{bn256::Fr, group::ff::PrimeField};
+use poseidon_base::hash::Hashable;
 
 /// Init hash scheme
 pub fn init_hash_scheme() {
@@ -48,7 +49,8 @@ pub(crate) const NODE_TYPE_MIDDLE_2: u8 = 8;
 pub(crate) const NODE_TYPE_MIDDLE_3: u8 = 9;
 pub(crate) const NODE_TYPE_LEAF: u8 = 4;
 pub(crate) const NODE_TYPE_EMPTY: u8 = 5;
-pub(crate) const SECURE_HASH_DOMAIN: u64 = 512;
+/// Secure hash domain
+pub const SECURE_HASH_DOMAIN: u64 = 512;
 
 /// AccountData
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
@@ -105,14 +107,58 @@ impl From<zktrie::AccountData> for AccountData {
     }
 }
 
-pub(crate) fn extend_address_to_h256(src: &Address) -> [u8; 32] {
+impl From<&AccountData> for state_db::Account {
+    fn from(acc_data: &AccountData) -> Self {
+        if acc_data.keccak_code_hash.is_zero() {
+            state_db::Account::zero()
+        } else {
+            Self {
+                nonce: acc_data.nonce.into(),
+                balance: acc_data.balance,
+                code_hash: acc_data.poseidon_code_hash,
+                keccak_code_hash: acc_data.keccak_code_hash,
+                code_size: acc_data.code_size.into(),
+                storage: Default::default(),
+            }
+        }
+    }
+}
+
+impl From<AccountData> for zktrie::AccountData {
+    fn from(acc: AccountData) -> Self {
+        let mut nonce_codesize = [0u8; 32];
+        let u64factor = U256::from(0x10000000000000000u128);
+        (U256::from(acc.code_size) * u64factor + U256::from(acc.nonce))
+            .to_big_endian(nonce_codesize.as_mut_slice());
+        let mut balance = [0u8; 32];
+        acc.balance.to_big_endian(balance.as_mut_slice());
+        let mut poseidon_code_hash = [0u8; 32];
+        U256::from(acc.poseidon_code_hash.0).to_big_endian(poseidon_code_hash.as_mut_slice());
+        let mut code_hash = [0u8; 32];
+        U256::from(acc.keccak_code_hash.0).to_big_endian(code_hash.as_mut_slice());
+
+        [
+            nonce_codesize,
+            balance,
+            acc.storage_root.0,
+            code_hash,
+            poseidon_code_hash,
+        ]
+    }
+}
+
+/// Extend address to H256
+pub fn extend_address_to_h256(src: &Address) -> [u8; 32] {
     let mut bts: Vec<u8> = src.as_bytes().into();
     bts.resize(32, 0);
     bts.as_slice().try_into().expect("32 bytes")
 }
 
-pub(crate) trait CanRead: Sized {
+/// The trait to parse proof
+pub trait CanRead: Sized {
+    /// Try parse
     fn try_parse(rd: impl Read) -> Result<Self, Error>;
+    /// Parse leaf
     fn parse_leaf(data: &[u8]) -> Result<Self, Error> {
         // notice the first 33 bytes has been read external
         Self::try_parse(&data[33..])
@@ -174,21 +220,28 @@ impl CanRead for StorageData {
     }
 }
 
+/// Trie proof
 #[derive(Debug, Default, Clone)]
-pub(crate) struct TrieProof<T> {
+pub struct TrieProof<T> {
+    /// Data
     pub data: T,
+    /// Key
     pub key: Option<H256>,
+    /// Key stype
     pub key_type: Option<u64>,
-    // the path from top to bottom, in (left child, right child) form
+    /// the path from top to bottom, in (left child, right child) form
     pub path: Vec<(U256, U256)>,
-    // the path type from top to bottom
+    /// the path type from top to bottom
     pub path_type: Vec<u64>,
 }
 
-pub(crate) type AccountProof = TrieProof<AccountData>;
-pub(crate) type StorageProof = TrieProof<StorageData>;
+/// Account Proof
+pub type AccountProof = TrieProof<AccountData>;
+/// Storage Proof
+pub type StorageProof = TrieProof<StorageData>;
 
-pub(crate) struct BytesArray<T>(pub T);
+/// Helper for dealing with bytes array
+pub struct BytesArray<T>(pub T);
 
 impl<'d, T, BYTES> TryFrom<BytesArray<BYTES>> for TrieProof<T>
 where
