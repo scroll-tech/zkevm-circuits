@@ -5132,7 +5132,7 @@ mod tests {
 
         // This blob data is of the form, with every 32-bytes chunk having its most-significant
         // byte set to 0.
-        let blob_data = hex::decode(fs::read_to_string(&blob_files[0])?.trim_end())
+        let blob_data = hex::decode(fs::read_to_string(&blob_files[2])?.trim_end())
             .expect("failed to decode hex data");
 
         let mut batch_data = Vec::with_capacity(31 * 4096);

@@ -942,7 +942,9 @@ impl FseAuxiliaryTableData {
         let mut state_table: FseStateMapping = BTreeMap::new();
 
         for row in rows {
-            state_table.insert(row.state, (row.symbol, row.baseline, row.num_bits));
+            if !row.is_state_skipped {
+                state_table.insert(row.state, (row.symbol, row.baseline, row.num_bits));
+            }
         }
 
         state_table

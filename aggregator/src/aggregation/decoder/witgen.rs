@@ -1641,8 +1641,8 @@ fn process_sequences<F: Field>(
         } else {
             let repeat_idx = inst.0;
             if inst.2 == 0 {
-                if repeat_idx > 3 {
-                    repeated_offset[1] - 1
+                if repeat_idx == 3 {
+                    repeated_offset[0] - 1
                 } else {
                     repeated_offset[repeat_idx]
                 }
@@ -1703,16 +1703,7 @@ fn process_sequences<F: Field>(
     let mut seq_exec_info: Vec<SequenceExec> = vec![];
     let mut current_literal_pos: usize = 0;
 
-    println!("start recovering");
-    for (i, inst) in address_table_rows.iter().enumerate() {
-        if i == 428 || i == 125 || i == 1737 {
-            println!("instruction {:4} = {:#?}", i, inst);
-            println!(
-                "i = {}, len(recovered_inputs) = {:?}",
-                i,
-                recovered_inputs.len()
-            );
-        }
+    for inst in address_table_rows.iter() {
         let new_literal_pos = current_literal_pos + (inst.literal_length as usize);
         if new_literal_pos > current_literal_pos {
             let r = current_literal_pos..new_literal_pos;
