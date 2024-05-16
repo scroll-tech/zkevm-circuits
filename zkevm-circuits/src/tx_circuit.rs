@@ -2883,8 +2883,13 @@ impl<F: Field> TxCircuitConfig<F> {
             let sig_s = meta.query_advice(tx_table.value, Rotation(3));
             let sv_address = meta.query_advice(sv_address, Rotation::cur());
 
+
+            // indicates tx type is eip155 or post (eip1559, eip2930).
+            
             let v = is_eip155(meta) * (sig_v.expr() - 2.expr() * chain_id - 35.expr())
-                + is_pre_eip155(meta) * (sig_v.expr() - 27.expr());
+                + is_pre_eip155(meta) * (sig_v.expr() - 27.expr()) + 
+                meta.query_advice(is_eip1559, Rotation::cur()) * sig_v.expr() + 
+                meta.query_advice(is_eip2930, Rotation::cur()) * sig_v.expr();
 
             let input_exprs = vec![
                 1.expr(),     // q_enable = true
@@ -4453,6 +4458,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             })
             .collect::<Result<Vec<SignData>, Error>>()?;
 
+            println!("tx circuit:sign_datas {:?}", sign_datas);
         // check if tx.caller_address == recovered_pk
         let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
             .into_iter()
