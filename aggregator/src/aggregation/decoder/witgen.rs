@@ -1609,7 +1609,7 @@ fn process_sequences<F: Field>(
                         ],
                         baseline: curr_baseline as u64,
                         is_nil: true,
-                        is_update_state: 0u64,
+                        is_update_state: (current_decoding_state >= 3) as u64,
                     },
                     decoded_data: last_row.decoded_data.clone(),
                     fse_data: FseDecodingRow {
