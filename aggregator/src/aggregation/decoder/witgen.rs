@@ -860,10 +860,8 @@ fn process_sequences<F: Field>(
                     from_pos = if next_symbol == -1 { (1, -1) } else { to_pos };
 
                     from_pos.1 += 1;
-                    if from_pos.1 == 8 {
+                    if from_pos.1 == 8 || from_pos.1 == 16 {
                         from_pos = (from_pos.0 + 1, 0);
-                    } else if from_pos.1 == 16 {
-                        from_pos = (from_pos.0 + 2, 0);
                     }
 
                     from_pos.1 = (from_pos.1 as u64).rem_euclid(8) as i64;
@@ -1089,8 +1087,10 @@ fn process_sequences<F: Field>(
                 });
 
                 // The maximum allowed accuracy log for literals length and match length tables is 9,
-                // and the maximum accuracy log for the offsets table is 8.
-                if row.5 >= 15 {
+                // This provision will produce a skipped byte row in only one scenario:
+                // The previous byte ended on the second last bit, and the subsequent read consumes 9 bits,
+                // which produces a range covering the second byte entirely, resulting in a nil row.
+                if (row.5 - row.3 + 1) > 8 && row.5 >= 15 {
                     last_row = witness_rows.last().cloned().unwrap();
                     let byte_value = src[start_offset + row.2];
 
@@ -1121,6 +1121,9 @@ fn process_sequences<F: Field>(
                             ..Default::default()
                         },
                         bitstream_read_data: BitstreamReadRow {
+                            // Deterministic start and end bit idx note:
+                            // There's only one scenario that can produce a nil row in the FSE table section.
+                            // This read operation must end on the last bit of the second byte.
                             bit_start_idx: 7,
                             bit_end_idx: 7,
                             bit_value: 0,
@@ -2065,36 +2068,36 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
 
     // witgen_debug
     // for (idx, row) in witness_rows.iter().enumerate() {
-    //     write!(
-    //         handle,
-    //         "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?
-    // };{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};
-    // {:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",         idx,
-    //         row.state.tag, row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
-    //         row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
-    //         row.state.is_tag_change, row.state.tag_rlc_acc,         row.encoded_data.byte_idx,
-    //         row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse,
-    //         row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1,
-    //         row.encoded_data.aux_2, row.encoded_data.value_rlc,
-    // row.decoded_data.decoded_len,         row.decoded_data.decoded_len_acc,
-    // row.decoded_data.total_decoded_len,         row.decoded_data.decoded_byte,
-    // row.decoded_data.decoded_value_rlc,         row.fse_data.table_kind,
-    // row.fse_data.table_size, row.fse_data.symbol,         row.fse_data.num_emitted,
-    // row.fse_data.value_decoded, row.fse_data.probability_acc,         row.fse_data.
-    // is_repeat_bits_loop, row.fse_data.is_trailing_bits,         row.bitstream_read_data.
-    // bit_start_idx,         row.bitstream_read_data.bit_end_idx,
-    // row.bitstream_read_data.bit_value,         row.bitstream_read_data.is_nil,
-    //         row.bitstream_read_data.is_zero_bit_read,
-    //         row.bitstream_read_data.is_seq_init,
-    //         row.bitstream_read_data.seq_idx,
-    //         row.bitstream_read_data.states,
-    //         row.bitstream_read_data.symbols,
-    //         row.bitstream_read_data.values,
-    //         row.bitstream_read_data.baseline,
-    //         row.bitstream_read_data.is_update_state,
-    //     ).unwrap();
-
-    //     writeln!(handle).unwrap();
+    //     if row.encoded_data.byte_idx >= 33860 && row.encoded_data.byte_idx <= 33870 {
+    //         write!(
+    //             handle,
+    //             "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",         idx,
+    //             row.state.tag, row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
+    //             row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
+    //             row.state.is_tag_change, row.state.tag_rlc_acc,         row.encoded_data.byte_idx,
+    //             row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse,
+    //             row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1,
+    //             row.encoded_data.aux_2, row.encoded_data.value_rlc,
+    //             row.decoded_data.decoded_len,         row.decoded_data.decoded_len_acc,
+    //             row.decoded_data.total_decoded_len,         row.decoded_data.decoded_byte,
+    //             row.decoded_data.decoded_value_rlc,         row.fse_data.table_kind,
+    //             row.fse_data.table_size, row.fse_data.symbol,         row.fse_data.num_emitted,
+    //             row.fse_data.value_decoded, row.fse_data.probability_acc,         row.fse_data.
+    //             is_repeat_bits_loop, row.fse_data.is_trailing_bits,         row.bitstream_read_data.
+    //             bit_start_idx,         row.bitstream_read_data.bit_end_idx,
+    //             row.bitstream_read_data.bit_value,         row.bitstream_read_data.is_nil,
+    //             row.bitstream_read_data.is_zero_bit_read,
+    //             row.bitstream_read_data.is_seq_init,
+    //             row.bitstream_read_data.seq_idx,
+    //             row.bitstream_read_data.states,
+    //             row.bitstream_read_data.symbols,
+    //             row.bitstream_read_data.values,
+    //             row.bitstream_read_data.baseline,
+    //             row.bitstream_read_data.is_update_state,
+    //         ).unwrap();
+    
+    //         writeln!(handle).unwrap();
+    //     }
     // }
 
     (
