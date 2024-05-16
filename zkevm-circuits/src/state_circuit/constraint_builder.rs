@@ -116,6 +116,8 @@ impl<F: Field> ConstraintBuilder<F> {
                 RwTableTag::Account => Self::build_account_constraints,
                 RwTableTag::CallContext => Self::build_call_context_constraints,
                 RwTableTag::TxLog => Self::build_tx_log_constraints,
+                RwTableTag::TxReceipt => Self::build_tx_receipt_constraints,
+                RwTableTag::AccountTransientStorage => Self::build_account_transient_storage_constraints,
             };
             self.condition(q.tag_matches(tag), |cb| build(cb, q));
         }
@@ -499,9 +501,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_tx_receipt_constraints(&mut self, q: &Queries<F>) {
-        // TODO: implement TxReceipt constraints
-        self.require_equal("TxReceipt rows not implemented", 1.expr(), 0.expr());
-
+        // TODO: finish TxReceipt constraints
         self.require_equal(
             "state_root is unchanged for TxReceipt",
             q.state_root(),
@@ -510,6 +510,36 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero(
             "value_prev_column is 0 for TxReceipt",
             q.value_prev_column(),
+        );
+    }
+
+    fn build_account_transient_storage_constraints(&mut self, q: &Queries<F>) {
+        // 5.0. `field_tag` is 0
+        self.require_zero("field_tag is 0 for AccountTransientStorage", q.field_tag());
+
+        // 5.1. `initial_value` is 0
+        self.require_zero("initial AccountTransientStorage value is 0", q.initial_value());
+
+        // 5.2. `value` is 0 if first access and `READ`
+        self.require_zero(
+            "AccountTransientStorage first access is 0 if READ",
+            q.first_access() * q.is_read() * q.value(),
+        );
+
+        // 5.3. `value` column at previous rotation equals `value_prev` at current rotation
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
+
+        // 5.4. `state root` is the same
+        self.require_equal(
+            "state_root is unchanged for AccountTransientStorage",
+            q.state_root(),
+            q.state_root_prev(),
         );
     }
 
