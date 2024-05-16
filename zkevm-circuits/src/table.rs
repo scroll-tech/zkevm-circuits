@@ -3258,7 +3258,7 @@ impl_expr!(BitwiseOp);
 
 /// Lookup table for bitwise AND/OR/XOR operations.
 #[derive(Clone, Copy, Debug)]
-pub struct BitwiseOpTable {
+pub struct BitwiseOpTable<const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize> {
     /// Denotes op: AND == 0, OR == 1, XOR == 2.
     pub op: Column<Fixed>,
     /// Denotes the left operand.
@@ -3269,7 +3269,9 @@ pub struct BitwiseOpTable {
     pub output: Column<Fixed>,
 }
 
-impl BitwiseOpTable {
+impl<const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize>
+    BitwiseOpTable<OP_CHOICE, RANGE_L, RANGE_R>
+{
     /// Construct the bitwise ops table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
@@ -3286,9 +3288,19 @@ impl BitwiseOpTable {
             || "BitwiseOp table",
             |mut region| {
                 let mut offset = 0;
-                for op in [BitwiseOp::AND /* , BitwiseOp::OR, BitwiseOp::XOR */] {
-                    for [lhs, rhs, out] in (0..256).flat_map(move |lhs| {
-                        (0..256).map(move |rhs| {
+                let chosen_ops = match OP_CHOICE {
+                    1 => vec![BitwiseOp::AND],
+                    2 => vec![BitwiseOp::OR],
+                    3 => vec![BitwiseOp::XOR],
+                    4 => vec![BitwiseOp::AND, BitwiseOp::OR],
+                    5 => vec![BitwiseOp::AND, BitwiseOp::XOR],
+                    6 => vec![BitwiseOp::OR, BitwiseOp::XOR],
+                    7 => vec![BitwiseOp::AND, BitwiseOp::OR, BitwiseOp::XOR],
+                    _ => unreachable!("OP_CHOICE in 1..=7"),
+                };
+                for op in chosen_ops {
+                    for [lhs, rhs, out] in (0..RANGE_L).flat_map(move |lhs| {
+                        (0..RANGE_R).map(move |rhs| {
                             [
                                 lhs,
                                 rhs,
@@ -3334,7 +3346,9 @@ impl BitwiseOpTable {
     }
 }
 
-impl<F: Field> LookupTable<F> for BitwiseOpTable {
+impl<F: Field, const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize> LookupTable<F>
+    for BitwiseOpTable<OP_CHOICE, RANGE_L, RANGE_R>
+{
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.op.into(),

@@ -43,7 +43,7 @@ use self::{
 use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
 
 #[derive(Clone, Debug)]
-pub struct DecoderConfig {
+pub struct DecoderConfig<const L: usize, const R: usize> {
     /// constant column required by SeqExecConfig.
     _const_col: Column<Fixed>,
     /// Fixed column to mark all the usable rows.
@@ -80,6 +80,8 @@ pub struct DecoderConfig {
     range8: RangeTable<8>,
     /// Range Table for [0, 16).
     range16: RangeTable<16>,
+    /// Range Table for [0, 512).
+    range512: RangeTable<512>,
     /// Power of 2 lookup table.
     pow2_table: Pow2Table<20>,
     /// Helper table for decoding the regenerated size from LiteralsHeader.
@@ -87,7 +89,7 @@ pub struct DecoderConfig {
     // /// Helper table for decoding bitstreams.
     bitstring_table: BitstringTable,
     /// Helper table for decoding FSE tables.
-    fse_table: FseTable,
+    fse_table: FseTable<L, R>,
 
     // witgen_debug
     /// Helper table for sequences as instructions.
@@ -940,7 +942,7 @@ pub struct AssignedDecoderConfigExports {
     pub decoded_len: AssignedCell<Fr, Fr>,
 }
 
-pub struct DecoderConfigArgs {
+pub struct DecoderConfigArgs<const L: usize, const R: usize> {
     /// Power of randomness table.
     pub pow_rand_table: PowOfRandTable,
     /// Power of 2 lookup table, up to exponent=20.
@@ -951,11 +953,13 @@ pub struct DecoderConfigArgs {
     pub range8: RangeTable<8>,
     /// Range table for lookup: [0, 16).
     pub range16: RangeTable<16>,
+    /// Range table for lookup: [0, 512).
+    pub range512: RangeTable<512>,
     /// Bitwise operation lookup table.
-    pub bitwise_op_table: BitwiseOpTable,
+    pub bitwise_op_table: BitwiseOpTable<1, L, R>,
 }
 
-impl DecoderConfig {
+impl<const L: usize, const R: usize> DecoderConfig<L, R> {
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         challenges: &Challenges<Expression<Fr>>,
@@ -965,8 +969,9 @@ impl DecoderConfig {
             u8_table,
             range8,
             range16,
+            range512,
             bitwise_op_table,
-        }: DecoderConfigArgs,
+        }: DecoderConfigArgs<L, R>,
     ) -> Self {
         // Fixed table
         let fixed_table = FixedTable::construct(meta);
@@ -987,6 +992,7 @@ impl DecoderConfig {
             &fixed_table,
             u8_table,
             range8,
+            range512,
             pow2_table,
             bitwise_op_table,
         );
@@ -1050,6 +1056,7 @@ impl DecoderConfig {
             sequences_data_decoder,
             range8,
             range16,
+            range512,
             pow2_table,
             literals_header_table,
             bitstring_table,
@@ -4126,6 +4133,7 @@ impl DecoderConfig {
         /////////////////////////////////////////
         self.range8.load(layouter)?;
         self.range16.load(layouter)?;
+        self.range512.load(layouter)?;
         self.fixed_table.load(layouter)?;
         self.pow2_table.load(layouter)?;
 
@@ -4866,17 +4874,17 @@ mod tests {
     };
 
     #[derive(Clone, Debug, Default)]
-    struct DecoderConfigTester {
+    struct DecoderConfigTester<const L: usize, const R: usize> {
         raw: Vec<u8>,
         compressed: Vec<u8>,
         k: u32,
     }
 
-    impl Circuit<Fr> for DecoderConfigTester {
+    impl<const L: usize, const R: usize> Circuit<Fr> for DecoderConfigTester<L, R> {
         type Config = (
-            DecoderConfig,
+            DecoderConfig<L, R>,
             U8Table,
-            BitwiseOpTable,
+            BitwiseOpTable<1, L, R>,
             PowOfRandTable,
             Challenges,
         );
@@ -4895,6 +4903,7 @@ mod tests {
             let u8_table = U8Table::construct(meta);
             let range8 = RangeTable::construct(meta);
             let range16 = RangeTable::construct(meta);
+            let range512 = RangeTable::construct(meta);
             let bitwise_op_table = BitwiseOpTable::construct(meta);
 
             let config = DecoderConfig::configure(
@@ -4906,6 +4915,7 @@ mod tests {
                     u8_table,
                     range8,
                     range16,
+                    range512,
                     bitwise_op_table,
                 },
             );
@@ -5051,14 +5061,15 @@ mod tests {
         };
 
         let k = 18;
-        let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
+        let decoder_config_tester: DecoderConfigTester<256, 256> =
+            DecoderConfigTester { raw, compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();
     }
 
     #[test]
     fn test_decoder_config_batch_data() -> Result<(), std::io::Error> {
-        let mut batch_files = fs::read_dir("./data")?
+        let mut batch_files = fs::read_dir("./data/test_batches")?
             .map(|entry| entry.map(|e| e.path()))
             .collect::<Result<Vec<_>, std::io::Error>>()?;
         batch_files.sort();
@@ -5114,7 +5125,79 @@ mod tests {
             raw.len()
         );
         let k = 18;
-        let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
+        let decoder_config_tester: DecoderConfigTester<256, 256> =
+            DecoderConfigTester { raw, compressed, k };
+        let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
+        mock_prover.assert_satisfied_par();
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decoder_config_blob() -> Result<(), std::io::Error> {
+        let mut blob_files = fs::read_dir("./data/test_blobs")?
+            .map(|entry| entry.map(|e| e.path()))
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
+        blob_files.sort();
+
+        // This blob data is of the form, with every 32-bytes chunk having its most-significant
+        // byte set to 0.
+        let blob_data = hex::decode(fs::read_to_string(&blob_files[0])?.trim_end())
+            .expect("failed to decode hex data");
+
+        let mut batch_data = Vec::with_capacity(31 * 4096);
+        for bytes32_chunk in blob_data.chunks(32) {
+            assert!(bytes32_chunk[0] == 0);
+            batch_data.extend_from_slice(&bytes32_chunk[1..])
+        }
+
+        let encoded_batch_data = {
+            // compression level = 0 defaults to using level=3, which is zstd's default.
+            let mut encoder =
+                zstd::stream::write::Encoder::new(Vec::new(), 0).expect("Encoder construction");
+
+            // disable compression of literals, i.e. literals will be raw bytes.
+            encoder
+                .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
+                    zstd::zstd_safe::ParamSwitch::Disable,
+                ))
+                .expect("Encoder set_parameter: LiteralCompressionMode");
+            // set target block size to fit within a single block.
+            encoder
+                .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
+                .expect("Encoder set_parameter: TargetCBlockSize");
+            // do not include the checksum at the end of the encoded data.
+            encoder
+                .include_checksum(false)
+                .expect("Encoder include_checksum: false");
+            // do not include magic bytes at the start of the frame since we will have a single
+            // frame.
+            encoder
+                .include_magicbytes(false)
+                .expect("Encoder include magicbytes: false");
+            // set source length, which will be reflected in the frame header.
+            encoder
+                .set_pledged_src_size(Some(batch_data.len() as u64))
+                .expect("Encoder src_size: raw.len()");
+            // include the content size to know at decode time the expected size of decoded data.
+            encoder
+                .include_contentsize(true)
+                .expect("Encoder include_contentsize: true");
+
+            encoder.write_all(&batch_data).expect("Encoder wirte_all");
+            encoder.finish().expect("Encoder success")
+        };
+
+        println!("len(blob_data)          = {:6}", blob_data.len());
+        println!("len(batch_data)         = {:6}", batch_data.len());
+        println!("len(encoded_batch_data) = {:6}", encoded_batch_data.len());
+
+        let k = 20;
+        let decoder_config_tester: DecoderConfigTester<1024, 512> = DecoderConfigTester {
+            raw: batch_data,
+            compressed: encoded_batch_data,
+            k,
+        };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();
 

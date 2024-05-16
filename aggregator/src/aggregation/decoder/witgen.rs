@@ -850,7 +850,7 @@ fn process_sequences<F: Field>(
                     from_pos = if next_symbol == -1 { (1, -1) } else { to_pos };
 
                     from_pos.1 += 1;
-                    if from_pos.1 == 8 {
+                    if from_pos.1 == 8 || from_pos.1 == 16 {
                         from_pos = (from_pos.0 + 1, 0);
                     }
 
@@ -859,7 +859,7 @@ fn process_sequences<F: Field>(
                     while from_pos.0 > last_byte_idx {
                         current_tag_value_acc = tag_value_iter.next().unwrap();
                         current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
-                        last_byte_idx = from_pos.0;
+                        last_byte_idx += 1;
                     }
 
                     let to_byte_idx = (bit_idx - 1) / 8;
@@ -1075,8 +1075,79 @@ fn process_sequences<F: Field>(
                         is_trailing_bits: row.14,
                     },
                 });
+
+                // The maximum allowed accuracy log for literals length and match length tables is
+                // 9, This provision will produce a skipped byte row in only one
+                // scenario: The previous byte ended on the second last bit, and the
+                // subsequent read consumes 9 bits, which produces a range covering
+                // the second byte entirely, resulting in a nil row.
+                if (row.5 - row.3 + 1) > 8 && row.5 >= 15 {
+                    last_row = witness_rows.last().cloned().unwrap();
+                    let byte_value = src[start_offset + row.2];
+
+                    witness_rows.push(ZstdWitnessRow {
+                        state: ZstdState {
+                            tag: ZstdTag::ZstdBlockSequenceFseCode,
+                            tag_next: if is_fse_section_end {
+                                ZstdTag::ZstdBlockSequenceData
+                            } else {
+                                ZstdTag::ZstdBlockSequenceFseCode
+                            },
+                            block_idx,
+                            max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceFseCode),
+                            tag_len,
+                            tag_idx: (row.2 + 1) as u64,
+                            tag_value,
+                            tag_value_acc: row.8 * randomness
+                                + Value::known(F::from(byte_value as u64)),
+                            is_tag_change: false,
+                            tag_rlc,
+                            tag_rlc_acc: row.9 * randomness
+                                + Value::known(F::from(byte_value as u64)),
+                        },
+                        encoded_data: EncodedData {
+                            byte_idx: (start_offset + row.2 + 1) as u64,
+                            encoded_len,
+                            value_byte: byte_value,
+                            value_rlc,
+                            reverse: false,
+                            ..Default::default()
+                        },
+                        bitstream_read_data: BitstreamReadRow {
+                            // Deterministic start and end bit idx note:
+                            // There's only one scenario that can produce a nil row in the FSE table
+                            // section. This read operation must end on
+                            // the last bit of the second byte.
+                            bit_start_idx: 7,
+                            bit_end_idx: 7,
+                            bit_value: 0,
+                            is_zero_bit_read: false,
+                            is_nil: true,
+                            is_update_state: 0u64,
+                            ..Default::default()
+                        },
+                        decoded_data: DecodedData {
+                            decoded_len: last_row.decoded_data.decoded_len,
+                            decoded_len_acc: last_row.decoded_data.decoded_len_acc,
+                            total_decoded_len: last_row.decoded_data.total_decoded_len,
+                            decoded_byte: 0u8,
+                            decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
+                        },
+                        fse_data: FseDecodingRow {
+                            table_kind: row.11,
+                            table_size: row.12,
+                            symbol: row.0,
+                            num_emitted: row.1 as u64,
+                            value_decoded: row.7,
+                            probability_acc: row.10 as u64,
+                            is_repeat_bits_loop: false,
+                            is_trailing_bits: row.14,
+                        },
+                    })
+                }
+
+                last_row = witness_rows.last().cloned().unwrap();
             }
-            last_row = witness_rows.last().cloned().unwrap();
         }
     }
 
@@ -1532,7 +1603,7 @@ fn process_sequences<F: Field>(
                         ],
                         baseline: curr_baseline as u64,
                         is_nil: true,
-                        is_update_state: 0u64,
+                        is_update_state: (current_decoding_state >= 3) as u64,
                     },
                     decoded_data: last_row.decoded_data.clone(),
                     fse_data: FseDecodingRow {
@@ -1631,8 +1702,8 @@ fn process_sequences<F: Field>(
         } else {
             let repeat_idx = inst.0;
             if inst.2 == 0 {
-                if repeat_idx > 3 {
-                    repeated_offset[1] - 1
+                if repeat_idx == 3 {
+                    repeated_offset[0] - 1
                 } else {
                     repeated_offset[repeat_idx]
                 }
@@ -1693,7 +1764,7 @@ fn process_sequences<F: Field>(
     let mut seq_exec_info: Vec<SequenceExec> = vec![];
     let mut current_literal_pos: usize = 0;
 
-    for inst in address_table_rows.clone() {
+    for inst in address_table_rows.iter() {
         let new_literal_pos = current_literal_pos + (inst.literal_length as usize);
         if new_literal_pos > current_literal_pos {
             let r = current_literal_pos..new_literal_pos;
@@ -1813,7 +1884,6 @@ fn process_block_zstd_literals_header<F: Field>(
     let regen_size = le_bits_to_value(&sizing_bits[0..n_bits_regen]);
     let compressed_size =
         le_bits_to_value(&sizing_bits[n_bits_regen..(n_bits_regen + n_bits_compressed)]);
-
     let tag_next = match literals_block_type {
         BlockType::RawBlock => ZstdTag::ZstdBlockLiteralsRawBytes,
         _ => unreachable!("BlockType::* unexpected. Must be raw bytes for literals."),
@@ -1987,36 +2057,40 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
 
     // witgen_debug
     // for (idx, row) in witness_rows.iter().enumerate() {
-    //     write!(
-    //         handle,
-    //         "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?
-    // };{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};
-    // {:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",         idx,
-    //         row.state.tag, row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
-    //         row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
-    //         row.state.is_tag_change, row.state.tag_rlc_acc,         row.encoded_data.byte_idx,
-    //         row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse,
-    //         row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1,
-    //         row.encoded_data.aux_2, row.encoded_data.value_rlc,
-    // row.decoded_data.decoded_len,         row.decoded_data.decoded_len_acc,
-    // row.decoded_data.total_decoded_len,         row.decoded_data.decoded_byte,
-    // row.decoded_data.decoded_value_rlc,         row.fse_data.table_kind,
-    // row.fse_data.table_size, row.fse_data.symbol,         row.fse_data.num_emitted,
-    // row.fse_data.value_decoded, row.fse_data.probability_acc,         row.fse_data.
-    // is_repeat_bits_loop, row.fse_data.is_trailing_bits,         row.bitstream_read_data.
-    // bit_start_idx,         row.bitstream_read_data.bit_end_idx,
-    // row.bitstream_read_data.bit_value,         row.bitstream_read_data.is_nil,
-    //         row.bitstream_read_data.is_zero_bit_read,
-    //         row.bitstream_read_data.is_seq_init,
-    //         row.bitstream_read_data.seq_idx,
-    //         row.bitstream_read_data.states,
-    //         row.bitstream_read_data.symbols,
-    //         row.bitstream_read_data.values,
-    //         row.bitstream_read_data.baseline,
-    //         row.bitstream_read_data.is_update_state,
-    //     ).unwrap();
+    //     if row.encoded_data.byte_idx >= 33860 && row.encoded_data.byte_idx <= 33870 {
+    //         write!(
+    //             handle,
+    //
+    // "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:
+    // ?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};
+    // {:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",         idx,             row.state.tag,
+    // row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
+    // row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
+    //             row.state.is_tag_change, row.state.tag_rlc_acc,
+    // row.encoded_data.byte_idx,             row.encoded_data.encoded_len,
+    // row.encoded_data.value_byte, row.encoded_data.reverse,
+    // row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1,
+    //             row.encoded_data.aux_2, row.encoded_data.value_rlc,
+    //             row.decoded_data.decoded_len,         row.decoded_data.decoded_len_acc,
+    //             row.decoded_data.total_decoded_len,         row.decoded_data.decoded_byte,
+    //             row.decoded_data.decoded_value_rlc,         row.fse_data.table_kind,
+    //             row.fse_data.table_size, row.fse_data.symbol,         row.fse_data.num_emitted,
+    //             row.fse_data.value_decoded, row.fse_data.probability_acc,         row.fse_data.
+    //             is_repeat_bits_loop, row.fse_data.is_trailing_bits,
+    // row.bitstream_read_data.             bit_start_idx,
+    // row.bitstream_read_data.bit_end_idx,             row.bitstream_read_data.bit_value,
+    // row.bitstream_read_data.is_nil,             row.bitstream_read_data.is_zero_bit_read,
+    //             row.bitstream_read_data.is_seq_init,
+    //             row.bitstream_read_data.seq_idx,
+    //             row.bitstream_read_data.states,
+    //             row.bitstream_read_data.symbols,
+    //             row.bitstream_read_data.values,
+    //             row.bitstream_read_data.baseline,
+    //             row.bitstream_read_data.is_update_state,
+    //         ).unwrap();
 
-    //     writeln!(handle).unwrap();
+    //         writeln!(handle).unwrap();
+    //     }
     // }
 
     (
@@ -2129,7 +2203,7 @@ mod tests {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
 
-        let mut batch_files = fs::read_dir("./data")?
+        let mut batch_files = fs::read_dir("./data/test_batches")?
             .map(|entry| entry.map(|e| e.path()))
             .collect::<Result<Vec<_>, std::io::Error>>()?;
         batch_files.sort();
