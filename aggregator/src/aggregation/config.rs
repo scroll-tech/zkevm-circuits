@@ -130,6 +130,7 @@ impl AggregationConfig {
         let pow2_table = Pow2Table::construct(meta);
         let range8 = RangeTable::construct(meta);
         let range16 = RangeTable::construct(meta);
+        let range512 = RangeTable::construct(meta);
         let bitwise_op_table = BitwiseOpTable::construct(meta);
         let decoder_config = DecoderConfig::configure(
             meta,
@@ -140,6 +141,7 @@ impl AggregationConfig {
                 u8_table,
                 range8,
                 range16,
+                range512,
                 bitwise_op_table,
             },
         );

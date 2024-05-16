@@ -132,12 +132,14 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
         fixed_table: &FixedTable,
         u8_table: U8Table,
         range8_table: RangeTable<8>,
+        range512_table: RangeTable<512>,
         pow2_table: Pow2Table<20>,
         bitwise_op_table: BitwiseOpTable<1, L, R>,
     ) -> Self {
         // Auxiliary table to validate that (baseline, nb) were assigned correctly to the states
         // allocated to a symbol.
-        let sorted_table = FseSortedStatesTable::configure(meta, q_enable, pow2_table, u8_table);
+        let sorted_table =
+            FseSortedStatesTable::configure(meta, q_enable, pow2_table, u8_table, range512_table);
 
         let config = Self {
             sorted_table,
@@ -1352,6 +1354,7 @@ impl FseSortedStatesTable {
         q_enable: Column<Fixed>,
         pow2_table: Pow2Table<20>,
         u8_table: U8Table,
+        range512_table: RangeTable<512>,
     ) -> Self {
         let (is_padding, baseline) = (meta.advice_column(), meta.advice_column());
 
@@ -1522,7 +1525,7 @@ impl FseSortedStatesTable {
                 );
                 let delta = state_curr - state_prev - 1.expr();
 
-                vec![(condition * delta, u8_table.into())]
+                vec![(condition * delta, range512_table.into())]
             },
         );
 

@@ -80,6 +80,8 @@ pub struct DecoderConfig<const L: usize, const R: usize> {
     range8: RangeTable<8>,
     /// Range Table for [0, 16).
     range16: RangeTable<16>,
+    /// Range Table for [0, 512).
+    range512: RangeTable<512>,
     /// Power of 2 lookup table.
     pow2_table: Pow2Table<20>,
     /// Helper table for decoding the regenerated size from LiteralsHeader.
@@ -951,6 +953,8 @@ pub struct DecoderConfigArgs<const L: usize, const R: usize> {
     pub range8: RangeTable<8>,
     /// Range table for lookup: [0, 16).
     pub range16: RangeTable<16>,
+    /// Range table for lookup: [0, 512).
+    pub range512: RangeTable<512>,
     /// Bitwise operation lookup table.
     pub bitwise_op_table: BitwiseOpTable<1, L, R>,
 }
@@ -965,6 +969,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             u8_table,
             range8,
             range16,
+            range512,
             bitwise_op_table,
         }: DecoderConfigArgs<L, R>,
     ) -> Self {
@@ -987,6 +992,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             &fixed_table,
             u8_table,
             range8,
+            range512,
             pow2_table,
             bitwise_op_table,
         );
@@ -1050,6 +1056,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             sequences_data_decoder,
             range8,
             range16,
+            range512,
             pow2_table,
             literals_header_table,
             bitstring_table,
@@ -4126,6 +4133,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         /////////////////////////////////////////
         self.range8.load(layouter)?;
         self.range16.load(layouter)?;
+        self.range512.load(layouter)?;
         self.fixed_table.load(layouter)?;
         self.pow2_table.load(layouter)?;
 
@@ -4895,6 +4903,7 @@ mod tests {
             let u8_table = U8Table::construct(meta);
             let range8 = RangeTable::construct(meta);
             let range16 = RangeTable::construct(meta);
+            let range512 = RangeTable::construct(meta);
             let bitwise_op_table = BitwiseOpTable::construct(meta);
 
             let config = DecoderConfig::configure(
@@ -4906,6 +4915,7 @@ mod tests {
                     u8_table,
                     range8,
                     range16,
+                    range512,
                     bitwise_op_table,
                 },
             );
@@ -5132,7 +5142,7 @@ mod tests {
 
         // This blob data is of the form, with every 32-bytes chunk having its most-significant
         // byte set to 0.
-        let blob_data = hex::decode(fs::read_to_string(&blob_files[2])?.trim_end())
+        let blob_data = hex::decode(fs::read_to_string(&blob_files[0])?.trim_end())
             .expect("failed to decode hex data");
 
         let mut batch_data = Vec::with_capacity(31 * 4096);
