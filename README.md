@@ -15,7 +15,7 @@ There are currently several benchmarks to run in the workspace in regards to the
 All use the `DEGREE` env var to specify the degree of the `K` parameter that you want 
 to use for your circuit in the bench process.
 -   Keccak Circuit prover benches. -> `DEGREE=16 make packed_multi_keccak_bench`
--   EVM Circuit prover benches. -> `DEGREE=18 make evm_bench`.
+-   EVM Circuit prover benches. -> `DEGREE=18 make evm_bench`
 -   State Circuit prover benches. -> `DEGREE=18 make state_bench`
 
 You can also run all benchmarks by running: `make circuit_benches DEGREE=18`.
@@ -37,7 +37,7 @@ This repository contains several Rust packages that implement the zkevm. The hig
 
 [`bus-mapping`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/bus-mapping)
 
-- a crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof.
+- A crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof
 
 [`circuit-benchmarks`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/circuit-benchmarks)
 
@@ -53,7 +53,7 @@ This repository contains several Rust packages that implement the zkevm. The hig
 
 [`gadgets`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/gadgets)
 
-- Custom circuits that abstracts away low-level circuit detail.
+- Custom circuits that abstracts away low-level circuit detail
 - [What are gadgets?](https://zcash.github.io/halo2/concepts/gadgets.html)
 
 [`geth-utils`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/geth-utils)
