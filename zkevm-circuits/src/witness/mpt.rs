@@ -286,21 +286,12 @@ impl MptUpdates {
                 MptUpdate::from_rows(key, rows, i, rows_len, old_root, new_root)
             })
             .collect();
-        let mpt_updates = MptUpdates {
+        MptUpdates {
             old_root,
             new_root,
             updates,
             ..Default::default()
-        };
-        // FIXME: we can remove this assert after the code runs a while and everything is ok?
-        #[cfg(debug_assertions)]
-        {
-            let mut rows = rows.to_vec();
-            rows.sort_by_key(Rw::as_key);
-            let old_updates = Self::from_rws_with_mock_state_roots(&rows, old_root, new_root);
-            assert_eq!(old_updates.updates, mpt_updates.updates);
         }
-        mpt_updates
     }
 
     pub(crate) fn from_rws_with_mock_state_roots(
