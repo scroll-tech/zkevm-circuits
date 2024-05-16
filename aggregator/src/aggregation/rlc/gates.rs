@@ -7,6 +7,7 @@ use halo2_proofs::{
 };
 use zkevm_circuits::util::Challenges;
 
+// TODO: remove MAX_AGG_SNARKS and make this generic over N_SNARKS
 use crate::{constants::LOG_DEGREE, util::assert_equal, DIGEST_LEN, MAX_AGG_SNARKS};
 
 use super::RlcConfig;
