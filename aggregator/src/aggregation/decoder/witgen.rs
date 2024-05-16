@@ -862,6 +862,8 @@ fn process_sequences<F: Field>(
                     from_pos.1 += 1;
                     if from_pos.1 == 8 {
                         from_pos = (from_pos.0 + 1, 0);
+                    } else if from_pos.1 == 16 {
+                        from_pos = (from_pos.0 + 2, 0);
                     }
 
                     from_pos.1 = (from_pos.1 as u64).rem_euclid(8) as i64;
@@ -869,7 +871,7 @@ fn process_sequences<F: Field>(
                     while from_pos.0 > last_byte_idx {
                         current_tag_value_acc = tag_value_iter.next().unwrap();
                         current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
-                        last_byte_idx = from_pos.0;
+                        last_byte_idx += 1;
                     }
 
                     let to_byte_idx = (bit_idx - 1) / 8;
@@ -1085,8 +1087,70 @@ fn process_sequences<F: Field>(
                         is_trailing_bits: row.14,
                     },
                 });
+
+                // The maximum allowed accuracy log for literals length and match length tables is 9,
+                // and the maximum accuracy log for the offsets table is 8.
+                if row.5 >= 15 {
+                    last_row = witness_rows.last().cloned().unwrap();
+                    let byte_value = src[start_offset + row.2];
+
+                    witness_rows.push(ZstdWitnessRow {
+                        state: ZstdState {
+                            tag: ZstdTag::ZstdBlockSequenceFseCode,
+                            tag_next: if is_fse_section_end {
+                                ZstdTag::ZstdBlockSequenceData
+                            } else {
+                                ZstdTag::ZstdBlockSequenceFseCode
+                            },
+                            block_idx,
+                            max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceFseCode),
+                            tag_len,
+                            tag_idx: (row.2 + 1) as u64,
+                            tag_value,
+                            tag_value_acc: row.8 * randomness + Value::known(F::from(byte_value as u64)),
+                            is_tag_change: false,
+                            tag_rlc,
+                            tag_rlc_acc: row.9 * randomness + Value::known(F::from(byte_value as u64)),
+                        },
+                        encoded_data: EncodedData {
+                            byte_idx: (start_offset + row.2 + 1) as u64,
+                            encoded_len,
+                            value_byte: byte_value,
+                            value_rlc,
+                            reverse: false,
+                            ..Default::default()
+                        },
+                        bitstream_read_data: BitstreamReadRow {
+                            bit_start_idx: 7,
+                            bit_end_idx: 7,
+                            bit_value: 0,
+                            is_zero_bit_read: false,
+                            is_nil: true,
+                            is_update_state: 0u64,
+                            ..Default::default()
+                        },
+                        decoded_data: DecodedData {
+                            decoded_len: last_row.decoded_data.decoded_len,
+                            decoded_len_acc: last_row.decoded_data.decoded_len_acc,
+                            total_decoded_len: last_row.decoded_data.total_decoded_len,
+                            decoded_byte: 0u8,
+                            decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
+                        },
+                        fse_data: FseDecodingRow {
+                            table_kind: row.11,
+                            table_size: row.12,
+                            symbol: row.0,
+                            num_emitted: row.1 as u64,
+                            value_decoded: row.7,
+                            probability_acc: row.10 as u64,
+                            is_repeat_bits_loop: false,
+                            is_trailing_bits: row.14,
+                        },
+                    })
+                }
+
+                last_row = witness_rows.last().cloned().unwrap();
             }
-            last_row = witness_rows.last().cloned().unwrap();
         }
     }
 
