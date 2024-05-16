@@ -83,6 +83,7 @@ fn process_frame_header<F: Field>(
             _ => fcs,
         }
     };
+    println!("frame content size = {:?}", fcs);
     let fcs_tag_value_iter = fcs_bytes
         .iter()
         .scan(Value::known(F::zero()), |acc, &byte| {
@@ -222,6 +223,7 @@ fn process_block<F: Field>(
 
     let (byte_offset, rows, block_info) =
         process_block_header(src, block_idx, byte_offset, last_row, randomness);
+    println!("processing block {:2} (is_last? {:5})", block_idx, block_info.is_last_block);
     witness_rows.extend_from_slice(&rows);
 
     let last_row = rows.last().expect("last row expected to exist");
@@ -610,6 +612,8 @@ fn process_sequences<F: Field>(
     let offsets_mode = mode_bits[4] + mode_bits[5] * 2;
     let match_lengths_mode = mode_bits[2] + mode_bits[3] * 2;
     let reserved = mode_bits[0] + mode_bits[1] * 2;
+
+    println!("block {:2} has num-seq = {:4}, modes = ({}, {}, {})", block_idx, num_of_sequences, literal_lengths_mode, offsets_mode, match_lengths_mode);
 
     assert!(reserved == 0, "Reserved bits must be 0");
 
@@ -1693,7 +1697,12 @@ fn process_sequences<F: Field>(
     let mut seq_exec_info: Vec<SequenceExec> = vec![];
     let mut current_literal_pos: usize = 0;
 
-    for inst in address_table_rows.clone() {
+    println!("start recovering");
+    for (i, inst) in address_table_rows.iter().enumerate() {
+        if i == 428 {
+            println!("instruction {:4} = {:#?}", i, inst);
+            println!("i = {}, len(recovered_inputs) = {:?}", i, recovered_inputs.len());
+        }
         let new_literal_pos = current_literal_pos + (inst.literal_length as usize);
         if new_literal_pos > current_literal_pos {
             let r = current_literal_pos..new_literal_pos;
@@ -1813,6 +1822,7 @@ fn process_block_zstd_literals_header<F: Field>(
     let regen_size = le_bits_to_value(&sizing_bits[0..n_bits_regen]);
     let compressed_size =
         le_bits_to_value(&sizing_bits[n_bits_regen..(n_bits_regen + n_bits_compressed)]);
+    println!("block {:2} with raw literals size = {:?}", block_idx, regen_size);
 
     let tag_next = match literals_block_type {
         BlockType::RawBlock => ZstdTag::ZstdBlockLiteralsRawBytes,
