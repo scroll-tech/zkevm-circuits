@@ -2129,7 +2129,7 @@ mod tests {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
 
-        let mut batch_files = fs::read_dir("./data")?
+        let mut batch_files = fs::read_dir("./data/test_batches")?
             .map(|entry| entry.map(|e| e.path()))
             .collect::<Result<Vec<_>, std::io::Error>>()?;
         batch_files.sort();

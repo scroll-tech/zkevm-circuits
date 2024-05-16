@@ -5058,7 +5058,7 @@ mod tests {
 
     #[test]
     fn test_decoder_config_batch_data() -> Result<(), std::io::Error> {
-        let mut batch_files = fs::read_dir("./data")?
+        let mut batch_files = fs::read_dir("./data/test_batches")?
             .map(|entry| entry.map(|e| e.path()))
             .collect::<Result<Vec<_>, std::io::Error>>()?;
         batch_files.sort();
@@ -5115,6 +5115,77 @@ mod tests {
         );
         let k = 18;
         let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
+        let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
+        mock_prover.assert_satisfied_par();
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decoder_config_blob() -> Result<(), std::io::Error> {
+        let mut blob_files = fs::read_dir("./data/test_blobs")?
+            .map(|entry| entry.map(|e| e.path()))
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
+        blob_files.sort();
+
+        // This blob data is of the form, with every 32-bytes chunk having its most-significant
+        // byte set to 0.
+        let blob_data = hex::decode(fs::read_to_string(&blob_files[0])?.trim_end())
+            .expect("failed to decode hex data");
+
+        let mut batch_data = Vec::with_capacity(31 * 4096);
+        for bytes32_chunk in blob_data.chunks(32) {
+            assert!(bytes32_chunk[0] == 0);
+            batch_data.extend_from_slice(&bytes32_chunk[1..])
+        }
+
+        let encoded_batch_data = {
+            // compression level = 0 defaults to using level=3, which is zstd's default.
+            let mut encoder =
+                zstd::stream::write::Encoder::new(Vec::new(), 0).expect("Encoder construction");
+
+            // disable compression of literals, i.e. literals will be raw bytes.
+            encoder
+                .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
+                    zstd::zstd_safe::ParamSwitch::Disable,
+                ))
+                .expect("Encoder set_parameter: LiteralCompressionMode");
+            // set target block size to fit within a single block.
+            encoder
+                .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
+                .expect("Encoder set_parameter: TargetCBlockSize");
+            // do not include the checksum at the end of the encoded data.
+            encoder
+                .include_checksum(false)
+                .expect("Encoder include_checksum: false");
+            // do not include magic bytes at the start of the frame since we will have a single
+            // frame.
+            encoder
+                .include_magicbytes(false)
+                .expect("Encoder include magicbytes: false");
+            // set source length, which will be reflected in the frame header.
+            encoder
+                .set_pledged_src_size(Some(batch_data.len() as u64))
+                .expect("Encoder src_size: raw.len()");
+            // include the content size to know at decode time the expected size of decoded data.
+            encoder
+                .include_contentsize(true)
+                .expect("Encoder include_contentsize: true");
+
+            encoder.write_all(&batch_data).expect("Encoder wirte_all");
+            encoder.finish().expect("Encoder success")
+        };
+
+        println!("len(blob_data)          = {:6}", blob_data.len());
+        println!("len(batch_data)         = {:6}", batch_data.len());
+        println!("len(encoded_batch_data) = {:6}", encoded_batch_data.len());
+
+        let k = 20;
+        let decoder_config_tester = DecoderConfigTester {
+            raw: batch_data,
+            compressed: encoded_batch_data,
+            k,
+        };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();
 
