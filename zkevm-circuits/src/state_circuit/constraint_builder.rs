@@ -98,37 +98,27 @@ impl<F: Field> ConstraintBuilder<F> {
 
     pub fn build(&mut self, q: &Queries<F>) {
         self.build_general_constraints(q);
-        self.condition(q.tag_matches(RwTableTag::Start), |cb| {
-            cb.build_start_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
-            cb.build_memory_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
-            cb.build_stack_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
-            cb.build_account_storage_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
-            cb.build_tx_access_list_account_constraints(q)
-        });
-        self.condition(
-            q.tag_matches(RwTableTag::TxAccessListAccountStorage),
-            |cb| cb.build_tx_access_list_account_storage_constraints(q),
-        );
-        self.condition(q.tag_matches(RwTableTag::TxRefund), |cb| {
-            cb.build_tx_refund_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::Account), |cb| {
-            cb.build_account_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
-            cb.build_call_context_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
-            cb.build_tx_log_constraints(q)
-        });
+        self.build_conditional_constraints(q);
+    }
+
+    fn build_conditional_constraints(&mut self, q: &Queries<F>) {
+        for tag in RwTableTag::iter() {
+            let build = match tag {
+                RwTableTag::Start => Self::build_start_constraints,
+                RwTableTag::Memory => Self::build_memory_constraints,
+                RwTableTag::Stack => Self::build_stack_constraints,
+                RwTableTag::AccountStorage => Self::build_account_storage_constraints,
+                RwTableTag::TxAccessListAccount => Self::build_tx_access_list_account_constraints,
+                RwTableTag::TxAccessListAccountStorage => {
+                    Self::build_tx_access_list_account_storage_constraints
+                }
+                RwTableTag::TxRefund => Self::build_tx_refund_constraints,
+                RwTableTag::Account => Self::build_account_constraints,
+                RwTableTag::CallContext => Self::build_call_context_constraints,
+                RwTableTag::TxLog => Self::build_tx_log_constraints,
+            };
+            self.condition(q.tag_matches(tag), |cb| build(cb, q));
+        }
     }
 
     fn build_general_constraints(&mut self, q: &Queries<F>) {
