@@ -43,7 +43,7 @@ use self::{
 use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
 
 #[derive(Clone, Debug)]
-pub struct DecoderConfig {
+pub struct DecoderConfig<const L: usize, const R: usize> {
     /// constant column required by SeqExecConfig.
     _const_col: Column<Fixed>,
     /// Fixed column to mark all the usable rows.
@@ -87,7 +87,7 @@ pub struct DecoderConfig {
     // /// Helper table for decoding bitstreams.
     bitstring_table: BitstringTable,
     /// Helper table for decoding FSE tables.
-    fse_table: FseTable,
+    fse_table: FseTable<L, R>,
 
     // witgen_debug
     /// Helper table for sequences as instructions.
@@ -940,7 +940,7 @@ pub struct AssignedDecoderConfigExports {
     pub decoded_len: AssignedCell<Fr, Fr>,
 }
 
-pub struct DecoderConfigArgs {
+pub struct DecoderConfigArgs<const L: usize, const R: usize> {
     /// Power of randomness table.
     pub pow_rand_table: PowOfRandTable,
     /// Power of 2 lookup table, up to exponent=20.
@@ -952,10 +952,10 @@ pub struct DecoderConfigArgs {
     /// Range table for lookup: [0, 16).
     pub range16: RangeTable<16>,
     /// Bitwise operation lookup table.
-    pub bitwise_op_table: BitwiseOpTable,
+    pub bitwise_op_table: BitwiseOpTable<1, L, R>,
 }
 
-impl DecoderConfig {
+impl<const L: usize, const R: usize> DecoderConfig<L, R> {
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         challenges: &Challenges<Expression<Fr>>,
@@ -966,7 +966,7 @@ impl DecoderConfig {
             range8,
             range16,
             bitwise_op_table,
-        }: DecoderConfigArgs,
+        }: DecoderConfigArgs<L, R>,
     ) -> Self {
         // Fixed table
         let fixed_table = FixedTable::construct(meta);
@@ -4866,17 +4866,17 @@ mod tests {
     };
 
     #[derive(Clone, Debug, Default)]
-    struct DecoderConfigTester {
+    struct DecoderConfigTester<const L: usize, const R: usize> {
         raw: Vec<u8>,
         compressed: Vec<u8>,
         k: u32,
     }
 
-    impl Circuit<Fr> for DecoderConfigTester {
+    impl<const L: usize, const R: usize> Circuit<Fr> for DecoderConfigTester<L, R> {
         type Config = (
-            DecoderConfig,
+            DecoderConfig<L, R>,
             U8Table,
-            BitwiseOpTable,
+            BitwiseOpTable<1, L, R>,
             PowOfRandTable,
             Challenges,
         );
@@ -5051,7 +5051,8 @@ mod tests {
         };
 
         let k = 18;
-        let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
+        let decoder_config_tester: DecoderConfigTester<256, 256> =
+            DecoderConfigTester { raw, compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();
     }
@@ -5114,7 +5115,8 @@ mod tests {
             raw.len()
         );
         let k = 18;
-        let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
+        let decoder_config_tester: DecoderConfigTester<256, 256> =
+            DecoderConfigTester { raw, compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();
         mock_prover.assert_satisfied_par();
 
@@ -5181,7 +5183,7 @@ mod tests {
         println!("len(encoded_batch_data) = {:6}", encoded_batch_data.len());
 
         let k = 20;
-        let decoder_config_tester = DecoderConfigTester {
+        let decoder_config_tester: DecoderConfigTester<1024, 512> = DecoderConfigTester {
             raw: batch_data,
             compressed: encoded_batch_data,
             k,

@@ -39,7 +39,7 @@ pub struct AggregationConfig {
     /// The batch data's config.
     pub batch_data_config: BatchDataConfig,
     /// The zstd decoder's config.
-    pub decoder_config: DecoderConfig,
+    pub decoder_config: DecoderConfig<1024, 512>,
     /// Config to do the barycentric evaluation on blob polynomial.
     pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores

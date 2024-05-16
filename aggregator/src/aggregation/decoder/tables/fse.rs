@@ -83,7 +83,7 @@ use crate::aggregation::decoder::{
 ///
 /// [doclink]: https://nigeltao.github.io/blog/2022/zstandard-part-5-fse.html#fse-reconstruction
 #[derive(Clone, Debug)]
-pub struct FseTable {
+pub struct FseTable<const L: usize, const R: usize> {
     /// The helper table to validate that the (baseline, nb) were assigned correctly to each state.
     sorted_table: FseSortedStatesTable,
     /// A boolean to mark whether this row represents a symbol with probability "less than 1".
@@ -124,7 +124,7 @@ pub struct FseTable {
     nb: Column<Advice>,
 }
 
-impl FseTable {
+impl<const L: usize, const R: usize> FseTable<L, R> {
     /// Configure the FSE table.
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
@@ -133,7 +133,7 @@ impl FseTable {
         u8_table: U8Table,
         range8_table: RangeTable<8>,
         pow2_table: Pow2Table<20>,
-        bitwise_op_table: BitwiseOpTable,
+        bitwise_op_table: BitwiseOpTable<1, L, R>,
     ) -> Self {
         // Auxiliary table to validate that (baseline, nb) were assigned correctly to the states
         // allocated to a symbol.
@@ -1201,7 +1201,7 @@ impl FseTable {
     }
 }
 
-impl FseTable {
+impl<const L: usize, const R: usize> FseTable<L, R> {
     /// Lookup table expressions for (state, symbol, baseline, nb) tuple check.
     ///
     /// This check can be done on any row within the FSE table.
