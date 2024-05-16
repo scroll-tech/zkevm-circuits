@@ -12,10 +12,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use tables::SeqInstTable;
 use witgen::{SequenceExec, SequenceExecInfo, SequenceInfo, ZstdTag};
-use zkevm_circuits::{
-    evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    util::Challenges,
-};
+use zkevm_circuits::evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon};
 
 /// TODO: This is in fact part of the `BlockConfig` in
 /// Decoder, we can use BlockConfig if it is decoupled
@@ -296,7 +293,7 @@ impl<F: Field> SeqExecConfig<F> {
     /// the maxium rotation is prev(2), next(1)
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        challenges: &Challenges<Expression<F>>,
+        challenges: Expression<F>,
         literal_table: &LiteralTable,
         inst_table: &SeqInstTable<F>,
         seq_config: &SequenceConfig,
@@ -545,7 +542,7 @@ impl<F: Field> SeqExecConfig<F> {
                 decoded_rlc_prev.expr()
                     * select::expr(
                         decoded_len.expr() - decoded_len_prev.expr(),
-                        challenges.evm_word(),
+                        challenges,
                         1.expr(),
                     )
                     + decoded_byte.expr(),
@@ -950,7 +947,7 @@ impl<F: Field> SeqExecConfig<F> {
     pub fn assign<'a>(
         &self,
         layouter: &mut impl Layouter<F>,
-        chng: &Challenges<Value<F>>,
+        chng: Value<F>,
         // per-block inputs: (literal, seq_info, seq_exec_trace)
         per_blk_inputs: impl IntoIterator<Item = (&'a [u64], &'a SequenceInfo, &'a [SequenceExec])>
             + Clone,
@@ -969,7 +966,7 @@ impl<F: Field> SeqExecConfig<F> {
                     blk_ind = seq_info.block_idx;
                     (offset, decoded_len, decoded_rlc) = self.assign_block(
                         &mut region,
-                        chng.evm_word(),
+                        chng,
                         offset,
                         decoded_len,
                         decoded_rlc,
@@ -997,7 +994,7 @@ impl<F: Field> SeqExecConfig<F> {
     pub fn mock_assign(
         &self,
         layouter: &mut impl Layouter<F>,
-        chng: &Challenges<Value<F>>,
+        chng: Value<F>,
         n_seq: usize,
         seq_exec_infos: &[SequenceExec],
         literals: &[u8],
@@ -1017,7 +1014,7 @@ impl<F: Field> SeqExecConfig<F> {
                 let offset = self.init_top_row(&mut region, None)?;
                 let (offset, decoded_len, decoded_rlc) = self.assign_block(
                     &mut region,
-                    chng.evm_word(),
+                    chng,
                     offset,
                     0,
                     Value::known(F::zero()),
@@ -1094,8 +1091,9 @@ mod tests {
                         inst.instruction_idx as usize,
                         SequenceExecInfo::BackRef(r.clone()),
                     ));
-                    let matched_bytes = Vec::from(&outputs[r]);
-                    outputs.extend(matched_bytes);
+                    for ref_pos in r {
+                        outputs.push(outputs[ref_pos]);
+                    }
                 }
                 current_literal_pos = new_literal_pos;
             }
@@ -1162,7 +1160,13 @@ mod tests {
             let chng_mock = MockChallenges::construct(meta);
             let chng = chng_mock.exprs(meta);
 
-            let config = SeqExecConfig::configure(meta, &chng, &literal_tbl, &inst_tbl, &seq_cfg);
+            let config = SeqExecConfig::configure(
+                meta,
+                chng.keccak_input(),
+                &literal_tbl,
+                &inst_tbl,
+                &seq_cfg,
+            );
 
             Self::Config {
                 config,
@@ -1198,7 +1202,7 @@ mod tests {
 
             config.config.mock_assign(
                 &mut layouter,
-                &chng_val,
+                chng_val.keccak_input(),
                 self.insts.len(),
                 &self.exec_trace,
                 &self.literals,

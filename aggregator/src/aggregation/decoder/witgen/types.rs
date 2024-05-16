@@ -651,49 +651,48 @@ impl FseAuxiliaryTableData {
         let mut reader = BitReader::endian(Cursor::new(&data), LittleEndian);
         let mut bit_boundaries: Vec<(u32, u64, u64)> = vec![];
 
-        // number of bits read by the bit-reader from the bistream.
-        let mut offset = 0;
-
-        let accuracy_log = {
-            offset += 4;
-            reader.read::<u8>(offset)? + 5
-        };
-        bit_boundaries.push((offset, accuracy_log as u64 - 5, accuracy_log as u64 - 5));
-        let table_size = 1 << accuracy_log;
-
         ////////////////////////////////////////////////////////////////////////////////////////
         //////////////////////////// Parse Normalised Probabilities ////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////////////
         let mut normalised_probs = BTreeMap::new();
-        let mut R = table_size;
-        let mut symbol = 0;
+        let mut offset = 0;
 
-        if is_predefined {
-            let predefined_frequencies = match table_kind {
-                FseTableKind::LLT => {
+        let (accuracy_log, table_size) = if is_predefined {
+            let (predefined_frequencies, accuracy_log) = match table_kind {
+                FseTableKind::LLT => (
                     vec![
                         4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,
                         3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1,
-                    ]
-                }
-                FseTableKind::MOT => {
+                    ],
+                    6,
+                ),
+                FseTableKind::MOT => (
                     vec![
                         1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1,
                         -1, -1, -1, -1,
-                    ]
-                }
-                FseTableKind::MLT => {
+                    ],
+                    5,
+                ),
+                FseTableKind::MLT => (
                     vec![
                         1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1,
                         -1, -1, -1, -1,
-                    ]
-                }
+                    ],
+                    6,
+                ),
             };
             for (symbol, freq) in predefined_frequencies.into_iter().enumerate() {
                 normalised_probs.insert(symbol as u64, freq);
             }
+            (accuracy_log, 1 << accuracy_log)
         } else {
+            offset += 4;
+            let accuracy_log = reader.read::<u8>(offset)? + 5;
+            bit_boundaries.push((offset, accuracy_log as u64 - 5, accuracy_log as u64 - 5));
+            let table_size = 1 << accuracy_log;
+            let mut R = table_size;
+            let mut symbol = 0;
             while R > 0 {
                 // number of bits and value read from the variable bit-packed data.
                 // And update the total number of bits read so far.
@@ -755,7 +754,8 @@ impl FseAuxiliaryTableData {
                 // remove N slots from a total of R.
                 R -= N;
             }
-        }
+            (accuracy_log, table_size)
+        };
 
         // ignore any bits left to be read until byte-aligned.
         let t = if is_predefined {

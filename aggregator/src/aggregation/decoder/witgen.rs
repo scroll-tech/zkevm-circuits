@@ -6,6 +6,8 @@ use halo2_proofs::circuit::Value;
 use revm_precompile::HashMap;
 
 use std::io;
+// witgen_debug
+use std::io::Write;
 
 mod params;
 pub use params::*;
@@ -16,7 +18,7 @@ pub use types::{ZstdTag::*, *};
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
 
-const TAG_MAX_LEN: [(ZstdTag, u64); 8] = [
+const TAG_MAX_LEN: [(ZstdTag, u64); 9] = [
     (FrameHeaderDescriptor, 1),
     (FrameContentSize, 8),
     (BlockHeader, 3),
@@ -25,6 +27,7 @@ const TAG_MAX_LEN: [(ZstdTag, u64); 8] = [
     (ZstdBlockSequenceHeader, 4),
     (ZstdBlockSequenceFseCode, 128),
     (ZstdBlockSequenceData, 1048575), // (1 << 20) - 1
+    (Null, 0),
 ];
 
 pub fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
@@ -73,6 +76,7 @@ fn process_frame_header<F: Field>(
     let fcs = {
         let fcs = fcs_bytes
             .iter()
+            .rev()
             .fold(0u64, |acc, &byte| acc * 256u64 + (byte as u64));
         match fcs_tag_len {
             2 => fcs + 256,
@@ -631,6 +635,7 @@ fn process_sequences<F: Field>(
     let multiplier =
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
+    let is_all_predefined_fse = literal_lengths_mode + offsets_mode + match_lengths_mode < 1;
 
     // Add witness rows for the sequence header
     let sequence_header_start_offset = byte_offset;
@@ -660,7 +665,11 @@ fn process_sequences<F: Field>(
             |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
                 state: ZstdState {
                     tag: ZstdTag::ZstdBlockSequenceHeader,
-                    tag_next: ZstdTag::ZstdBlockSequenceFseCode,
+                    tag_next: if is_all_predefined_fse {
+                        ZstdTag::ZstdBlockSequenceData
+                    } else {
+                        ZstdTag::ZstdBlockSequenceFseCode
+                    },
                     block_idx,
                     max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceHeader),
                     tag_len: num_sequence_header_bytes as u64,
@@ -768,7 +777,7 @@ fn process_sequences<F: Field>(
 
     // Add witness rows for the FSE tables
     let mut last_row = header_rows.last().cloned().unwrap();
-    for (idx, start_offset, end_offset, bit_boundaries, tag_len, table) in [
+    for (idx, start_offset, end_offset, bit_boundaries, tag_len, table, is_fse_section_end) in [
         (
             0usize,
             fse_starting_byte_offset,
@@ -776,6 +785,7 @@ fn process_sequences<F: Field>(
             bit_boundaries_llt,
             n_fse_bytes_llt as u64,
             &table_llt,
+            offsets_mode + match_lengths_mode < 1,
         ),
         (
             1usize,
@@ -784,6 +794,7 @@ fn process_sequences<F: Field>(
             bit_boundaries_cmot,
             n_fse_bytes_cmot as u64,
             &table_cmot,
+            match_lengths_mode < 1,
         ),
         (
             2usize,
@@ -792,104 +803,81 @@ fn process_sequences<F: Field>(
             bit_boundaries_mlt,
             n_fse_bytes_mlt as u64,
             &table_mlt,
+            true,
         ),
     ] {
-        let mut tag_value_iter =
-            src[start_offset..end_offset]
+        if end_offset > start_offset {
+            let mut tag_value_iter =
+                src[start_offset..end_offset]
+                    .iter()
+                    .scan(Value::known(F::zero()), |acc, &byte| {
+                        *acc = *acc * randomness + Value::known(F::from(byte as u64));
+                        Some(*acc)
+                    });
+            let tag_value = tag_value_iter.clone().last().expect("Tag value must exist");
+
+            let mut tag_rlc_iter =
+                src[start_offset..end_offset]
+                    .iter()
+                    .scan(Value::known(F::zero()), |acc, &byte| {
+                        *acc = *acc * randomness + Value::known(F::from(byte as u64));
+                        Some(*acc)
+                    });
+            let tag_rlc = tag_rlc_iter.clone().last().expect("Tag RLC must exist");
+
+            let mut decoded: u64 = 0;
+            let mut n_acc: usize = 0;
+            let mut n_emitted: usize = 0;
+            let mut current_tag_value_acc = Value::known(F::zero());
+            let mut current_tag_rlc_acc = Value::known(F::zero());
+            let mut last_byte_idx: i64 = 0;
+            let mut from_pos: (i64, i64) = (1, 0);
+            let mut to_pos: (i64, i64) = (0, 0);
+            let kind = table.table_kind;
+            let mut next_symbol: i32 = -1;
+            let mut is_repeating_bit_boundary: HashMap<usize, bool> = HashMap::new();
+
+            let multiplier =
+                (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+            let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
+            let mut last_symbol: i32 = 0;
+
+            let bitstream_rows = bit_boundaries
                 .iter()
-                .scan(Value::known(F::zero()), |acc, &byte| {
-                    *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                    Some(*acc)
-                });
-        let tag_value = tag_value_iter.clone().last().expect("Tag value must exist");
+                .enumerate()
+                .map(|(bit_boundary_idx, (bit_idx, value_read, value_decoded))| {
+                    // Calculate byte and bit positions. Increment allocators.
+                    from_pos = if next_symbol == -1 { (1, -1) } else { to_pos };
 
-        let mut tag_rlc_iter =
-            src[start_offset..end_offset]
-                .iter()
-                .scan(Value::known(F::zero()), |acc, &byte| {
-                    *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                    Some(*acc)
-                });
-        let tag_rlc = tag_rlc_iter.clone().last().expect("Tag RLC must exist");
+                    from_pos.1 += 1;
+                    if from_pos.1 == 8 {
+                        from_pos = (from_pos.0 + 1, 0);
+                    }
 
-        let mut decoded: u64 = 0;
-        let mut n_acc: usize = 0;
-        let mut n_emitted: usize = 0;
-        let mut current_tag_value_acc = Value::known(F::zero());
-        let mut current_tag_rlc_acc = Value::known(F::zero());
-        let mut last_byte_idx: i64 = 0;
-        let mut from_pos: (i64, i64) = (1, 0);
-        let mut to_pos: (i64, i64) = (0, 0);
-        let kind = table.table_kind;
-        let mut next_symbol: i32 = -1;
-        let mut is_repeating_bit_boundary: HashMap<usize, bool> = HashMap::new();
+                    from_pos.1 = (from_pos.1 as u64).rem_euclid(8) as i64;
 
-        let multiplier =
-            (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
-        let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
-        let mut last_symbol: i32 = 0;
+                    while from_pos.0 > last_byte_idx {
+                        current_tag_value_acc = tag_value_iter.next().unwrap();
+                        current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+                        last_byte_idx = from_pos.0;
+                    }
 
-        let bitstream_rows = bit_boundaries
-            .iter()
-            .enumerate()
-            .map(|(bit_boundary_idx, (bit_idx, value_read, value_decoded))| {
-                // Calculate byte and bit positions. Increment allocators.
-                from_pos = if next_symbol == -1 { (1, -1) } else { to_pos };
+                    let to_byte_idx = (bit_idx - 1) / 8;
+                    let mut to_bit_idx = bit_idx - to_byte_idx * (N_BITS_PER_BYTE as u32) - 1;
 
-                from_pos.1 += 1;
-                if from_pos.1 == 8 {
-                    from_pos = (from_pos.0 + 1, 0);
-                }
+                    if from_pos.0 < (to_byte_idx + 1) as i64 {
+                        to_bit_idx += 8;
+                    }
 
-                from_pos.1 = (from_pos.1 as u64).rem_euclid(8) as i64;
+                    to_pos = ((to_byte_idx + 1) as i64, to_bit_idx as i64);
 
-                while from_pos.0 > last_byte_idx {
-                    current_tag_value_acc = tag_value_iter.next().unwrap();
-                    current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
-                    last_byte_idx = from_pos.0;
-                }
-
-                let to_byte_idx = (bit_idx - 1) / 8;
-                let mut to_bit_idx = bit_idx - to_byte_idx * (N_BITS_PER_BYTE as u32) - 1;
-
-                if from_pos.0 < (to_byte_idx + 1) as i64 {
-                    to_bit_idx += 8;
-                }
-
-                to_pos = ((to_byte_idx + 1) as i64, to_bit_idx as i64);
-
-                // Decide Fse decoding results
-                if bit_boundary_idx < 1 {
-                    // Accuracy log bits
-                    next_symbol += 1;
-                    assert_eq!(value_read, value_decoded, "no varbit packing for AL bits");
-                    (
-                        0,
-                        n_emitted,
-                        from_pos.0 as usize,
-                        from_pos.1 as usize,
-                        to_pos.0 as usize,
-                        to_pos.1 as usize,
-                        *value_read,
-                        *value_decoded,
-                        current_tag_value_acc,
-                        current_tag_rlc_acc,
-                        n_acc,
-                        // FseDecoder-specific witness values
-                        kind as u64,
-                        table.table_size,
-                        false,
-                        false,
-                    )
-                } else if !is_repeating_bit_boundary.contains_key(&bit_boundary_idx) {
-                    if n_acc >= (table.table_size as usize) {
-                        // Trailing bits
-                        assert_eq!(
-                            value_read, value_decoded,
-                            "no varbit packing for trailing bits"
-                        );
+                    // Decide Fse decoding results
+                    if bit_boundary_idx < 1 {
+                        // Accuracy log bits
+                        next_symbol += 1;
+                        assert_eq!(value_read, value_decoded, "no varbit packing for AL bits");
                         (
-                            last_symbol as u64,
+                            0,
                             n_emitted,
                             from_pos.0 as usize,
                             from_pos.1 as usize,
@@ -904,46 +892,100 @@ fn process_sequences<F: Field>(
                             kind as u64,
                             table.table_size,
                             false,
-                            true,
+                            false,
                         )
-                    } else {
-                        // Regular decoding state
-                        assert!(next_symbol >= 0);
-                        decoded = next_symbol as u64;
-                        n_emitted += 1;
-                        last_symbol = next_symbol;
-                        next_symbol += 1;
-                        match *value_decoded {
-                            0 => {
-                                // When a symbol has a value==0, it signifies a case of prob=-1 (or
-                                // probability "less than 1"), where
-                                // such symbols are allocated states from the
-                                // end and retreating. Exactly 1 state is allocated in this case.
-                                n_acc += 1;
-                            }
-                            1 => {
-                                let mut repeating_bit_boundary_idx = bit_boundary_idx + 1;
-                                loop {
-                                    let repeating_bits =
-                                        bit_boundaries[repeating_bit_boundary_idx].1;
-                                    next_symbol += repeating_bits as i32; // skip symbols
-                                    is_repeating_bit_boundary
-                                        .insert(repeating_bit_boundary_idx, true);
+                    } else if !is_repeating_bit_boundary.contains_key(&bit_boundary_idx) {
+                        if n_acc >= (table.table_size as usize) {
+                            // Trailing bits
+                            assert_eq!(
+                                value_read, value_decoded,
+                                "no varbit packing for trailing bits"
+                            );
+                            (
+                                last_symbol as u64,
+                                n_emitted,
+                                from_pos.0 as usize,
+                                from_pos.1 as usize,
+                                to_pos.0 as usize,
+                                to_pos.1 as usize,
+                                *value_read,
+                                *value_decoded,
+                                current_tag_value_acc,
+                                current_tag_rlc_acc,
+                                n_acc,
+                                // FseDecoder-specific witness values
+                                kind as u64,
+                                table.table_size,
+                                false,
+                                true,
+                            )
+                        } else {
+                            // Regular decoding state
+                            assert!(next_symbol >= 0);
+                            decoded = next_symbol as u64;
+                            n_emitted += 1;
+                            last_symbol = next_symbol;
+                            next_symbol += 1;
+                            match *value_decoded {
+                                0 => {
+                                    // When a symbol has a value==0, it signifies a case of prob=-1
+                                    // (or probability "less
+                                    // than 1"), where
+                                    // such symbols are allocated states from the
+                                    // end and retreating. Exactly 1 state is allocated in this
+                                    // case.
+                                    n_acc += 1;
+                                }
+                                1 => {
+                                    let mut repeating_bit_boundary_idx = bit_boundary_idx + 1;
+                                    loop {
+                                        let repeating_bits =
+                                            bit_boundaries[repeating_bit_boundary_idx].1;
+                                        next_symbol += repeating_bits as i32; // skip symbols
+                                        is_repeating_bit_boundary
+                                            .insert(repeating_bit_boundary_idx, true);
 
-                                    if repeating_bits < 3 {
-                                        break;
-                                    } else {
-                                        repeating_bit_boundary_idx += 1;
+                                        if repeating_bits < 3 {
+                                            break;
+                                        } else {
+                                            repeating_bit_boundary_idx += 1;
+                                        }
                                     }
                                 }
+                                _ => {
+                                    n_acc += (*value_decoded - 1) as usize;
+                                }
                             }
-                            _ => {
-                                n_acc += (*value_decoded - 1) as usize;
-                            }
-                        }
 
+                            (
+                                decoded,
+                                n_emitted,
+                                from_pos.0 as usize,
+                                from_pos.1 as usize,
+                                to_pos.0 as usize,
+                                to_pos.1 as usize,
+                                *value_read,
+                                *value_decoded,
+                                current_tag_value_acc,
+                                current_tag_rlc_acc,
+                                n_acc,
+                                // FseDecoder-specific witness values
+                                kind as u64,
+                                table.table_size,
+                                false, // repeating bits
+                                false, // trailing bits
+                            )
+                        }
+                    } else {
+                        // Repeating bits
+                        let symbol = last_symbol as u64 + value_decoded;
+                        last_symbol = symbol as i32;
+                        assert_eq!(
+                            value_read, value_decoded,
+                            "no varbit packing for repeat-bits flag"
+                        );
                         (
-                            decoded,
+                            symbol,
                             n_emitted,
                             from_pos.0 as usize,
                             from_pos.1 as usize,
@@ -957,111 +999,85 @@ fn process_sequences<F: Field>(
                             // FseDecoder-specific witness values
                             kind as u64,
                             table.table_size,
-                            false, // repeating bits
-                            false, // trailing bits
+                            true,
+                            false,
                         )
                     }
-                } else {
-                    // Repeating bits
-                    let symbol = last_symbol as u64 + value_decoded;
-                    last_symbol = symbol as i32;
-                    assert_eq!(
-                        value_read, value_decoded,
-                        "no varbit packing for repeat-bits flag"
-                    );
-                    (
-                        symbol,
-                        n_emitted,
-                        from_pos.0 as usize,
-                        from_pos.1 as usize,
-                        to_pos.0 as usize,
-                        to_pos.1 as usize,
-                        *value_read,
-                        *value_decoded,
-                        current_tag_value_acc,
-                        current_tag_rlc_acc,
-                        n_acc,
-                        // FseDecoder-specific witness values
-                        kind as u64,
-                        table.table_size,
-                        true,
-                        false,
-                    )
-                }
-            })
-            .collect::<Vec<(
-                u64,
-                usize,
-                usize,
-                usize,
-                usize,
-                usize,
-                u64,
-                u64,
-                Value<F>,
-                Value<F>,
-                usize,
-                u64,
-                u64,
-                bool,
-                bool,
-            )>>();
+                })
+                .collect::<Vec<(
+                    u64,
+                    usize,
+                    usize,
+                    usize,
+                    usize,
+                    usize,
+                    u64,
+                    u64,
+                    Value<F>,
+                    Value<F>,
+                    usize,
+                    u64,
+                    u64,
+                    bool,
+                    bool,
+                )>>();
 
-        // Transform bitstream rows into witness rows
-        for (j, row) in bitstream_rows.iter().enumerate() {
-            witness_rows.push(ZstdWitnessRow {
-                state: ZstdState {
-                    tag: ZstdTag::ZstdBlockSequenceFseCode,
-                    tag_next: if idx > 1 {
-                        ZstdTag::ZstdBlockSequenceData
-                    } else {
-                        ZstdTag::ZstdBlockSequenceFseCode
+            // Transform bitstream rows into witness rows
+            for (j, row) in bitstream_rows.iter().enumerate() {
+                witness_rows.push(ZstdWitnessRow {
+                    state: ZstdState {
+                        tag: ZstdTag::ZstdBlockSequenceFseCode,
+                        tag_next: if is_fse_section_end {
+                            ZstdTag::ZstdBlockSequenceData
+                        } else {
+                            ZstdTag::ZstdBlockSequenceFseCode
+                        },
+                        block_idx,
+                        max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceFseCode),
+                        tag_len,
+                        tag_idx: row.2 as u64,
+                        tag_value,
+                        tag_value_acc: row.8,
+                        is_tag_change: j == 0,
+                        tag_rlc,
+                        tag_rlc_acc: row.9,
                     },
-                    block_idx,
-                    max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceFseCode),
-                    tag_len,
-                    tag_idx: row.2 as u64,
-                    tag_value,
-                    tag_value_acc: row.8,
-                    is_tag_change: j == 0,
-                    tag_rlc,
-                    tag_rlc_acc: row.9,
-                },
-                encoded_data: EncodedData {
-                    byte_idx: (start_offset + row.2) as u64,
-                    encoded_len,
-                    value_byte: src[start_offset + row.2 - 1],
-                    value_rlc,
-                    reverse: false,
-                    ..Default::default()
-                },
-                bitstream_read_data: BitstreamReadRow {
-                    bit_start_idx: row.3,
-                    bit_end_idx: row.5,
-                    bit_value: row.6,
-                    is_zero_bit_read: false,
-                    ..Default::default()
-                },
-                decoded_data: DecodedData {
-                    decoded_len: last_row.decoded_data.decoded_len,
-                    decoded_len_acc: last_row.decoded_data.decoded_len_acc,
-                    total_decoded_len: last_row.decoded_data.total_decoded_len,
-                    decoded_byte: 0u8,
-                    decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
-                },
-                fse_data: FseDecodingRow {
-                    table_kind: row.11,
-                    table_size: row.12,
-                    symbol: row.0,
-                    num_emitted: row.1 as u64,
-                    value_decoded: row.7,
-                    probability_acc: row.10 as u64,
-                    is_repeat_bits_loop: row.13,
-                    is_trailing_bits: row.14,
-                },
-            });
+                    encoded_data: EncodedData {
+                        byte_idx: (start_offset + row.2) as u64,
+                        encoded_len,
+                        value_byte: src[start_offset + row.2 - 1],
+                        value_rlc,
+                        reverse: false,
+                        ..Default::default()
+                    },
+                    bitstream_read_data: BitstreamReadRow {
+                        bit_start_idx: row.3,
+                        bit_end_idx: row.5,
+                        bit_value: row.6,
+                        is_zero_bit_read: false,
+                        ..Default::default()
+                    },
+                    decoded_data: DecodedData {
+                        decoded_len: last_row.decoded_data.decoded_len,
+                        decoded_len_acc: last_row.decoded_data.decoded_len_acc,
+                        total_decoded_len: last_row.decoded_data.total_decoded_len,
+                        decoded_byte: 0u8,
+                        decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
+                    },
+                    fse_data: FseDecodingRow {
+                        table_kind: row.11,
+                        table_size: row.12,
+                        symbol: row.0,
+                        num_emitted: row.1 as u64,
+                        value_decoded: row.7,
+                        probability_acc: row.10 as u64,
+                        is_repeat_bits_loop: row.13,
+                        is_trailing_bits: row.14,
+                    },
+                });
+            }
+            last_row = witness_rows.last().cloned().unwrap();
         }
-        last_row = witness_rows.last().cloned().unwrap();
     }
 
     // Reconstruct LLTV, CMOTV, and MLTV which specifies bit actions for a specific state
@@ -1124,7 +1140,6 @@ fn process_sequences<F: Field>(
     let tag_rlc_iter =
         &src[byte_offset..end_offset]
             .iter()
-            .rev()
             .scan(Value::known(F::zero()), |acc, &byte| {
                 *acc = *acc * randomness + Value::known(F::from(byte as u64));
                 Some(*acc)
@@ -1169,7 +1184,7 @@ fn process_sequences<F: Field>(
         encoded_data: EncodedData {
             byte_idx: (byte_offset + current_byte_idx) as u64,
             encoded_len,
-            value_byte: src[byte_offset + current_byte_idx - 1],
+            value_byte: src[end_offset - current_byte_idx],
             value_rlc,
             reverse: true,
             reverse_len: n_sequence_data_bytes as u64,
@@ -1400,8 +1415,8 @@ fn process_sequences<F: Field>(
                 // TODO(ray): This is a special case of the sequences data being a part of the
                 // "last block", hence the overflow. I have just re-used the "last" byte from the
                 // source data in such a case.
-                value_byte: if byte_offset + current_byte_idx - 1 < src.len() {
-                    src[byte_offset + current_byte_idx - 1]
+                value_byte: if end_offset - current_byte_idx < src.len() {
+                    src[end_offset - current_byte_idx]
                 } else {
                     src.last().cloned().unwrap()
                 },
@@ -1458,6 +1473,11 @@ fn process_sequences<F: Field>(
                 // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?}, is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, 0, 0, 7, true, false).unwrap();
                 // writeln!(handle).unwrap();
 
+                let wrap_by = match to_bit_idx {
+                    15 => 8,
+                    16..=23 => 16,
+                    _ => unreachable!(),
+                };
                 witness_rows.push(ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::ZstdBlockSequenceData,
@@ -1484,8 +1504,8 @@ fn process_sequences<F: Field>(
                         // the "last block", hence the overflow. I have just
                         // re-used the "last" byte from the source data in
                         // such a case.
-                        value_byte: if byte_offset + current_byte_idx - 1 < src.len() {
-                            src[byte_offset + current_byte_idx - 1]
+                        value_byte: if end_offset - current_byte_idx < src.len() {
+                            src[end_offset - current_byte_idx]
                         } else {
                             src.last().cloned().unwrap()
                         },
@@ -1497,8 +1517,8 @@ fn process_sequences<F: Field>(
                         aux_2: Value::known(F::zero()),
                     },
                     bitstream_read_data: BitstreamReadRow {
-                        bit_start_idx: 7,
-                        bit_end_idx: 7,
+                        bit_start_idx: to_bit_idx - wrap_by,
+                        bit_end_idx: to_bit_idx - wrap_by,
                         bit_value: 0,
                         is_zero_bit_read: false,
                         is_seq_init: false,
@@ -1697,8 +1717,15 @@ fn process_sequences<F: Field>(
                 inst.instruction_idx as usize,
                 SequenceExecInfo::BackRef(r.clone()),
             ));
-            let matched_bytes = Vec::from(&recovered_inputs[r]);
-            recovered_inputs.extend_from_slice(matched_bytes.as_slice());
+            let matched_and_repeated_bytes = if inst.match_length <= inst.actual_offset {
+                Vec::from(&recovered_inputs[r])
+            } else {
+                let l = inst.match_length as usize;
+                let r_prime = match_pos..recovered_inputs.len();
+                let matched_bytes = Vec::from(&recovered_inputs[r_prime]);
+                matched_bytes.iter().cycle().take(l).copied().collect()
+            };
+            recovered_inputs.extend_from_slice(matched_and_repeated_bytes.as_slice());
         }
         current_literal_pos = new_literal_pos;
     }
@@ -1718,6 +1745,14 @@ fn process_sequences<F: Field>(
                 .as_slice(),
         );
     }
+
+    // witgen_debug
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+
+    // witgen_debug
+    // write!(handle, "=> decoded: {:?}", recovered_inputs).unwrap();
+    // writeln!(handle).unwrap();
 
     (
         end_offset,
@@ -2004,6 +2039,7 @@ mod tests {
     // use bitstream_io::write;
     // use halo2_proofs::halo2curves::bn256::Fr;
     // use serde_json::from_str;
+    use std::fs;
 
     // witgen_debug
     use std::io::Write;
@@ -2085,52 +2121,87 @@ mod tests {
     // }
 
     #[test]
-    fn batch_compression_zstd() -> Result<(), std::io::Error> {
-        use halo2_proofs::halo2curves::bn256::Fr;
-        // witgen_debug
-        // use hex::FromHex;
-
+    fn test_zstd_witness_processing_batch_data() -> Result<(), std::io::Error> {
         use super::*;
-        // let raw = <Vec<u8>>::from_hex(r#"0100000000000231fb0000000064e588f7000000000000000000000000000000000000000000000000000000000000000000000000007a12000006000000000219f90216038510229a150083039bd49417afd0263d6909ba1f9a8eac697f76532365fb95880234e1a857498000b901a45ae401dc0000000000000000000000000000000000000000000000000000000064e58a1400000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf0000000000000000000000005300000000000000000000000000000000000004000000000000000000000000d9692f1748afee00face2da35242417dd05a86150000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000c3100d07a5997a7f9f9cdde967d396f9a2aed6a60000000000000000000000000000000000000000000000000234e1a8574980000000000000000000000000000000000000000000000000049032ac61d5dce9e600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000083104ec1a053077484b4d7a88434c2d03c30c3c55bd3a82b259f339f1c0e1e1244189009c5a01c915dd14aed1b824bf610a95560e380ea3213f0bf345df3bddff1acaf7da84d000002d8f902d5068510229a1500830992fd94bbad0e891922a8a4a7e9c39d4cc0559117016fec87082b6be7f5b757b90264ac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000164883164560000000000000000000000005300000000000000000000000000000000000004000000000000000000000000ffd2ece82f7959ae184d10fe17865d27b4f0fb9400000000000000000000000000000000000000000000000000000000000001f4fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffce9f6fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcea0a00000000000000000000000000000000000000000000000000082b6be7f5b75700000000000000000000000000000000000000000000000000000000004c4b40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006aea61ea08dd6e4834cd43a257ed52d9a31dd3b90000000000000000000000000000000000000000000000000000000064e58a1400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000412210e8a0000000000000000000000000000000000000000000000000000000083104ec2a0bc501c59bceb707d958423bad14c0d0daec84ad067f7e42209ad2cb8d904a55da00a04de4c79ed24b7a82d523b5de63c7ff68a3b7bb519546b3fe4ba8bc90a396600000137f9013480850f7eb06980830317329446ce46951d12710d85bc4fe10bb29c6ea501207787019945ca262000b8c4b2dd898a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000065e4e8d7bd50191abfee6e5bcdc4d16ddfe9975e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000083104ec2a037979a5225dd156f51abf9a8601e9156e1b1308c0474d69af98c55627886232ea048ac197295187e7ad48aa34cc37c2625434fa812449337732d8522014f4eacfc00000137f9013480850f7eb06980830317329446ce46951d12710d85bc4fe10bb29c6ea501207787019945ca262000b8c4b2dd898a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000065e4e8d7bd50191abfee6e5bcdc4d16ddfe9975e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000083104ec1a087269dbb9e987e5d58ecd3bcb724cbc4e6c843eb9095de16a25263aebfe06f5aa07f3ac49b6847ba51c5319174e51e088117742240f8555c5c1d77108cf0df90d700000137f9013480850f7eb06980830317329446ce46951d12710d85bc4fe10bb29c6ea501207787019945ca262000b8c4b2dd898a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000065e4e8d7bd50191abfee6e5bcdc4d16ddfe9975e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000083104ec1a04abdb8572dcabf1996825de6f753124eed41c1292fcfdc4d9a90cb4f8a0f8ff1a06ef25857e2cc9d0fa8b6ecc03b4ba6ef6f3ec1515d570fcc9102e2aa653f347a00000137f9013480850f7eb06980830317329446ce46951d12710d85bc4fe10bb29c6ea501207787019945ca262000b8c4b2dd898a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000065e4e8d7bd50191abfee6e5bcdc4d16ddfe9975e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000083104ec2a0882202163cbb9a299709b443b663fbab459440deabfbe183e999c98c00ea80c2a010ecb1e5196f0b1ee3d067d9a158b47b1376706e42ce2e769cf8e986935781dd"#)
-        //     .expect("FromHex failure");
+        use halo2_proofs::halo2curves::bn256::Fr;
 
         // witgen_debug
-        let raw: Vec<u8> = String::from("Romeo and Juliet@Excerpt from Act 2, Scene 2@@JULIET@O Romeo, Romeo! wherefore art thou Romeo?@Deny thy father and refuse thy name;@Or, if thou wilt not, be but sworn my love,@And I'll no longer be a Capulet.@@ROMEO@[Aside] Shall I hear more, or shall I speak at this?@@JULIET@'Tis but thy name that is my enemy;@Thou art thyself, though not a Montague.@What's Montague? it is nor hand, nor foot,@Nor arm, nor face, nor any other part@Belonging to a man. O, be some other name!@What's in a name? that which we call a rose@By any other name would smell as sweet;@So Romeo would, were he not Romeo call'd,@Retain that dear perfection which he owes@Without that title. Romeo, doff thy name,@And for that name which is no part of thee@Take all myself.@@ROMEO@I take thee at thy word:@Call me but love, and I'll be new baptized;@Henceforth I never will be Romeo.@@JULIET@What man art thou that thus bescreen'd in night@So stumblest on my counsel?").as_bytes().to_vec();
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
 
-        let compressed = {
-            // compression level = 0 defaults to using level=3, which is zstd's default.
-            let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
+        let mut batch_files = fs::read_dir("./data")?
+            .map(|entry| entry.map(|e| e.path()))
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
+        batch_files.sort();
+        let batches = batch_files
+            .iter()
+            .map(fs::read_to_string)
+            .filter_map(|data| data.ok())
+            .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
+            .collect::<Vec<Vec<u8>>>();
 
-            // disable compression of literals, i.e. literals will be raw bytes.
-            encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                zstd::zstd_safe::ParamSwitch::Disable,
-            ))?;
-            // set target block size to fit within a single block.
-            encoder.set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
-            // do not include the checksum at the end of the encoded data.
-            encoder.include_checksum(false)?;
-            // do not include magic bytes at the start of the frame since we will have a single
-            // frame.
-            encoder.include_magicbytes(false)?;
-            // set source length, which will be reflected in the frame header.
-            encoder.set_pledged_src_size(Some(raw.len() as u64))?;
-            // include the content size to know at decode time the expected size of decoded data.
-            encoder.include_contentsize(true)?;
+        for (batch_idx, raw_input_bytes) in batches.into_iter().enumerate() {
+            // witgen_debug
+            // if batch_idx == 127 {
+            //     continue;
+            // }
 
-            encoder.write_all(&raw)?;
-            encoder.finish()?
-        };
+            let compressed = {
+                // compression level = 0 defaults to using level=3, which is zstd's default.
+                let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
 
-        let (
-            _witness_rows,
-            _decoded_literals,
-            _aux_data,
-            _fse_aux_tables,
-            _block_info_arr,
-            _sequence_info_arr,
-            _,
-            _,
-        ) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+                // disable compression of literals, i.e. literals will be raw bytes.
+                encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
+                    zstd::zstd_safe::ParamSwitch::Disable,
+                ))?;
+                // set target block size to fit within a single block.
+                encoder
+                    .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
+                // do not include the checksum at the end of the encoded data.
+                encoder.include_checksum(false)?;
+                // do not include magic bytes at the start of the frame since we will have a single
+                // frame.
+                encoder.include_magicbytes(false)?;
+                // set source length, which will be reflected in the frame header.
+                encoder.set_pledged_src_size(Some(raw_input_bytes.len() as u64))?;
+                // include the content size to know at decode time the expected size of decoded
+                // data.
+                encoder.include_contentsize(true)?;
+
+                encoder.write_all(&raw_input_bytes)?;
+                encoder.finish()?
+            };
+
+            // witgen_debug
+            // write!(handle, "=> compressed: {:?}", compressed).unwrap();
+            // writeln!(handle).unwrap();
+
+            let (
+                _witness_rows,
+                _decoded_literals,
+                _aux_data,
+                _fse_aux_tables,
+                _block_info_arr,
+                _sequence_info_arr,
+                _,
+                sequence_exec_result,
+            ) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+
+            let decoded_bytes = sequence_exec_result
+                .into_iter()
+                .flat_map(|r| r.recovered_bytes)
+                .collect::<Vec<u8>>();
+
+            // witgen_debug
+            write!(handle, "=> batch_idx: {:?}", batch_idx).unwrap();
+            writeln!(handle).unwrap();
+
+            // witgen_debug
+            // write!(handle, "=> decoded: {:?}", decoded_bytes).unwrap();
+            // writeln!(handle).unwrap();
+
+            assert!(raw_input_bytes == decoded_bytes);
+        }
 
         Ok(())
     }

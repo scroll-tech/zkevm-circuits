@@ -16,7 +16,8 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
+        Advice, Assigned, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        VirtualCells,
     },
     poly::Rotation,
 };
@@ -117,6 +118,8 @@ struct TagConfig {
     /// number of bytes required to encode this tag. For instance, the LiteralsHeader is variable
     /// sized, ranging from 1-5 bytes. The max_len for LiteralsHeader would be 5.
     max_len: Column<Advice>,
+    /// The running accumulator of RLC values of bytes in the tag.
+    tag_rlc_acc: Column<Advice>,
     /// The RLC of bytes in the tag.
     tag_rlc: Column<Advice>,
     /// Represents keccak randomness exponentiated by the tag len.
@@ -163,6 +166,7 @@ impl TagConfig {
                 |meta| meta.query_advice(tag_len, Rotation::cur()),
             ),
             max_len: meta.advice_column(),
+            tag_rlc_acc: meta.advice_column_in(SecondPhase),
             tag_rlc: meta.advice_column_in(SecondPhase),
             rpow_tag_len: meta.advice_column_in(SecondPhase),
             is_output: meta.advice_column(),
@@ -924,11 +928,16 @@ impl SequencesDataDecoder {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct AssignedDecoderConfigExports {
     /// The RLC of the zstd encoded bytes, i.e. blob bytes.
     pub encoded_rlc: AssignedCell<Fr, Fr>,
+    /// The length of encoded data.
+    pub encoded_len: AssignedCell<Fr, Fr>,
     /// The RLC of the decoded bytes, i.e. batch bytes.
     pub decoded_rlc: AssignedCell<Fr, Fr>,
+    /// The length of decoded data.
+    pub decoded_len: AssignedCell<Fr, Fr>,
 }
 
 pub struct DecoderConfigArgs {
@@ -995,7 +1004,7 @@ impl DecoderConfig {
         let sequences_data_decoder = SequencesDataDecoder::configure(meta);
         let sequence_execution_config = SequenceExecutionConfig::configure(
             meta,
-            challenges,
+            challenges.keccak_input(),
             &LiteralTable::construct([
                 q_enable.into(),
                 tag_config.tag.into(),
@@ -1050,6 +1059,8 @@ impl DecoderConfig {
             sequence_execution_config,
             fixed_table,
         };
+
+        meta.enable_equality(config.decoded_len);
 
         macro_rules! is_tag {
             ($var:ident, $tag_variant:ident) => {
@@ -1366,17 +1377,21 @@ impl DecoderConfig {
                 meta.query_advice(config.tag_config.is_reverse, Rotation::prev());
             cb.condition(prev_tag_reverse, |cb| {
                 cb.require_equal(
-                    "tag_rlc::prev == byte::prev",
-                    meta.query_advice(config.tag_config.tag_rlc, Rotation::prev()),
+                    "tag_rlc_acc::prev == byte::prev",
+                    meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::prev()),
                     meta.query_advice(config.byte, Rotation::prev()),
                 );
             });
 
             // The tag_idx is initialised correctly.
             cb.require_equal(
-                "tag_idx::cur == 1",
+                "tag_idx::cur == 1 (if not padding)",
                 meta.query_advice(config.tag_config.tag_idx, Rotation::cur()),
-                1.expr(),
+                select::expr(
+                    meta.query_advice(config.is_padding, Rotation::cur()),
+                    0.expr(),
+                    1.expr(),
+                ),
             );
 
             // If the new tag is not processed from back-to-front, the RLC of the tag bytes
@@ -1384,8 +1399,8 @@ impl DecoderConfig {
             let curr_tag_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
             cb.condition(not::expr(curr_tag_reverse), |cb| {
                 cb.require_equal(
-                    "tag_rlc::cur == byte::cur",
-                    meta.query_advice(config.tag_config.tag_rlc, Rotation::cur()),
+                    "tag_rlc_acc::cur == byte::cur",
+                    meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::cur()),
                     meta.query_advice(config.byte, Rotation::cur()),
                 );
             });
@@ -1417,6 +1432,7 @@ impl DecoderConfig {
                 config.tag_config.tag,
                 config.tag_config.tag_next,
                 config.tag_config.tag_len,
+                config.tag_config.tag_rlc,
                 config.tag_config.max_len,
                 config.tag_config.rpow_tag_len,
                 config.tag_config.is_output,
@@ -1448,23 +1464,25 @@ impl DecoderConfig {
             // from back-to-front or not.
             let byte_prev = meta.query_advice(config.byte, Rotation::prev());
             let byte_curr = meta.query_advice(config.byte, Rotation::cur());
-            let tag_rlc_prev = meta.query_advice(config.tag_config.tag_rlc, Rotation::prev());
-            let tag_rlc_curr = meta.query_advice(config.tag_config.tag_rlc, Rotation::cur());
+            let tag_rlc_acc_prev =
+                meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::prev());
+            let tag_rlc_acc_curr =
+                meta.query_advice(config.tag_config.tag_rlc_acc, Rotation::cur());
             let curr_tag_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
             cb.condition(not::expr(byte_idx_delta.expr()), |cb| {
                 cb.require_equal(
-                    "tag_rlc::cur == tag_rlc::prev",
-                    tag_rlc_curr.expr(),
-                    tag_rlc_prev.expr(),
+                    "tag_rlc_acc::cur == tag_rlc_acc::prev",
+                    tag_rlc_acc_curr.expr(),
+                    tag_rlc_acc_prev.expr(),
                 );
             });
             cb.condition(
                 and::expr([byte_idx_delta.expr(), curr_tag_reverse.expr()]),
                 |cb| {
                     cb.require_equal(
-                        "tag_rlc::prev == tag_rlc::cur * r + byte::prev",
-                        tag_rlc_prev.expr(),
-                        tag_rlc_curr.expr() * challenges.keccak_input() + byte_prev,
+                        "tag_rlc_acc::prev == tag_rlc_acc::cur * r + byte::prev",
+                        tag_rlc_acc_prev.expr(),
+                        tag_rlc_acc_curr.expr() * challenges.keccak_input() + byte_prev,
                     );
                 },
             );
@@ -1472,9 +1490,9 @@ impl DecoderConfig {
                 and::expr([byte_idx_delta.expr(), not::expr(curr_tag_reverse.expr())]),
                 |cb| {
                     cb.require_equal(
-                        "tag_rlc::cur == tag_rlc::prev * r + byte::cur",
-                        tag_rlc_curr.expr(),
-                        tag_rlc_prev.expr() * challenges.keccak_input() + byte_curr,
+                        "tag_rlc_acc::cur == tag_rlc_acc::prev * r + byte::cur",
+                        tag_rlc_acc_curr.expr(),
+                        tag_rlc_acc_prev.expr() * challenges.keccak_input() + byte_curr,
                     );
                 },
             );
@@ -1601,21 +1619,21 @@ impl DecoderConfig {
 
             // FrameContentSize are LE bytes.
             let case4_value = meta.query_advice(config.byte, Rotation::cur());
-            let case3_value = meta.query_advice(config.byte, Rotation::cur()) * 256.expr()
-                + meta.query_advice(config.byte, Rotation::next());
-            let case2_value = meta.query_advice(config.byte, Rotation(0)) * 16777216.expr()
-                + meta.query_advice(config.byte, Rotation(1)) * 65536.expr()
-                + meta.query_advice(config.byte, Rotation(2)) * 256.expr()
-                + meta.query_advice(config.byte, Rotation(3));
-            let case1_value = meta.query_advice(config.byte, Rotation(0))
+            let case3_value = meta.query_advice(config.byte, Rotation::next()) * 256.expr()
+                + meta.query_advice(config.byte, Rotation::cur());
+            let case2_value = meta.query_advice(config.byte, Rotation(3)) * 16777216.expr()
+                + meta.query_advice(config.byte, Rotation(2)) * 65536.expr()
+                + meta.query_advice(config.byte, Rotation(1)) * 256.expr()
+                + meta.query_advice(config.byte, Rotation(0));
+            let case1_value = meta.query_advice(config.byte, Rotation(7))
                 * 72057594037927936u64.expr()
-                + meta.query_advice(config.byte, Rotation(1)) * 281474976710656u64.expr()
-                + meta.query_advice(config.byte, Rotation(2)) * 1099511627776u64.expr()
-                + meta.query_advice(config.byte, Rotation(3)) * 4294967296u64.expr()
-                + meta.query_advice(config.byte, Rotation(4)) * 16777216.expr()
-                + meta.query_advice(config.byte, Rotation(5)) * 65536.expr()
-                + meta.query_advice(config.byte, Rotation(6)) * 256.expr()
-                + meta.query_advice(config.byte, Rotation(7));
+                + meta.query_advice(config.byte, Rotation(6)) * 281474976710656u64.expr()
+                + meta.query_advice(config.byte, Rotation(5)) * 1099511627776u64.expr()
+                + meta.query_advice(config.byte, Rotation(4)) * 4294967296u64.expr()
+                + meta.query_advice(config.byte, Rotation(3)) * 16777216.expr()
+                + meta.query_advice(config.byte, Rotation(2)) * 65536.expr()
+                + meta.query_advice(config.byte, Rotation(1)) * 256.expr()
+                + meta.query_advice(config.byte, Rotation(0));
 
             let frame_content_size = select::expr(
                 case1,
@@ -1893,7 +1911,7 @@ impl DecoderConfig {
                     0.expr(),
                 );
                 let byte2 = select::expr(
-                    size_format_bit1.expr() * size_format_bit1.expr(),
+                    size_format_bit0.expr() * size_format_bit1.expr(),
                     meta.query_advice(config.byte, Rotation(2)),
                     0.expr(),
                 );
@@ -1905,7 +1923,7 @@ impl DecoderConfig {
                     size_format_bit0.expr() * not::expr(size_format_bit1.expr()),
                     meta.query_advice(config.tag_config.tag_len, Rotation(2)),
                     select::expr(
-                        size_format_bit1.expr() * size_format_bit0.expr(),
+                        size_format_bit0.expr() * size_format_bit1.expr(),
                         meta.query_advice(config.tag_config.tag_len, Rotation(3)),
                         meta.query_advice(config.tag_config.tag_len, Rotation(1)),
                     ),
@@ -2573,13 +2591,17 @@ impl DecoderConfig {
                     1.expr(),
                     value_decoded - 1.expr(),
                 );
+                let is_predefined_mode =
+                    config
+                        .block_config
+                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
 
                 [
                     0.expr(), // skip first row
                     block_idx,
                     fse_table_kind,
                     fse_table_size,
-                    0.expr(), // is_predefined
+                    is_predefined_mode,
                     fse_symbol,
                     norm_prob.expr(),
                     norm_prob.expr(),
@@ -3477,14 +3499,14 @@ impl DecoderConfig {
             cb.condition(case2.expr(), |cb| {
                 cb.require_equal(
                     "nil(case2): wrap bit_index_start by 16",
-                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::next())
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur())
                         + 16.expr(),
-                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::prev()),
                 );
                 cb.require_equal(
                     "nil(case2): increment byte_idx",
-                    meta.query_advice(config.byte_idx, Rotation::next()),
-                    meta.query_advice(config.byte_idx, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(config.byte_idx, Rotation::cur()),
+                    meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
                 );
             });
             cb.condition(and::expr([case2.expr(), is_next_nb0.expr()]), |cb| {
@@ -3512,7 +3534,7 @@ impl DecoderConfig {
             );
 
             // 3. bit_index_end(-1) == 23
-            // the next is_nil=true row will handle.
+            // the next is_nil=true row will handle is_next_nb=0.
             cb.condition(case3.expr(), |cb| {
                 cb.require_equal("nil(case3): next is_nil too", is_next_nil, 1.expr());
                 cb.require_equal(
@@ -3866,21 +3888,10 @@ impl DecoderConfig {
                             1.expr(),
                         );
                         cb.require_equal(
-                            "(case5): bit_index_start' == bit_index_start''",
+                            "(case5): wrap bit_index_start' within <= 7",
                             meta.query_advice(
                                 config.bitstream_decoder.bit_index_start,
                                 Rotation::next(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bit_index_start,
-                                Rotation(2),
-                            ),
-                        );
-                        cb.require_equal(
-                            "(case5): wrap bit_index_start'' within <= 7",
-                            meta.query_advice(
-                                config.bitstream_decoder.bit_index_start,
-                                Rotation(2),
                             ) + 16.expr(),
                             meta.query_advice(
                                 config.bitstream_decoder.bit_index_end,
@@ -3948,7 +3959,7 @@ impl DecoderConfig {
             // - we are on the same byte_idx
             // - bit_index_start' == bit_index_start
             //
-            // Then it means we are either not reading from the bitstream, or reading nb=0 bits
+            // it means we are either not reading from the bitstream, or reading nb=0 bits
             // from the bitstream.
             let (byte_idx_prev, byte_idx_curr) = (
                 meta.query_advice(config.byte_idx, Rotation::prev()),
@@ -3966,8 +3977,8 @@ impl DecoderConfig {
                     cb.require_equal(
                         "if byte_idx' == byte_idx and start' == start: is_nil=1 or is_nb0=1",
                         sum::expr([
-                            config.bitstream_decoder.is_nil(meta, Rotation::prev()),
-                            config.bitstream_decoder.is_nb0(meta, Rotation::prev()),
+                            config.bitstream_decoder.is_nil(meta, Rotation::cur()),
+                            config.bitstream_decoder.is_nb0(meta, Rotation::cur()),
                         ]),
                         1.expr(),
                     );
@@ -4098,8 +4109,7 @@ impl DecoderConfig {
         challenges: &Challenges<Value<Fr>>,
         k: u32,
         // witgen_debug
-        // ) -> Result<AssignedDecoderConfigExports, Error> {
-    ) -> Result<(), Error> {
+    ) -> Result<AssignedDecoderConfigExports, Error> {
         let mut pow_of_rand: Vec<Value<Fr>> = vec![Value::known(Fr::ONE)];
 
         assert!(!block_info_arr.is_empty(), "Must have at least 1 block");
@@ -4184,10 +4194,9 @@ impl DecoderConfig {
             address_table_arr.iter().map(|rows| rows.iter()),
             (1 << k) - self.unusable_rows(),
         )?;
-        // TODO: use equality constraint for the exported_len and exported_rlc cell
-        let (_exported_len, _exported_rlc) = self.sequence_execution_config.assign(
+        let (exported_len, exported_rlc) = self.sequence_execution_config.assign(
             layouter,
-            challenges,
+            challenges.keccak_input(),
             literal_datas
                 .iter()
                 .zip(&sequence_info_arr)
@@ -4203,6 +4212,16 @@ impl DecoderConfig {
         layouter.assign_region(
             || "Decompression table region",
             |mut region| {
+                ////////////////////////////////////////////////////////
+                //////// Capture Copy Constraint/Export Cells  /////////
+                ////////////////////////////////////////////////////////
+                let mut last_encoded_rlc: Value<Fr> = Value::known(Fr::zero());
+                let mut last_decoded_len: Value<Fr> = Value::known(Fr::zero());
+
+                let mut encoded_len_cell: Option<AssignedCell<Fr, Fr>> = None;
+                let mut encoded_rlc_cell: Option<AssignedCell<Fr, Fr>> = None;
+                let mut decoded_len_cell: Option<AssignedCell<Fr, Fr>> = None;
+
                 /////////////////////////////////////////
                 /////////// Assign First Row  ///////////
                 /////////////////////////////////////////
@@ -4228,12 +4247,12 @@ impl DecoderConfig {
                         i,
                         || Value::known(Fr::zero()),
                     )?;
-                    region.assign_advice(
+                    encoded_len_cell = Some(region.assign_advice(
                         || "byte_idx",
                         self.byte_idx,
                         i,
                         || Value::known(Fr::from(row.encoded_data.byte_idx)),
-                    )?;
+                    )?);
                     last_byte_idx = row.encoded_data.byte_idx;
                     region.assign_advice(
                         || "byte",
@@ -4259,18 +4278,20 @@ impl DecoderConfig {
                             },
                         )?;
                     }
-                    region.assign_advice(
+                    encoded_rlc_cell = Some(region.assign_advice(
                         || "encoded_rlc",
                         self.encoded_rlc,
                         i,
                         || row.encoded_data.value_rlc,
-                    )?;
-                    region.assign_advice(
+                    )?);
+                    last_encoded_rlc = row.encoded_data.value_rlc;
+                    decoded_len_cell = Some(region.assign_advice(
                         || "decoded_len",
                         self.decoded_len,
                         i,
                         || Value::known(Fr::from(row.decoded_data.decoded_len)),
-                    )?;
+                    )?);
+                    last_decoded_len = Value::known(Fr::from(row.decoded_data.decoded_len));
 
                     /////////////////////////////////////////
                     ///// Assign Bitstream Decoder  /////////
@@ -4438,10 +4459,16 @@ impl DecoderConfig {
                         || Value::known(Fr::from(row.state.tag.is_reverse() as u64)),
                     )?;
                     region.assign_advice(
+                        || "tag_config.tag_rlc_acc",
+                        self.tag_config.tag_rlc_acc,
+                        i,
+                        || row.state.tag_rlc_acc,
+                    )?;
+                    region.assign_advice(
                         || "tag_config.tag_rlc",
                         self.tag_config.tag_rlc,
                         i,
-                        || row.state.tag_rlc_acc,
+                        || row.state.tag_rlc,
                     )?;
                     region.assign_advice(
                         || "tag_config.is_output",
@@ -4684,17 +4711,53 @@ impl DecoderConfig {
                     )?;
                 }
 
-                let mut padding_count = 2usize;
-                for idx in witness_rows.len()..((1 << k) - self.unusable_rows()) {
-                    if padding_count > 0 {
-                        region.assign_advice(
-                            || "byte_idx",
-                            self.byte_idx,
-                            idx,
-                            || Value::known(Fr::from(last_byte_idx + 1)),
-                        )?;
-                        padding_count -= 1;
+                // The last encoded_rlc at this point indicates the encoded_rlc until the
+                // penultimate tag. We need to do one more round of RLC computation, to calculate
+                // the RLC taking into considering the ultimate tag as well.
+                let last_row = witness_rows.last().expect("last row exists");
+                let last_tag_len = last_row.state.tag_len as usize;
+                let last_tag_rlc = last_row.state.tag_rlc;
+                if last_tag_len >= pow_of_rand.len() {
+                    let mut last = *pow_of_rand.last().expect("Last pow_of_rand exists.");
+                    for _ in pow_of_rand.len()..=last_tag_len {
+                        last = last * challenges.keccak_input();
+                        pow_of_rand.push(last);
                     }
+                }
+                let last_rpow_tag_len = pow_of_rand[last_tag_len];
+                let final_encoded_rlc = last_encoded_rlc * last_rpow_tag_len + last_tag_rlc;
+
+                /////////////////////////////////////////
+                ///////// Assign Padding Rows  //////////
+                /////////////////////////////////////////
+                for idx in witness_rows.len()..((1 << k) - self.unusable_rows()) {
+                    if idx == witness_rows.len() {
+                        region.assign_advice(
+                            || "is_tag_change",
+                            self.tag_config.is_change,
+                            idx,
+                            || Value::known(Fr::one()),
+                        )?;
+                    }
+                    encoded_len_cell = Some(region.assign_advice(
+                        || "byte_idx",
+                        self.byte_idx,
+                        idx,
+                        || Value::known(Fr::from(last_byte_idx + 1)),
+                    )?);
+                    encoded_rlc_cell = Some(region.assign_advice(
+                        || "encoded_rlc",
+                        self.encoded_rlc,
+                        idx,
+                        || final_encoded_rlc,
+                    )?);
+                    decoded_len_cell = Some(region.assign_advice(
+                        || "decoded_len",
+                        self.decoded_len,
+                        idx,
+                        || last_decoded_len,
+                    )?);
+
                     region.assign_advice(
                         || "tag_config.tag",
                         self.tag_config.tag,
@@ -4764,19 +4827,21 @@ impl DecoderConfig {
                     )?;
                 }
 
-                Ok(())
+                // dbg: decoded length from SeqExecConfig and decoder config must match.
+                region.constrain_equal(exported_len.cell(), decoded_len_cell.unwrap().cell())?;
+
+                Ok(AssignedDecoderConfigExports {
+                    // length of encoded data (from DecoderConfig)
+                    encoded_len: encoded_len_cell.unwrap().clone(),
+                    // RLC of encoded data (from DecoderConfig)
+                    encoded_rlc: encoded_rlc_cell.unwrap().clone(),
+                    // length of decoded data (from SeqExecConfig)
+                    decoded_len: exported_len.clone(),
+                    // RLC of decoded data (from SeqExecConfig)
+                    decoded_rlc: exported_rlc.clone(),
+                })
             },
-        )?;
-
-        // witgen_debug
-        // pub struct AssignedDecoderConfigExports {
-        //     /// The RLC of the zstd encoded bytes, i.e. blob bytes.
-        //     pub encoded_rlc: AssignedCell<Fr, Fr>,
-        //     /// The RLC of the decoded bytes, i.e. batch bytes.
-        //     pub decoded_rlc: AssignedCell<Fr, Fr>,
-        // }
-
-        Ok(())
+        )
     }
 
     pub fn unusable_rows(&self) -> usize {
@@ -4789,7 +4854,7 @@ mod tests {
     use super::process;
     use crate::{DecoderConfig, DecoderConfigArgs};
     use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
@@ -4885,12 +4950,13 @@ mod tests {
             assert_eq!(
                 std::str::from_utf8(&recovered_bytes),
                 std::str::from_utf8(&self.raw),
+                "witgen recovered bytes do not match original raw bytes",
             );
 
             u8_table.load(&mut layouter)?;
             bitwise_op_table.load(&mut layouter)?;
             pow_rand_table.assign(&mut layouter, &challenges, 1 << (self.k - 1))?;
-            config.assign(
+            let decoder_config_exports = config.assign(
                 &mut layouter,
                 &self.raw,
                 &self.compressed,
@@ -4905,6 +4971,39 @@ mod tests {
                 &challenges,
                 self.k,
             )?;
+
+            let expected_encoded_len = Value::known(Fr::from(self.compressed.len() as u64));
+            let expected_encoded_rlc = self
+                .compressed
+                .iter()
+                .fold(Value::known(Fr::zero()), |acc, &x| {
+                    acc * challenges.keccak_input() + Value::known(Fr::from(x as u64))
+                });
+            let expected_decoded_len = Value::known(Fr::from(self.raw.len() as u64));
+            let expected_decoded_rlc = self.raw.iter().fold(Value::known(Fr::zero()), |acc, &x| {
+                acc * challenges.keccak_input() + Value::known(Fr::from(x as u64))
+            });
+
+            println!("expected encoded len = {:?}", expected_encoded_len);
+            println!(
+                "got      encoded len = {:?}\n\n",
+                decoder_config_exports.encoded_len.value()
+            );
+            println!("expected encoded rlc = {:?}", expected_encoded_rlc);
+            println!(
+                "got      encoded rlc = {:?}\n\n",
+                decoder_config_exports.encoded_rlc.value()
+            );
+            println!("expected decoded len = {:?}", expected_decoded_len);
+            println!(
+                "got      decoded len = {:?}\n\n",
+                decoder_config_exports.decoded_len.value()
+            );
+            println!("expected decoded rlc = {:?}", expected_decoded_rlc);
+            println!(
+                "got      decoded rlc = {:?}\n\n",
+                decoder_config_exports.decoded_rlc.value()
+            );
 
             Ok(())
         }
@@ -4971,7 +5070,7 @@ mod tests {
             .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
             .collect::<Vec<Vec<u8>>>();
 
-        let raw = batches[0].clone();
+        let raw = batches[127].clone();
         let compressed = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
             let mut encoder =
@@ -5009,6 +5108,11 @@ mod tests {
             encoder.finish().expect("Encoder success")
         };
 
+        println!(
+            "len(encoded)={:6}\tlen(decoded)={:6}",
+            compressed.len(),
+            raw.len()
+        );
         let k = 18;
         let decoder_config_tester = DecoderConfigTester { raw, compressed, k };
         let mock_prover = MockProver::<Fr>::run(k, &decoder_config_tester, vec![]).unwrap();

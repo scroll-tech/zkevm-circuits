@@ -568,24 +568,25 @@ impl BitstringTable {
                     // Append 2 more witness rows to accommodate the 3-bytes chunk for the last
                     // FseCode row.
                     let sequence_data_rows_len = sequence_data_rows.len();
-                    sequence_data_rows.extend_from_slice(
-                        witness_rows
-                            .iter()
-                            .skip(sequence_data_position + sequence_data_rows_len)
-                            .take(2)
-                            .map(|r| {
-                                (
-                                    r.encoded_data.byte_idx as usize,
-                                    r.encoded_data.value_byte as u64,
-                                    r.bitstream_read_data.bit_start_idx,
-                                    r.bitstream_read_data.bit_end_idx,
-                                    r.bitstream_read_data.bit_value,
-                                    r.state.tag.is_reverse() as u64,
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                    );
+                    let padding_byte_idx = sequence_data_rows.last().unwrap().0 + 1;
+                    let extension = witness_rows
+                        .iter()
+                        .skip(sequence_data_position + sequence_data_rows_len)
+                        .take(2)
+                        .map(|r| {
+                            (
+                                r.encoded_data.byte_idx as usize,
+                                r.encoded_data.value_byte as u64,
+                                r.bitstream_read_data.bit_start_idx,
+                                r.bitstream_read_data.bit_end_idx,
+                                r.bitstream_read_data.bit_value,
+                                r.state.tag.is_reverse() as u64,
+                            )
+                        })
+                        .chain(std::iter::repeat((padding_byte_idx, 0, 0, 0, 0, 0)))
+                        .take(2)
+                        .collect::<Vec<_>>();
+                    sequence_data_rows.extend_from_slice(&extension);
 
                     for rows in [fse_rows, sequence_data_rows].into_iter() {
                         for grouped_rows in rows.windows(3) {

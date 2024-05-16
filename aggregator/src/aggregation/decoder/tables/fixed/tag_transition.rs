@@ -41,6 +41,7 @@ impl FixedLookupValues for RomTagTransition {
             (ZstdBlockSequenceFseCode, ZstdBlockSequenceFseCode),
             (ZstdBlockSequenceFseCode, ZstdBlockSequenceData),
             (ZstdBlockSequenceData, Null),
+            (Null, Null),
         ]
         .map(|(tag, tag_next)| {
             [

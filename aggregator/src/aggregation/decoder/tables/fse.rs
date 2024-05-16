@@ -430,6 +430,16 @@ impl FseTable {
                 );
             });
 
+            // is the first symbol if:
+            // - prev row was prob=-1
+            let is_first_symbol = meta.query_advice(config.is_prob_less_than1, Rotation::prev());
+            cb.condition(is_first_symbol, |cb| {
+                cb.require_zero(
+                    "first symbol (prob >= 1): state == 0",
+                    meta.query_advice(config.state, Rotation::cur()),
+                );
+            });
+
             cb.gate(condition)
         });
 
@@ -634,9 +644,9 @@ impl FseTable {
 
             // The symbol_count_acc inits at 1.
             cb.require_equal(
-                "symbol_count_acc inits at 1",
+                "symbol_count_acc inits at 1 if not skipped state",
                 meta.query_advice(config.symbol_count_acc, Rotation::cur()),
-                1.expr(),
+                not::expr(meta.query_advice(config.is_skipped_state, Rotation::cur())),
             );
 
             cb.gate(condition)
@@ -686,6 +696,7 @@ impl FseTable {
                 not::expr(meta.query_fixed(config.sorted_table.q_first, Rotation::cur())),
                 not::expr(meta.query_fixed(config.sorted_table.q_start, Rotation::cur())),
                 not::expr(meta.query_advice(config.is_prob_less_than1, Rotation::cur())),
+                not::expr(meta.query_advice(config.is_prob_less_than1, Rotation::prev())),
                 not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
             ]);
 
@@ -749,7 +760,7 @@ impl FseTable {
                                                                     // Assign q_start
 
                     let states_to_symbol = table.parse_state_table();
-                    let mut state_idx: usize = 1;
+                    let mut state_idx: usize = 0;
 
                     // Assign the symbols with negative normalised probability
                     let tail_states_count = table
@@ -762,6 +773,7 @@ impl FseTable {
                             ..=(table.table_size - 1))
                             .rev()
                         {
+                            state_idx += 1;
                             region.assign_advice(
                                 || "state",
                                 self.state,
@@ -820,7 +832,7 @@ impl FseTable {
                                 || "is_skipped_state",
                                 self.is_skipped_state,
                                 fse_offset,
-                                || Value::known(Fr::one()),
+                                || Value::known(Fr::zero()),
                             )?;
                             region.assign_advice(
                                 || "symbol_count",
@@ -847,7 +859,6 @@ impl FseTable {
                                 || Value::known(Fr::from(table.table_size >> 3)),
                             )?;
 
-                            state_idx += 1;
                             fse_offset += 1;
                         }
                     }
@@ -860,11 +871,15 @@ impl FseTable {
                         .filter(|(_sym, w)| *w > 0)
                         .collect::<Vec<(u64, i32)>>();
                     for (sym, _c) in regular_symbols.clone().into_iter() {
-                        let mut sym_acc: usize = 1;
+                        let mut sym_acc: usize = 0;
                         let sym_rows = table.sym_to_states.get(&sym).expect("symbol exists.");
                         let sym_count = sym_rows.iter().filter(|r| !r.is_state_skipped).count();
 
-                        for fse_row in sym_rows {
+                        for (j, fse_row) in sym_rows.iter().enumerate() {
+                            if !fse_row.is_state_skipped {
+                                state_idx += 1;
+                                sym_acc += 1;
+                            }
                             region.assign_advice(
                                 || "state",
                                 self.state,
@@ -899,7 +914,7 @@ impl FseTable {
                                 || "is_new_symbol",
                                 self.is_new_symbol,
                                 fse_offset,
-                                || Value::known(Fr::from((sym_acc == 1) as u64)),
+                                || Value::known(Fr::from((j == 0) as u64)),
                             )?;
                             region.assign_advice(
                                 || "is_prob_less_than1",
@@ -939,18 +954,14 @@ impl FseTable {
                             )?;
 
                             fse_offset += 1;
-                            if !fse_row.is_state_skipped {
-                                state_idx += 1;
-                                sym_acc += 1;
-                            }
                         }
                     }
 
                     // witgen_debug
-                    // assert!(
-                    //     state_idx as u64 == table.table_size,
-                    //     "Last state should correspond to end of table"
-                    // );
+                    assert!(
+                        state_idx as u64 == table.table_size,
+                        "Last state should correspond to end of table"
+                    );
 
                     // Assign the symbols with positive probability in sorted table
                     for (sym, _c) in regular_symbols.into_iter() {
@@ -973,6 +984,10 @@ impl FseTable {
                             as u64;
 
                         for fse_row in sym_rows {
+                            assert!(
+                                !fse_row.is_state_skipped,
+                                "sorted state rows cannot be skipped states"
+                            );
                             if !fse_row.is_state_skipped {
                                 region.assign_advice(
                                     || "sorted_table.block_idx",
@@ -1123,9 +1138,7 @@ impl FseTable {
                             || "idx",
                             self.idx,
                             offset,
-                            // We incremented state_idx after the last valid symbol's last state.
-                            // So we less 1 here.
-                            || Value::known(Fr::from(state_idx as u64 - 1)),
+                            || Value::known(Fr::from(state_idx as u64)),
                         )?;
                     }
                     for offset in sorted_offset..target_end_offset {
