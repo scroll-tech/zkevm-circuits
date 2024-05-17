@@ -311,8 +311,6 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
     );
 }
 
-
-
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
@@ -468,8 +466,8 @@ fn serial_test_super_circuit_eip_1559_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 256;
 
-    let block_trace = eip1559::test_block_trace();
-    let circuits_params = eip1559::test_circuits_params(MAX_TXS, MAX_CALLDATA);
+    let block_trace = eip1559_2930::test_block_1559_trace();
+    let circuits_params = eip1559_2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
         block_trace,
@@ -484,8 +482,8 @@ fn serial_test_super_circuit_eip_2930_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 256;
 
-    let block_trace = eip2930::test_block_trace();
-    let circuits_params = eip2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
+    let block_trace = eip1559_2930::test_block_2930_trace();
+    let circuits_params = eip1559_2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
         block_trace,
