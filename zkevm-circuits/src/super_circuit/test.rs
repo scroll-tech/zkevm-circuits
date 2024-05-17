@@ -190,9 +190,54 @@ fn block_1tx_ctx() -> TestContext<2, 1> {
     .unwrap()
 }
 
+fn block_1tx_1559_ctx() -> TestContext<2, 1> {
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+    let chain_id = MOCK_CHAIN_ID;
+
+    let bytecode = bytecode! {
+        GAS
+        STOP
+    };
+
+    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+
+    let addr_a = wallet_a.address();
+    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+
+    TestContext::new(
+        Some(vec![Word::zero()]),
+        |accs| {
+            accs[0]
+                .address(addr_b)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode);
+            accs[1].address(addr_a).balance(Word::from(1u64 << 20));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(wallet_a)
+                .to(accs[0].address)
+                .gas(Word::from(1_000_000u64))
+                //.gas(30_000.into())
+                .value(Word::from(1_000_000u64))
+                .max_fee_per_gas(Word::from(3_000_000u64))
+                .max_priority_fee_per_gas(Word::from(2_000_000u64))
+                .transaction_type(2); // Set tx type to EIP-1559.
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+}
+
 #[cfg(feature = "scroll")]
 fn block_1tx_trace() -> BlockTrace {
     block_1tx_ctx().l2_trace().clone()
+}
+
+#[cfg(feature = "scroll")]
+fn block_1tx_1559_trace() -> BlockTrace {
+    block_1tx_1559_ctx().l2_trace().clone()
 }
 
 pub(crate) fn block_1tx() -> GethData {
@@ -283,6 +328,35 @@ fn serial_test_super_circuit_1tx_1max_tx() {
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
+fn serial_test_super_circuit_1tx_1max_tx_1559() {
+    let block = block_1tx_1559_trace();
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 256;
+    const MAX_INNER_BLOCKS: usize = 1;
+    let circuits_params = CircuitsParams {
+        max_txs: MAX_TXS,
+        max_calldata: MAX_CALLDATA,
+        max_rws: 256,
+        max_copy_rows: 256,
+        max_exp_steps: 256,
+        max_bytecode: 512,
+        max_mpt_rows: 2049,
+        max_poseidon_rows: 512,
+        max_evm_rows: 0,
+        max_keccak_rows: 0,
+        max_inner_blocks: MAX_INNER_BLOCKS,
+        max_rlp_rows: 500,
+        ..Default::default()
+    };
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
+        block,
+        circuits_params,
+    );
+}
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
 fn serial_test_super_circuit_1tx_deploy_2max_tx() {
     let block = block_1tx_deploy();
     const MAX_TXS: usize = 2;
@@ -311,34 +385,7 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
     );
 }
 
-#[ignore]
-#[cfg(feature = "scroll")]
-#[test]
-fn serial_test_super_circuit_1tx_2max_tx() {
-    let block = block_1tx_trace();
-    const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 256;
-    const MAX_INNER_BLOCKS: usize = 1;
-    let circuits_params = CircuitsParams {
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
-        max_rws: 256,
-        max_copy_rows: 256,
-        max_exp_steps: 256,
-        max_bytecode: 512,
-        max_mpt_rows: 2049,
-        max_poseidon_rows: 512,
-        max_evm_rows: 0,
-        max_keccak_rows: 0,
-        max_inner_blocks: MAX_INNER_BLOCKS,
-        max_rlp_rows: 500,
-        ..Default::default()
-    };
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
-        block,
-        circuits_params,
-    );
-}
+
 
 #[ignore]
 #[cfg(feature = "scroll")]
