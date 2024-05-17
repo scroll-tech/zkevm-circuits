@@ -83,6 +83,7 @@ fn process_frame_header<F: Field>(
             _ => fcs,
         }
     };
+    println!("frame content size = {:?}", fcs);
     let fcs_tag_value_iter = fcs_bytes
         .iter()
         .scan(Value::known(F::zero()), |acc, &byte| {
@@ -218,6 +219,13 @@ fn process_block<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
 ) -> AggregateBlockResult<F> {
+    println!(
+        "process block: block_idx={:?}\tbyte_offset={:?}",
+        block_idx, byte_offset
+    );
+    if block_idx > 10 {
+        unreachable!("not more than 10 blocks");
+    }
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, block_info) =
@@ -226,7 +234,7 @@ fn process_block<F: Field>(
 
     let last_row = rows.last().expect("last row expected to exist");
     let (
-        _byte_offset,
+        end_offset,
         rows,
         literals,
         lstream_len,
@@ -250,7 +258,7 @@ fn process_block<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     (
-        byte_offset,
+        end_offset,
         witness_rows,
         block_info,
         sequence_info,
@@ -396,7 +404,7 @@ fn process_block_zstd<F: Field>(
     block_size: usize,
     last_block: bool,
 ) -> BlockProcessingResult<F> {
-    let end_offset = byte_offset + block_size;
+    let expected_end_offset = byte_offset + block_size;
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
@@ -502,7 +510,7 @@ fn process_block_zstd<F: Field>(
 
     let last_row = witness_rows.last().expect("last row expected to exist");
     let (
-        bytes_offset,
+        end_offset,
         rows,
         fse_aux_tables,
         address_table_rows,
@@ -513,16 +521,17 @@ fn process_block_zstd<F: Field>(
         src,
         block_idx,
         byte_offset,
-        end_offset,
+        expected_end_offset,
         literals.clone(),
         last_row,
         last_block,
         randomness,
     );
+    assert!(end_offset == expected_end_offset, "end offset mismatch");
     witness_rows.extend_from_slice(&rows);
 
     (
-        bytes_offset,
+        end_offset,
         witness_rows,
         literals,
         lstream_len,
@@ -616,7 +625,8 @@ fn process_sequences<F: Field>(
     // TODO: Treatment of other encoding modes
     assert!(
         literal_lengths_mode == 2 || literal_lengths_mode == 0,
-        "Only FSE_Compressed_Mode is allowed"
+        "Only FSE_Compressed_Mode is allowed llt_mode={:?}",
+        literal_lengths_mode,
     );
     assert!(
         offsets_mode == 2 || offsets_mode == 0,
@@ -702,6 +712,8 @@ fn process_sequences<F: Field>(
         .collect::<Vec<_>>();
 
     witness_rows.extend_from_slice(&header_rows);
+
+    //println!("got seq header (info) = {:?}", sequence_info);
 
     // Second, process the sequence tables (encoded using FSE)
     let byte_offset = sequence_header_end_offset;
@@ -1997,25 +2009,20 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     let mut address_table_arr: Vec<Vec<AddressTableRow>> = vec![];
     // TODO: handle multi-block
     let mut sequence_exec_info_arr: Vec<SequenceExecResult> = vec![];
-    let byte_offset = 0;
 
     // witgen_debug
     let stdout = io::stdout();
     let mut handle = stdout.lock();
 
     // FrameHeaderDescriptor and FrameContentSize
-    let (byte_offset, rows) = process_frame_header::<F>(
-        src,
-        byte_offset,
-        &ZstdWitnessRow::init(src.len()),
-        randomness,
-    );
+    let (mut byte_offset, rows) =
+        process_frame_header::<F>(src, 0, &ZstdWitnessRow::init(src.len()), randomness);
     witness_rows.extend_from_slice(&rows);
 
     let mut block_idx: u64 = 1;
     loop {
         let (
-            _byte_offset,
+            end_offset,
             rows,
             block_info,
             sequence_info,
@@ -2048,10 +2055,11 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
 
         if block_info.is_last_block {
             // TODO: Recover this assertion after the sequence section decoding is completed.
-            // assert!(byte_offset >= src.len());
+            assert!(end_offset == src.len());
             break;
         } else {
             block_idx += 1;
+            byte_offset = end_offset;
         }
     }
 
