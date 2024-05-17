@@ -136,9 +136,7 @@ fn process_frame_header<F: Field>(
                 value_rlc: Value::known(F::zero()),
                 ..Default::default()
             },
-            decoded_data: DecodedData {
-                decoded_len: fcs,
-            },
+            decoded_data: DecodedData { decoded_len: fcs },
             bitstream_read_data: BitstreamReadRow::default(),
             fse_data: FseDecodingRow::default(),
         })
@@ -174,9 +172,7 @@ fn process_frame_header<F: Field>(
                                 reverse_len: fcs_tag_len as u64,
                                 value_rlc: fhd_value_rlc,
                             },
-                            decoded_data: DecodedData {
-                                decoded_len: fcs,
-                            },
+                            decoded_data: DecodedData { decoded_len: fcs },
                             bitstream_read_data: BitstreamReadRow::default(),
                             fse_data: FseDecodingRow::default(),
                         }
@@ -418,35 +414,33 @@ fn process_block_zstd<F: Field>(
                 .zip(tag_rlc_iter)
                 .enumerate()
                 .map(
-                    |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| {
-                        ZstdWitnessRow {
-                            state: ZstdState {
-                                tag,
-                                tag_next,
-                                block_idx,
-                                max_tag_len: lookup_max_tag_len(tag),
-                                tag_len: regen_size as u64,
-                                tag_idx: (i + 1) as u64,
-                                tag_value,
-                                tag_value_acc,
-                                is_tag_change: i == 0,
-                                tag_rlc,
-                                tag_rlc_acc,
-                            },
-                            encoded_data: EncodedData {
-                                byte_idx: (byte_offset + i + 1) as u64,
-                                encoded_len: last_row.encoded_data.encoded_len,
-                                value_byte,
-                                value_rlc,
-                                reverse: false,
-                                ..Default::default()
-                            },
-                            decoded_data: DecodedData {
-                                decoded_len: last_row.decoded_data.decoded_len,
-                            },
-                            bitstream_read_data: BitstreamReadRow::default(),
-                            fse_data: FseDecodingRow::default(),
-                        }
+                    |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
+                        state: ZstdState {
+                            tag,
+                            tag_next,
+                            block_idx,
+                            max_tag_len: lookup_max_tag_len(tag),
+                            tag_len: regen_size as u64,
+                            tag_idx: (i + 1) as u64,
+                            tag_value,
+                            tag_value_acc,
+                            is_tag_change: i == 0,
+                            tag_rlc,
+                            tag_rlc_acc,
+                        },
+                        encoded_data: EncodedData {
+                            byte_idx: (byte_offset + i + 1) as u64,
+                            encoded_len: last_row.encoded_data.encoded_len,
+                            value_byte,
+                            value_rlc,
+                            reverse: false,
+                            ..Default::default()
+                        },
+                        decoded_data: DecodedData {
+                            decoded_len: last_row.decoded_data.decoded_len,
+                        },
+                        bitstream_read_data: BitstreamReadRow::default(),
+                        fse_data: FseDecodingRow::default(),
                     },
                 )
                 .collect::<Vec<_>>(),
@@ -1444,15 +1438,21 @@ fn process_sequences<F: Field>(
             },
         });
 
+        // When the range of a multi-byte read operation from the bitstream covers an entire byte,
+        // a separate row needs to be added for each of such byte to ensure continuity of the value
+        // accumulators. These compensating rows have is_nil=true. At most, two bytes can be
+        // entirely covered by a bitstream read operation.
         let multi_byte_boundaries: [usize; 2] = [15, 23];
         let mut skipped_bits = 0usize;
 
         for boundary in multi_byte_boundaries {
             if to_bit_idx >= boundary {
+                // Skip over covered bytes for byte and bit index
                 for _ in 0..N_BITS_PER_BYTE {
                     (current_byte_idx, current_bit_idx) =
                         increment_idx(current_byte_idx, current_bit_idx);
                 }
+                // Increment accumulators for nil row
                 if current_byte_idx > last_byte_idx && current_byte_idx <= n_sequence_data_bytes {
                     next_tag_value_acc = tag_value_iter.next().unwrap();
                     next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
@@ -1524,6 +1524,7 @@ fn process_sequences<F: Field>(
             }
         }
 
+        // Update all variables that indicate current decoding states
         order_idx += 1;
         if mode > 0 {
             if order_idx > 2 {
@@ -1535,7 +1536,7 @@ fn process_sequences<F: Field>(
             mode = 1; // switch to FSE mode
             order_idx = 0;
 
-            // Add the instruction
+            // Three elements (MO, ML and LL) are all decoded. Add the instruction.
             let new_instruction = (
                 curr_instruction[0],
                 curr_instruction[1],
@@ -1553,6 +1554,10 @@ fn process_sequences<F: Field>(
             nb_switch[mode][order_idx]
         };
 
+        // Adjust the end position of the current read operation:
+        // If the next operation reads 0 bits, the ending bit position should stay on
+        // the last bit, instead of incrementing to the next position. When the nb=0 streak breaks,
+        // the held off position is released.
         if nb > 0 && next_nb > 0 {
             for _ in 0..(nb - skipped_bits) {
                 (current_byte_idx, current_bit_idx) =
@@ -1575,6 +1580,7 @@ fn process_sequences<F: Field>(
             last_byte_idx = current_byte_idx;
         }
 
+        // Update the next nb for the next read operation
         nb = next_nb;
     }
 

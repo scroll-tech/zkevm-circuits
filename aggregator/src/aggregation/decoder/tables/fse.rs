@@ -958,7 +958,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                             fse_offset += 1;
                         }
                     }
-                    
+
                     assert!(
                         state_idx as u64 == table.table_size,
                         "Last state should correspond to end of table"
