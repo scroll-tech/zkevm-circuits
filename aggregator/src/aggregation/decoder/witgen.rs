@@ -138,10 +138,6 @@ fn process_frame_header<F: Field>(
             },
             decoded_data: DecodedData {
                 decoded_len: fcs,
-                decoded_len_acc: 0,
-                total_decoded_len: last_row.decoded_data.total_decoded_len + fcs,
-                decoded_byte: 0,
-                decoded_value_rlc: Value::known(F::zero()),
             },
             bitstream_read_data: BitstreamReadRow::default(),
             fse_data: FseDecodingRow::default(),
@@ -176,16 +172,10 @@ fn process_frame_header<F: Field>(
                                 reverse: false,
                                 reverse_idx: (fcs_tag_len - i) as u64,
                                 reverse_len: fcs_tag_len as u64,
-                                aux_1: *aux_1,
-                                aux_2,
                                 value_rlc: fhd_value_rlc,
                             },
                             decoded_data: DecodedData {
                                 decoded_len: fcs,
-                                decoded_len_acc: 0,
-                                total_decoded_len: last_row.decoded_data.total_decoded_len + fcs,
-                                decoded_byte: 0,
-                                decoded_value_rlc: Value::known(F::zero()),
                             },
                             bitstream_read_data: BitstreamReadRow::default(),
                             fse_data: FseDecodingRow::default(),
@@ -307,23 +297,6 @@ fn process_block_header<F: Field>(
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
 
-    // BlockHeader follows FrameContentSize which is processed in reverse order.
-    // Hence value_rlc at the first BlockHeader byte will be calculated as:
-    //
-    // value_rlc::cur == aux_1::prev * (rand ^ reverse_len) * rand
-    //      + aux_2::prev * rand
-    //      + value_byte::cur
-    let acc_start = last_row.encoded_data.aux_1
-        * randomness.map(|r| r.pow([last_row.encoded_data.reverse_len, 0, 0, 0]))
-        + last_row.encoded_data.aux_2;
-    let _value_rlcs = bh_bytes
-        .iter()
-        .scan(acc_start, |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        })
-        .collect::<Vec<Value<F>>>();
-
     (
         byte_offset + N_BLOCK_HEADER_BYTES,
         bh_bytes
@@ -426,13 +399,6 @@ fn process_block_zstd<F: Field>(
                 *acc = *acc * randomness + Value::known(F::from(byte as u64));
                 Some(*acc)
             });
-        let decoded_value_rlc_iter =
-            literals
-                .iter()
-                .scan(last_row.decoded_data.decoded_value_rlc, |acc, &byte| {
-                    *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                    Some(*acc)
-                });
         let tag_value_iter = literals.iter().scan(Value::known(F::zero()), |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
@@ -449,11 +415,10 @@ fn process_block_zstd<F: Field>(
             literals
                 .iter()
                 .zip(tag_value_iter)
-                .zip(decoded_value_rlc_iter)
                 .zip(tag_rlc_iter)
                 .enumerate()
                 .map(
-                    |(i, (((&value_byte, tag_value_acc), decoded_value_rlc), tag_rlc_acc))| {
+                    |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| {
                         ZstdWitnessRow {
                             state: ZstdState {
                                 tag,
@@ -478,10 +443,6 @@ fn process_block_zstd<F: Field>(
                             },
                             decoded_data: DecodedData {
                                 decoded_len: last_row.decoded_data.decoded_len,
-                                decoded_len_acc: last_row.decoded_data.decoded_len + (i as u64) + 1,
-                                total_decoded_len: last_row.decoded_data.total_decoded_len,
-                                decoded_byte: value_byte,
-                                decoded_value_rlc,
                             },
                             bitstream_read_data: BitstreamReadRow::default(),
                             fse_data: FseDecodingRow::default(),
@@ -688,10 +649,6 @@ fn process_sequences<F: Field>(
                 },
                 decoded_data: DecodedData {
                     decoded_len: last_row.decoded_data.decoded_len,
-                    decoded_len_acc: last_row.decoded_data.decoded_len + (i as u64) + 1,
-                    total_decoded_len: last_row.decoded_data.total_decoded_len,
-                    decoded_byte: value_byte,
-                    decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
                 },
                 bitstream_read_data: BitstreamReadRow::default(),
                 fse_data: FseDecodingRow::default(),
@@ -1051,10 +1008,6 @@ fn process_sequences<F: Field>(
                     },
                     decoded_data: DecodedData {
                         decoded_len: last_row.decoded_data.decoded_len,
-                        decoded_len_acc: last_row.decoded_data.decoded_len_acc,
-                        total_decoded_len: last_row.decoded_data.total_decoded_len,
-                        decoded_byte: 0u8,
-                        decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
                     },
                     fse_data: FseDecodingRow {
                         table_kind: row.11,
@@ -1120,10 +1073,6 @@ fn process_sequences<F: Field>(
                         },
                         decoded_data: DecodedData {
                             decoded_len: last_row.decoded_data.decoded_len,
-                            decoded_len_acc: last_row.decoded_data.decoded_len_acc,
-                            total_decoded_len: last_row.decoded_data.total_decoded_len,
-                            decoded_byte: 0u8,
-                            decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
                         },
                         fse_data: FseDecodingRow {
                             table_kind: row.11,
@@ -1252,8 +1201,6 @@ fn process_sequences<F: Field>(
             reverse: true,
             reverse_len: n_sequence_data_bytes as u64,
             reverse_idx: (n_sequence_data_bytes - (current_byte_idx - 1)) as u64,
-            aux_1,
-            aux_2: Value::known(F::zero()),
         },
         bitstream_read_data: BitstreamReadRow {
             bit_start_idx: 0usize,
@@ -1470,8 +1417,6 @@ fn process_sequences<F: Field>(
                 reverse: true,
                 reverse_len: n_sequence_data_bytes as u64,
                 reverse_idx: (n_sequence_data_bytes - (current_byte_idx - 1)) as u64,
-                aux_1,
-                aux_2: Value::known(F::zero()),
             },
             bitstream_read_data: BitstreamReadRow {
                 bit_start_idx: from_bit_idx,
@@ -1550,8 +1495,6 @@ fn process_sequences<F: Field>(
                         reverse: true,
                         reverse_len: n_sequence_data_bytes as u64,
                         reverse_idx: (n_sequence_data_bytes - (current_byte_idx - 1)) as u64,
-                        aux_1,
-                        aux_2: Value::known(F::zero()),
                     },
                     bitstream_read_data: BitstreamReadRow {
                         bit_start_idx: to_bit_idx - wrap_by,

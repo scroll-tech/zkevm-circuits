@@ -297,8 +297,6 @@ pub struct EncodedData<F> {
     pub reverse: bool,
     pub reverse_idx: u64,
     pub reverse_len: u64,
-    pub aux_1: Value<F>,
-    pub aux_2: Value<F>,
     pub value_rlc: Value<F>,
 }
 
@@ -317,20 +315,14 @@ impl<F: Field> Default for EncodedData<F> {
             reverse: false,
             reverse_idx: 0,
             reverse_len: 0,
-            aux_1: Value::known(F::zero()),
-            aux_2: Value::known(F::zero()),
             value_rlc: Value::known(F::zero()),
         }
     }
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DecodedData<F> {
+pub struct DecodedData {
     pub decoded_len: u64,
-    pub decoded_len_acc: u64,
-    pub total_decoded_len: u64,
-    pub decoded_byte: u8,
-    pub decoded_value_rlc: Value<F>,
 }
 
 /// FSE decoding data from witness generation
@@ -959,7 +951,7 @@ pub struct ZstdWitnessRow<F> {
     /// Data on compressed data
     pub encoded_data: EncodedData<F>,
     /// Data on decompressed data
-    pub decoded_data: DecodedData<F>,
+    pub decoded_data: DecodedData,
     /// Fse decoding state transition data
     pub fse_data: FseDecodingRow,
     /// Bitstream reader
