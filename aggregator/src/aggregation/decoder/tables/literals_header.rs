@@ -235,7 +235,6 @@ impl LiteralsHeaderTable {
                         (self.byte1, byte1, "byte1"),
                         (self.byte2, byte2, "byte2"),
                         (self.regen_size, regen_size, "regen_size"),
-                        // witgen_debug: check bit order
                         (
                             self.size_format_bit0,
                             (size_format & 1) as u64,

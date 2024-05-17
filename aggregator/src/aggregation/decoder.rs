@@ -90,8 +90,6 @@ pub struct DecoderConfig<const L: usize, const R: usize> {
     bitstring_table: BitstringTable,
     /// Helper table for decoding FSE tables.
     fse_table: FseTable<L, R>,
-
-    // witgen_debug
     /// Helper table for sequences as instructions.
     sequence_instruction_table: SequenceInstructionTable<Fr>,
     // /// Helper table in the "output" region for accumulating the result of executing sequences.
@@ -4115,7 +4113,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         sequence_exec_info_arr: Vec<Vec<SequenceExec>>,
         challenges: &Challenges<Value<Fr>>,
         k: u32,
-        // witgen_debug
     ) -> Result<AssignedDecoderConfigExports, Error> {
         let mut pow_of_rand: Vec<Value<Fr>> = vec![Value::known(Fr::ONE)];
 

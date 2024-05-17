@@ -422,7 +422,6 @@ impl BitstringTable {
             cb.gate(condition)
         });
 
-        // witgen_debug
         // For every bitstring accumulation, the byte indices must be in the order in which
         // they appear in the rows assigned to the DecoderConfig. Which means:
         // - byte_idx_2 at the most increments by 1 compared to byte_idx_1.

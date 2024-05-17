@@ -6,8 +6,6 @@ use halo2_proofs::circuit::Value;
 use revm_precompile::HashMap;
 
 use std::io;
-// witgen_debug
-use std::io::Write;
 
 mod params;
 pub use params::*;
@@ -727,12 +725,6 @@ fn process_sequences<F: Field>(
         6
     };
 
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-    // write!(handle, "bit_boundaries_llt: {:?}", bit_boundaries_llt).unwrap();
-    // writeln!(handle).unwrap();
-
     // Cooked Match Offset Table (CMOT)
     let byte_offset = byte_offset + n_fse_bytes_llt;
     let (n_fse_bytes_cmot, bit_boundaries_cmot, table_cmot) = FseAuxiliaryTableData::reconstruct(
@@ -1328,15 +1320,7 @@ fn process_sequences<F: Field>(
     let mut current_decoding_state = 0u64;
     let mut tail_holding_bit = false;
 
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-
     while current_bit_idx + nb <= bitstream_end_bit_idx {
-        // witgen_debug
-        // write!(handle, "current_byte_idx: {:?}, current_bit_idx: {:?}, nb: {:?}",
-        // current_byte_idx, current_bit_idx, nb).unwrap(); writeln!(handle).unwrap();
-
         let bitstring_value =
             be_bits_to_value(&sequence_bitstream[current_bit_idx..(current_bit_idx + nb)]);
 
@@ -1455,11 +1439,6 @@ fn process_sequences<F: Field>(
             from_bit_idx
         };
 
-        // witgen_debug
-        // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?},
-        // is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, from_bit_idx,
-        // to_bit_idx, nb, false, (nb == 0)).unwrap(); writeln!(handle).unwrap();
-
         // Add a witness row
         witness_rows.push(ZstdWitnessRow {
             state: ZstdState {
@@ -1482,10 +1461,6 @@ fn process_sequences<F: Field>(
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + current_byte_idx) as u64,
                 encoded_len,
-                // witgen_debug, idx overflow
-                // TODO(ray): This is a special case of the sequences data being a part of the
-                // "last block", hence the overflow. I have just re-used the "last" byte from the
-                // source data in such a case.
                 value_byte: if end_offset - current_byte_idx < src.len() {
                     src[end_offset - current_byte_idx]
                 } else {
@@ -1540,10 +1515,6 @@ fn process_sequences<F: Field>(
                 }
                 skipped_bits += N_BITS_PER_BYTE;
 
-                // witgen_debug
-                // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?}, is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, 0, 0, 7, true, false).unwrap();
-                // writeln!(handle).unwrap();
-
                 let wrap_by = match to_bit_idx {
                     15 => 8,
                     16..=23 => 16,
@@ -1570,11 +1541,6 @@ fn process_sequences<F: Field>(
                     encoded_data: EncodedData {
                         byte_idx: (byte_offset + current_byte_idx) as u64,
                         encoded_len,
-                        // witgen_debug, idx overflow
-                        // TODO(ray): This is a special case of the sequences data being a part of
-                        // the "last block", hence the overflow. I have just
-                        // re-used the "last" byte from the source data in
-                        // such a case.
                         value_byte: if end_offset - current_byte_idx < src.len() {
                             src[end_offset - current_byte_idx]
                         } else {
@@ -1633,11 +1599,6 @@ fn process_sequences<F: Field>(
                 curr_instruction[2],
             );
 
-            // witgen_debug
-            // write!(handle, "NewInstruction - idx: {:?}, Offset: {:?}, ML: {:?}, LLT: {:?}",
-            // raw_sequence_instructions.len(), new_instruction.0, new_instruction.1,
-            // new_instruction.2).unwrap(); writeln!(handle);
-
             raw_sequence_instructions.push(new_instruction);
         }
 
@@ -1678,23 +1639,6 @@ fn process_sequences<F: Field>(
     let mut address_table_rows: Vec<AddressTableRow> = vec![];
     let mut literal_len_acc: usize = 0;
     let mut repeated_offset: [usize; 3] = [1, 4, 8];
-
-    // witgen_debug
-    // for idx in 0..witness_rows.len() {
-    //     if witness_rows[idx].state.tag == ZstdTag::ZstdBlockSequenceData
-    //         && !witness_rows[idx].bitstream_read_data.is_seq_init
-    //     {
-    //         let seq_idx = witness_rows[idx].bitstream_read_data.seq_idx;
-    //         if seq_idx > 0 {
-    //             witness_rows[idx].bitstream_read_data.values = [
-    //                 // literal length, match length and match offset.
-    //                 raw_sequence_instructions[seq_idx - 1].2 as u64,
-    //                 raw_sequence_instructions[seq_idx - 1].1 as u64,
-    //                 raw_sequence_instructions[seq_idx - 1].0 as u64,
-    //             ];
-    //         }
-    //     }
-    // }
 
     for (idx, inst) in raw_sequence_instructions.iter().enumerate() {
         let actual_offset = if inst.0 > 3 {
@@ -1816,14 +1760,6 @@ fn process_sequences<F: Field>(
                 .as_slice(),
         );
     }
-
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-
-    // witgen_debug
-    // write!(handle, "=> decoded: {:?}", recovered_inputs).unwrap();
-    // writeln!(handle).unwrap();
 
     (
         end_offset,
@@ -1999,10 +1935,6 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     let mut sequence_exec_info_arr: Vec<SequenceExecResult> = vec![];
     let byte_offset = 0;
 
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-
     // FrameHeaderDescriptor and FrameContentSize
     let (byte_offset, rows) = process_frame_header::<F>(
         src,
@@ -2054,44 +1986,6 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             block_idx += 1;
         }
     }
-
-    // witgen_debug
-    // for (idx, row) in witness_rows.iter().enumerate() {
-    //     if row.encoded_data.byte_idx >= 33860 && row.encoded_data.byte_idx <= 33870 {
-    //         write!(
-    //             handle,
-    //
-    // "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:
-    // ?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};
-    // {:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",         idx,             row.state.tag,
-    // row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
-    // row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
-    //             row.state.is_tag_change, row.state.tag_rlc_acc,
-    // row.encoded_data.byte_idx,             row.encoded_data.encoded_len,
-    // row.encoded_data.value_byte, row.encoded_data.reverse,
-    // row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1,
-    //             row.encoded_data.aux_2, row.encoded_data.value_rlc,
-    //             row.decoded_data.decoded_len,         row.decoded_data.decoded_len_acc,
-    //             row.decoded_data.total_decoded_len,         row.decoded_data.decoded_byte,
-    //             row.decoded_data.decoded_value_rlc,         row.fse_data.table_kind,
-    //             row.fse_data.table_size, row.fse_data.symbol,         row.fse_data.num_emitted,
-    //             row.fse_data.value_decoded, row.fse_data.probability_acc,         row.fse_data.
-    //             is_repeat_bits_loop, row.fse_data.is_trailing_bits,
-    // row.bitstream_read_data.             bit_start_idx,
-    // row.bitstream_read_data.bit_end_idx,             row.bitstream_read_data.bit_value,
-    // row.bitstream_read_data.is_nil,             row.bitstream_read_data.is_zero_bit_read,
-    //             row.bitstream_read_data.is_seq_init,
-    //             row.bitstream_read_data.seq_idx,
-    //             row.bitstream_read_data.states,
-    //             row.bitstream_read_data.symbols,
-    //             row.bitstream_read_data.values,
-    //             row.bitstream_read_data.baseline,
-    //             row.bitstream_read_data.is_update_state,
-    //         ).unwrap();
-
-    //         writeln!(handle).unwrap();
-    //     }
-    // }
 
     (
         witness_rows,
@@ -2199,10 +2093,6 @@ mod tests {
         use super::*;
         use halo2_proofs::halo2curves::bn256::Fr;
 
-        // witgen_debug
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-
         let mut batch_files = fs::read_dir("./data/test_batches")?
             .map(|entry| entry.map(|e| e.path()))
             .collect::<Result<Vec<_>, std::io::Error>>()?;
@@ -2214,12 +2104,7 @@ mod tests {
             .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
             .collect::<Vec<Vec<u8>>>();
 
-        for (batch_idx, raw_input_bytes) in batches.into_iter().enumerate() {
-            // witgen_debug
-            // if batch_idx == 127 {
-            //     continue;
-            // }
-
+        for (_batch_idx, raw_input_bytes) in batches.into_iter().enumerate() {
             let compressed = {
                 // compression level = 0 defaults to using level=3, which is zstd's default.
                 let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
@@ -2246,10 +2131,6 @@ mod tests {
                 encoder.finish()?
             };
 
-            // witgen_debug
-            // write!(handle, "=> compressed: {:?}", compressed).unwrap();
-            // writeln!(handle).unwrap();
-
             let (
                 _witness_rows,
                 _decoded_literals,
@@ -2265,14 +2146,6 @@ mod tests {
                 .into_iter()
                 .flat_map(|r| r.recovered_bytes)
                 .collect::<Vec<u8>>();
-
-            // witgen_debug
-            write!(handle, "=> batch_idx: {:?}", batch_idx).unwrap();
-            writeln!(handle).unwrap();
-
-            // witgen_debug
-            // write!(handle, "=> decoded: {:?}", decoded_bytes).unwrap();
-            // writeln!(handle).unwrap();
 
             assert!(raw_input_bytes == decoded_bytes);
         }
