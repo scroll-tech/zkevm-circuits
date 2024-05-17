@@ -22,7 +22,7 @@ pub(crate) fn test_block_1559_trace() -> BlockTrace {
         },
         |mut txs, _accs| {
             txs[0]
-                .from(addr_a)
+                .from(wallet_a)
                 .to(addr_b)
                 .gas_price(gwei(2))
                 .gas(30_000.into())
@@ -87,7 +87,7 @@ pub(crate) fn test_block_2930_trace() -> BlockTrace {
         },
         |mut txs, _accs| {
             txs[0]
-                .from(addr_a)
+                .from(wallet_a)
                 .to(addr_b)
                 .gas_price(gwei(2))
                 .gas(1_000_000.into())
