@@ -13,61 +13,6 @@ use super::{
     util::{read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
 };
 
-/// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
-/// fields are assigned correctly.
-#[derive(Clone, Debug)]
-pub struct RomTagTableRow {
-    /// The current tag.
-    tag: ZstdTag,
-    /// The tag that will be processed after the current tag is finished processing.
-    tag_next: ZstdTag,
-    /// The maximum number of bytes that are needed to represent the current tag.
-    max_len: u64,
-    /// Whether this tag outputs a decoded byte or not.
-    is_output: bool,
-    /// Whether this tag is processed from back-to-front or not.
-    is_reverse: bool,
-    /// Whether this tag belongs to a ``block`` in zstd or not.
-    is_block: bool,
-}
-
-impl RomTagTableRow {
-    pub(crate) fn rows() -> Vec<Self> {
-        use ZstdTag::{
-            BlockHeader, FrameContentSize, FrameHeaderDescriptor, ZstdBlockLiteralsHeader,
-            ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader,
-        };
-
-        [
-            (FrameHeaderDescriptor, FrameContentSize, 1),
-            (FrameContentSize, BlockHeader, 8),
-            (BlockHeader, ZstdBlockLiteralsHeader, 3),
-            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, 5),
-            (ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader, 1048575), // (1 << 20) - 1
-        ]
-        .map(|(tag, tag_next, max_len)| Self {
-            tag,
-            tag_next,
-            max_len,
-            is_output: tag.is_output(),
-            is_reverse: tag.is_reverse(),
-            is_block: tag.is_block(),
-        })
-        .to_vec()
-    }
-
-    pub(crate) fn values<F: Field>(&self) -> Vec<Value<F>> {
-        vec![
-            Value::known(F::from(usize::from(self.tag) as u64)),
-            Value::known(F::from(usize::from(self.tag_next) as u64)),
-            Value::known(F::from(self.max_len)),
-            Value::known(F::from(self.is_output as u64)),
-            Value::known(F::from(self.is_reverse as u64)),
-            Value::known(F::from(self.is_block as u64)),
-        ]
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy)]
 pub enum BlockType {
     #[default]
@@ -150,7 +95,7 @@ impl_expr!(LstreamNum);
 /// Various tags that we can decode from a zstd encoded data.
 #[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, Hash)]
 pub enum ZstdTag {
-    /// Null should not occur.
+    /// Null is reserved for padding rows.
     Null = 0,
     /// The frame header's descriptor.
     FrameHeaderDescriptor,
@@ -171,21 +116,6 @@ pub enum ZstdTag {
 }
 
 impl ZstdTag {
-    /// Whether this tag produces an output or not.
-    pub fn is_output(&self) -> bool {
-        match self {
-            Self::Null => false,
-            Self::FrameHeaderDescriptor => false,
-            Self::FrameContentSize => false,
-            Self::BlockHeader => false,
-            Self::ZstdBlockLiteralsHeader => false,
-            Self::ZstdBlockLiteralsRawBytes => false,
-            Self::ZstdBlockSequenceHeader => false,
-            Self::ZstdBlockSequenceFseCode => false,
-            Self::ZstdBlockSequenceData => true,
-        }
-    }
-
     /// Whether this tag is a part of block or not.
     pub fn is_block(&self) -> bool {
         match self {
@@ -213,6 +143,23 @@ impl ZstdTag {
             Self::ZstdBlockSequenceHeader => false,
             Self::ZstdBlockSequenceFseCode => false,
             Self::ZstdBlockSequenceData => true,
+        }
+    }
+
+    /// The maximum number of bytes that can be taken by this tag.
+    pub fn max_len(&self) -> u64 {
+        match self {
+            Self::Null => 0,
+            Self::FrameHeaderDescriptor => 1,
+            Self::FrameContentSize => 8,
+            Self::BlockHeader => 3,
+            // as per spec, should be 5. But given that our encoder does not compress literals, it
+            // is 3.
+            Self::ZstdBlockLiteralsHeader => 3,
+            Self::ZstdBlockLiteralsRawBytes => (1 << 17) - 1,
+            Self::ZstdBlockSequenceHeader => 4,
+            Self::ZstdBlockSequenceFseCode => 128,
+            Self::ZstdBlockSequenceData => (1 << 17) - 1,
         }
     }
 }
@@ -263,10 +210,7 @@ pub struct ZstdState<F> {
     pub max_tag_len: u64,
     pub tag_len: u64,
     pub tag_idx: u64,
-    pub tag_value: Value<F>,
-    pub tag_value_acc: Value<F>,
     pub is_tag_change: bool,
-    // Unlike tag_value, tag_rlc only uses challenge as multiplier
     pub tag_rlc: Value<F>,
     pub tag_rlc_acc: Value<F>,
 }
@@ -280,8 +224,6 @@ impl<F: Field> Default for ZstdState<F> {
             max_tag_len: 0,
             tag_len: 0,
             tag_idx: 0,
-            tag_value: Value::known(F::zero()),
-            tag_value_acc: Value::known(F::zero()),
             is_tag_change: false,
             tag_rlc: Value::known(F::zero()),
             tag_rlc_acc: Value::known(F::zero()),
@@ -297,8 +239,6 @@ pub struct EncodedData<F> {
     pub reverse: bool,
     pub reverse_idx: u64,
     pub reverse_len: u64,
-    pub aux_1: Value<F>,
-    pub aux_2: Value<F>,
     pub value_rlc: Value<F>,
 }
 
@@ -317,20 +257,14 @@ impl<F: Field> Default for EncodedData<F> {
             reverse: false,
             reverse_idx: 0,
             reverse_len: 0,
-            aux_1: Value::known(F::zero()),
-            aux_2: Value::known(F::zero()),
             value_rlc: Value::known(F::zero()),
         }
     }
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DecodedData<F> {
+pub struct DecodedData {
     pub decoded_len: u64,
-    pub decoded_len_acc: u64,
-    pub total_decoded_len: u64,
-    pub decoded_byte: u8,
-    pub decoded_value_rlc: Value<F>,
 }
 
 /// FSE decoding data from witness generation
@@ -414,8 +348,7 @@ pub struct BitstreamReadRow {
 /// Sequence data is interleaved with 6 bitstreams. Each producing a different type of value.
 #[derive(Clone, Copy, Debug)]
 pub enum SequenceDataTag {
-    Null = 0,
-    LiteralLengthFse,
+    LiteralLengthFse = 1,
     MatchLengthFse,
     CookedMatchOffsetFse,
     LiteralLengthValue,
@@ -959,7 +892,7 @@ pub struct ZstdWitnessRow<F> {
     /// Data on compressed data
     pub encoded_data: EncodedData<F>,
     /// Data on decompressed data
-    pub decoded_data: DecodedData<F>,
+    pub decoded_data: DecodedData,
     /// Fse decoding state transition data
     pub fse_data: FseDecodingRow,
     /// Bitstream reader
@@ -1035,21 +968,6 @@ mod tests {
         // Here we test whether we can actually reconstruct the FSE table for distributions that
         // include prob=-1 cases, one such example is the Predefined FSE table as per
         // specifications.
-        //
-        // short literalsLength_defaultDistribution[36] =
-        // { 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
-        //   2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
-        //  -1,-1,-1,-1 };
-        //
-        // short matchLengths_defaultDistribution[53] =
-        // { 1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
-        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,-1,-1,
-        //  -1,-1,-1,-1,-1 };
-        //
-        //  short offsetCodes_defaultDistribution[29] =
-        // { 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
-        //   1, 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1 };
         let default_distribution_llt = vec![
             4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1,
             1, 1, 1, -1, -1, -1, -1,
@@ -1118,10 +1036,82 @@ mod tests {
 
         let (_n_bytes, _bit_boundaries, table) =
             FseAuxiliaryTableData::reconstruct(&src, 0, FseTableKind::LLT, 0, false)?;
-        let _parsed_state_map = table.parse_state_table();
+        let parsed_state_map = table.parse_state_table();
 
-        // witgen_debug
-        // TODO: assertions
+        let mut expected_state_table = BTreeMap::new();
+
+        let expected_state_table_states: [[u64; 4]; 64] = [
+            [0, 0, 4, 2],
+            [1, 0, 8, 2],
+            [2, 0, 12, 2],
+            [3, 0, 16, 2],
+            [4, 0, 20, 2],
+            [5, 0, 24, 2],
+            [6, 1, 32, 4],
+            [7, 1, 48, 4],
+            [8, 2, 0, 5],
+            [9, 3, 0, 4],
+            [10, 4, 16, 4],
+            [11, 4, 32, 4],
+            [12, 6, 0, 5],
+            [13, 8, 32, 5],
+            [14, 9, 32, 5],
+            [15, 10, 32, 5],
+            [16, 12, 0, 6],
+            [17, 14, 0, 6],
+            [18, 15, 0, 4],
+            [19, 17, 0, 6],
+            [20, 20, 0, 6],
+            [21, 24, 32, 5],
+            [22, 0, 28, 2],
+            [23, 0, 32, 2],
+            [24, 0, 36, 2],
+            [25, 0, 40, 2],
+            [26, 0, 44, 2],
+            [27, 1, 0, 3],
+            [28, 1, 8, 3],
+            [29, 2, 32, 5],
+            [30, 3, 16, 4],
+            [31, 4, 48, 4],
+            [32, 4, 0, 3],
+            [33, 5, 0, 5],
+            [34, 7, 0, 6],
+            [35, 8, 0, 4],
+            [36, 9, 0, 4],
+            [37, 10, 0, 4],
+            [38, 13, 0, 5],
+            [39, 15, 16, 4],
+            [40, 16, 0, 6],
+            [41, 18, 0, 5],
+            [42, 24, 0, 4],
+            [43, 0, 48, 2],
+            [44, 0, 52, 2],
+            [45, 0, 56, 2],
+            [46, 0, 60, 2],
+            [47, 0, 0, 1],
+            [48, 0, 2, 1],
+            [49, 1, 16, 3],
+            [50, 1, 24, 3],
+            [51, 3, 32, 4],
+            [52, 3, 48, 4],
+            [53, 4, 8, 3],
+            [54, 5, 32, 5],
+            [55, 6, 32, 5],
+            [56, 8, 16, 4],
+            [57, 9, 16, 4],
+            [58, 10, 16, 4],
+            [59, 13, 32, 5],
+            [60, 15, 32, 4],
+            [61, 15, 48, 4],
+            [62, 18, 32, 5],
+            [63, 24, 16, 4],
+        ];
+
+        for state in expected_state_table_states {
+            expected_state_table.insert(state[0], (state[1], state[2], state[3]));
+        }
+
+        assert!(parsed_state_map == expected_state_table);
 
         Ok(())
     }

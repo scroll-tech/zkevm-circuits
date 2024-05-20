@@ -1,13 +1,6 @@
-#![allow(dead_code)]
-#![allow(clippy::too_many_arguments)]
-
 use eth_types::Field;
 use halo2_proofs::circuit::Value;
 use revm_precompile::HashMap;
-
-use std::io;
-// witgen_debug
-use std::io::Write;
 
 mod params;
 pub use params::*;
@@ -17,22 +10,6 @@ pub use types::{ZstdTag::*, *};
 
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
-
-const TAG_MAX_LEN: [(ZstdTag, u64); 9] = [
-    (FrameHeaderDescriptor, 1),
-    (FrameContentSize, 8),
-    (BlockHeader, 3),
-    (ZstdBlockLiteralsHeader, 5),
-    (ZstdBlockLiteralsRawBytes, 1048575), // (1 << 20) - 1
-    (ZstdBlockSequenceHeader, 4),
-    (ZstdBlockSequenceFseCode, 128),
-    (ZstdBlockSequenceData, 1048575), // (1 << 20) - 1
-    (Null, 0),
-];
-
-pub fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
-    TAG_MAX_LEN.iter().find(|record| record.0 == tag).unwrap().1
-}
 
 const CMOT_N: u64 = 31;
 
@@ -83,24 +60,8 @@ fn process_frame_header<F: Field>(
             _ => fcs,
         }
     };
+
     println!("frame content size = {:?}", fcs);
-    let fcs_tag_value_iter = fcs_bytes
-        .iter()
-        .scan(Value::known(F::zero()), |acc, &byte| {
-            *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
-            Some(*acc)
-        });
-    let fcs_tag_value = fcs_tag_value_iter
-        .clone()
-        .last()
-        .expect("FrameContentSize expected");
-    let fcs_value_rlcs = fcs_bytes
-        .iter()
-        .scan(Value::known(F::zero()), |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        })
-        .collect::<Vec<Value<F>>>();
 
     let tag_rlc_iter = fcs_bytes
         .iter()
@@ -111,23 +72,16 @@ fn process_frame_header<F: Field>(
         .collect::<Vec<Value<F>>>();
     let tag_rlc = *(tag_rlc_iter.clone().last().expect("Tag RLC expected"));
 
-    let aux_1 = fcs_value_rlcs
-        .last()
-        .expect("FrameContentSize bytes expected");
-    let aux_2 = fhd_value_rlc;
-
     (
         byte_offset + 1 + fcs_tag_len,
         std::iter::once(ZstdWitnessRow {
             state: ZstdState {
                 tag: ZstdTag::FrameHeaderDescriptor,
                 tag_next: ZstdTag::FrameContentSize,
-                max_tag_len: lookup_max_tag_len(ZstdTag::FrameHeaderDescriptor),
+                max_tag_len: ZstdTag::FrameHeaderDescriptor.max_len(),
                 block_idx: 0,
                 tag_len: 1,
                 tag_idx: 1,
-                tag_value: Value::known(F::from(*fhd_byte as u64)),
-                tag_value_acc: Value::known(F::from(*fhd_byte as u64)),
                 is_tag_change: true,
                 tag_rlc: Value::known(F::from(*fhd_byte as u64)),
                 tag_rlc_acc: Value::known(F::from(*fhd_byte as u64)),
@@ -139,63 +93,37 @@ fn process_frame_header<F: Field>(
                 value_rlc: Value::known(F::zero()),
                 ..Default::default()
             },
-            decoded_data: DecodedData {
-                decoded_len: fcs,
-                decoded_len_acc: 0,
-                total_decoded_len: last_row.decoded_data.total_decoded_len + fcs,
-                decoded_byte: 0,
-                decoded_value_rlc: Value::known(F::zero()),
-            },
+            decoded_data: DecodedData { decoded_len: fcs },
             bitstream_read_data: BitstreamReadRow::default(),
             fse_data: FseDecodingRow::default(),
         })
-        .chain(
-            fcs_bytes
-                .iter()
-                .zip(fcs_tag_value_iter)
-                .zip(fcs_value_rlcs.iter())
-                .zip(tag_rlc_iter.iter())
-                .enumerate()
-                .map(
-                    |(i, (((&value_byte, tag_value_acc), _value_rlc), &tag_rlc_acc))| {
-                        ZstdWitnessRow {
-                            state: ZstdState {
-                                tag: ZstdTag::FrameContentSize,
-                                tag_next: ZstdTag::BlockHeader,
-                                block_idx: 0,
-                                max_tag_len: lookup_max_tag_len(ZstdTag::FrameContentSize),
-                                tag_len: fcs_tag_len as u64,
-                                tag_idx: (i + 1) as u64,
-                                tag_value: fcs_tag_value,
-                                tag_value_acc,
-                                is_tag_change: i == 0,
-                                tag_rlc,
-                                tag_rlc_acc,
-                            },
-                            encoded_data: EncodedData {
-                                byte_idx: (byte_offset + 2 + i) as u64,
-                                encoded_len: last_row.encoded_data.encoded_len,
-                                value_byte,
-                                reverse: false,
-                                reverse_idx: (fcs_tag_len - i) as u64,
-                                reverse_len: fcs_tag_len as u64,
-                                aux_1: *aux_1,
-                                aux_2,
-                                value_rlc: fhd_value_rlc,
-                            },
-                            decoded_data: DecodedData {
-                                decoded_len: fcs,
-                                decoded_len_acc: 0,
-                                total_decoded_len: last_row.decoded_data.total_decoded_len + fcs,
-                                decoded_byte: 0,
-                                decoded_value_rlc: Value::known(F::zero()),
-                            },
-                            bitstream_read_data: BitstreamReadRow::default(),
-                            fse_data: FseDecodingRow::default(),
-                        }
-                    },
-                ),
-        )
+        .chain(fcs_bytes.iter().zip(tag_rlc_iter.iter()).enumerate().map(
+            |(i, (&value_byte, &tag_rlc_acc))| ZstdWitnessRow {
+                state: ZstdState {
+                    tag: ZstdTag::FrameContentSize,
+                    tag_next: ZstdTag::BlockHeader,
+                    block_idx: 0,
+                    max_tag_len: ZstdTag::FrameContentSize.max_len(),
+                    tag_len: fcs_tag_len as u64,
+                    tag_idx: (i + 1) as u64,
+                    is_tag_change: i == 0,
+                    tag_rlc,
+                    tag_rlc_acc,
+                },
+                encoded_data: EncodedData {
+                    byte_idx: (byte_offset + 2 + i) as u64,
+                    encoded_len: last_row.encoded_data.encoded_len,
+                    value_byte,
+                    reverse: false,
+                    reverse_idx: (fcs_tag_len - i) as u64,
+                    reverse_len: fcs_tag_len as u64,
+                    value_rlc: fhd_value_rlc,
+                },
+                decoded_data: DecodedData { decoded_len: fcs },
+                bitstream_read_data: BitstreamReadRow::default(),
+                fse_data: FseDecodingRow::default(),
+            },
+        ))
         .collect::<Vec<_>>(),
     )
 }
@@ -298,12 +226,6 @@ fn process_block_header<F: Field>(
         _ => unreachable!("BlockType::ZstdCompressedBlock expected"),
     };
 
-    let tag_value_iter = bh_bytes.iter().scan(Value::known(F::zero()), |acc, &byte| {
-        *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
-        Some(*acc)
-    });
-    let tag_value = tag_value_iter.clone().last().expect("BlockHeader expected");
-
     let tag_rlc_iter = bh_bytes
         .iter()
         .scan(Value::known(F::zero()), |acc, &byte| {
@@ -317,58 +239,36 @@ fn process_block_header<F: Field>(
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
 
-    // BlockHeader follows FrameContentSize which is processed in reverse order.
-    // Hence value_rlc at the first BlockHeader byte will be calculated as:
-    //
-    // value_rlc::cur == aux_1::prev * (rand ^ reverse_len) * rand
-    //      + aux_2::prev * rand
-    //      + value_byte::cur
-    let acc_start = last_row.encoded_data.aux_1
-        * randomness.map(|r| r.pow([last_row.encoded_data.reverse_len, 0, 0, 0]))
-        + last_row.encoded_data.aux_2;
-    let _value_rlcs = bh_bytes
-        .iter()
-        .scan(acc_start, |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        })
-        .collect::<Vec<Value<F>>>();
-
     (
         byte_offset + N_BLOCK_HEADER_BYTES,
         bh_bytes
             .iter()
-            .zip(tag_value_iter)
             .zip(tag_rlc_iter.iter())
             .enumerate()
-            .map(
-                |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
-                    state: ZstdState {
-                        tag: ZstdTag::BlockHeader,
-                        tag_next,
-                        block_idx,
-                        max_tag_len: lookup_max_tag_len(ZstdTag::BlockHeader),
-                        tag_len: N_BLOCK_HEADER_BYTES as u64,
-                        tag_idx: (i + 1) as u64,
-                        tag_value,
-                        tag_value_acc,
-                        is_tag_change: i == 0,
-                        tag_rlc,
-                        tag_rlc_acc: *tag_rlc_acc,
-                    },
-                    encoded_data: EncodedData {
-                        byte_idx: (byte_offset + i + 1) as u64,
-                        encoded_len: last_row.encoded_data.encoded_len,
-                        value_byte,
-                        reverse: false,
-                        value_rlc,
-                        ..Default::default()
-                    },
-                    bitstream_read_data: BitstreamReadRow::default(),
-                    decoded_data: last_row.decoded_data.clone(),
-                    fse_data: FseDecodingRow::default(),
+            .map(|(i, (&value_byte, tag_rlc_acc))| ZstdWitnessRow {
+                state: ZstdState {
+                    tag: ZstdTag::BlockHeader,
+                    tag_next,
+                    block_idx,
+                    max_tag_len: ZstdTag::BlockHeader.max_len(),
+                    tag_len: N_BLOCK_HEADER_BYTES as u64,
+                    tag_idx: (i + 1) as u64,
+                    is_tag_change: i == 0,
+                    tag_rlc,
+                    tag_rlc_acc: *tag_rlc_acc,
                 },
-            )
+                encoded_data: EncodedData {
+                    byte_idx: (byte_offset + i + 1) as u64,
+                    encoded_len: last_row.encoded_data.encoded_len,
+                    value_byte,
+                    reverse: false,
+                    value_rlc,
+                    ..Default::default()
+                },
+                bitstream_read_data: BitstreamReadRow::default(),
+                decoded_data: last_row.decoded_data.clone(),
+                fse_data: FseDecodingRow::default(),
+            })
             .collect::<Vec<_>>(),
         block_info,
     )
@@ -436,13 +336,6 @@ fn process_block_zstd<F: Field>(
                 *acc = *acc * randomness + Value::known(F::from(byte as u64));
                 Some(*acc)
             });
-        let decoded_value_rlc_iter =
-            literals
-                .iter()
-                .scan(last_row.decoded_data.decoded_value_rlc, |acc, &byte| {
-                    *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                    Some(*acc)
-                });
         let tag_value_iter = literals.iter().scan(Value::known(F::zero()), |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
@@ -459,43 +352,34 @@ fn process_block_zstd<F: Field>(
             literals
                 .iter()
                 .zip(tag_value_iter)
-                .zip(decoded_value_rlc_iter)
                 .zip(tag_rlc_iter)
                 .enumerate()
                 .map(
-                    |(i, (((&value_byte, tag_value_acc), decoded_value_rlc), tag_rlc_acc))| {
-                        ZstdWitnessRow {
-                            state: ZstdState {
-                                tag,
-                                tag_next,
-                                block_idx,
-                                max_tag_len: lookup_max_tag_len(tag),
-                                tag_len: regen_size as u64,
-                                tag_idx: (i + 1) as u64,
-                                tag_value,
-                                tag_value_acc,
-                                is_tag_change: i == 0,
-                                tag_rlc,
-                                tag_rlc_acc,
-                            },
-                            encoded_data: EncodedData {
-                                byte_idx: (byte_offset + i + 1) as u64,
-                                encoded_len: last_row.encoded_data.encoded_len,
-                                value_byte,
-                                value_rlc,
-                                reverse: false,
-                                ..Default::default()
-                            },
-                            decoded_data: DecodedData {
-                                decoded_len: last_row.decoded_data.decoded_len,
-                                decoded_len_acc: last_row.decoded_data.decoded_len + (i as u64) + 1,
-                                total_decoded_len: last_row.decoded_data.total_decoded_len,
-                                decoded_byte: value_byte,
-                                decoded_value_rlc,
-                            },
-                            bitstream_read_data: BitstreamReadRow::default(),
-                            fse_data: FseDecodingRow::default(),
-                        }
+                    |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
+                        state: ZstdState {
+                            tag,
+                            tag_next,
+                            block_idx,
+                            max_tag_len: tag.max_len(),
+                            tag_len: regen_size as u64,
+                            tag_idx: (i + 1) as u64,
+                            is_tag_change: i == 0,
+                            tag_rlc,
+                            tag_rlc_acc,
+                        },
+                        encoded_data: EncodedData {
+                            byte_idx: (byte_offset + i + 1) as u64,
+                            encoded_len: last_row.encoded_data.encoded_len,
+                            value_byte,
+                            value_rlc,
+                            reverse: false,
+                            ..Default::default()
+                        },
+                        decoded_data: DecodedData {
+                            decoded_len: last_row.decoded_data.decoded_len,
+                        },
+                        bitstream_read_data: BitstreamReadRow::default(),
+                        fse_data: FseDecodingRow::default(),
                     },
                 )
                 .collect::<Vec<_>>(),
@@ -527,7 +411,12 @@ fn process_block_zstd<F: Field>(
         last_block,
         randomness,
     );
-    assert!(end_offset == expected_end_offset, "end offset mismatch");
+
+    // sanity check:
+    assert_eq!(
+        end_offset, expected_end_offset,
+        "end offset after tag=SequencesData mismatch"
+    );
     witness_rows.extend_from_slice(&rows);
 
     (
@@ -565,6 +454,7 @@ type SequencesProcessingResult<F> = (
     Vec<SequenceExec>,
 );
 
+#[allow(clippy::too_many_arguments)]
 fn process_sequences<F: Field>(
     src: &[u8],
     block_idx: u64,
@@ -575,14 +465,13 @@ fn process_sequences<F: Field>(
     last_block: bool,
     randomness: Value<F>,
 ) -> SequencesProcessingResult<F> {
-    // Initialize witness rows
+    // Initialize witness values
     let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
-
-    // Other consistent values
     let encoded_len = last_row.encoded_data.encoded_len;
-    let _decoded_data = last_row.decoded_data.clone();
 
-    // First, process the sequence header
+    //////////////////////////////////////////////////////
+    ///// Sequence Section Part 1: Sequence Header  //////
+    //////////////////////////////////////////////////////
     let mut sequence_info = SequenceInfo {
         block_idx: block_idx as usize,
         ..Default::default()
@@ -622,19 +511,20 @@ fn process_sequences<F: Field>(
 
     assert!(reserved == 0, "Reserved bits must be 0");
 
-    // TODO: Treatment of other encoding modes
+    // Note: Only 2 modes of FSE encoding are accepted (instead of 4):
+    // 0 - Predefined.
+    // 2 - Variable bit packing.
     assert!(
         literal_lengths_mode == 2 || literal_lengths_mode == 0,
-        "Only FSE_Compressed_Mode is allowed llt_mode={:?}",
-        literal_lengths_mode,
+        "Only FSE_Compressed_Mode or Predefined are allowed"
     );
     assert!(
         offsets_mode == 2 || offsets_mode == 0,
-        "Only FSE_Compressed_Mode is allowed"
+        "Only FSE_Compressed_Mode or Predefined are allowed"
     );
     assert!(
         match_lengths_mode == 2 || match_lengths_mode == 0,
-        "Only FSE_Compressed_Mode is allowed"
+        "Only FSE_Compressed_Mode or Predefined are allowed"
     );
     sequence_info.compression_mode = [
         literal_lengths_mode > 0,
@@ -650,13 +540,6 @@ fn process_sequences<F: Field>(
     // Add witness rows for the sequence header
     let sequence_header_start_offset = byte_offset;
     let sequence_header_end_offset = byte_offset + num_sequence_header_bytes;
-    let tag_value_iter = src[sequence_header_start_offset..sequence_header_end_offset]
-        .iter()
-        .scan(Value::known(F::zero()), |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        });
-    let tag_value = tag_value_iter.clone().last().expect("Tag value must exist");
 
     let tag_rlc_iter = src[sequence_header_start_offset..sequence_header_end_offset]
         .iter()
@@ -668,54 +551,46 @@ fn process_sequences<F: Field>(
 
     let header_rows = src[sequence_header_start_offset..sequence_header_end_offset]
         .iter()
-        .zip(tag_value_iter)
         .zip(tag_rlc_iter)
         .enumerate()
-        .map(
-            |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
-                state: ZstdState {
-                    tag: ZstdTag::ZstdBlockSequenceHeader,
-                    tag_next: if is_all_predefined_fse {
-                        ZstdTag::ZstdBlockSequenceData
-                    } else {
-                        ZstdTag::ZstdBlockSequenceFseCode
-                    },
-                    block_idx,
-                    max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceHeader),
-                    tag_len: num_sequence_header_bytes as u64,
-                    tag_idx: (i + 1) as u64,
-                    tag_value,
-                    tag_value_acc,
-                    is_tag_change: i == 0,
-                    tag_rlc,
-                    tag_rlc_acc,
+        .map(|(i, (&value_byte, tag_rlc_acc))| ZstdWitnessRow {
+            state: ZstdState {
+                tag: ZstdTag::ZstdBlockSequenceHeader,
+                tag_next: if is_all_predefined_fse {
+                    ZstdTag::ZstdBlockSequenceData
+                } else {
+                    ZstdTag::ZstdBlockSequenceFseCode
                 },
-                encoded_data: EncodedData {
-                    byte_idx: (sequence_header_start_offset + i + 1) as u64,
-                    encoded_len: last_row.encoded_data.encoded_len,
-                    value_byte,
-                    value_rlc,
-                    reverse: false,
-                    ..Default::default()
-                },
-                decoded_data: DecodedData {
-                    decoded_len: last_row.decoded_data.decoded_len,
-                    decoded_len_acc: last_row.decoded_data.decoded_len + (i as u64) + 1,
-                    total_decoded_len: last_row.decoded_data.total_decoded_len,
-                    decoded_byte: value_byte,
-                    decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
-                },
-                bitstream_read_data: BitstreamReadRow::default(),
-                fse_data: FseDecodingRow::default(),
+                block_idx,
+                max_tag_len: ZstdTag::ZstdBlockSequenceHeader.max_len(),
+                tag_len: num_sequence_header_bytes as u64,
+                tag_idx: (i + 1) as u64,
+                is_tag_change: i == 0,
+                tag_rlc,
+                tag_rlc_acc,
             },
-        )
+            encoded_data: EncodedData {
+                byte_idx: (sequence_header_start_offset + i + 1) as u64,
+                encoded_len: last_row.encoded_data.encoded_len,
+                value_byte,
+                value_rlc,
+                reverse: false,
+                ..Default::default()
+            },
+            decoded_data: DecodedData {
+                decoded_len: last_row.decoded_data.decoded_len,
+            },
+            bitstream_read_data: BitstreamReadRow::default(),
+            fse_data: FseDecodingRow::default(),
+        })
         .collect::<Vec<_>>();
 
     witness_rows.extend_from_slice(&header_rows);
 
-    //println!("got seq header (info) = {:?}", sequence_info);
 
-    // Second, process the sequence tables (encoded using FSE)
+    /////////////////////////////////////////////////
+    ///// Sequence Section Part 2: FSE Tables  //////
+    /////////////////////////////////////////////////
     let byte_offset = sequence_header_end_offset;
     let fse_starting_byte_offset = byte_offset;
 
@@ -729,6 +604,7 @@ fn process_sequences<F: Field>(
     )
     .expect("Reconstructing FSE-packed Literl Length (LL) table should not fail.");
     let llt = table_llt.parse_state_table();
+    // Determine the accuracy log of LLT
     let al_llt = if literal_lengths_mode > 0 {
         bit_boundaries_llt
             .first()
@@ -738,12 +614,6 @@ fn process_sequences<F: Field>(
     } else {
         6
     };
-
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-    // write!(handle, "bit_boundaries_llt: {:?}", bit_boundaries_llt).unwrap();
-    // writeln!(handle).unwrap();
 
     // Cooked Match Offset Table (CMOT)
     let byte_offset = byte_offset + n_fse_bytes_llt;
@@ -756,6 +626,7 @@ fn process_sequences<F: Field>(
     )
     .expect("Reconstructing FSE-packed Cooked Match Offset (CMO) table should not fail.");
     let cmot = table_cmot.parse_state_table();
+    // Determine the accuracy log of CMOT
     let al_cmot = if offsets_mode > 0 {
         bit_boundaries_cmot
             .first()
@@ -777,6 +648,7 @@ fn process_sequences<F: Field>(
     )
     .expect("Reconstructing FSE-packed Match Length (ML) table should not fail.");
     let mlt = table_mlt.parse_state_table();
+    // Determine the accuracy log of MLT
     let al_mlt = if match_lengths_mode > 0 {
         bit_boundaries_mlt
             .first()
@@ -787,11 +659,10 @@ fn process_sequences<F: Field>(
         6
     };
 
-    // Add witness rows for the FSE tables
+    // Add witness rows for the above three FSE tables
     let mut last_row = header_rows.last().cloned().unwrap();
-    for (idx, start_offset, end_offset, bit_boundaries, tag_len, table, is_fse_section_end) in [
+    for (start_offset, end_offset, bit_boundaries, tag_len, table, is_fse_section_end) in [
         (
-            0usize,
             fse_starting_byte_offset,
             fse_starting_byte_offset + n_fse_bytes_llt,
             bit_boundaries_llt,
@@ -800,7 +671,6 @@ fn process_sequences<F: Field>(
             offsets_mode + match_lengths_mode < 1,
         ),
         (
-            1usize,
             fse_starting_byte_offset + n_fse_bytes_llt,
             fse_starting_byte_offset + n_fse_bytes_llt + n_fse_bytes_cmot,
             bit_boundaries_cmot,
@@ -809,7 +679,6 @@ fn process_sequences<F: Field>(
             match_lengths_mode < 1,
         ),
         (
-            2usize,
             fse_starting_byte_offset + n_fse_bytes_llt + n_fse_bytes_cmot,
             fse_starting_byte_offset + n_fse_bytes_llt + n_fse_bytes_cmot + n_fse_bytes_mlt,
             bit_boundaries_mlt,
@@ -819,15 +688,6 @@ fn process_sequences<F: Field>(
         ),
     ] {
         if end_offset > start_offset {
-            let mut tag_value_iter =
-                src[start_offset..end_offset]
-                    .iter()
-                    .scan(Value::known(F::zero()), |acc, &byte| {
-                        *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                        Some(*acc)
-                    });
-            let tag_value = tag_value_iter.clone().last().expect("Tag value must exist");
-
             let mut tag_rlc_iter =
                 src[start_offset..end_offset]
                     .iter()
@@ -840,7 +700,6 @@ fn process_sequences<F: Field>(
             let mut decoded: u64 = 0;
             let mut n_acc: usize = 0;
             let mut n_emitted: usize = 0;
-            let mut current_tag_value_acc = Value::known(F::zero());
             let mut current_tag_rlc_acc = Value::known(F::zero());
             let mut last_byte_idx: i64 = 0;
             let mut from_pos: (i64, i64) = (1, 0);
@@ -854,38 +713,59 @@ fn process_sequences<F: Field>(
             let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
             let mut last_symbol: i32 = 0;
 
+            // Convert multi-bit read operations boundaries from the stream into a convenient format
+            // so they can be easily converted into witness rows later.
+
+            // Format:
+
+            // symbol,                 The symbol being decoded now
+            // n_emitted,              The total number of unique symbols decoded
+            // from_byte_position,     Which byte the read operation starts at
+            // from_bit_position,      Which bit position the read operation
+            //                         starts at, with range ∈ [0, 8)
+            // to_byte_position,       Which byte the read operation ends at
+            // to_bit_position,        Which bit position the read operation ends at,
+            //                         with range ∈ [0, 16)
+            // value_read,             Bit value
+            // value_decoded,          The decoded value is processed from the raw bitstring value
+            // current_tag_value_acc,  Depending on the current byte position,
+            //                         the accumulator increments accordingly
+            // current_tag_rlc_acc,    Depending on the current byte position,
+            //                         the accumulator increments accordingly
+            // n_acc,                  How many states are already assigned to the current symbol
+            // table_kind,             What FSE table is being decoded
+            // table_size,             The size of current FSE table
+            // is_repeating_bits,      Whether current bitstring represents repeat bits.
+            //                         Repeat bits immediately follows a bitstring=1 read operation.
+            //                         Repeat bits indicate how many 0-state symbols to skip.
+            // is_trailing_bits,       FSE bitstreams may have trailing bits
+
             let bitstream_rows = bit_boundaries
                 .iter()
                 .enumerate()
                 .map(|(bit_boundary_idx, (bit_idx, value_read, value_decoded))| {
-                    // Calculate byte and bit positions. Increment allocators.
+                    // First calculate the start and end position of the current read operation
                     from_pos = if next_symbol == -1 { (1, -1) } else { to_pos };
-
                     from_pos.1 += 1;
                     if from_pos.1 == 8 || from_pos.1 == 16 {
                         from_pos = (from_pos.0 + 1, 0);
                     }
-
                     from_pos.1 = (from_pos.1 as u64).rem_euclid(8) as i64;
-
                     while from_pos.0 > last_byte_idx {
-                        current_tag_value_acc = tag_value_iter.next().unwrap();
                         current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
                         last_byte_idx += 1;
                     }
 
+                    // Derive the end position based on how many bits are read
                     let to_byte_idx = (bit_idx - 1) / 8;
                     let mut to_bit_idx = bit_idx - to_byte_idx * (N_BITS_PER_BYTE as u32) - 1;
-
                     if from_pos.0 < (to_byte_idx + 1) as i64 {
                         to_bit_idx += 8;
                     }
-
                     to_pos = ((to_byte_idx + 1) as i64, to_bit_idx as i64);
 
-                    // Decide Fse decoding results
                     if bit_boundary_idx < 1 {
-                        // Accuracy log bits
+                        // Read Scenarios 1: Accuracy log bits (Always the First Read)
                         next_symbol += 1;
                         assert_eq!(value_read, value_decoded, "no varbit packing for AL bits");
                         (
@@ -897,10 +777,8 @@ fn process_sequences<F: Field>(
                             to_pos.1 as usize,
                             *value_read,
                             *value_decoded,
-                            current_tag_value_acc,
                             current_tag_rlc_acc,
                             n_acc,
-                            // FseDecoder-specific witness values
                             kind as u64,
                             table.table_size,
                             false,
@@ -908,7 +786,7 @@ fn process_sequences<F: Field>(
                         )
                     } else if !is_repeating_bit_boundary.contains_key(&bit_boundary_idx) {
                         if n_acc >= (table.table_size as usize) {
-                            // Trailing bits
+                            // Read Scenarios 2: Trailing Bits
                             assert_eq!(
                                 value_read, value_decoded,
                                 "no varbit packing for trailing bits"
@@ -922,17 +800,15 @@ fn process_sequences<F: Field>(
                                 to_pos.1 as usize,
                                 *value_read,
                                 *value_decoded,
-                                current_tag_value_acc,
                                 current_tag_rlc_acc,
                                 n_acc,
-                                // FseDecoder-specific witness values
                                 kind as u64,
                                 table.table_size,
                                 false,
                                 true,
                             )
                         } else {
-                            // Regular decoding state
+                            // Read Scenarios 3: Regular Decoding State
                             assert!(next_symbol >= 0);
                             decoded = next_symbol as u64;
                             n_emitted += 1;
@@ -978,18 +854,16 @@ fn process_sequences<F: Field>(
                                 to_pos.1 as usize,
                                 *value_read,
                                 *value_decoded,
-                                current_tag_value_acc,
                                 current_tag_rlc_acc,
                                 n_acc,
-                                // FseDecoder-specific witness values
                                 kind as u64,
                                 table.table_size,
-                                false, // repeating bits
-                                false, // trailing bits
+                                false,
+                                false,
                             )
                         }
                     } else {
-                        // Repeating bits
+                        // Read Scenarios 3: Repeating Bits
                         let symbol = last_symbol as u64 + value_decoded;
                         last_symbol = symbol as i32;
                         assert_eq!(
@@ -1005,7 +879,6 @@ fn process_sequences<F: Field>(
                             to_pos.1 as usize,
                             *value_read,
                             *value_decoded,
-                            current_tag_value_acc,
                             current_tag_rlc_acc,
                             n_acc,
                             // FseDecoder-specific witness values
@@ -1026,7 +899,6 @@ fn process_sequences<F: Field>(
                     u64,
                     u64,
                     Value<F>,
-                    Value<F>,
                     usize,
                     u64,
                     u64,
@@ -1045,14 +917,12 @@ fn process_sequences<F: Field>(
                             ZstdTag::ZstdBlockSequenceFseCode
                         },
                         block_idx,
-                        max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceFseCode),
+                        max_tag_len: ZstdTag::ZstdBlockSequenceFseCode.max_len(),
                         tag_len,
                         tag_idx: row.2 as u64,
-                        tag_value,
-                        tag_value_acc: row.8,
                         is_tag_change: j == 0,
                         tag_rlc,
-                        tag_rlc_acc: row.9,
+                        tag_rlc_acc: row.8,
                     },
                     encoded_data: EncodedData {
                         byte_idx: (start_offset + row.2) as u64,
@@ -1071,20 +941,16 @@ fn process_sequences<F: Field>(
                     },
                     decoded_data: DecodedData {
                         decoded_len: last_row.decoded_data.decoded_len,
-                        decoded_len_acc: last_row.decoded_data.decoded_len_acc,
-                        total_decoded_len: last_row.decoded_data.total_decoded_len,
-                        decoded_byte: 0u8,
-                        decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
                     },
                     fse_data: FseDecodingRow {
-                        table_kind: row.11,
-                        table_size: row.12,
+                        table_kind: row.10,
+                        table_size: row.11,
                         symbol: row.0,
                         num_emitted: row.1 as u64,
                         value_decoded: row.7,
-                        probability_acc: row.10 as u64,
-                        is_repeat_bits_loop: row.13,
-                        is_trailing_bits: row.14,
+                        probability_acc: row.9 as u64,
+                        is_repeat_bits_loop: row.12,
+                        is_trailing_bits: row.13,
                     },
                 });
 
@@ -1106,15 +972,12 @@ fn process_sequences<F: Field>(
                                 ZstdTag::ZstdBlockSequenceFseCode
                             },
                             block_idx,
-                            max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceFseCode),
+                            max_tag_len: ZstdTag::ZstdBlockSequenceFseCode.max_len(),
                             tag_len,
                             tag_idx: (row.2 + 1) as u64,
-                            tag_value,
-                            tag_value_acc: row.8 * randomness
-                                + Value::known(F::from(byte_value as u64)),
                             is_tag_change: false,
                             tag_rlc,
-                            tag_rlc_acc: row.9 * randomness
+                            tag_rlc_acc: row.8 * randomness
                                 + Value::known(F::from(byte_value as u64)),
                         },
                         encoded_data: EncodedData {
@@ -1140,20 +1003,16 @@ fn process_sequences<F: Field>(
                         },
                         decoded_data: DecodedData {
                             decoded_len: last_row.decoded_data.decoded_len,
-                            decoded_len_acc: last_row.decoded_data.decoded_len_acc,
-                            total_decoded_len: last_row.decoded_data.total_decoded_len,
-                            decoded_byte: 0u8,
-                            decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
                         },
                         fse_data: FseDecodingRow {
-                            table_kind: row.11,
-                            table_size: row.12,
+                            table_kind: row.10,
+                            table_size: row.11,
                             symbol: row.0,
                             num_emitted: row.1 as u64,
                             value_decoded: row.7,
-                            probability_acc: row.10 as u64,
+                            probability_acc: row.9 as u64,
                             is_repeat_bits_loop: false,
-                            is_trailing_bits: row.14,
+                            is_trailing_bits: row.13,
                         },
                     })
                 }
@@ -1162,6 +1021,10 @@ fn process_sequences<F: Field>(
             }
         }
     }
+
+    ////////////////////////////////////////////////////////////////////////////
+    ///// Sequence Section Part 3: Sequence Data (Instruction Bitstream)  //////
+    ////////////////////////////////////////////////////////////////////////////
 
     // Reconstruct LLTV, CMOTV, and MLTV which specifies bit actions for a specific state
     let lltv = SequenceFixedStateActionTable::reconstruct_lltv();
@@ -1193,33 +1056,6 @@ fn process_sequences<F: Field>(
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
 
-    let value_rlc_iter =
-        &src[byte_offset..end_offset]
-            .iter()
-            .scan(Value::known(F::zero()), |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            });
-    let mut value_rlc_iter = value_rlc_iter
-        .clone()
-        .collect::<Vec<Value<F>>>()
-        .into_iter()
-        .rev();
-
-    let tag_value_iter =
-        &src[byte_offset..end_offset]
-            .iter()
-            .scan(Value::known(F::zero()), |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            });
-    let tag_value = tag_value_iter.clone().last().expect("Tag value must exist");
-    let mut tag_value_iter = tag_value_iter
-        .clone()
-        .collect::<Vec<Value<F>>>()
-        .into_iter()
-        .rev();
-
     let tag_rlc_iter =
         &src[byte_offset..end_offset]
             .iter()
@@ -1234,11 +1070,7 @@ fn process_sequences<F: Field>(
         .into_iter()
         .rev();
 
-    let mut next_tag_value_acc = tag_value_iter.next().unwrap();
-    let next_value_rlc_acc = value_rlc_iter.next().unwrap();
     let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
-
-    let aux_1 = next_value_rlc_acc;
 
     let mut padding_end_idx = 0;
     while sequence_bitstream[padding_end_idx] == 0 {
@@ -1255,11 +1087,9 @@ fn process_sequences<F: Field>(
                 ZstdTag::BlockHeader
             },
             block_idx,
-            max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceData),
+            max_tag_len: ZstdTag::ZstdBlockSequenceData.max_len(),
             tag_len: n_sequence_data_bytes as u64,
             tag_idx: 1_u64,
-            tag_value,
-            tag_value_acc: next_tag_value_acc,
             is_tag_change: true,
             tag_rlc,
             tag_rlc_acc: next_tag_rlc_acc,
@@ -1272,8 +1102,6 @@ fn process_sequences<F: Field>(
             reverse: true,
             reverse_len: n_sequence_data_bytes as u64,
             reverse_idx: (n_sequence_data_bytes - (current_byte_idx - 1)) as u64,
-            aux_1,
-            aux_2: Value::known(F::zero()),
         },
         bitstream_read_data: BitstreamReadRow {
             bit_start_idx: 0usize,
@@ -1295,7 +1123,6 @@ fn process_sequences<F: Field>(
 
     // Update accumulators
     if current_byte_idx > last_byte_idx {
-        next_tag_value_acc = tag_value_iter.next().unwrap();
         next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
         last_byte_idx = current_byte_idx;
     }
@@ -1333,26 +1160,18 @@ fn process_sequences<F: Field>(
     let mut is_init = true;
     let mut nb = nb_switch[mode][order_idx];
     let bitstream_end_bit_idx = n_sequence_data_bytes * N_BITS_PER_BYTE;
-    let mut table_kind = 0u64;
-    let mut table_size = 0u64;
+    let mut table_kind;
+    let mut table_size;
     let mut last_states: [u64; 3] = [0, 0, 0];
     let mut last_symbols: [u64; 3] = [0, 0, 0];
-    let mut current_decoding_state = 0u64;
+    let mut current_decoding_state;
     let mut tail_holding_bit = false;
 
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-
     while current_bit_idx + nb <= bitstream_end_bit_idx {
-        // witgen_debug
-        // write!(handle, "current_byte_idx: {:?}, current_bit_idx: {:?}, nb: {:?}",
-        // current_byte_idx, current_bit_idx, nb).unwrap(); writeln!(handle).unwrap();
-
         let bitstring_value =
             be_bits_to_value(&sequence_bitstream[current_bit_idx..(current_bit_idx + nb)]);
+        let curr_baseline;
 
-        let mut curr_baseline = 0;
         if mode > 0 {
             // For the initial baseline determination, ML and CMO positions are flipped.
             if is_init {
@@ -1378,7 +1197,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_kind as u64
                 }
-                _ => unreachable!(),
             };
             table_size = match new_decoded.0 {
                 SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => {
@@ -1390,7 +1208,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_size
                 }
-                _ => unreachable!(),
             };
 
             // FSE state update step
@@ -1438,7 +1255,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_kind as u64
                 }
-                _ => unreachable!(),
             };
             table_size = match new_decoded.0 {
                 SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => {
@@ -1450,7 +1266,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_size
                 }
-                _ => unreachable!(),
             };
 
             // Value decoding step
@@ -1467,11 +1282,6 @@ fn process_sequences<F: Field>(
             from_bit_idx
         };
 
-        // witgen_debug
-        // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?},
-        // is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, from_bit_idx,
-        // to_bit_idx, nb, false, (nb == 0)).unwrap(); writeln!(handle).unwrap();
-
         // Add a witness row
         witness_rows.push(ZstdWitnessRow {
             state: ZstdState {
@@ -1482,11 +1292,9 @@ fn process_sequences<F: Field>(
                     ZstdTag::BlockHeader
                 },
                 block_idx,
-                max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceData),
+                max_tag_len: ZstdTag::ZstdBlockSequenceData.max_len(),
                 tag_len: n_sequence_data_bytes as u64,
                 tag_idx: current_byte_idx as u64,
-                tag_value,
-                tag_value_acc: next_tag_value_acc,
                 is_tag_change: false,
                 tag_rlc,
                 tag_rlc_acc: next_tag_rlc_acc,
@@ -1494,10 +1302,6 @@ fn process_sequences<F: Field>(
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + current_byte_idx) as u64,
                 encoded_len,
-                // witgen_debug, idx overflow
-                // TODO(ray): This is a special case of the sequences data being a part of the
-                // "last block", hence the overflow. I have just re-used the "last" byte from the
-                // source data in such a case.
                 value_byte: if end_offset - current_byte_idx < src.len() {
                     src[end_offset - current_byte_idx]
                 } else {
@@ -1507,8 +1311,6 @@ fn process_sequences<F: Field>(
                 reverse: true,
                 reverse_len: n_sequence_data_bytes as u64,
                 reverse_idx: (n_sequence_data_bytes - (current_byte_idx - 1)) as u64,
-                aux_1,
-                aux_2: Value::known(F::zero()),
             },
             bitstream_read_data: BitstreamReadRow {
                 bit_start_idx: from_bit_idx,
@@ -1536,25 +1338,26 @@ fn process_sequences<F: Field>(
             },
         });
 
+        // When the range of a multi-byte read operation from the bitstream covers an entire byte,
+        // a separate row needs to be added for each of such byte to ensure continuity of the value
+        // accumulators. These compensating rows have is_nil=true. At most, two bytes can be
+        // entirely covered by a bitstream read operation.
         let multi_byte_boundaries: [usize; 2] = [15, 23];
         let mut skipped_bits = 0usize;
 
         for boundary in multi_byte_boundaries {
             if to_bit_idx >= boundary {
+                // Skip over covered bytes for byte and bit index
                 for _ in 0..N_BITS_PER_BYTE {
                     (current_byte_idx, current_bit_idx) =
                         increment_idx(current_byte_idx, current_bit_idx);
                 }
+                // Increment accumulators for nil row
                 if current_byte_idx > last_byte_idx && current_byte_idx <= n_sequence_data_bytes {
-                    next_tag_value_acc = tag_value_iter.next().unwrap();
                     next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
                     last_byte_idx = current_byte_idx;
                 }
                 skipped_bits += N_BITS_PER_BYTE;
-
-                // witgen_debug
-                // write!(handle, "current_byte_idx: {:?}, from_bit_idx: {:?}, to_bit_idx: {:?}, nb: {:?}, is_nil: {:?}, is_zero_read: {:?}", byte_offset + current_byte_idx, 0, 0, 7, true, false).unwrap();
-                // writeln!(handle).unwrap();
 
                 let wrap_by = match to_bit_idx {
                     15 => 8,
@@ -1570,11 +1373,9 @@ fn process_sequences<F: Field>(
                             ZstdTag::BlockHeader
                         },
                         block_idx,
-                        max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockSequenceData),
+                        max_tag_len: ZstdTag::ZstdBlockSequenceData.max_len(),
                         tag_len: n_sequence_data_bytes as u64,
                         tag_idx: current_byte_idx as u64,
-                        tag_value,
-                        tag_value_acc: next_tag_value_acc,
                         is_tag_change: false,
                         tag_rlc,
                         tag_rlc_acc: next_tag_rlc_acc,
@@ -1582,11 +1383,6 @@ fn process_sequences<F: Field>(
                     encoded_data: EncodedData {
                         byte_idx: (byte_offset + current_byte_idx) as u64,
                         encoded_len,
-                        // witgen_debug, idx overflow
-                        // TODO(ray): This is a special case of the sequences data being a part of
-                        // the "last block", hence the overflow. I have just
-                        // re-used the "last" byte from the source data in
-                        // such a case.
                         value_byte: if end_offset - current_byte_idx < src.len() {
                             src[end_offset - current_byte_idx]
                         } else {
@@ -1596,8 +1392,6 @@ fn process_sequences<F: Field>(
                         reverse: true,
                         reverse_len: n_sequence_data_bytes as u64,
                         reverse_idx: (n_sequence_data_bytes - (current_byte_idx - 1)) as u64,
-                        aux_1,
-                        aux_2: Value::known(F::zero()),
                     },
                     bitstream_read_data: BitstreamReadRow {
                         bit_start_idx: to_bit_idx - wrap_by,
@@ -1627,6 +1421,7 @@ fn process_sequences<F: Field>(
             }
         }
 
+        // Update all variables that indicate current decoding states
         order_idx += 1;
         if mode > 0 {
             if order_idx > 2 {
@@ -1638,17 +1433,12 @@ fn process_sequences<F: Field>(
             mode = 1; // switch to FSE mode
             order_idx = 0;
 
-            // Add the instruction
+            // Three elements (MO, ML and LL) are all decoded. Add the instruction.
             let new_instruction = (
                 curr_instruction[0],
                 curr_instruction[1],
                 curr_instruction[2],
             );
-
-            // witgen_debug
-            // write!(handle, "NewInstruction - idx: {:?}, Offset: {:?}, ML: {:?}, LLT: {:?}",
-            // raw_sequence_instructions.len(), new_instruction.0, new_instruction.1,
-            // new_instruction.2).unwrap(); writeln!(handle);
 
             raw_sequence_instructions.push(new_instruction);
         }
@@ -1661,6 +1451,10 @@ fn process_sequences<F: Field>(
             nb_switch[mode][order_idx]
         };
 
+        // Adjust the end position of the current read operation:
+        // If the next operation reads 0 bits, the ending bit position should stay on
+        // the last bit, instead of incrementing to the next position. When the nb=0 streak breaks,
+        // the held off position is released.
         if nb > 0 && next_nb > 0 {
             for _ in 0..(nb - skipped_bits) {
                 (current_byte_idx, current_bit_idx) =
@@ -1678,11 +1472,11 @@ fn process_sequences<F: Field>(
         }
 
         if current_byte_idx > last_byte_idx && current_byte_idx <= n_sequence_data_bytes {
-            next_tag_value_acc = tag_value_iter.next().unwrap();
             next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
             last_byte_idx = current_byte_idx;
         }
 
+        // Update the next nb for the next read operation
         nb = next_nb;
     }
 
@@ -1690,23 +1484,6 @@ fn process_sequences<F: Field>(
     let mut address_table_rows: Vec<AddressTableRow> = vec![];
     let mut literal_len_acc: usize = 0;
     let mut repeated_offset: [usize; 3] = [1, 4, 8];
-
-    // witgen_debug
-    // for idx in 0..witness_rows.len() {
-    //     if witness_rows[idx].state.tag == ZstdTag::ZstdBlockSequenceData
-    //         && !witness_rows[idx].bitstream_read_data.is_seq_init
-    //     {
-    //         let seq_idx = witness_rows[idx].bitstream_read_data.seq_idx;
-    //         if seq_idx > 0 {
-    //             witness_rows[idx].bitstream_read_data.values = [
-    //                 // literal length, match length and match offset.
-    //                 raw_sequence_instructions[seq_idx - 1].2 as u64,
-    //                 raw_sequence_instructions[seq_idx - 1].1 as u64,
-    //                 raw_sequence_instructions[seq_idx - 1].0 as u64,
-    //             ];
-    //         }
-    //     }
-    // }
 
     for (idx, inst) in raw_sequence_instructions.iter().enumerate() {
         let actual_offset = if inst.0 > 3 {
@@ -1829,14 +1606,6 @@ fn process_sequences<F: Field>(
         );
     }
 
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-
-    // witgen_debug
-    // write!(handle, "=> decoded: {:?}", recovered_inputs).unwrap();
-    // writeln!(handle).unwrap();
-
     (
         end_offset,
         witness_rows,
@@ -1901,19 +1670,6 @@ fn process_block_zstd_literals_header<F: Field>(
         _ => unreachable!("BlockType::* unexpected. Must be raw bytes for literals."),
     };
 
-    let tag_value_iter =
-        lh_bytes
-            .iter()
-            .take(n_bytes_header)
-            .scan(Value::known(F::zero()), |acc, &byte| {
-                *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
-                Some(*acc)
-            });
-    let tag_value = tag_value_iter
-        .clone()
-        .last()
-        .expect("LiteralsHeader expected");
-
     let tag_rlc_iter =
         lh_bytes
             .iter()
@@ -1924,15 +1680,6 @@ fn process_block_zstd_literals_header<F: Field>(
             });
     let tag_rlc = tag_rlc_iter.clone().last().expect("Tag RLC expected");
 
-    let value_rlc_iter =
-        lh_bytes
-            .iter()
-            .take(n_bytes_header)
-            .scan(last_row.encoded_data.value_rlc, |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            });
-
     let multiplier =
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
@@ -1942,38 +1689,32 @@ fn process_block_zstd_literals_header<F: Field>(
         lh_bytes
             .iter()
             .take(n_bytes_header)
-            .zip(tag_value_iter)
-            .zip(value_rlc_iter)
             .zip(tag_rlc_iter)
             .enumerate()
-            .map(
-                |(i, (((&value_byte, tag_value_acc), _v_rlc), tag_rlc_acc))| ZstdWitnessRow {
-                    state: ZstdState {
-                        tag: ZstdTag::ZstdBlockLiteralsHeader,
-                        tag_next,
-                        block_idx,
-                        max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockLiteralsHeader),
-                        tag_len: n_bytes_header as u64,
-                        tag_idx: (i + 1) as u64,
-                        tag_value,
-                        tag_value_acc,
-                        is_tag_change: i == 0,
-                        tag_rlc,
-                        tag_rlc_acc,
-                    },
-                    encoded_data: EncodedData {
-                        byte_idx: (byte_offset + i + 1) as u64,
-                        encoded_len: last_row.encoded_data.encoded_len,
-                        value_byte,
-                        reverse: false,
-                        value_rlc,
-                        ..Default::default()
-                    },
-                    bitstream_read_data: BitstreamReadRow::default(),
-                    decoded_data: last_row.decoded_data.clone(),
-                    fse_data: FseDecodingRow::default(),
+            .map(|(i, (&value_byte, tag_rlc_acc))| ZstdWitnessRow {
+                state: ZstdState {
+                    tag: ZstdTag::ZstdBlockLiteralsHeader,
+                    tag_next,
+                    block_idx,
+                    max_tag_len: ZstdTag::ZstdBlockLiteralsHeader.max_len(),
+                    tag_len: n_bytes_header as u64,
+                    tag_idx: (i + 1) as u64,
+                    is_tag_change: i == 0,
+                    tag_rlc,
+                    tag_rlc_acc,
                 },
-            )
+                encoded_data: EncodedData {
+                    byte_idx: (byte_offset + i + 1) as u64,
+                    encoded_len: last_row.encoded_data.encoded_len,
+                    value_byte,
+                    reverse: false,
+                    value_rlc,
+                    ..Default::default()
+                },
+                bitstream_read_data: BitstreamReadRow::default(),
+                decoded_data: last_row.decoded_data.clone(),
+                fse_data: FseDecodingRow::default(),
+            })
             .collect::<Vec<_>>(),
         literals_block_type,
         n_streams,
@@ -2010,13 +1751,13 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     // TODO: handle multi-block
     let mut sequence_exec_info_arr: Vec<SequenceExecResult> = vec![];
 
-    // witgen_debug
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-
     // FrameHeaderDescriptor and FrameContentSize
-    let (mut byte_offset, rows) =
-        process_frame_header::<F>(src, 0, &ZstdWitnessRow::init(src.len()), randomness);
+    let (mut byte_offset, rows) = process_frame_header::<F>(
+        src,
+        0, // frame header starts at offset=0
+        &ZstdWitnessRow::init(src.len()),
+        randomness,
+    );
     witness_rows.extend_from_slice(&rows);
 
     let mut block_idx: u64 = 1;
@@ -2054,52 +1795,13 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
         sequence_exec_info_arr.push(sequence_exec_info);
 
         if block_info.is_last_block {
-            // TODO: Recover this assertion after the sequence section decoding is completed.
-            assert!(end_offset == src.len());
+            assert!(end_offset >= src.len());
             break;
         } else {
             block_idx += 1;
             byte_offset = end_offset;
         }
     }
-
-    // witgen_debug
-    // for (idx, row) in witness_rows.iter().enumerate() {
-    //     if row.encoded_data.byte_idx >= 33860 && row.encoded_data.byte_idx <= 33870 {
-    //         write!(
-    //             handle,
-    //
-    // "{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:
-    // ?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};
-    // {:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};",         idx,             row.state.tag,
-    // row.state.tag_next, row.state.block_idx, row.state.max_tag_len,
-    // row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc,
-    //             row.state.is_tag_change, row.state.tag_rlc_acc,
-    // row.encoded_data.byte_idx,             row.encoded_data.encoded_len,
-    // row.encoded_data.value_byte, row.encoded_data.reverse,
-    // row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1,
-    //             row.encoded_data.aux_2, row.encoded_data.value_rlc,
-    //             row.decoded_data.decoded_len,         row.decoded_data.decoded_len_acc,
-    //             row.decoded_data.total_decoded_len,         row.decoded_data.decoded_byte,
-    //             row.decoded_data.decoded_value_rlc,         row.fse_data.table_kind,
-    //             row.fse_data.table_size, row.fse_data.symbol,         row.fse_data.num_emitted,
-    //             row.fse_data.value_decoded, row.fse_data.probability_acc,         row.fse_data.
-    //             is_repeat_bits_loop, row.fse_data.is_trailing_bits,
-    // row.bitstream_read_data.             bit_start_idx,
-    // row.bitstream_read_data.bit_end_idx,             row.bitstream_read_data.bit_value,
-    // row.bitstream_read_data.is_nil,             row.bitstream_read_data.is_zero_bit_read,
-    //             row.bitstream_read_data.is_seq_init,
-    //             row.bitstream_read_data.seq_idx,
-    //             row.bitstream_read_data.states,
-    //             row.bitstream_read_data.symbols,
-    //             row.bitstream_read_data.values,
-    //             row.bitstream_read_data.baseline,
-    //             row.bitstream_read_data.is_update_state,
-    //         ).unwrap();
-
-    //         writeln!(handle).unwrap();
-    //     }
-    // }
 
     (
         witness_rows,
@@ -2116,100 +1818,88 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
 
 #[cfg(test)]
 mod tests {
-    // witgen_debug
-    // use super::*;
-    // use bitstream_io::write;
-    // use halo2_proofs::halo2curves::bn256::Fr;
-    // use serde_json::from_str;
-    use std::fs;
+    use eth_types::H256;
+    use ethers_core::utils::keccak256;
+    use std::{fs, fs::File, io::Write};
 
-    // witgen_debug
-    use std::io::Write;
+    #[test]
+    #[ignore]
+    fn compression_ratio() -> Result<(), std::io::Error> {
+        use csv::WriterBuilder;
 
-    // witgen_debug
-    // #[test]
-    // #[ignore]
-    // fn compression_ratio() -> Result<(), std::io::Error> {
-    //     use csv::WriterBuilder;
-    //     use super::*;
+        let get_compression_ratio = |data: &[u8]| -> Result<(u64, u64, H256), std::io::Error> {
+            let raw_len = data.len();
+            let compressed = {
+                // compression level = 0 defaults to using level=3, which is zstd's default.
+                let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
 
-    //     let get_compression_ratio = |data: &[u8]| -> Result<(u64, u64, H256), std::io::Error> {
-    //         let raw_len = data.len();
-    //         let compressed = {
-    //             // compression level = 0 defaults to using level=3, which is zstd's default.
-    //             let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
+                // disable compression of literals, i.e. literals will be raw bytes.
+                encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
+                    zstd::zstd_safe::ParamSwitch::Disable,
+                ))?;
+                // set target block size to fit within a single block.
+                encoder
+                    .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
+                // do not include the checksum at the end of the encoded data.
+                encoder.include_checksum(false)?;
+                // do not include magic bytes at the start of the frame since we will have a
+                // single frame.
+                encoder.include_magicbytes(false)?;
+                // set source length, which will be reflected in the frame header.
+                encoder.set_pledged_src_size(Some(raw_len as u64))?;
+                // include the content size to know at decode time the expected size of decoded
+                // data.
+                encoder.include_contentsize(true)?;
 
-    //             // disable compression of literals, i.e. literals will be raw bytes.
-    //             encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-    //                 zstd::zstd_safe::ParamSwitch::Disable,
-    //             ))?;
-    //             // set target block size to fit within a single block.
-    //             encoder
-    //                 .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
-    //             // do not include the checksum at the end of the encoded data.
-    //             encoder.include_checksum(false)?;
-    //             // do not include magic bytes at the start of the frame since we will have a
-    // single             // frame.
-    //             encoder.include_magicbytes(false)?;
-    //             // set source length, which will be reflected in the frame header.
-    //             encoder.set_pledged_src_size(Some(raw_len as u64))?;
-    //             // include the content size to know at decode time the expected size of decoded
-    //             // data.
-    //             encoder.include_contentsize(true)?;
+                encoder.write_all(data)?;
+                encoder.finish()?
+            };
+            let hash = keccak256(&compressed);
+            let compressed_len = compressed.len();
+            Ok((raw_len as u64, compressed_len as u64, hash.into()))
+        };
 
-    //             encoder.write_all(data)?;
-    //             encoder.finish()?
-    //         };
-    //         let hash = keccak256(&compressed);
-    //         let compressed_len = compressed.len();
-    //         Ok((raw_len as u64, compressed_len as u64, hash.into()))
-    //     };
+        let mut batch_files = fs::read_dir("./data")?
+            .map(|entry| entry.map(|e| e.path()))
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
+        batch_files.sort();
 
-    //     let mut batch_files = fs::read_dir("./data")?
-    //         .map(|entry| entry.map(|e| e.path()))
-    //         .collect::<Result<Vec<_>, std::io::Error>>()?;
-    //     batch_files.sort();
+        let batches = batch_files
+            .iter()
+            .map(fs::read_to_string)
+            .filter_map(|data| data.ok())
+            .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
+            .collect::<Vec<Vec<u8>>>();
 
-    //     let batches = batch_files
-    //         .iter()
-    //         .map(fs::read_to_string)
-    //         .filter_map(|data| data.ok())
-    //         .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
-    //         .collect::<Vec<Vec<u8>>>();
+        let file = File::create("modified-ratio.csv")?;
+        let mut writer = WriterBuilder::new().from_writer(file);
 
-    //     let file = File::create("modified-ratio.csv")?;
-    //     let mut writer = WriterBuilder::new().from_writer(file);
+        // Write headers to CSV
+        writer.write_record(["ID", "Len(input)", "Compression Ratio"])?;
 
-    //     // Write headers to CSV
-    //     writer.write_record(["ID", "Len(input)", "Compression Ratio"])?;
+        // Test and store results in CSV
+        for (i, batch) in batches.iter().enumerate() {
+            let (raw_len, compr_len, keccak_hash) = get_compression_ratio(batch)?;
+            println!(
+                "batch{:0>3}, raw_size={:6}, compr_size={:6}, compr_keccak_hash={:64x}",
+                i, raw_len, compr_len, keccak_hash
+            );
 
-    //     // Test and store results in CSV
-    //     for (i, batch) in batches.iter().enumerate() {
-    //         let (raw_len, compr_len, keccak_hash) = get_compression_ratio(batch)?;
-    //         println!(
-    //             "batch{:0>3}, raw_size={:6}, compr_size={:6}, compr_keccak_hash={:64x}",
-    //             i, raw_len, compr_len, keccak_hash
-    //         );
+            // Write input and result to CSV
+            let compr_ratio = raw_len as f64 / compr_len as f64;
+            writer.write_record(&[i.to_string(), raw_len.to_string(), compr_ratio.to_string()])?;
+        }
 
-    //         // Write input and result to CSV
-    //         let compr_ratio = raw_len as f64 / compr_len as f64;
-    //         writer.write_record(&[i.to_string(), raw_len.to_string(), compr_ratio.to_string()])?;
-    //     }
+        // Flush the CSV writer
+        writer.flush()?;
 
-    //     // Flush the CSV writer
-    //     writer.flush()?;
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     #[test]
     fn test_zstd_witness_processing_batch_data() -> Result<(), std::io::Error> {
         use super::*;
         use halo2_proofs::halo2curves::bn256::Fr;
-
-        // witgen_debug
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
 
         let mut batch_files = fs::read_dir("./data/test_batches")?
             .map(|entry| entry.map(|e| e.path()))
@@ -2222,12 +1912,7 @@ mod tests {
             .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
             .collect::<Vec<Vec<u8>>>();
 
-        for (batch_idx, raw_input_bytes) in batches.into_iter().enumerate() {
-            // witgen_debug
-            // if batch_idx == 127 {
-            //     continue;
-            // }
-
+        for raw_input_bytes in batches.into_iter() {
             let compressed = {
                 // compression level = 0 defaults to using level=3, which is zstd's default.
                 let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
@@ -2254,10 +1939,6 @@ mod tests {
                 encoder.finish()?
             };
 
-            // witgen_debug
-            // write!(handle, "=> compressed: {:?}", compressed).unwrap();
-            // writeln!(handle).unwrap();
-
             let (
                 _witness_rows,
                 _decoded_literals,
@@ -2273,14 +1954,6 @@ mod tests {
                 .into_iter()
                 .flat_map(|r| r.recovered_bytes)
                 .collect::<Vec<u8>>();
-
-            // witgen_debug
-            write!(handle, "=> batch_idx: {:?}", batch_idx).unwrap();
-            writeln!(handle).unwrap();
-
-            // witgen_debug
-            // write!(handle, "=> decoded: {:?}", decoded_bytes).unwrap();
-            // writeln!(handle).unwrap();
 
             assert!(raw_input_bytes == decoded_bytes);
         }

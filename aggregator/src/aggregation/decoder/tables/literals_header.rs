@@ -125,7 +125,6 @@ impl LiteralsHeaderTable {
             cb.gate(condition)
         });
 
-        // witgen_debug
         meta.create_gate(
             "LiteralsHeaderTable: subsequent rows after q_first=true",
             |meta| {
@@ -144,18 +143,17 @@ impl LiteralsHeaderTable {
                 cb.require_boolean("is_padding is boolean", is_padding_cur.expr());
                 cb.require_boolean("is_padding delta is boolean", is_padding_delta);
 
-                // witgen_debug
                 // block_idx increments.
                 //
                 // This also ensures that we are not populating conflicting literal headers for the
                 // same block_idx in this layout.
-                // cb.condition(not::expr(is_padding_cur), |cb| {
-                //     cb.require_equal(
-                //         "block_idx increments",
-                //         meta.query_advice(config.block_idx, Rotation::cur()),
-                //         meta.query_advice(config.block_idx, Rotation::prev()) + 1.expr(),
-                //     );
-                // });
+                cb.condition(not::expr(is_padding_cur), |cb| {
+                    cb.require_equal(
+                        "block_idx increments",
+                        meta.query_advice(config.block_idx, Rotation::cur()),
+                        meta.query_advice(config.block_idx, Rotation::prev()) + 1.expr(),
+                    );
+                });
 
                 cb.gate(condition)
             },
@@ -193,6 +191,8 @@ impl LiteralsHeaderTable {
     /// Assign witness to the literals header table.
     pub fn assign<F: Field>(
         &self,
+        k: u32,
+        unusable_rows: usize,
         layouter: &mut impl Layouter<F>,
         literals_headers: Vec<(u64, u64, (u64, u64, u64))>,
     ) -> Result<(), Error> {
@@ -235,7 +235,6 @@ impl LiteralsHeaderTable {
                         (self.byte1, byte1, "byte1"),
                         (self.byte2, byte2, "byte2"),
                         (self.regen_size, regen_size, "regen_size"),
-                        // witgen_debug: check bit order
                         (
                             self.size_format_bit0,
                             (size_format & 1) as u64,
@@ -258,8 +257,14 @@ impl LiteralsHeaderTable {
                     }
                 }
 
-                // TODO(ray): assign is_padding=true for other rows so that the block_idx
-                // increments gate is not checked.
+                for offset in literals_headers.len()..((1 << k) - unusable_rows) {
+                    region.assign_advice(
+                        || "is_padding",
+                        self.is_padding,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                }
 
                 Ok(())
             },

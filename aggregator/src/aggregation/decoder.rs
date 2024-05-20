@@ -16,8 +16,7 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Assigned, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
@@ -90,8 +89,6 @@ pub struct DecoderConfig<const L: usize, const R: usize> {
     bitstring_table: BitstringTable,
     /// Helper table for decoding FSE tables.
     fse_table: FseTable<L, R>,
-
-    // witgen_debug
     /// Helper table for sequences as instructions.
     sequence_instruction_table: SequenceInstructionTable<Fr>,
     // /// Helper table in the "output" region for accumulating the result of executing sequences.
@@ -126,8 +123,6 @@ struct TagConfig {
     tag_rlc: Column<Advice>,
     /// Represents keccak randomness exponentiated by the tag len.
     rpow_tag_len: Column<Advice>,
-    /// Whether this tag outputs decoded bytes or not.
-    is_output: Column<Advice>,
     /// Whether this tag is processed from back-to-front or not.
     is_reverse: Column<Advice>,
     /// Whether this row represents the first byte in a new tag. Effectively this also means that
@@ -171,7 +166,6 @@ impl TagConfig {
             tag_rlc_acc: meta.advice_column_in(SecondPhase),
             tag_rlc: meta.advice_column_in(SecondPhase),
             rpow_tag_len: meta.advice_column_in(SecondPhase),
-            is_output: meta.advice_column(),
             is_reverse: meta.advice_column(),
             is_change: meta.advice_column(),
             // degree reduction.
@@ -1339,9 +1333,9 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 meta.query_advice(config.tag_config.tag, Rotation::cur()),
                 meta.query_advice(config.tag_config.tag_next, Rotation::cur()),
                 meta.query_advice(config.tag_config.max_len, Rotation::cur()),
-                meta.query_advice(config.tag_config.is_output, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_reverse, Rotation::cur()),
                 meta.query_advice(config.block_config.is_block, Rotation::cur()),
+                0.expr(), // unused
             ]
             .into_iter()
             .zip_eq(config.fixed_table.table_exprs(meta))
@@ -1442,7 +1436,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 config.tag_config.tag_rlc,
                 config.tag_config.max_len,
                 config.tag_config.rpow_tag_len,
-                config.tag_config.is_output,
                 config.tag_config.is_reverse,
                 config.block_config.is_block,
                 config.encoded_rlc,
@@ -4115,7 +4108,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         sequence_exec_info_arr: Vec<Vec<SequenceExec>>,
         challenges: &Challenges<Value<Fr>>,
         k: u32,
-        // witgen_debug
     ) -> Result<AssignedDecoderConfigExports, Error> {
         let mut pow_of_rand: Vec<Value<Fr>> = vec![Value::known(Fr::ONE)];
 
@@ -4192,7 +4184,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             ));
         }
         self.literals_header_table
-            .assign(layouter, literal_headers)?;
+            .assign(k, self.unusable_rows(), layouter, literal_headers)?;
 
         /////////////////////////////////////////
         //// Assign Sequence-related Configs ////
@@ -4477,12 +4469,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                         self.tag_config.tag_rlc,
                         i,
                         || row.state.tag_rlc,
-                    )?;
-                    region.assign_advice(
-                        || "tag_config.is_output",
-                        self.tag_config.is_output,
-                        i,
-                        || Value::known(Fr::from(row.state.tag.is_output() as u64)),
                     )?;
 
                     let tag_len = row.state.tag_len as usize;
