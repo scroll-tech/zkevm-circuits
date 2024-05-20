@@ -126,6 +126,7 @@ pub struct FseTable<const L: usize, const R: usize> {
 
 impl<const L: usize, const R: usize> FseTable<L, R> {
     /// Configure the FSE table.
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         q_enable: Column<Fixed>,
@@ -959,7 +960,6 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                         }
                     }
 
-                    // witgen_debug
                     assert!(
                         state_idx as u64 == table.table_size,
                         "Last state should correspond to end of table"

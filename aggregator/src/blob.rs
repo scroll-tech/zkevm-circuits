@@ -285,20 +285,23 @@ impl BatchData {
             .collect()
     }
 
+    /// Get the zstd encoded batch data bytes.
+    pub(crate) fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
+        let batch_data_bytes = self.get_batch_data_bytes();
+        let mut encoder = init_zstd_encoder();
+        encoder
+            .set_pledged_src_size(Some(batch_data_bytes.len() as u64))
+            .expect("infallible");
+        encoder.write_all(&batch_data_bytes).expect("infallible");
+        encoder.finish().expect("infallible")
+    }
+
     /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
     pub(crate) fn get_coefficients(&self) -> [U256; BLOB_WIDTH] {
         let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
         // We only consider the data from `valid` chunks and ignore the padded chunks.
-        let batch_bytes = self.get_batch_data_bytes();
-        let blob_bytes = {
-            let mut encoder = init_zstd_encoder();
-            encoder
-                .set_pledged_src_size(Some(batch_bytes.len() as u64))
-                .expect("infallible");
-            encoder.write_all(&batch_bytes).expect("infallible");
-            encoder.finish().expect("infallible")
-        };
+        let blob_bytes = self.get_encoded_batch_data_bytes();
         assert!(
             blob_bytes.len() < N_BLOB_BYTES,
             "too many bytes in batch data"

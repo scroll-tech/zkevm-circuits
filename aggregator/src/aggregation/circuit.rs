@@ -457,8 +457,53 @@ impl Circuit<Fr> for AggregationCircuit {
                 barycentric_assignments,
             )?;
 
-            // TODO: uncomment this line
-            // let decoder_exports = config.decoder_config.assign(&mut layouter)?;
+            let batch_bytes = batch_data.get_batch_data_bytes();
+            let encoded_batch_bytes = batch_data.get_encoded_batch_data_bytes();
+            let (
+                witness_rows,
+                decoded_literals,
+                aux_data,
+                fse_aux_tables,
+                block_info_arr,
+                sequence_info_arr,
+                address_table_arr,
+                sequence_exec_result,
+            ) = crate::aggregation::decoder::witgen::process(
+                &encoded_batch_bytes,
+                challenges.keccak_input(),
+            );
+
+            // sanity check:
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+                (Vec::new(), Vec::new()),
+                |(mut out_byte, mut out_exec), res| {
+                    out_byte.extend(res.recovered_bytes);
+                    out_exec.push(res.exec_trace);
+                    (out_byte, out_exec)
+                },
+            );
+            assert_eq!(
+                batch_bytes, recovered_bytes,
+                "original and recovered bytes mismatch"
+            );
+
+            // TODO: add copy constraints between decoder_exports and batchdataconfig +
+            // blobdataconfig
+            let _decoder_exports = config.decoder_config.assign(
+                &mut layouter,
+                &batch_bytes,
+                &encoded_batch_bytes,
+                witness_rows,
+                decoded_literals,
+                aux_data,
+                fse_aux_tables,
+                block_info_arr,
+                sequence_info_arr,
+                address_table_arr,
+                sequence_exec_info_arr,
+                &challenges,
+                20, // TODO: configure k for aggregation circuit instead of hard-coded here.
+            )?;
 
             layouter.assign_region(
                 || "batch checks",
