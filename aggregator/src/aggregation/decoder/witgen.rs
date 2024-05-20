@@ -791,14 +791,16 @@ fn process_sequences<F: Field>(
             // to_bit_position,        Which bit position the read operation ends at, with range ∈ [0, 16)
             // value_read,             Bit value
             // value_decoded,          The decoded value is processed from the raw bitstring value
-            // current_tag_value_acc,  Depending on the current byte position, the accumulator increments accordingly
-            // current_tag_rlc_acc,    Depending on the current byte position, the accumulator increments accordingly
+            // current_tag_value_acc,  Depending on the current byte position, 
+            //                         the accumulator increments accordingly
+            // current_tag_rlc_acc,    Depending on the current byte position, 
+            //                         the accumulator increments accordingly
             // n_acc,                  How many states are already assigned to the current symbol
-            // table_kind,             What FSE table is being decoded (Literal Length, Matched Offset or Match Length)
+            // table_kind,             What FSE table is being decoded
             // table_size,             The size of current FSE table
             // is_repeating_bits,      Whether current bitstring represents repeat bits.
             //                         Repeat bits immediately follows a bitstring=1 read operation.
-            //                         Repeat bits indicate how many 0-state symbols to skip after the last symbol.
+            //                         Repeat bits indicate how many 0-state symbols to skip.
             // is_trailing_bits,       FSE bitstreams may have trailing bits
 
             let bitstream_rows = bit_boundaries
