@@ -786,9 +786,11 @@ fn process_sequences<F: Field>(
             // symbol,                 The symbol being decoded now
             // n_emitted,              The total number of unique symbols decoded
             // from_byte_position,     Which byte the read operation starts at
-            // from_bit_position,      Which bit position the read operation starts at, with range ∈ [0, 8)
+            // from_bit_position,      Which bit position the read operation 
+            //                         starts at, with range ∈ [0, 8)
             // to_byte_position,       Which byte the read operation ends at
-            // to_bit_position,        Which bit position the read operation ends at, with range ∈ [0, 16)
+            // to_bit_position,        Which bit position the read operation ends at, 
+            //                         with range ∈ [0, 16)
             // value_read,             Bit value
             // value_decoded,          The decoded value is processed from the raw bitstring value
             // current_tag_value_acc,  Depending on the current byte position, 
