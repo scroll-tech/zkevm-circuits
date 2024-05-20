@@ -1027,21 +1027,6 @@ mod tests {
         // Here we test whether we can actually reconstruct the FSE table for distributions that
         // include prob=-1 cases, one such example is the Predefined FSE table as per
         // specifications.
-        //
-        // short literalsLength_defaultDistribution[36] =
-        // { 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
-        //   2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
-        //  -1,-1,-1,-1 };
-        //
-        // short matchLengths_defaultDistribution[53] =
-        // { 1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
-        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        //   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,-1,-1,
-        //  -1,-1,-1,-1,-1 };
-        //
-        //  short offsetCodes_defaultDistribution[29] =
-        // { 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
-        //   1, 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1 };
         let default_distribution_llt = vec![
             4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1,
             1, 1, 1, -1, -1, -1, -1,

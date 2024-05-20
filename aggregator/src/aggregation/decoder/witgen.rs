@@ -1951,91 +1951,86 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
 
 #[cfg(test)]
 mod tests {
-    // witgen_debug
-    // use super::*;
-    // use bitstream_io::write;
-    // use halo2_proofs::halo2curves::bn256::Fr;
-    // use serde_json::from_str;
     use std::fs;
-
-    // witgen_debug
+    use std::fs::File;
     use std::io::Write;
+    use eth_types::H256;
+    use ethers_core::utils::keccak256;
 
-    // witgen_debug
-    // #[test]
-    // #[ignore]
-    // fn compression_ratio() -> Result<(), std::io::Error> {
-    //     use csv::WriterBuilder;
-    //     use super::*;
+    #[test]
+    #[ignore]
+    fn compression_ratio() -> Result<(), std::io::Error> {
+        use csv::WriterBuilder;
+        use super::*;
 
-    //     let get_compression_ratio = |data: &[u8]| -> Result<(u64, u64, H256), std::io::Error> {
-    //         let raw_len = data.len();
-    //         let compressed = {
-    //             // compression level = 0 defaults to using level=3, which is zstd's default.
-    //             let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
+        let get_compression_ratio = |data: &[u8]| -> Result<(u64, u64, H256), std::io::Error> {
+            let raw_len = data.len();
+            let compressed = {
+                // compression level = 0 defaults to using level=3, which is zstd's default.
+                let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
 
-    //             // disable compression of literals, i.e. literals will be raw bytes.
-    //             encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-    //                 zstd::zstd_safe::ParamSwitch::Disable,
-    //             ))?;
-    //             // set target block size to fit within a single block.
-    //             encoder
-    //                 .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
-    //             // do not include the checksum at the end of the encoded data.
-    //             encoder.include_checksum(false)?;
-    //             // do not include magic bytes at the start of the frame since we will have a
-    // single             // frame.
-    //             encoder.include_magicbytes(false)?;
-    //             // set source length, which will be reflected in the frame header.
-    //             encoder.set_pledged_src_size(Some(raw_len as u64))?;
-    //             // include the content size to know at decode time the expected size of decoded
-    //             // data.
-    //             encoder.include_contentsize(true)?;
+                // disable compression of literals, i.e. literals will be raw bytes.
+                encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
+                    zstd::zstd_safe::ParamSwitch::Disable,
+                ))?;
+                // set target block size to fit within a single block.
+                encoder
+                    .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
+                // do not include the checksum at the end of the encoded data.
+                encoder.include_checksum(false)?;
+                // do not include magic bytes at the start of the frame since we will have a
+                // single frame.
+                encoder.include_magicbytes(false)?;
+                // set source length, which will be reflected in the frame header.
+                encoder.set_pledged_src_size(Some(raw_len as u64))?;
+                // include the content size to know at decode time the expected size of decoded
+                // data.
+                encoder.include_contentsize(true)?;
 
-    //             encoder.write_all(data)?;
-    //             encoder.finish()?
-    //         };
-    //         let hash = keccak256(&compressed);
-    //         let compressed_len = compressed.len();
-    //         Ok((raw_len as u64, compressed_len as u64, hash.into()))
-    //     };
+                encoder.write_all(data)?;
+                encoder.finish()?
+            };
+            let hash = keccak256(&compressed);
+            let compressed_len = compressed.len();
+            Ok((raw_len as u64, compressed_len as u64, hash.into()))
+        };
 
-    //     let mut batch_files = fs::read_dir("./data")?
-    //         .map(|entry| entry.map(|e| e.path()))
-    //         .collect::<Result<Vec<_>, std::io::Error>>()?;
-    //     batch_files.sort();
+        let mut batch_files = fs::read_dir("./data")?
+            .map(|entry| entry.map(|e| e.path()))
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
+        batch_files.sort();
 
-    //     let batches = batch_files
-    //         .iter()
-    //         .map(fs::read_to_string)
-    //         .filter_map(|data| data.ok())
-    //         .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
-    //         .collect::<Vec<Vec<u8>>>();
+        let batches = batch_files
+            .iter()
+            .map(fs::read_to_string)
+            .filter_map(|data| data.ok())
+            .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
+            .collect::<Vec<Vec<u8>>>();
 
-    //     let file = File::create("modified-ratio.csv")?;
-    //     let mut writer = WriterBuilder::new().from_writer(file);
+        let file = File::create("modified-ratio.csv")?;
+        let mut writer = WriterBuilder::new().from_writer(file);
 
-    //     // Write headers to CSV
-    //     writer.write_record(["ID", "Len(input)", "Compression Ratio"])?;
+        // Write headers to CSV
+        writer.write_record(["ID", "Len(input)", "Compression Ratio"])?;
 
-    //     // Test and store results in CSV
-    //     for (i, batch) in batches.iter().enumerate() {
-    //         let (raw_len, compr_len, keccak_hash) = get_compression_ratio(batch)?;
-    //         println!(
-    //             "batch{:0>3}, raw_size={:6}, compr_size={:6}, compr_keccak_hash={:64x}",
-    //             i, raw_len, compr_len, keccak_hash
-    //         );
+        // Test and store results in CSV
+        for (i, batch) in batches.iter().enumerate() {
+            let (raw_len, compr_len, keccak_hash) = get_compression_ratio(batch)?;
+            println!(
+                "batch{:0>3}, raw_size={:6}, compr_size={:6}, compr_keccak_hash={:64x}",
+                i, raw_len, compr_len, keccak_hash
+            );
 
-    //         // Write input and result to CSV
-    //         let compr_ratio = raw_len as f64 / compr_len as f64;
-    //         writer.write_record(&[i.to_string(), raw_len.to_string(), compr_ratio.to_string()])?;
-    //     }
+            // Write input and result to CSV
+            let compr_ratio = raw_len as f64 / compr_len as f64;
+            writer.write_record(&[i.to_string(), raw_len.to_string(), compr_ratio.to_string()])?;
+        }
 
-    //     // Flush the CSV writer
-    //     writer.flush()?;
+        // Flush the CSV writer
+        writer.flush()?;
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     #[test]
     fn test_zstd_witness_processing_batch_data() -> Result<(), std::io::Error> {
