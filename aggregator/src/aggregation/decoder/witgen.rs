@@ -659,6 +659,7 @@ fn process_sequences<F: Field>(
     )
     .expect("Reconstructing FSE-packed Literl Length (LL) table should not fail.");
     let llt = table_llt.parse_state_table();
+    // Determine the accuracy log of LLT
     let al_llt = if literal_lengths_mode > 0 {
         bit_boundaries_llt
             .first()
@@ -680,6 +681,7 @@ fn process_sequences<F: Field>(
     )
     .expect("Reconstructing FSE-packed Cooked Match Offset (CMO) table should not fail.");
     let cmot = table_cmot.parse_state_table();
+    // Determine the accuracy log of CMOT
     let al_cmot = if offsets_mode > 0 {
         bit_boundaries_cmot
             .first()
@@ -701,6 +703,7 @@ fn process_sequences<F: Field>(
     )
     .expect("Reconstructing FSE-packed Match Length (ML) table should not fail.");
     let mlt = table_mlt.parse_state_table();
+    // Determine the accuracy log of MLT
     let al_mlt = if match_lengths_mode > 0 {
         bit_boundaries_mlt
             .first()
@@ -711,7 +714,7 @@ fn process_sequences<F: Field>(
         6
     };
 
-    // Add witness rows for the FSE tables
+    // Add witness rows for the above three FSE tables
     let mut last_row = header_rows.last().cloned().unwrap();
     for (start_offset, end_offset, bit_boundaries, tag_len, table, is_fse_section_end) in [
         (
@@ -775,38 +778,55 @@ fn process_sequences<F: Field>(
             let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
             let mut last_symbol: i32 = 0;
 
+            // Convert multi-bit read operations boundaries from the stream into a convenient format
+            // so they can be easily converted into witness rows later. Format:
+            // (
+            //     symbol,                 // The symbol being decoded now
+            //     n_emitted,              // The total number of unique symbols decoded
+            //     from_byte_position,     // Which byte the read operation starts at
+            //     from_bit_position,      // Which bit position the read operation starts at, with range ∈ [0, 8)
+            //     to_byte_position,       // Which byte the read operation ends at
+            //     to_bit_position,        // Which bit position the read operation ends at, with range ∈ [0, 16)
+            //     value_read,             // Bit value
+            //     value_decoded,          // The decoded value is processed from the raw bitstring value
+            //     current_tag_value_acc,  // Depending on the current byte position, the accumulator increments accordingly
+            //     current_tag_rlc_acc,    // Depending on the current byte position, the accumulator increments accordingly
+            //     n_acc,                  // How many states are already assigned to the current symbol
+            //     table_kind,             // What FSE table is being decoded (Literal Length, Matched Offset or Match Length)
+            //     table_size,             // The size of current FSE table
+            //     is_repeating_bits,      // Whether current bitstring represents repeat bits.
+            //                             // Repeat bits immediately follows a bitstring=1 read operation.
+            //                             // Repeat bits indicate how many 0-state symbols to skip after the last symbol.
+            //     is_trailing_bits,       // FSE bitstreams may have trailing bits
+            // )
+
             let bitstream_rows = bit_boundaries
                 .iter()
                 .enumerate()
                 .map(|(bit_boundary_idx, (bit_idx, value_read, value_decoded))| {
-                    // Calculate byte and bit positions. Increment allocators.
+                    // First calculate the start and end position of the current read operation
                     from_pos = if next_symbol == -1 { (1, -1) } else { to_pos };
-
                     from_pos.1 += 1;
                     if from_pos.1 == 8 || from_pos.1 == 16 {
                         from_pos = (from_pos.0 + 1, 0);
                     }
-
                     from_pos.1 = (from_pos.1 as u64).rem_euclid(8) as i64;
-
                     while from_pos.0 > last_byte_idx {
                         current_tag_value_acc = tag_value_iter.next().unwrap();
                         current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
                         last_byte_idx += 1;
                     }
 
+                    // Derive the end position based on how many bits are read
                     let to_byte_idx = (bit_idx - 1) / 8;
                     let mut to_bit_idx = bit_idx - to_byte_idx * (N_BITS_PER_BYTE as u32) - 1;
-
                     if from_pos.0 < (to_byte_idx + 1) as i64 {
                         to_bit_idx += 8;
                     }
-
                     to_pos = ((to_byte_idx + 1) as i64, to_bit_idx as i64);
 
-                    // Decide Fse decoding results
                     if bit_boundary_idx < 1 {
-                        // Accuracy log bits
+                        // Read Scenarios 1: Accuracy log bits (Always the First Read)
                         next_symbol += 1;
                         assert_eq!(value_read, value_decoded, "no varbit packing for AL bits");
                         (
@@ -821,7 +841,6 @@ fn process_sequences<F: Field>(
                             current_tag_value_acc,
                             current_tag_rlc_acc,
                             n_acc,
-                            // FseDecoder-specific witness values
                             kind as u64,
                             table.table_size,
                             false,
@@ -829,7 +848,7 @@ fn process_sequences<F: Field>(
                         )
                     } else if !is_repeating_bit_boundary.contains_key(&bit_boundary_idx) {
                         if n_acc >= (table.table_size as usize) {
-                            // Trailing bits
+                            // Read Scenarios 2: Trailing Bits
                             assert_eq!(
                                 value_read, value_decoded,
                                 "no varbit packing for trailing bits"
@@ -846,14 +865,13 @@ fn process_sequences<F: Field>(
                                 current_tag_value_acc,
                                 current_tag_rlc_acc,
                                 n_acc,
-                                // FseDecoder-specific witness values
                                 kind as u64,
                                 table.table_size,
                                 false,
                                 true,
                             )
                         } else {
-                            // Regular decoding state
+                            // Read Scenarios 3: Regular Decoding State
                             assert!(next_symbol >= 0);
                             decoded = next_symbol as u64;
                             n_emitted += 1;
@@ -902,15 +920,14 @@ fn process_sequences<F: Field>(
                                 current_tag_value_acc,
                                 current_tag_rlc_acc,
                                 n_acc,
-                                // FseDecoder-specific witness values
                                 kind as u64,
                                 table.table_size,
-                                false, // repeating bits
-                                false, // trailing bits
+                                false,
+                                false,
                             )
                         }
                     } else {
-                        // Repeating bits
+                        // Read Scenarios 3: Repeating Bits
                         let symbol = last_symbol as u64 + value_decoded;
                         last_symbol = symbol as i32;
                         assert_eq!(
@@ -1238,8 +1255,8 @@ fn process_sequences<F: Field>(
     while current_bit_idx + nb <= bitstream_end_bit_idx {
         let bitstring_value =
             be_bits_to_value(&sequence_bitstream[current_bit_idx..(current_bit_idx + nb)]);
+        let curr_baseline;
 
-        let mut curr_baseline;
         if mode > 0 {
             // For the initial baseline determination, ML and CMO positions are flipped.
             if is_init {
