@@ -153,7 +153,7 @@ fn process_block<F: Field>(
 
     let last_row = rows.last().expect("last row expected to exist");
     let (
-        _byte_offset,
+        end_offset,
         rows,
         literals,
         lstream_len,
@@ -177,7 +177,7 @@ fn process_block<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     (
-        byte_offset,
+        end_offset,
         witness_rows,
         block_info,
         sequence_info,
@@ -295,7 +295,7 @@ fn process_block_zstd<F: Field>(
     block_size: usize,
     last_block: bool,
 ) -> BlockProcessingResult<F> {
-    let end_offset = byte_offset + block_size;
+    let expected_end_offset = byte_offset + block_size;
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
@@ -385,7 +385,7 @@ fn process_block_zstd<F: Field>(
 
     let last_row = witness_rows.last().expect("last row expected to exist");
     let (
-        bytes_offset,
+        end_offset,
         rows,
         fse_aux_tables,
         address_table_rows,
@@ -396,16 +396,21 @@ fn process_block_zstd<F: Field>(
         src,
         block_idx,
         byte_offset,
-        end_offset,
+        expected_end_offset,
         literals.clone(),
         last_row,
         last_block,
         randomness,
     );
+    // sanity check:
+    assert_eq!(
+        end_offset, expected_end_offset,
+        "end offset after tag=SequencesData mismatch"
+    );
     witness_rows.extend_from_slice(&rows);
 
     (
-        bytes_offset,
+        end_offset,
         witness_rows,
         literals,
         lstream_len,
@@ -1734,12 +1739,11 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     let mut address_table_arr: Vec<Vec<AddressTableRow>> = vec![];
     // TODO: handle multi-block
     let mut sequence_exec_info_arr: Vec<SequenceExecResult> = vec![];
-    let byte_offset = 0;
 
     // FrameHeaderDescriptor and FrameContentSize
-    let (byte_offset, rows) = process_frame_header::<F>(
+    let (mut byte_offset, rows) = process_frame_header::<F>(
         src,
-        byte_offset,
+        0, // frame header starts at offset=0
         &ZstdWitnessRow::init(src.len()),
         randomness,
     );
@@ -1748,7 +1752,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     let mut block_idx: u64 = 1;
     loop {
         let (
-            _byte_offset,
+            end_offset,
             rows,
             block_info,
             sequence_info,
@@ -1780,11 +1784,11 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
         sequence_exec_info_arr.push(sequence_exec_info);
 
         if block_info.is_last_block {
-            // TODO: Recover this assertion after the sequence section decoding is completed.
-            // assert!(byte_offset >= src.len());
+            assert!(end_offset >= src.len());
             break;
         } else {
             block_idx += 1;
+            byte_offset = end_offset;
         }
     }
 
