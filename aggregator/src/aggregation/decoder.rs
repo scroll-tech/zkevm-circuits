@@ -4189,7 +4189,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             ));
         }
         self.literals_header_table
-            .assign(layouter, literal_headers)?;
+            .assign(k, layouter, literal_headers)?;
 
         /////////////////////////////////////////
         //// Assign Sequence-related Configs ////

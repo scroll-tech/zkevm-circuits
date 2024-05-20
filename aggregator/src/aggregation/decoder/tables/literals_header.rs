@@ -149,13 +149,13 @@ impl LiteralsHeaderTable {
                 //
                 // This also ensures that we are not populating conflicting literal headers for the
                 // same block_idx in this layout.
-                // cb.condition(not::expr(is_padding_cur), |cb| {
-                //     cb.require_equal(
-                //         "block_idx increments",
-                //         meta.query_advice(config.block_idx, Rotation::cur()),
-                //         meta.query_advice(config.block_idx, Rotation::prev()) + 1.expr(),
-                //     );
-                // });
+                cb.condition(not::expr(is_padding_cur), |cb| {
+                    cb.require_equal(
+                        "block_idx increments",
+                        meta.query_advice(config.block_idx, Rotation::cur()),
+                        meta.query_advice(config.block_idx, Rotation::prev()) + 1.expr(),
+                    );
+                });
 
                 cb.gate(condition)
             },
@@ -193,6 +193,7 @@ impl LiteralsHeaderTable {
     /// Assign witness to the literals header table.
     pub fn assign<F: Field>(
         &self,
+        k: u32,
         layouter: &mut impl Layouter<F>,
         literals_headers: Vec<(u64, u64, (u64, u64, u64))>,
     ) -> Result<(), Error> {
@@ -257,12 +258,26 @@ impl LiteralsHeaderTable {
                     }
                 }
 
+                // witgen_debug
+                for offset in literals_headers.len()..((1 << k) - self.unusable_rows()) {
+                    region.assign_advice(
+                        || "is_padding",
+                        self.is_padding,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                }
+
                 // TODO(ray): assign is_padding=true for other rows so that the block_idx
                 // increments gate is not checked.
 
                 Ok(())
             },
         )
+    }
+
+    pub fn unusable_rows(&self) -> usize {
+        6
     }
 }
 
