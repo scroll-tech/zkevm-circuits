@@ -125,7 +125,6 @@ impl LiteralsHeaderTable {
             cb.gate(condition)
         });
 
-        // witgen_debug
         meta.create_gate(
             "LiteralsHeaderTable: subsequent rows after q_first=true",
             |meta| {
@@ -144,7 +143,6 @@ impl LiteralsHeaderTable {
                 cb.require_boolean("is_padding is boolean", is_padding_cur.expr());
                 cb.require_boolean("is_padding delta is boolean", is_padding_delta);
 
-                // witgen_debug
                 // block_idx increments.
                 //
                 // This also ensures that we are not populating conflicting literal headers for the
@@ -194,6 +192,7 @@ impl LiteralsHeaderTable {
     pub fn assign<F: Field>(
         &self,
         k: u32,
+        unusable_rows: usize,
         layouter: &mut impl Layouter<F>,
         literals_headers: Vec<(u64, u64, (u64, u64, u64))>,
     ) -> Result<(), Error> {
@@ -258,8 +257,7 @@ impl LiteralsHeaderTable {
                     }
                 }
 
-                // witgen_debug
-                for offset in literals_headers.len()..((1 << k) - self.unusable_rows()) {
+                for offset in literals_headers.len()..((1 << k) - unusable_rows) {
                     region.assign_advice(
                         || "is_padding",
                         self.is_padding,
@@ -268,16 +266,9 @@ impl LiteralsHeaderTable {
                     )?;
                 }
 
-                // TODO(ray): assign is_padding=true for other rows so that the block_idx
-                // increments gate is not checked.
-
                 Ok(())
             },
         )
-    }
-
-    pub fn unusable_rows(&self) -> usize {
-        6
     }
 }
 
