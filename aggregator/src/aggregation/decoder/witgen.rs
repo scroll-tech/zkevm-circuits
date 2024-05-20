@@ -5,8 +5,6 @@ use eth_types::Field;
 use halo2_proofs::circuit::Value;
 use revm_precompile::HashMap;
 
-use std::io;
-
 mod params;
 pub use params::*;
 
@@ -107,11 +105,6 @@ fn process_frame_header<F: Field>(
         })
         .collect::<Vec<Value<F>>>();
     let tag_rlc = *(tag_rlc_iter.clone().last().expect("Tag RLC expected"));
-
-    let aux_1 = fcs_value_rlcs
-        .last()
-        .expect("FrameContentSize bytes expected");
-    let aux_2 = fhd_value_rlc;
 
     (
         byte_offset + 1 + fcs_tag_len,
@@ -720,9 +713,8 @@ fn process_sequences<F: Field>(
 
     // Add witness rows for the FSE tables
     let mut last_row = header_rows.last().cloned().unwrap();
-    for (idx, start_offset, end_offset, bit_boundaries, tag_len, table, is_fse_section_end) in [
+    for (start_offset, end_offset, bit_boundaries, tag_len, table, is_fse_section_end) in [
         (
-            0usize,
             fse_starting_byte_offset,
             fse_starting_byte_offset + n_fse_bytes_llt,
             bit_boundaries_llt,
@@ -731,7 +723,6 @@ fn process_sequences<F: Field>(
             offsets_mode + match_lengths_mode < 1,
         ),
         (
-            1usize,
             fse_starting_byte_offset + n_fse_bytes_llt,
             fse_starting_byte_offset + n_fse_bytes_llt + n_fse_bytes_cmot,
             bit_boundaries_cmot,
@@ -740,7 +731,6 @@ fn process_sequences<F: Field>(
             match_lengths_mode < 1,
         ),
         (
-            2usize,
             fse_starting_byte_offset + n_fse_bytes_llt + n_fse_bytes_cmot,
             fse_starting_byte_offset + n_fse_bytes_llt + n_fse_bytes_cmot + n_fse_bytes_mlt,
             bit_boundaries_mlt,
@@ -1116,19 +1106,6 @@ fn process_sequences<F: Field>(
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
 
-    let value_rlc_iter =
-        &src[byte_offset..end_offset]
-            .iter()
-            .scan(Value::known(F::zero()), |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            });
-    let mut value_rlc_iter = value_rlc_iter
-        .clone()
-        .collect::<Vec<Value<F>>>()
-        .into_iter()
-        .rev();
-
     let tag_value_iter =
         &src[byte_offset..end_offset]
             .iter()
@@ -1158,10 +1135,7 @@ fn process_sequences<F: Field>(
         .rev();
 
     let mut next_tag_value_acc = tag_value_iter.next().unwrap();
-    let next_value_rlc_acc = value_rlc_iter.next().unwrap();
     let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
-
-    let aux_1 = next_value_rlc_acc;
 
     let mut padding_end_idx = 0;
     while sequence_bitstream[padding_end_idx] == 0 {
@@ -1254,11 +1228,11 @@ fn process_sequences<F: Field>(
     let mut is_init = true;
     let mut nb = nb_switch[mode][order_idx];
     let bitstream_end_bit_idx = n_sequence_data_bytes * N_BITS_PER_BYTE;
-    let mut table_kind = 0u64;
-    let mut table_size = 0u64;
+    let mut table_kind;
+    let mut table_size;
     let mut last_states: [u64; 3] = [0, 0, 0];
     let mut last_symbols: [u64; 3] = [0, 0, 0];
-    let mut current_decoding_state = 0u64;
+    let mut current_decoding_state;
     let mut tail_holding_bit = false;
 
     while current_bit_idx + nb <= bitstream_end_bit_idx {
