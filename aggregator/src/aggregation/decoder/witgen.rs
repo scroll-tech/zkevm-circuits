@@ -512,14 +512,13 @@ fn process_sequences<F: Field>(
     last_block: bool,
     randomness: Value<F>,
 ) -> SequencesProcessingResult<F> {
-    // Initialize witness rows
+    // Initialize witness values
     let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
-
-    // Other consistent values
     let encoded_len = last_row.encoded_data.encoded_len;
-    let _decoded_data = last_row.decoded_data.clone();
 
-    // First, process the sequence header
+    //////////////////////////////////////////////////////
+    ///// Sequence Section Part 1: Sequence Header  //////
+    //////////////////////////////////////////////////////
     let mut sequence_info = SequenceInfo {
         block_idx: block_idx as usize,
         ..Default::default()
@@ -559,18 +558,20 @@ fn process_sequences<F: Field>(
 
     assert!(reserved == 0, "Reserved bits must be 0");
 
-    // TODO: Treatment of other encoding modes
+    // Note: Only 2 modes of FSE encoding are accepted (instead of 4):
+    // 0 - Predefined.
+    // 2 - Variable bit packing.
     assert!(
         literal_lengths_mode == 2 || literal_lengths_mode == 0,
-        "Only FSE_Compressed_Mode is allowed"
+        "Only FSE_Compressed_Mode or Predefined are allowed"
     );
     assert!(
         offsets_mode == 2 || offsets_mode == 0,
-        "Only FSE_Compressed_Mode is allowed"
+        "Only FSE_Compressed_Mode or Predefined are allowed"
     );
     assert!(
         match_lengths_mode == 2 || match_lengths_mode == 0,
-        "Only FSE_Compressed_Mode is allowed"
+        "Only FSE_Compressed_Mode or Predefined are allowed"
     );
     sequence_info.compression_mode = [
         literal_lengths_mode > 0,
@@ -645,7 +646,9 @@ fn process_sequences<F: Field>(
 
     witness_rows.extend_from_slice(&header_rows);
 
-    // Second, process the sequence tables (encoded using FSE)
+    /////////////////////////////////////////////////
+    ///// Sequence Section Part 2: FSE Tables  //////
+    /////////////////////////////////////////////////
     let byte_offset = sequence_header_end_offset;
     let fse_starting_byte_offset = byte_offset;
 
@@ -1097,6 +1100,10 @@ fn process_sequences<F: Field>(
             }
         }
     }
+
+    ////////////////////////////////////////////////////////////////////////////
+    ///// Sequence Section Part 3: Sequence Data (Instruction Bitstream)  //////
+    ////////////////////////////////////////////////////////////////////////////
 
     // Reconstruct LLTV, CMOTV, and MLTV which specifies bit actions for a specific state
     let lltv = SequenceFixedStateActionTable::reconstruct_lltv();
