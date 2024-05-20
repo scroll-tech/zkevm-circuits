@@ -11,8 +11,8 @@ use itertools::Itertools;
 use zkevm_circuits::{table::U8Table, util::Challenges};
 
 use crate::{
-    aggregation::rlc::POWS_OF_256,
-    blob::{init_zstd_encoder, BatchData, BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
+    aggregation::{decoder::witgen::init_zstd_encoder, rlc::POWS_OF_256},
+    blob::{BatchData, BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
     RlcConfig,
 };
 
@@ -88,7 +88,7 @@ impl BlobDataConfig {
     ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
         let batch_bytes = batch_data.get_batch_data_bytes();
         let blob_bytes = {
-            let mut encoder = init_zstd_encoder();
+            let mut encoder = init_zstd_encoder(None);
             encoder
                 .set_pledged_src_size(Some(batch_bytes.len() as u64))
                 .map_err(|_| Error::Synthesis)?;

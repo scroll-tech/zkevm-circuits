@@ -4846,7 +4846,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 #[cfg(test)]
 mod tests {
     use super::process;
-    use crate::{DecoderConfig, DecoderConfigArgs};
+    use crate::{witgen::init_zstd_encoder, DecoderConfig, DecoderConfigArgs};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
@@ -5011,36 +5011,12 @@ mod tests {
 
         let compressed = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
-            let mut encoder =
-                zstd::stream::write::Encoder::new(Vec::new(), 0).expect("Encoder construction");
+            let mut encoder = init_zstd_encoder(None);
 
-            // disable compression of literals, i.e. literals will be raw bytes.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                    zstd::zstd_safe::ParamSwitch::Disable,
-                ))
-                .expect("Encoder set_parameter: LiteralCompressionMode");
-            // set target block size to fit within a single block.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
-                .expect("Encoder set_parameter: TargetCBlockSize");
-            // do not include the checksum at the end of the encoded data.
-            encoder
-                .include_checksum(false)
-                .expect("Encoder include_checksum: false");
-            // do not include magic bytes at the start of the frame since we will have a single
-            // frame.
-            encoder
-                .include_magicbytes(false)
-                .expect("Encoder include magicbytes: false");
             // set source length, which will be reflected in the frame header.
             encoder
                 .set_pledged_src_size(Some(raw.len() as u64))
                 .expect("Encoder src_size: raw.len()");
-            // include the content size to know at decode time the expected size of decoded data.
-            encoder
-                .include_contentsize(true)
-                .expect("Encoder include_contentsize: true");
 
             encoder.write_all(&raw).expect("Encoder wirte_all");
             encoder.finish().expect("Encoder success")
@@ -5070,36 +5046,13 @@ mod tests {
         let raw = batches[127].clone();
         let compressed = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
-            let mut encoder =
-                zstd::stream::write::Encoder::new(Vec::new(), 0).expect("Encoder construction");
+            let mut encoder = init_zstd_encoder(None);
 
-            // disable compression of literals, i.e. literals will be raw bytes.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                    zstd::zstd_safe::ParamSwitch::Disable,
-                ))
-                .expect("Encoder set_parameter: LiteralCompressionMode");
-            // set target block size to fit within a single block.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
-                .expect("Encoder set_parameter: TargetCBlockSize");
-            // do not include the checksum at the end of the encoded data.
-            encoder
-                .include_checksum(false)
-                .expect("Encoder include_checksum: false");
-            // do not include magic bytes at the start of the frame since we will have a single
-            // frame.
-            encoder
-                .include_magicbytes(false)
-                .expect("Encoder include magicbytes: false");
             // set source length, which will be reflected in the frame header.
             encoder
                 .set_pledged_src_size(Some(raw.len() as u64))
                 .expect("Encoder src_size: raw.len()");
             // include the content size to know at decode time the expected size of decoded data.
-            encoder
-                .include_contentsize(true)
-                .expect("Encoder include_contentsize: true");
 
             encoder.write_all(&raw).expect("Encoder wirte_all");
             encoder.finish().expect("Encoder success")
@@ -5139,36 +5092,12 @@ mod tests {
 
         let encoded_batch_data = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
-            let mut encoder =
-                zstd::stream::write::Encoder::new(Vec::new(), 0).expect("Encoder construction");
+            let mut encoder = init_zstd_encoder(None);
 
-            // disable compression of literals, i.e. literals will be raw bytes.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                    zstd::zstd_safe::ParamSwitch::Disable,
-                ))
-                .expect("Encoder set_parameter: LiteralCompressionMode");
-            // set target block size to fit within a single block.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
-                .expect("Encoder set_parameter: TargetCBlockSize");
-            // do not include the checksum at the end of the encoded data.
-            encoder
-                .include_checksum(false)
-                .expect("Encoder include_checksum: false");
-            // do not include magic bytes at the start of the frame since we will have a single
-            // frame.
-            encoder
-                .include_magicbytes(false)
-                .expect("Encoder include magicbytes: false");
             // set source length, which will be reflected in the frame header.
             encoder
                 .set_pledged_src_size(Some(batch_data.len() as u64))
                 .expect("Encoder src_size: raw.len()");
-            // include the content size to know at decode time the expected size of decoded data.
-            encoder
-                .include_contentsize(true)
-                .expect("Encoder include_contentsize: true");
 
             encoder.write_all(&batch_data).expect("Encoder wirte_all");
             encoder.finish().expect("Encoder success")
