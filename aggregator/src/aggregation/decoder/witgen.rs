@@ -1239,7 +1239,7 @@ fn process_sequences<F: Field>(
         let bitstring_value =
             be_bits_to_value(&sequence_bitstream[current_bit_idx..(current_bit_idx + nb)]);
 
-        let mut curr_baseline = 0;
+        let mut curr_baseline;
         if mode > 0 {
             // For the initial baseline determination, ML and CMO positions are flipped.
             if is_init {
