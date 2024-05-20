@@ -16,8 +16,7 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
