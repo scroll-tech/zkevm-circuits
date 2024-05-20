@@ -215,6 +215,23 @@ impl ZstdTag {
             Self::ZstdBlockSequenceData => true,
         }
     }
+
+    /// The maximum number of bytes that can be taken by this tag.
+    pub fn max_len(&self) -> u64 {
+        match self {
+            Self::Null => 0,
+            Self::FrameHeaderDescriptor => 1,
+            Self::FrameContentSize => 8,
+            Self::BlockHeader => 3,
+            // as per spec, should be 5. But given that our encoder does not compress literals, it
+            // is 3.
+            Self::ZstdBlockLiteralsHeader => 3,
+            Self::ZstdBlockLiteralsRawBytes => (1 << 17) - 1,
+            Self::ZstdBlockSequenceHeader => 4,
+            Self::ZstdBlockSequenceFseCode => 128,
+            Self::ZstdBlockSequenceData => (1 << 17) - 1,
+        }
+    }
 }
 
 impl_expr!(ZstdTag);
@@ -263,10 +280,7 @@ pub struct ZstdState<F> {
     pub max_tag_len: u64,
     pub tag_len: u64,
     pub tag_idx: u64,
-    pub tag_value: Value<F>,
-    pub tag_value_acc: Value<F>,
     pub is_tag_change: bool,
-    // Unlike tag_value, tag_rlc only uses challenge as multiplier
     pub tag_rlc: Value<F>,
     pub tag_rlc_acc: Value<F>,
 }
@@ -280,8 +294,6 @@ impl<F: Field> Default for ZstdState<F> {
             max_tag_len: 0,
             tag_len: 0,
             tag_idx: 0,
-            tag_value: Value::known(F::zero()),
-            tag_value_acc: Value::known(F::zero()),
             is_tag_change: false,
             tag_rlc: Value::known(F::zero()),
             tag_rlc_acc: Value::known(F::zero()),

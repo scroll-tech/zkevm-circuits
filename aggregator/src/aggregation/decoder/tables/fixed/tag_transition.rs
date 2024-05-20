@@ -1,9 +1,6 @@
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
-use crate::aggregation::decoder::{
-    tables::fixed::FixedLookupTag,
-    witgen::{lookup_max_tag_len, ZstdTag},
-};
+use crate::aggregation::decoder::{tables::fixed::FixedLookupTag, witgen::ZstdTag};
 
 use super::FixedLookupValues;
 
@@ -48,7 +45,7 @@ impl FixedLookupValues for RomTagTransition {
                 Value::known(Fr::from(FixedLookupTag::TagTransition as u64)),
                 Value::known(Fr::from(tag as u64)),
                 Value::known(Fr::from(tag_next as u64)),
-                Value::known(Fr::from(lookup_max_tag_len(tag))),
+                Value::known(Fr::from(tag.max_len())),
                 Value::known(Fr::from(tag.is_output())),
                 Value::known(Fr::from(tag.is_reverse())),
                 Value::known(Fr::from(tag.is_block())),
