@@ -871,6 +871,18 @@ impl SequencesDataDecoder {
         meta.query_advice(self.symbols[2], rotation)
     }
 
+    fn value_llt(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        meta.query_advice(self.values[0], rotation)
+    }
+
+    fn value_mlt(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        meta.query_advice(self.values[1], rotation)
+    }
+
+    fn value_mot(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
+        meta.query_advice(self.values[2], rotation)
+    }
+
     fn state_at_prev(
         &self,
         meta: &mut VirtualCells<Fr>,
@@ -2788,184 +2800,211 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 // - Update "value" at code-to-value (match offset)
                 // - Update "value" at code-to-value (match length)
                 // - Update "value" at code-to-value (literal length)
-                cb.condition(
+                let is_decode_value = config
+                    .sequences_data_decoder
+                    .is_code_to_value(meta, Rotation::cur());
+                let (v_mot, v_mlt, v_llt) = (
                     and::expr([
                         config.fse_decoder.is_mot(meta, Rotation::cur()),
-                        config
-                            .sequences_data_decoder
-                            .is_code_to_value(meta, Rotation::cur()),
+                        is_decode_value.expr(),
                     ]),
-                    |cb| {
-                        let (baseline, bitstring_value) = (
-                            meta.query_advice(
-                                config.sequences_data_decoder.baseline,
-                                Rotation::cur(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bitstring_value,
-                                Rotation::cur(),
-                            ),
-                        );
-                        cb.require_equal(
-                            "value(mot) update",
-                            meta.query_advice(
-                                config.sequences_data_decoder.values[2],
-                                Rotation::cur(),
-                            ),
-                            baseline + bitstring_value,
-                        );
-                    },
-                );
-                cb.condition(
                     and::expr([
                         config.fse_decoder.is_mlt(meta, Rotation::cur()),
-                        config
-                            .sequences_data_decoder
-                            .is_code_to_value(meta, Rotation::cur()),
+                        is_decode_value.expr(),
                     ]),
-                    |cb| {
-                        let (baseline, bitstring_value) = (
-                            meta.query_advice(
-                                config.sequences_data_decoder.baseline,
-                                Rotation::cur(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bitstring_value,
-                                Rotation::cur(),
-                            ),
-                        );
-                        cb.require_equal(
-                            "value(mlt) update",
-                            meta.query_advice(
-                                config.sequences_data_decoder.values[1],
-                                Rotation::cur(),
-                            ),
-                            baseline + bitstring_value,
-                        );
-                    },
-                );
-                cb.condition(
                     and::expr([
                         config.fse_decoder.is_llt(meta, Rotation::cur()),
+                        is_decode_value.expr(),
+                    ]),
+                );
+                cb.condition(v_mot.expr(), |cb| {
+                    let (baseline, bitstring_value) = (
+                        meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                        meta.query_advice(
+                            config.bitstream_decoder.bitstring_value,
+                            Rotation::cur(),
+                        ),
+                    );
+                    cb.require_equal(
+                        "value(mot) update",
                         config
                             .sequences_data_decoder
-                            .is_code_to_value(meta, Rotation::cur()),
-                    ]),
-                    |cb| {
-                        let (baseline, bitstring_value) = (
-                            meta.query_advice(
-                                config.sequences_data_decoder.baseline,
-                                Rotation::cur(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bitstring_value,
-                                Rotation::cur(),
-                            ),
-                        );
-                        cb.require_equal(
-                            "value(llt) update",
-                            meta.query_advice(
-                                config.sequences_data_decoder.values[0],
-                                Rotation::cur(),
-                            ),
-                            baseline + bitstring_value,
-                        );
-                    },
-                );
+                            .value_mot(meta, Rotation::cur()),
+                        baseline + bitstring_value,
+                    );
+                });
+                cb.condition(v_mlt.expr(), |cb| {
+                    let (baseline, bitstring_value) = (
+                        meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                        meta.query_advice(
+                            config.bitstream_decoder.bitstring_value,
+                            Rotation::cur(),
+                        ),
+                    );
+                    cb.require_equal(
+                        "value(mlt) update",
+                        config
+                            .sequences_data_decoder
+                            .value_mlt(meta, Rotation::cur()),
+                        baseline + bitstring_value,
+                    );
+                });
+                cb.condition(v_llt.expr(), |cb| {
+                    let (baseline, bitstring_value) = (
+                        meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                        meta.query_advice(
+                            config.bitstream_decoder.bitstring_value,
+                            Rotation::cur(),
+                        ),
+                    );
+                    cb.require_equal(
+                        "value(llt) update",
+                        config
+                            .sequences_data_decoder
+                            .value_llt(meta, Rotation::cur()),
+                        baseline + bitstring_value,
+                    );
+                });
 
                 // - Update "state" at update-state (literal length)
                 //      - This also means we have started decoding another sequence.
                 // - Update "state" at update-state (match length)
                 // - Update "state" at update-state (match offset)
-                cb.condition(
+                let is_update_state = config
+                    .sequences_data_decoder
+                    .is_update_state(meta, Rotation::cur());
+                let (f_llt, f_mlt, f_mot) = (
                     and::expr([
                         config.fse_decoder.is_llt(meta, Rotation::cur()),
-                        config
-                            .sequences_data_decoder
-                            .is_update_state(meta, Rotation::cur()),
+                        is_update_state.expr(),
                     ]),
-                    |cb| {
-                        let (baseline, bitstring_value) = (
-                            meta.query_advice(
-                                config.sequences_data_decoder.baseline,
-                                Rotation::cur(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bitstring_value,
-                                Rotation::cur(),
-                            ),
-                        );
-                        cb.require_equal(
-                            "llt: state == baseline + readBits(nb)",
-                            config
-                                .sequences_data_decoder
-                                .state_llt(meta, Rotation::cur()),
-                            baseline + bitstring_value,
-                        );
-                        cb.require_equal(
-                            "seq_idx increments",
-                            meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),
-                            meta.query_advice(config.sequences_data_decoder.idx, Rotation::prev())
-                                + 1.expr(),
-                        );
-                    },
-                );
-                cb.condition(
                     and::expr([
                         config.fse_decoder.is_mlt(meta, Rotation::cur()),
-                        config
-                            .sequences_data_decoder
-                            .is_update_state(meta, Rotation::cur()),
+                        is_update_state.expr(),
                     ]),
-                    |cb| {
-                        let (baseline, bitstring_value) = (
-                            meta.query_advice(
-                                config.sequences_data_decoder.baseline,
-                                Rotation::cur(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bitstring_value,
-                                Rotation::cur(),
-                            ),
-                        );
-                        cb.require_equal(
-                            "mlt: state == baseline + readBits(nb)",
-                            config
-                                .sequences_data_decoder
-                                .state_mlt(meta, Rotation::cur()),
-                            baseline + bitstring_value,
-                        );
-                    },
-                );
-                cb.condition(
                     and::expr([
                         config.fse_decoder.is_mot(meta, Rotation::cur()),
+                        is_update_state.expr(),
+                    ]),
+                );
+                cb.condition(f_llt.expr(), |cb| {
+                    let (baseline, bitstring_value) = (
+                        meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                        meta.query_advice(
+                            config.bitstream_decoder.bitstring_value,
+                            Rotation::cur(),
+                        ),
+                    );
+                    cb.require_equal(
+                        "llt: state == baseline + readBits(nb)",
                         config
                             .sequences_data_decoder
-                            .is_update_state(meta, Rotation::cur()),
-                    ]),
-                    |cb| {
-                        let (baseline, bitstring_value) = (
-                            meta.query_advice(
-                                config.sequences_data_decoder.baseline,
-                                Rotation::cur(),
-                            ),
-                            meta.query_advice(
-                                config.bitstream_decoder.bitstring_value,
-                                Rotation::cur(),
-                            ),
-                        );
-                        cb.require_equal(
-                            "mot: state == baseline + readBits(nb)",
-                            config
-                                .sequences_data_decoder
-                                .state_mot(meta, Rotation::cur()),
-                            baseline + bitstring_value,
-                        );
-                    },
-                );
+                            .state_llt(meta, Rotation::cur()),
+                        baseline + bitstring_value,
+                    );
+                    cb.require_equal(
+                        "seq_idx increments",
+                        meta.query_advice(config.sequences_data_decoder.idx, Rotation::cur()),
+                        meta.query_advice(config.sequences_data_decoder.idx, Rotation::prev())
+                            + 1.expr(),
+                    );
+                });
+                cb.condition(f_mlt.expr(), |cb| {
+                    let (baseline, bitstring_value) = (
+                        meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                        meta.query_advice(
+                            config.bitstream_decoder.bitstring_value,
+                            Rotation::cur(),
+                        ),
+                    );
+                    cb.require_equal(
+                        "mlt: state == baseline + readBits(nb)",
+                        config
+                            .sequences_data_decoder
+                            .state_mlt(meta, Rotation::cur()),
+                        baseline + bitstring_value,
+                    );
+                });
+                cb.condition(f_mot.expr(), |cb| {
+                    let (baseline, bitstring_value) = (
+                        meta.query_advice(config.sequences_data_decoder.baseline, Rotation::cur()),
+                        meta.query_advice(
+                            config.bitstream_decoder.bitstring_value,
+                            Rotation::cur(),
+                        ),
+                    );
+                    cb.require_equal(
+                        "mot: state == baseline + readBits(nb)",
+                        config
+                            .sequences_data_decoder
+                            .state_mot(meta, Rotation::cur()),
+                        baseline + bitstring_value,
+                    );
+                });
 
-                // TODO: make sure columns don't change if not at the appropriate condition.
+                // all relevant columns in sequences data decoding.
+                let all_cols = [
+                    config.sequences_data_decoder.idx,
+                    config.sequences_data_decoder.states[0],
+                    config.sequences_data_decoder.states[1],
+                    config.sequences_data_decoder.states[2],
+                    config.sequences_data_decoder.symbols[0],
+                    config.sequences_data_decoder.symbols[1],
+                    config.sequences_data_decoder.symbols[2],
+                    config.sequences_data_decoder.values[0],
+                    config.sequences_data_decoder.values[1],
+                    config.sequences_data_decoder.values[2],
+                ];
+                // tuple (condition, column) such that all columns except column should remain
+                // unchanged if not this condition.
+                let rules = [
+                    // only value CMOT can change.
+                    (v_mot, vec![config.sequences_data_decoder.values[2]]),
+                    // only value MLT can change.
+                    (v_mlt, vec![config.sequences_data_decoder.values[1]]),
+                    // only value LLT can change.
+                    (v_llt, vec![config.sequences_data_decoder.values[0]]),
+                    // LLT state, symbol and sequence IDX can change.
+                    (
+                        f_llt,
+                        vec![
+                            config.sequences_data_decoder.states[0],
+                            config.sequences_data_decoder.symbols[0],
+                            config.sequences_data_decoder.idx,
+                        ],
+                    ),
+                    // MLT state and symbol can change.
+                    (
+                        f_mlt,
+                        vec![
+                            config.sequences_data_decoder.states[1],
+                            config.sequences_data_decoder.symbols[1],
+                        ],
+                    ),
+                    // CMOT state and symbol can change.
+                    (
+                        f_mot,
+                        vec![
+                            config.sequences_data_decoder.states[2],
+                            config.sequences_data_decoder.symbols[2],
+                        ],
+                    ),
+                ];
+                for (cond, except_col) in rules {
+                    // If the rule's condition is met, all columns except that rule's columns
+                    // remain unchanged.
+                    cb.condition(cond, |cb| {
+                        for col in all_cols {
+                            if !except_col.contains(&col) {
+                                cb.require_equal(
+                                    "only the column of interest could be updated",
+                                    meta.query_advice(col, Rotation::prev()),
+                                    meta.query_advice(col, Rotation::cur()),
+                                );
+                            }
+                        }
+                    });
+                }
 
                 cb.gate(condition)
             },
