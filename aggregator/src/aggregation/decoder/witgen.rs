@@ -1961,7 +1961,6 @@ mod tests {
     #[ignore]
     fn compression_ratio() -> Result<(), std::io::Error> {
         use csv::WriterBuilder;
-        use super::*;
 
         let get_compression_ratio = |data: &[u8]| -> Result<(u64, u64, H256), std::io::Error> {
             let raw_len = data.len();
