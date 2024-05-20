@@ -439,6 +439,7 @@ type SequencesProcessingResult<F> = (
     Vec<SequenceExec>,
 );
 
+#[allow(clippy::too_many_arguments)]
 fn process_sequences<F: Field>(
     src: &[u8],
     block_idx: u64,
@@ -1180,7 +1181,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_kind as u64
                 }
-                _ => unreachable!(),
             };
             table_size = match new_decoded.0 {
                 SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => {
@@ -1192,7 +1192,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_size
                 }
-                _ => unreachable!(),
             };
 
             // FSE state update step
@@ -1240,7 +1239,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_kind as u64
                 }
-                _ => unreachable!(),
             };
             table_size = match new_decoded.0 {
                 SequenceDataTag::CookedMatchOffsetFse | SequenceDataTag::CookedMatchOffsetValue => {
@@ -1252,7 +1250,6 @@ fn process_sequences<F: Field>(
                 SequenceDataTag::LiteralLengthFse | SequenceDataTag::LiteralLengthValue => {
                     table_llt.table_size
                 }
-                _ => unreachable!(),
             };
 
             // Value decoding step
@@ -1900,7 +1897,7 @@ mod tests {
             .map(|data| hex::decode(data.trim_end()).expect("Failed to decode hex data"))
             .collect::<Vec<Vec<u8>>>();
 
-        for (_batch_idx, raw_input_bytes) in batches.into_iter().enumerate() {
+        for raw_input_bytes in batches.into_iter() {
             let compressed = {
                 // compression level = 0 defaults to using level=3, which is zstd's default.
                 let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;

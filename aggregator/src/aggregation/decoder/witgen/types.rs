@@ -13,61 +13,6 @@ use super::{
     util::{read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
 };
 
-/// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
-/// fields are assigned correctly.
-#[derive(Clone, Debug)]
-pub struct RomTagTableRow {
-    /// The current tag.
-    tag: ZstdTag,
-    /// The tag that will be processed after the current tag is finished processing.
-    tag_next: ZstdTag,
-    /// The maximum number of bytes that are needed to represent the current tag.
-    max_len: u64,
-    /// Whether this tag outputs a decoded byte or not.
-    is_output: bool,
-    /// Whether this tag is processed from back-to-front or not.
-    is_reverse: bool,
-    /// Whether this tag belongs to a ``block`` in zstd or not.
-    is_block: bool,
-}
-
-impl RomTagTableRow {
-    pub(crate) fn rows() -> Vec<Self> {
-        use ZstdTag::{
-            BlockHeader, FrameContentSize, FrameHeaderDescriptor, ZstdBlockLiteralsHeader,
-            ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader,
-        };
-
-        [
-            (FrameHeaderDescriptor, FrameContentSize, 1),
-            (FrameContentSize, BlockHeader, 8),
-            (BlockHeader, ZstdBlockLiteralsHeader, 3),
-            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, 5),
-            (ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader, 1048575), // (1 << 20) - 1
-        ]
-        .map(|(tag, tag_next, max_len)| Self {
-            tag,
-            tag_next,
-            max_len,
-            is_output: tag.is_output(),
-            is_reverse: tag.is_reverse(),
-            is_block: tag.is_block(),
-        })
-        .to_vec()
-    }
-
-    pub(crate) fn values<F: Field>(&self) -> Vec<Value<F>> {
-        vec![
-            Value::known(F::from(usize::from(self.tag) as u64)),
-            Value::known(F::from(usize::from(self.tag_next) as u64)),
-            Value::known(F::from(self.max_len)),
-            Value::known(F::from(self.is_output as u64)),
-            Value::known(F::from(self.is_reverse as u64)),
-            Value::known(F::from(self.is_block as u64)),
-        ]
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy)]
 pub enum BlockType {
     #[default]
@@ -150,7 +95,7 @@ impl_expr!(LstreamNum);
 /// Various tags that we can decode from a zstd encoded data.
 #[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, Hash)]
 pub enum ZstdTag {
-    /// Null should not occur.
+    /// Null is reserved for padding rows.
     Null = 0,
     /// The frame header's descriptor.
     FrameHeaderDescriptor,
@@ -171,21 +116,6 @@ pub enum ZstdTag {
 }
 
 impl ZstdTag {
-    /// Whether this tag produces an output or not.
-    pub fn is_output(&self) -> bool {
-        match self {
-            Self::Null => false,
-            Self::FrameHeaderDescriptor => false,
-            Self::FrameContentSize => false,
-            Self::BlockHeader => false,
-            Self::ZstdBlockLiteralsHeader => false,
-            Self::ZstdBlockLiteralsRawBytes => false,
-            Self::ZstdBlockSequenceHeader => false,
-            Self::ZstdBlockSequenceFseCode => false,
-            Self::ZstdBlockSequenceData => true,
-        }
-    }
-
     /// Whether this tag is a part of block or not.
     pub fn is_block(&self) -> bool {
         match self {
@@ -418,8 +348,7 @@ pub struct BitstreamReadRow {
 /// Sequence data is interleaved with 6 bitstreams. Each producing a different type of value.
 #[derive(Clone, Copy, Debug)]
 pub enum SequenceDataTag {
-    Null = 0,
-    LiteralLengthFse,
+    LiteralLengthFse = 1,
     MatchLengthFse,
     CookedMatchOffsetFse,
     LiteralLengthValue,
