@@ -779,26 +779,27 @@ fn process_sequences<F: Field>(
             let mut last_symbol: i32 = 0;
 
             // Convert multi-bit read operations boundaries from the stream into a convenient format
-            // so they can be easily converted into witness rows later. Format:
-            // (
-            //     symbol,                 // The symbol being decoded now
-            //     n_emitted,              // The total number of unique symbols decoded
-            //     from_byte_position,     // Which byte the read operation starts at
-            //     from_bit_position,      // Which bit position the read operation starts at, with range ∈ [0, 8)
-            //     to_byte_position,       // Which byte the read operation ends at
-            //     to_bit_position,        // Which bit position the read operation ends at, with range ∈ [0, 16)
-            //     value_read,             // Bit value
-            //     value_decoded,          // The decoded value is processed from the raw bitstring value
-            //     current_tag_value_acc,  // Depending on the current byte position, the accumulator increments accordingly
-            //     current_tag_rlc_acc,    // Depending on the current byte position, the accumulator increments accordingly
-            //     n_acc,                  // How many states are already assigned to the current symbol
-            //     table_kind,             // What FSE table is being decoded (Literal Length, Matched Offset or Match Length)
-            //     table_size,             // The size of current FSE table
-            //     is_repeating_bits,      // Whether current bitstring represents repeat bits.
-            //                             // Repeat bits immediately follows a bitstring=1 read operation.
-            //                             // Repeat bits indicate how many 0-state symbols to skip after the last symbol.
-            //     is_trailing_bits,       // FSE bitstreams may have trailing bits
-            // )
+            // so they can be easily converted into witness rows later. 
+            
+            // Format:
+            
+            // symbol,                 The symbol being decoded now
+            // n_emitted,              The total number of unique symbols decoded
+            // from_byte_position,     Which byte the read operation starts at
+            // from_bit_position,      Which bit position the read operation starts at, with range ∈ [0, 8)
+            // to_byte_position,       Which byte the read operation ends at
+            // to_bit_position,        Which bit position the read operation ends at, with range ∈ [0, 16)
+            // value_read,             Bit value
+            // value_decoded,          The decoded value is processed from the raw bitstring value
+            // current_tag_value_acc,  Depending on the current byte position, the accumulator increments accordingly
+            // current_tag_rlc_acc,    Depending on the current byte position, the accumulator increments accordingly
+            // n_acc,                  How many states are already assigned to the current symbol
+            // table_kind,             What FSE table is being decoded (Literal Length, Matched Offset or Match Length)
+            // table_size,             The size of current FSE table
+            // is_repeating_bits,      Whether current bitstring represents repeat bits.
+            //                         Repeat bits immediately follows a bitstring=1 read operation.
+            //                         Repeat bits indicate how many 0-state symbols to skip after the last symbol.
+            // is_trailing_bits,       FSE bitstreams may have trailing bits
 
             let bitstream_rows = bit_boundaries
                 .iter()
