@@ -333,7 +333,7 @@ pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStat
 /// - 3 comes from minimum number of distinct queries to permutation argument witness column
 /// - 1 comes from queries at x_3 during multiopen
 /// - 1 comes as slight defense against off-by-one errors
-/// - 1 comes from reservation for last row for grand-product boundray check, hence not copy-able or
+/// - 1 comes from reservation for last row for grand-product boundary check, hence not copy-able or
 ///   lookup-able. Note this 1 is not considered in [`ConstraintSystem::blinding_factors`], so below
 ///   we need to add an extra 1.
 ///

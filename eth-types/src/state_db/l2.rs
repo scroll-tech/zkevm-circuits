@@ -116,7 +116,7 @@ impl CodeDB {
                             // bustmapping do this job
                             unreachable!()
                         }
-                        OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
+                        OpcodeId::EXTCODECOPY => {
                             let code = data.get_code_at(0);
                             if code.is_none() {
                                 log::warn!("unable to fetch code from step. {step:?}");

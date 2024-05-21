@@ -57,7 +57,15 @@ impl Opcode for Extcodesize {
         let (code_hash, code_size) = if exists {
             (
                 account.code_hash,
-                state.code(account.code_hash)?.len().into(),
+                if cfg!(feature = "scroll") {
+                    debug_assert_eq!(
+                        account.code_size,
+                        state.code(account.code_hash)?.len().into()
+                    );
+                    account.code_size
+                } else {
+                    state.code(account.code_hash)?.len().into()
+                },
             )
         } else {
             (H256::zero(), Word::zero())
