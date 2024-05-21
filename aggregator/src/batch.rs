@@ -41,7 +41,6 @@ pub struct BatchHash<const N_SNARKS: usize> {
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
-    #[allow(dead_code)]
     pub fn construct(chunks_with_padding: &[ChunkHash]) -> Self {
         assert_eq!(
             chunks_with_padding.len(),

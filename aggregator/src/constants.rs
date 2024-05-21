@@ -1,5 +1,4 @@
 // A chain_id is u64 and uses 8 bytes
-#[allow(dead_code)]
 pub(crate) const CHAIN_ID_LEN: usize = 8;
 
 // ================================
