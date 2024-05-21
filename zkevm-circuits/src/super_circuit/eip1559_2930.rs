@@ -57,14 +57,14 @@ pub(crate) fn test_circuits_params(max_txs: usize, max_calldata: usize) -> Circu
 }
 
 /// Helper functions for super circuit tests of EIP-2930
-pub(crate) fn test_block_2930_trace() -> BlockTrace {
+pub(crate) fn test_block_2930_trace(has_access_list: bool) -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(MOCK_CHAIN_ID);
 
     let addr_a = wallet_a.address();
     let addr_b = address!("0x0000000000000000000000000000000000002930");
 
-    let test_access_list = AccessList(vec![
+    let test_access_list =  AccessList(vec![
         AccessListItem {
             address: address!("0x0000000000000000000000000000000000001111"),
             storage_keys: [10, 11].map(H256::from_low_u64_be).to_vec(),
@@ -93,7 +93,10 @@ pub(crate) fn test_block_2930_trace() -> BlockTrace {
                 .gas(1_000_000.into())
                 .value(eth(2))
                 .transaction_type(1); // Set tx type to EIP-2930.
-                .access_list(test_access_list);
+
+            if has_access_list {
+                txs[0].access_list(test_access_list);
+            }
         },
         |block, _tx| block.number(0xcafe_u64),
     )
