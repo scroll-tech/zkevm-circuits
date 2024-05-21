@@ -78,6 +78,11 @@ pub(crate) fn test_block_2930_trace(has_access_list: bool) -> BlockTrace {
             address: address!("0x0000000000000000000000000000000000003333"),
             storage_keys: [30, 33].map(H256::from_low_u64_be).to_vec(),
         },
+        // empty storage_keys
+        AccessListItem {
+            address: address!("0x0000000000000000000000000000000000004444"),
+            storage_keys: Vec::new(),
+        },
     ]);
 
     TestContext::<2, 1>::new(
