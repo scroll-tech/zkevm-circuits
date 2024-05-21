@@ -117,7 +117,9 @@ impl<F: Field> ConstraintBuilder<F> {
                 RwTableTag::CallContext => Self::build_call_context_constraints,
                 RwTableTag::TxLog => Self::build_tx_log_constraints,
                 RwTableTag::TxReceipt => Self::build_tx_receipt_constraints,
-                RwTableTag::AccountTransientStorage => Self::build_account_transient_storage_constraints,
+                RwTableTag::AccountTransientStorage => {
+                    Self::build_account_transient_storage_constraints
+                }
             };
             self.condition(q.tag_matches(tag), |cb| build(cb, q));
         }
@@ -518,7 +520,10 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("field_tag is 0 for AccountTransientStorage", q.field_tag());
 
         // 5.1. `initial_value` is 0
-        self.require_zero("initial AccountTransientStorage value is 0", q.initial_value());
+        self.require_zero(
+            "initial AccountTransientStorage value is 0",
+            q.initial_value(),
+        );
 
         // 5.2. `value` is 0 if first access and `READ`
         self.require_zero(
