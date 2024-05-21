@@ -511,6 +511,7 @@ fn serial_test_super_circuit_eip_2930_tx_no_accesslist() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 256;
 
+    // tx with no access list data
     let block_trace = eip1559_2930::test_block_2930_trace(false);
     let circuits_params = eip1559_2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
 
@@ -520,7 +521,6 @@ fn serial_test_super_circuit_eip_2930_tx_no_accesslist() {
     );
 }
 
-
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
@@ -528,6 +528,7 @@ fn serial_test_super_circuit_eip_2930_tx_accesslist() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 256;
 
+    // tx with access list data
     let block_trace = eip1559_2930::test_block_2930_trace(true);
     let circuits_params = eip1559_2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
 
