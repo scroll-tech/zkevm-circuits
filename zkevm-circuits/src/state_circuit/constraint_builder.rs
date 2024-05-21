@@ -525,13 +525,7 @@ impl<F: Field> ConstraintBuilder<F> {
             q.initial_value(),
         );
 
-        // 5.2. `value` is 0 if first access and `READ`
-        self.require_zero(
-            "AccountTransientStorage first access is 0 if READ",
-            q.first_access() * q.is_read() * q.value(),
-        );
-
-        // 5.3. `value` column at previous rotation equals `value_prev` at current rotation
+        // 5.2. `value` column at previous rotation equals `value_prev` at current rotation
         self.condition(q.not_first_access.clone(), |cb| {
             cb.require_equal(
                 "value column at Rotation::prev() equals value_prev at Rotation::cur()",
@@ -540,7 +534,7 @@ impl<F: Field> ConstraintBuilder<F> {
             );
         });
 
-        // 5.4. `state root` is the same
+        // 5.3. `state root` is the same
         self.require_equal(
             "state_root is unchanged for AccountTransientStorage",
             q.state_root(),
