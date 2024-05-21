@@ -6223,8 +6223,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "zstd"
-version = "0.13.0"
-source = "git+https://github.com/scroll-tech/zstd-rs?branch=test/rohit#9f12f12ea3539228b01f0731311caa6a5c0c34c7"
