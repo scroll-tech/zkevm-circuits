@@ -98,37 +98,31 @@ impl<F: Field> ConstraintBuilder<F> {
 
     pub fn build(&mut self, q: &Queries<F>) {
         self.build_general_constraints(q);
-        self.condition(q.tag_matches(RwTableTag::Start), |cb| {
-            cb.build_start_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
-            cb.build_memory_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
-            cb.build_stack_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
-            cb.build_account_storage_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
-            cb.build_tx_access_list_account_constraints(q)
-        });
-        self.condition(
-            q.tag_matches(RwTableTag::TxAccessListAccountStorage),
-            |cb| cb.build_tx_access_list_account_storage_constraints(q),
-        );
-        self.condition(q.tag_matches(RwTableTag::TxRefund), |cb| {
-            cb.build_tx_refund_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::Account), |cb| {
-            cb.build_account_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
-            cb.build_call_context_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
-            cb.build_tx_log_constraints(q)
-        });
+        self.build_conditional_constraints(q);
+    }
+
+    fn build_conditional_constraints(&mut self, q: &Queries<F>) {
+        for tag in RwTableTag::iter() {
+            let build = match tag {
+                RwTableTag::Start => Self::build_start_constraints,
+                RwTableTag::Memory => Self::build_memory_constraints,
+                RwTableTag::Stack => Self::build_stack_constraints,
+                RwTableTag::AccountStorage => Self::build_account_storage_constraints,
+                RwTableTag::TxAccessListAccount => Self::build_tx_access_list_account_constraints,
+                RwTableTag::TxAccessListAccountStorage => {
+                    Self::build_tx_access_list_account_storage_constraints
+                }
+                RwTableTag::TxRefund => Self::build_tx_refund_constraints,
+                RwTableTag::Account => Self::build_account_constraints,
+                RwTableTag::CallContext => Self::build_call_context_constraints,
+                RwTableTag::TxLog => Self::build_tx_log_constraints,
+                RwTableTag::TxReceipt => Self::build_tx_receipt_constraints,
+                RwTableTag::AccountTransientStorage => {
+                    Self::build_account_transient_storage_constraints
+                }
+            };
+            self.condition(q.tag_matches(tag), |cb| build(cb, q));
+        }
     }
 
     fn build_general_constraints(&mut self, q: &Queries<F>) {
@@ -509,9 +503,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_tx_receipt_constraints(&mut self, q: &Queries<F>) {
-        // TODO: implement TxReceipt constraints
-        self.require_equal("TxReceipt rows not implemented", 1.expr(), 0.expr());
-
+        // TODO: finish TxReceipt constraints
         self.require_equal(
             "state_root is unchanged for TxReceipt",
             q.state_root(),
@@ -520,6 +512,33 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero(
             "value_prev_column is 0 for TxReceipt",
             q.value_prev_column(),
+        );
+    }
+
+    fn build_account_transient_storage_constraints(&mut self, q: &Queries<F>) {
+        // 5.0. `field_tag` is 0
+        self.require_zero("field_tag is 0 for AccountTransientStorage", q.field_tag());
+
+        // 5.1. `initial_value` is 0
+        self.require_zero(
+            "initial AccountTransientStorage value is 0",
+            q.initial_value(),
+        );
+
+        // 5.2. `value` column at previous rotation equals `value_prev` at current rotation
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
+
+        // 5.3. `state root` is the same
+        self.require_equal(
+            "state_root is unchanged for AccountTransientStorage",
+            q.state_root(),
+            q.state_root_prev(),
         );
     }
 
