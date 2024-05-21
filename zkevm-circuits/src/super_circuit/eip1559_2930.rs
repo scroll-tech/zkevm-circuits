@@ -51,7 +51,7 @@ pub(crate) fn test_circuits_params(max_txs: usize, max_calldata: usize) -> Circu
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: 1,
-        max_rlp_rows: 500,
+        max_rlp_rows: 1000,
         ..Default::default()
     }
 }
@@ -92,7 +92,7 @@ pub(crate) fn test_block_2930_trace() -> BlockTrace {
                 .gas_price(gwei(2))
                 .gas(1_000_000.into())
                 .value(eth(2))
-                .transaction_type(1) // Set tx type to EIP-2930.
+                .transaction_type(1); // Set tx type to EIP-2930.
                 .access_list(test_access_list);
         },
         |block, _tx| block.number(0xcafe_u64),
