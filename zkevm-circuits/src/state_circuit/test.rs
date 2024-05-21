@@ -979,7 +979,9 @@ fn account_transient_storage_nonzero_field_tag() {
     }];
 
     let nonzero_field_tag = Fr::one();
-    let nonempty_witness = (nonzero_field_tag - Fr::from(AccountFieldTag::CodeHash as u64)).invert().unwrap();
+    let nonempty_witness = (nonzero_field_tag - Fr::from(AccountFieldTag::CodeHash as u64))
+        .invert()
+        .unwrap();
 
     let overrides = HashMap::from([
         ((AdviceColumn::FieldTag, 0), nonzero_field_tag),
