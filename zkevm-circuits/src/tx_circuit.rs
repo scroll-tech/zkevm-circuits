@@ -4457,7 +4457,6 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             })
             .collect::<Result<Vec<SignData>, Error>>()?;
 
-        println!("tx circuit:sign_datas {:?}", sign_datas);
         // check if tx.caller_address == recovered_pk
         let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
             .into_iter()
