@@ -1822,6 +1822,8 @@ mod tests {
     use ethers_core::utils::keccak256;
     use std::{fs, fs::File, io::Write};
 
+    use crate::witgen::init_zstd_encoder;
+
     #[test]
     #[ignore]
     fn compression_ratio() -> Result<(), std::io::Error> {
@@ -1831,25 +1833,10 @@ mod tests {
             let raw_len = data.len();
             let compressed = {
                 // compression level = 0 defaults to using level=3, which is zstd's default.
-                let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
+                let mut encoder = init_zstd_encoder(None);
 
-                // disable compression of literals, i.e. literals will be raw bytes.
-                encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                    zstd::zstd_safe::ParamSwitch::Disable,
-                ))?;
-                // set target block size to fit within a single block.
-                encoder
-                    .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
-                // do not include the checksum at the end of the encoded data.
-                encoder.include_checksum(false)?;
-                // do not include magic bytes at the start of the frame since we will have a
-                // single frame.
-                encoder.include_magicbytes(false)?;
                 // set source length, which will be reflected in the frame header.
                 encoder.set_pledged_src_size(Some(raw_len as u64))?;
-                // include the content size to know at decode time the expected size of decoded
-                // data.
-                encoder.include_contentsize(true)?;
 
                 encoder.write_all(data)?;
                 encoder.finish()?
@@ -1915,25 +1902,10 @@ mod tests {
         for raw_input_bytes in batches.into_iter() {
             let compressed = {
                 // compression level = 0 defaults to using level=3, which is zstd's default.
-                let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
+                let mut encoder = init_zstd_encoder(None);
 
-                // disable compression of literals, i.e. literals will be raw bytes.
-                encoder.set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                    zstd::zstd_safe::ParamSwitch::Disable,
-                ))?;
-                // set target block size to fit within a single block.
-                encoder
-                    .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))?;
-                // do not include the checksum at the end of the encoded data.
-                encoder.include_checksum(false)?;
-                // do not include magic bytes at the start of the frame since we will have a single
-                // frame.
-                encoder.include_magicbytes(false)?;
                 // set source length, which will be reflected in the frame header.
                 encoder.set_pledged_src_size(Some(raw_input_bytes.len() as u64))?;
-                // include the content size to know at decode time the expected size of decoded
-                // data.
-                encoder.include_contentsize(true)?;
 
                 encoder.write_all(&raw_input_bytes)?;
                 encoder.finish()?

@@ -1,5 +1,5 @@
 use crate::{
-    aggregation::{interpolate, BLS_MODULUS},
+    aggregation::{interpolate, witgen::init_zstd_encoder, BLS_MODULUS},
     BatchHash, ChunkHash, MAX_AGG_SNARKS,
 };
 
@@ -85,30 +85,6 @@ pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
         .expect("failed to load trusted setup"),
     )
 });
-
-/// Zstd encoder configuration
-pub fn init_zstd_encoder() -> zstd::stream::Encoder<'static, Vec<u8>> {
-    let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0).expect("infallible");
-    // disable compression of literals, i.e. literals will be raw bytes.
-    encoder
-        .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-            zstd::zstd_safe::ParamSwitch::Disable,
-        ))
-        .expect("infallible");
-    // set target block size to fit within a single block.
-    encoder
-        .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
-        .expect("infallible");
-    // do not include the checksum at the end of the encoded data.
-    encoder.include_checksum(false).expect("infallible");
-    // do not include magic bytes at the start of the frame since we will have a single
-    // frame.
-    encoder.include_magicbytes(false).expect("infallible");
-    // include the content size to know at decode time the expected size of decoded
-    // data.
-    encoder.include_contentsize(true).expect("infallible");
-    encoder
-}
 
 /// Helper struct to generate witness for the Batch Data Config.
 #[derive(Clone, Debug)]
@@ -288,7 +264,7 @@ impl BatchData {
     /// Get the zstd encoded batch data bytes.
     pub(crate) fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
         let batch_data_bytes = self.get_batch_data_bytes();
-        let mut encoder = init_zstd_encoder();
+        let mut encoder = init_zstd_encoder(None);
         encoder
             .set_pledged_src_size(Some(batch_data_bytes.len() as u64))
             .expect("infallible");
