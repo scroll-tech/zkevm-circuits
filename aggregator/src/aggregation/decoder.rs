@@ -5200,7 +5200,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "large_multi_block: heavy"]
     fn test_decoder_config_large_multi_block() -> Result<(), std::io::Error> {
         let mut batch_files = fs::read_dir("./data/test_blobs/multi")?
             .map(|entry| entry.map(|e| e.path()))

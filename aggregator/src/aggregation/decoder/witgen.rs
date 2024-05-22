@@ -1355,7 +1355,7 @@ fn process_sequences<F: Field>(
                 let wrap_by = match to_bit_idx {
                     15 => 8,
                     16..=23 => 16,
-                    _ => unreachable!(),
+                    v => unreachable!("unexpected bitstring-length={:?}", v),
                 };
                 witness_rows.push(ZstdWitnessRow {
                     state: ZstdState {
@@ -1771,6 +1771,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             randomness,
             repeated_offset,
         );
+        println!("processed block={:?}: offset={:?}", block_idx, end_offset);
 
         witness_rows.extend_from_slice(&rows);
         literals.push(new_literals);
