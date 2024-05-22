@@ -81,6 +81,8 @@ pub struct DecoderConfig<const L: usize, const R: usize> {
     range16: RangeTable<16>,
     /// Range Table for [0, 512).
     range512: RangeTable<512>,
+    /// Range table for [0, 128kb).
+    range_block_len: RangeTable<{ N_BLOCK_SIZE_TARGET as usize }>,
     /// Power of 2 lookup table.
     pow2_table: Pow2Table<20>,
     /// Helper table for decoding the regenerated size from LiteralsHeader.
@@ -961,6 +963,8 @@ pub struct DecoderConfigArgs<const L: usize, const R: usize> {
     pub range16: RangeTable<16>,
     /// Range table for lookup: [0, 512).
     pub range512: RangeTable<512>,
+    /// Range table for [0, 128kb).
+    pub range_block_len: RangeTable<{ N_BLOCK_SIZE_TARGET as usize }>,
     /// Bitwise operation lookup table.
     pub bitwise_op_table: BitwiseOpTable<1, L, R>,
 }
@@ -976,6 +980,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             range8,
             range16,
             range512,
+            range_block_len,
             bitwise_op_table,
         }: DecoderConfigArgs<L, R>,
     ) -> Self {
@@ -991,7 +996,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         );
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, q_enable, range8, range16);
-        let bitstring_table = BitstringTable::configure(meta, q_enable, u8_table);
+        let bitstring_table = BitstringTable::configure(meta, q_enable, range_block_len);
         let fse_table = FseTable::configure(
             meta,
             q_enable,
@@ -1063,6 +1068,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             range8,
             range16,
             range512,
+            range_block_len,
             pow2_table,
             literals_header_table,
             bitstring_table,
@@ -4156,6 +4162,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         self.range8.load(layouter)?;
         self.range16.load(layouter)?;
         self.range512.load(layouter)?;
+        self.range_block_len.load(layouter)?;
         self.fixed_table.load(layouter)?;
         self.pow2_table.load(layouter)?;
 
@@ -4918,6 +4925,7 @@ mod tests {
             let range8 = RangeTable::construct(meta);
             let range16 = RangeTable::construct(meta);
             let range512 = RangeTable::construct(meta);
+            let range_block_len = RangeTable::construct(meta);
             let bitwise_op_table = BitwiseOpTable::construct(meta);
 
             let config = DecoderConfig::configure(
@@ -4930,6 +4938,7 @@ mod tests {
                     range8,
                     range16,
                     range512,
+                    range_block_len,
                     bitwise_op_table,
                 },
             );

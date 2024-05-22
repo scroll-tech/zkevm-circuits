@@ -7,13 +7,16 @@ use halo2_proofs::{
 };
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, U8Table},
+    table::{LookupTable, RangeTable},
 };
 
-use crate::aggregation::decoder::{
-    util::value_bits_le,
-    witgen::{ZstdTag, ZstdWitnessRow},
-    BlockInfo,
+use crate::{
+    aggregation::decoder::{
+        util::value_bits_le,
+        witgen::{ZstdTag, ZstdWitnessRow},
+        BlockInfo,
+    },
+    witgen::N_BLOCK_SIZE_TARGET,
 };
 
 /// In the process of decoding zstd encoded data, there are several scenarios in which we process
@@ -111,7 +114,7 @@ impl BitstringTable {
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         q_enable: Column<Fixed>,
-        u8_table: U8Table,
+        range_block_len: RangeTable<{ N_BLOCK_SIZE_TARGET as usize }>,
     ) -> Self {
         let config = Self {
             q_first: meta.fixed_column(),
@@ -433,8 +436,6 @@ impl BitstringTable {
         // However, we still want to make sure subsequent bitstring accumulation happens in
         // increasing order of byte indices, to avoid malicious assignments for an older byte
         // index. We need this check only for subsequent bitstrings after q_first=true.
-        //
-        // TODO: for a multi-block setup, the difference may be greater than 255.
         meta.lookup("BitstringTable: byte_idx_1 is increasing", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -449,7 +450,7 @@ impl BitstringTable {
             );
             let byte_idx_delta = byte_idx_1_curr - byte_idx_1_prev;
 
-            vec![(condition * byte_idx_delta, u8_table.into())]
+            vec![(condition * byte_idx_delta, range_block_len.into())]
         });
 
         debug_assert!(meta.degree() <= 9);
