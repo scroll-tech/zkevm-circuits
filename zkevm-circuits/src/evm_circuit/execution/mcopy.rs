@@ -172,10 +172,6 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
             [src_addr, dest_addr],
         )?;
 
-        println!("cur_memory_word_size:{}, next_memory_word_size: {}, src_addr {} ,
-            dest_addr {}", step.memory_word_size(),
-            next_memory_word_size, src_addr, d);
-
         self.memory_copier_gas.assign(
             region,
             offset,
@@ -244,11 +240,9 @@ mod test {
     // tests for zero copy length
     #[test]
     fn mcopy_empty() {
-        // test_ok(Word::from("0x20"), Word::zero(), 0x0);
-        test_ok(Word::from("0x20"),  Word::from("0x60"), 0x0);
-
-        //test_ok(Word::from("0xa8"), Word::from("0x2f"), 0x0);
-        //test_ok(Word::from("0x0"), Word::from("0x600"), 0x0);
+        test_ok(Word::from("0x20"), Word::zero(), 0x0);
+        test_ok(Word::from("0xa8"), Word::from("0x2f"), 0x0);
+        test_ok(Word::from("0x0"), Word::from("0x600"), 0x0);
     }
 
     // tests for real copy
