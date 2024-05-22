@@ -62,6 +62,8 @@ fn process_frame_header<F: Field>(
         }
     };
 
+    println!("frame content size = {:?}", fcs);
+
     let tag_rlc_iter = fcs_bytes
         .iter()
         .scan(Value::known(F::zero()), |acc, &byte| {
@@ -147,6 +149,13 @@ fn process_block<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
 ) -> AggregateBlockResult<F> {
+    println!(
+        "process block: block_idx={:?}\tbyte_offset={:?}",
+        block_idx, byte_offset
+    );
+    if block_idx > 10 {
+        unreachable!("not more than 10 blocks");
+    }
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, block_info) =
@@ -407,6 +416,7 @@ fn process_block_zstd<F: Field>(
         last_block,
         randomness,
     );
+
     // sanity check:
     assert_eq!(
         end_offset, expected_end_offset,
@@ -582,6 +592,7 @@ fn process_sequences<F: Field>(
         .collect::<Vec<_>>();
 
     witness_rows.extend_from_slice(&header_rows);
+
 
     /////////////////////////////////////////////////
     ///// Sequence Section Part 2: FSE Tables  //////
