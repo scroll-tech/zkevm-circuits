@@ -799,7 +799,6 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
                 F::from(*memory_word_size),
             )?;
             next_memory_word_size = max.get_lower_128() as u64;
-            println!("next_memory_word_size in assign {}", next_memory_word_size);
         }
 
         // Calculate the quad gas cost for the memory size
