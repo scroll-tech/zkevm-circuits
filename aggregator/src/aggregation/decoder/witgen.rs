@@ -10,6 +10,7 @@ pub use types::{ZstdTag::*, *};
 
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
+use zstd::zstd_safe::WriteBuf;
 
 const CMOT_N: u64 = 31;
 
@@ -142,6 +143,7 @@ type AggregateBlockResult<F> = (
 );
 fn process_block<F: Field>(
     src: &[u8],
+    decoded_bytes: &mut Vec<u8>,
     block_idx: u64,
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
@@ -174,6 +176,7 @@ fn process_block<F: Field>(
     ) = match block_info.block_type {
         BlockType::ZstdCompressedBlock => process_block_zstd(
             src,
+            decoded_bytes,
             block_idx,
             byte_offset,
             last_row,
@@ -297,6 +300,7 @@ type LiteralsBlockResult<F> = (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>
 #[allow(unused_variables)]
 fn process_block_zstd<F: Field>(
     src: &[u8],
+    decoded_bytes: &mut Vec<u8>,
     block_idx: u64,
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
@@ -403,6 +407,7 @@ fn process_block_zstd<F: Field>(
         sequence_exec_info,
     ) = process_sequences::<F>(
         src,
+        decoded_bytes,
         block_idx,
         byte_offset,
         expected_end_offset,
@@ -457,6 +462,7 @@ type SequencesProcessingResult<F> = (
 #[allow(clippy::too_many_arguments)]
 fn process_sequences<F: Field>(
     src: &[u8],
+    decoded_bytes: &mut Vec<u8>,
     block_idx: u64,
     byte_offset: usize,
     end_offset: usize,
@@ -1561,16 +1567,12 @@ fn process_sequences<F: Field>(
                 inst.instruction_idx as usize,
                 SequenceExecInfo::LiteralCopy(r.clone()),
             ));
-            recovered_inputs.extend_from_slice(
-                literals[r]
-                    .iter()
-                    .map(|&v| v as u8)
-                    .collect::<Vec<u8>>()
-                    .as_slice(),
-            );
+            let ext_slice = literals[r].iter().map(|&v| v as u8).collect::<Vec<u8>>();
+            recovered_inputs.extend_from_slice(ext_slice.as_slice());
+            decoded_bytes.extend_from_slice(ext_slice.as_slice());
         }
 
-        let match_pos = recovered_inputs.len() - (inst.actual_offset as usize);
+        let match_pos = decoded_bytes.len() - (inst.actual_offset as usize);
         if inst.match_length > 0 {
             let r = match_pos..(inst.match_length as usize + match_pos);
             seq_exec_info.push(SequenceExec(
@@ -1578,14 +1580,15 @@ fn process_sequences<F: Field>(
                 SequenceExecInfo::BackRef(r.clone()),
             ));
             let matched_and_repeated_bytes = if inst.match_length <= inst.actual_offset {
-                Vec::from(&recovered_inputs[r])
+                Vec::from(&decoded_bytes[r])
             } else {
                 let l = inst.match_length as usize;
-                let r_prime = match_pos..recovered_inputs.len();
-                let matched_bytes = Vec::from(&recovered_inputs[r_prime]);
+                let r_prime = match_pos..decoded_bytes.len();
+                let matched_bytes = Vec::from(&decoded_bytes[r_prime]);
                 matched_bytes.iter().cycle().take(l).copied().collect()
             };
             recovered_inputs.extend_from_slice(matched_and_repeated_bytes.as_slice());
+            decoded_bytes.extend_from_slice(matched_and_repeated_bytes.as_slice());
         }
         current_literal_pos = new_literal_pos;
     }
@@ -1597,13 +1600,9 @@ fn process_sequences<F: Field>(
             sequence_info.num_sequences,
             SequenceExecInfo::LiteralCopy(r.clone()),
         ));
-        recovered_inputs.extend_from_slice(
-            literals[r]
-                .iter()
-                .map(|&v| v as u8)
-                .collect::<Vec<u8>>()
-                .as_slice(),
-        );
+        let ext_slice = literals[r].iter().map(|&v| v as u8).collect::<Vec<u8>>();
+        recovered_inputs.extend_from_slice(ext_slice.as_slice());
+        decoded_bytes.extend_from_slice(ext_slice.as_slice());
     }
 
     (
@@ -1741,6 +1740,7 @@ pub type MultiBlockProcessResult<F> = (
 /// Process a slice of bytes into decompression circuit witness rows
 pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessResult<F> {
     let mut witness_rows = vec![];
+    let mut decoded_bytes: Vec<u8> = vec![];
     let mut literals: Vec<Vec<u64>> = vec![];
     let mut aux_data: Vec<u64> = vec![];
     let mut fse_aux_tables: Vec<FseAuxiliaryTableData> = vec![];
@@ -1775,6 +1775,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             sequence_exec_info,
         ) = process_block::<F>(
             src,
+            &mut decoded_bytes,
             block_idx,
             byte_offset,
             rows.last().expect("last row expected to exist"),
