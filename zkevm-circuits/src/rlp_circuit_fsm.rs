@@ -396,7 +396,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         rlp_decoding_table: RlpDecodingTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
-        log::debug!("{:?}", rlp_decoding_table);
         let (tx_id, format) = (rlp_table.tx_id, rlp_table.format);
         let tag_length = rlp_table.tag_length;
         let q_enabled = rlp_table.q_enable;
