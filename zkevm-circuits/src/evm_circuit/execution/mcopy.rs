@@ -59,16 +59,16 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
             MemoryAddressGadget::construct(cb, dest_offset.clone(), length.clone());
 
         // if no acutal copy happens, memory_word_size doesn't change. MemoryExpansionGadget handle
-        // it with MemoryAddressGadget.
+        // memory_word_size with MemoryAddressGadget.
         // more detailed: 
         // when copy length is zero ( `length` == 0), MemoryAddressGadget set address offset to zero. in this context
         // memory_src_address and memory_dest_address are both zeros.
-        // then for `end_offset()` also return zero.
+        // then for `end_offset()` in MemoryExpansionGadget also return zero.
         // MemoryExpansionGadget compares current memory_word_size (cb.curr.state.memory_word_size) to two new addresses(    
         // memory_src_address and memory_dest_address) required word expansion, the max were selected as next memory_word_size.
         // because of zeros of new address word expansion not greater than 
         // current memory_word_size, so next memory_word_size remains the same to current memory_word_size, which means memory_word_size
-        // state of next steo doesn't change.
+        // state in next step doesn't change.
 
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
@@ -165,7 +165,7 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
             ),
         )?;
 
-        let (next_memory_word_size, memory_expansion_gas_cost) = self.memory_expansion.assign(
+        let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
