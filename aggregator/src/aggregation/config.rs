@@ -131,6 +131,7 @@ impl AggregationConfig {
         let range8 = RangeTable::construct(meta);
         let range16 = RangeTable::construct(meta);
         let range512 = RangeTable::construct(meta);
+        let range_block_len = RangeTable::construct(meta);
         let bitwise_op_table = BitwiseOpTable::construct(meta);
         let decoder_config = DecoderConfig::configure(
             meta,
@@ -142,6 +143,7 @@ impl AggregationConfig {
                 range8,
                 range16,
                 range512,
+                range_block_len,
                 bitwise_op_table,
             },
         );

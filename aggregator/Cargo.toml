@@ -36,7 +36,7 @@ revm-primitives = "3.1.0"
 
 # da-compression
 bitstream-io = "2.2.0"
-zstd = { version = "0.13", features = ["experimental"] }
+zstd = { git = "https://github.com/scroll-tech/zstd-rs", branch = "hack/mul-block", features = ["experimental"]}
 
 [dev-dependencies]
 

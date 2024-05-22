@@ -35,6 +35,7 @@ impl FixedLookupValues for RomTagTransition {
             (ZstdBlockSequenceHeader, ZstdBlockSequenceData),
             (ZstdBlockSequenceFseCode, ZstdBlockSequenceFseCode),
             (ZstdBlockSequenceFseCode, ZstdBlockSequenceData),
+            (ZstdBlockSequenceData, BlockHeader), // multi-block
             (ZstdBlockSequenceData, Null),
             (Null, Null),
         ]

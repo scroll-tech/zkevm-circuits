@@ -7,13 +7,16 @@ use halo2_proofs::{
 };
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, U8Table},
+    table::{LookupTable, RangeTable},
 };
 
-use crate::aggregation::decoder::{
-    util::value_bits_le,
-    witgen::{ZstdTag, ZstdWitnessRow},
-    BlockInfo,
+use crate::{
+    aggregation::decoder::{
+        util::value_bits_le,
+        witgen::{ZstdTag, ZstdWitnessRow},
+        BlockInfo,
+    },
+    witgen::{N_BITS_PER_BYTE, N_BLOCK_SIZE_TARGET},
 };
 
 /// In the process of decoding zstd encoded data, there are several scenarios in which we process
@@ -62,7 +65,7 @@ use crate::aggregation::decoder::{
 /// the bits of interest where "from_start == until_end == 1". Over these rows, we accumulate the
 /// binary value and the bitstring's length.
 #[derive(Clone, Debug)]
-pub struct BitstringTable {
+pub struct BitstringTable<const N_BYTES: usize> {
     /// Fixed column that is enabled only for the first row.
     pub q_first: Column<Fixed>,
     /// The byte offset of byte_1.
@@ -106,13 +109,21 @@ pub struct BitstringTable {
     pub is_padding: Column<Advice>,
 }
 
-impl BitstringTable {
+impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
     /// Construct the bitstring accumulation table.
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         q_enable: Column<Fixed>,
-        u8_table: U8Table,
+        range_block_len: RangeTable<{ N_BLOCK_SIZE_TARGET as usize }>,
     ) -> Self {
+        assert!(
+            (1..=3).contains(&N_BYTES),
+            "unexpected byte-group={:?} expected=range({:?}..={:?})",
+            N_BYTES,
+            1,
+            3,
+        );
+
         let config = Self {
             q_first: meta.fixed_column(),
             byte_idx_1: meta.advice_column(),
@@ -142,8 +153,8 @@ impl BitstringTable {
 
             let mut cb = BaseConstraintBuilder::default();
 
-            let bits = (0..24)
-                .map(|i| meta.query_advice(config.bit, Rotation(i)))
+            let bits = (0..(3 * N_BITS_PER_BYTE))
+                .map(|i| meta.query_advice(config.bit, Rotation(i as i32)))
                 .collect::<Vec<Expression<Fr>>>();
 
             let (byte_1, byte_2, byte_3) = (
@@ -176,53 +187,57 @@ impl BitstringTable {
                 ),
             );
 
-            cb.require_equal(
-                "byte2 is the binary accumulation of 8 <= bit_index <= 15",
-                byte_2,
-                select::expr(
-                    meta.query_advice(config.is_reverse, Rotation::cur()),
-                    bits[15].expr()
-                        + bits[14].expr() * 2.expr()
-                        + bits[13].expr() * 4.expr()
-                        + bits[12].expr() * 8.expr()
-                        + bits[11].expr() * 16.expr()
-                        + bits[10].expr() * 32.expr()
-                        + bits[9].expr() * 64.expr()
-                        + bits[8].expr() * 128.expr(),
-                    bits[8].expr()
-                        + bits[9].expr() * 2.expr()
-                        + bits[10].expr() * 4.expr()
-                        + bits[11].expr() * 8.expr()
-                        + bits[12].expr() * 16.expr()
-                        + bits[13].expr() * 32.expr()
-                        + bits[14].expr() * 64.expr()
-                        + bits[15].expr() * 128.expr(),
-                ),
-            );
+            if N_BYTES > 1 {
+                cb.require_equal(
+                    "byte2 is the binary accumulation of 8 <= bit_index <= 15",
+                    byte_2,
+                    select::expr(
+                        meta.query_advice(config.is_reverse, Rotation::cur()),
+                        bits[15].expr()
+                            + bits[14].expr() * 2.expr()
+                            + bits[13].expr() * 4.expr()
+                            + bits[12].expr() * 8.expr()
+                            + bits[11].expr() * 16.expr()
+                            + bits[10].expr() * 32.expr()
+                            + bits[9].expr() * 64.expr()
+                            + bits[8].expr() * 128.expr(),
+                        bits[8].expr()
+                            + bits[9].expr() * 2.expr()
+                            + bits[10].expr() * 4.expr()
+                            + bits[11].expr() * 8.expr()
+                            + bits[12].expr() * 16.expr()
+                            + bits[13].expr() * 32.expr()
+                            + bits[14].expr() * 64.expr()
+                            + bits[15].expr() * 128.expr(),
+                    ),
+                );
+            }
 
-            cb.require_equal(
-                "byte3 is the binary accumulation of 16 <= bit_index <= 23",
-                byte_3,
-                select::expr(
-                    meta.query_advice(config.is_reverse, Rotation::cur()),
-                    bits[23].expr()
-                        + bits[22].expr() * 2.expr()
-                        + bits[21].expr() * 4.expr()
-                        + bits[20].expr() * 8.expr()
-                        + bits[19].expr() * 16.expr()
-                        + bits[18].expr() * 32.expr()
-                        + bits[17].expr() * 64.expr()
-                        + bits[16].expr() * 128.expr(),
-                    bits[16].expr()
-                        + bits[17].expr() * 2.expr()
-                        + bits[18].expr() * 4.expr()
-                        + bits[19].expr() * 8.expr()
-                        + bits[20].expr() * 16.expr()
-                        + bits[21].expr() * 32.expr()
-                        + bits[22].expr() * 64.expr()
-                        + bits[23].expr() * 128.expr(),
-                ),
-            );
+            if N_BYTES > 2 {
+                cb.require_equal(
+                    "byte3 is the binary accumulation of 16 <= bit_index <= 23",
+                    byte_3,
+                    select::expr(
+                        meta.query_advice(config.is_reverse, Rotation::cur()),
+                        bits[23].expr()
+                            + bits[22].expr() * 2.expr()
+                            + bits[21].expr() * 4.expr()
+                            + bits[20].expr() * 8.expr()
+                            + bits[19].expr() * 16.expr()
+                            + bits[18].expr() * 32.expr()
+                            + bits[17].expr() * 64.expr()
+                            + bits[16].expr() * 128.expr(),
+                        bits[16].expr()
+                            + bits[17].expr() * 2.expr()
+                            + bits[18].expr() * 4.expr()
+                            + bits[19].expr() * 8.expr()
+                            + bits[20].expr() * 16.expr()
+                            + bits[21].expr() * 32.expr()
+                            + bits[22].expr() * 64.expr()
+                            + bits[23].expr() * 128.expr(),
+                    ),
+                );
+            }
 
             cb.require_boolean(
                 "is_reverse is boolean",
@@ -230,13 +245,11 @@ impl BitstringTable {
             );
 
             // from_start initialises at 1
-            /*
             cb.require_equal(
                 "if bit_index == 0: from_start == 1",
                 meta.query_advice(config.from_start, Rotation::cur()),
                 1.expr(),
             );
-            */
 
             cb.gate(condition)
         });
@@ -308,7 +321,6 @@ impl BitstringTable {
             let delta = meta.query_advice(config.until_end, Rotation::next())
                 - meta.query_advice(config.until_end, Rotation::cur());
 
-            /*
             cb.condition(is_end.expr(), |cb| {
                 cb.require_equal(
                     "if bit_index == 23: until_end == 1",
@@ -316,7 +328,6 @@ impl BitstringTable {
                     1.expr(),
                 );
             });
-            */
             cb.condition(not::expr(is_end.expr()), |cb| {
                 cb.require_boolean("until_end delta is boolean", delta);
             });
@@ -433,8 +444,6 @@ impl BitstringTable {
         // However, we still want to make sure subsequent bitstring accumulation happens in
         // increasing order of byte indices, to avoid malicious assignments for an older byte
         // index. We need this check only for subsequent bitstrings after q_first=true.
-        //
-        // TODO: for a multi-block setup, the difference may be greater than 255.
         meta.lookup("BitstringTable: byte_idx_1 is increasing", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -449,7 +458,7 @@ impl BitstringTable {
             );
             let byte_idx_delta = byte_idx_1_curr - byte_idx_1_prev;
 
-            vec![(condition * byte_idx_delta, u8_table.into())]
+            vec![(condition * byte_idx_delta, range_block_len.into())]
         });
 
         debug_assert!(meta.degree() <= 9);
@@ -464,249 +473,241 @@ impl BitstringTable {
         block_info_arr: &Vec<BlockInfo>,
         witness_rows: &[ZstdWitnessRow<Fr>],
         k: u32,
+        unusable_rows: usize,
     ) -> Result<(), Error> {
-        assert!(!witness_rows.is_empty());
-
         layouter.assign_region(
-            || "Bitstring Accumulation Table",
+            || "Bitstring Table",
             |mut region| {
                 let mut offset: usize = 0;
                 region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(Fr::one()))?;
 
-                for i in 0..(((1 << k) - 30) / 24) {
-                    for bit_idx in 0..24 {
+                // assign fixed columns.
+                let n_enabled = (1 << k) - unusable_rows;
+                for i in 0..n_enabled {
+                    let bit_index = i % (N_BYTES * N_BITS_PER_BYTE);
+                    if bit_index == 0 {
                         region.assign_fixed(
-                            || "bit_index",
-                            self.bit_index,
-                            24 * i + bit_idx,
-                            || Value::known(Fr::from(bit_idx as u64)),
+                            || "q_start",
+                            self.q_start,
+                            i,
+                            || Value::known(Fr::one()),
                         )?;
                     }
                     region.assign_fixed(
-                        || "q_start",
-                        self.q_start,
-                        24 * i,
-                        || Value::known(Fr::one()),
+                        || "bit_index",
+                        self.bit_index,
+                        i,
+                        || Value::known(Fr::from(bit_index as u64)),
                     )?;
                 }
 
-                // Multi-block assignment
-                for block in block_info_arr {
-                    // Fse decoding rows
-                    let fse_position = witness_rows
-                        .iter()
-                        .position(|r| {
-                            r.state.block_idx == (block.block_idx as u64)
-                                && r.state.tag == ZstdTag::ZstdBlockSequenceFseCode
-                        })
-                        .unwrap();
-                    let mut fse_rows = witness_rows
-                        .iter()
-                        .filter(|&r| {
-                            r.state.block_idx == (block.block_idx as u64)
-                                && r.state.tag == ZstdTag::ZstdBlockSequenceFseCode
-                        })
-                        .map(|r| {
-                            (
-                                r.encoded_data.byte_idx as usize,
-                                r.encoded_data.value_byte as u64,
-                                r.bitstream_read_data.bit_start_idx,
-                                r.bitstream_read_data.bit_end_idx,
-                                r.bitstream_read_data.bit_value,
-                                r.state.tag.is_reverse() as u64,
-                            )
-                        })
-                        .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
-                    // Append 2 more witness rows to accommodate the 3-bytes chunk for the last
-                    // FseCode row.
-                    let fse_rows_len = fse_rows.len();
-                    fse_rows.extend_from_slice(
-                        witness_rows
-                            .iter()
-                            .skip(fse_position + fse_rows_len)
-                            .take(2)
-                            .map(|r| {
-                                (
-                                    r.encoded_data.byte_idx as usize,
-                                    r.encoded_data.value_byte as u64,
-                                    r.bitstream_read_data.bit_start_idx,
-                                    r.bitstream_read_data.bit_end_idx,
-                                    r.bitstream_read_data.bit_value,
-                                    r.state.tag.is_reverse() as u64,
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                    );
+                let n_witness_rows = witness_rows.len();
+                let filler_row = (
+                    witness_rows
+                        .last()
+                        .expect("at least 1 row")
+                        .encoded_data
+                        .byte_idx
+                        + 1,
+                    0u64,
+                    0u64,
+                    0u64,
+                    0u64,
+                    0u64,
+                );
 
-                    // Sequence data rows
-                    let sequence_data_position = witness_rows
-                        .iter()
-                        .position(|r| {
-                            r.state.block_idx == (block.block_idx as u64)
-                                && r.state.tag == ZstdTag::ZstdBlockSequenceData
-                        })
-                        .unwrap();
-                    let mut sequence_data_rows = witness_rows
-                        .iter()
-                        .filter(|&r| {
-                            r.state.block_idx == (block.block_idx as u64)
-                                && r.state.tag == ZstdTag::ZstdBlockSequenceData
-                        })
-                        .map(|r| {
-                            (
-                                r.encoded_data.byte_idx as usize,
-                                r.encoded_data.value_byte as u64,
-                                r.bitstream_read_data.bit_start_idx,
-                                r.bitstream_read_data.bit_end_idx,
-                                r.bitstream_read_data.bit_value,
-                                r.state.tag.is_reverse() as u64,
-                            )
-                        })
-                        .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
-                    // Append 2 more witness rows to accommodate the 3-bytes chunk for the last
-                    // FseCode row.
-                    let sequence_data_rows_len = sequence_data_rows.len();
-                    let padding_byte_idx = sequence_data_rows.last().unwrap().0 + 1;
-                    let extension = witness_rows
-                        .iter()
-                        .skip(sequence_data_position + sequence_data_rows_len)
-                        .take(2)
-                        .map(|r| {
-                            (
-                                r.encoded_data.byte_idx as usize,
-                                r.encoded_data.value_byte as u64,
-                                r.bitstream_read_data.bit_start_idx,
-                                r.bitstream_read_data.bit_end_idx,
-                                r.bitstream_read_data.bit_value,
-                                r.state.tag.is_reverse() as u64,
-                            )
-                        })
-                        .chain(std::iter::repeat((padding_byte_idx, 0, 0, 0, 0, 0)))
-                        .take(2)
-                        .collect::<Vec<_>>();
-                    sequence_data_rows.extend_from_slice(&extension);
+                let mut rows = Vec::with_capacity(n_enabled);
+                for block_info in block_info_arr {
+                    for i in 0..n_witness_rows {
+                        // prechecks.
+                        let witness_row = &witness_rows[i];
+                        if witness_row.state.block_idx > (block_info.block_idx as u64) {
+                            break;
+                        }
+                        if witness_row.state.block_idx != (block_info.block_idx as u64)
+                            || witness_row.bitstream_read_data.is_nil
+                            || witness_row.bitstream_read_data.is_zero_bit_read
+                        {
+                            continue;
+                        }
 
-                    for rows in [fse_rows, sequence_data_rows].into_iter() {
-                        for grouped_rows in rows.windows(3) {
-                            let curr_row = grouped_rows[0];
-
-                            let byte_idx_1 = grouped_rows[0].0;
-                            let byte_idx_2 = grouped_rows[1].0;
-                            let byte_idx_3 = grouped_rows[2].0;
-                            let byte_1 = grouped_rows[0].1;
-                            let byte_2 = grouped_rows[1].1;
-                            let byte_3 = grouped_rows[2].1;
-
-                            let byte_1_bits = value_bits_le(byte_1 as u8);
-                            let byte_2_bits = value_bits_le(byte_2 as u8);
-                            let byte_3_bits = value_bits_le(byte_3 as u8);
-
-                            let bits = if curr_row.5 > 0 {
-                                // reversed
-                                [
-                                    byte_1_bits.into_iter().rev().collect::<Vec<u8>>(),
-                                    byte_2_bits.into_iter().rev().collect::<Vec<u8>>(),
-                                    byte_3_bits.into_iter().rev().collect::<Vec<u8>>(),
-                                ]
-                                .concat()
-                            } else {
-                                // not reversed
-                                [byte_1_bits, byte_2_bits, byte_3_bits].concat()
-                            };
-
-                            let mut acc: u64 = 0;
-                            let mut bitstring_len: u64 = 0;
-
-                            for (bit_idx, bit) in bits.into_iter().enumerate().take(24) {
-                                region.assign_advice(
-                                    || "byte_idx_1",
-                                    self.byte_idx_1,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(byte_idx_1 as u64)),
-                                )?;
-                                region.assign_advice(
-                                    || "byte_idx_2",
-                                    self.byte_idx_2,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(byte_idx_2 as u64)),
-                                )?;
-                                region.assign_advice(
-                                    || "byte_idx_3",
-                                    self.byte_idx_3,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(byte_idx_3 as u64)),
-                                )?;
-                                region.assign_advice(
-                                    || "byte_1",
-                                    self.byte_1,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(byte_1)),
-                                )?;
-                                region.assign_advice(
-                                    || "byte_2",
-                                    self.byte_2,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(byte_2)),
-                                )?;
-                                region.assign_advice(
-                                    || "byte_3",
-                                    self.byte_3,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(byte_3)),
-                                )?;
-
-                                if bit_idx >= curr_row.2 && bit_idx <= curr_row.3 {
-                                    acc = acc * 2 + (bit as u64);
-                                    bitstring_len += 1;
-                                }
-                                region.assign_advice(
-                                    || "bit",
-                                    self.bit,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(bit as u64)),
-                                )?;
-                                region.assign_advice(
-                                    || "bitstring_value",
-                                    self.bitstring_value,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(curr_row.4)),
-                                )?;
-                                region.assign_advice(
-                                    || "bitstring_value_acc",
-                                    self.bitstring_value_acc,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(acc)),
-                                )?;
-                                region.assign_advice(
-                                    || "bitstring_len",
-                                    self.bitstring_len,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(bitstring_len)),
-                                )?;
-                                region.assign_advice(
-                                    || "from_start",
-                                    self.from_start,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from((bit_idx <= curr_row.3) as u64)),
-                                )?;
-                                region.assign_advice(
-                                    || "until_end",
-                                    self.until_end,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from((bit_idx >= curr_row.2) as u64)),
-                                )?;
-                                region.assign_advice(
-                                    || "is_reverse",
-                                    self.is_reverse,
-                                    offset + bit_idx,
-                                    || Value::known(Fr::from(curr_row.5)),
-                                )?;
+                        let is_tag_ok = matches!(
+                            witness_row.state.tag,
+                            ZstdTag::ZstdBlockSequenceFseCode | ZstdTag::ZstdBlockSequenceData
+                        );
+                        let bit_end_idx = witness_row.bitstream_read_data.bit_end_idx;
+                        let is_bitstring_ok = (bit_end_idx >= ((N_BYTES - 1) * N_BITS_PER_BYTE))
+                            && (bit_end_idx < N_BYTES * N_BITS_PER_BYTE);
+                        if is_tag_ok && is_bitstring_ok {
+                            rows.push((
+                                witness_row.encoded_data.byte_idx,
+                                witness_row.encoded_data.value_byte as u64,
+                                witness_row.bitstream_read_data.bit_start_idx as u64,
+                                witness_row.bitstream_read_data.bit_end_idx as u64,
+                                witness_row.bitstream_read_data.bit_value,
+                                witness_row.state.tag.is_reverse() as u64,
+                            ));
+                            if N_BYTES > 1 {
+                                let next_row = if i + 1 < n_witness_rows {
+                                    (
+                                        witness_rows[i + 1].encoded_data.byte_idx,
+                                        witness_rows[i + 1].encoded_data.value_byte as u64,
+                                        witness_rows[i + 1].bitstream_read_data.bit_start_idx
+                                            as u64,
+                                        witness_rows[i + 1].bitstream_read_data.bit_end_idx as u64,
+                                        witness_rows[i + 1].bitstream_read_data.bit_value,
+                                        witness_rows[i + 1].state.tag.is_reverse() as u64,
+                                    )
+                                } else {
+                                    filler_row
+                                };
+                                rows.push(next_row);
                             }
-
-                            offset += 24;
+                            if N_BYTES > 2 {
+                                let next_next_row = if i + 2 < n_witness_rows {
+                                    (
+                                        witness_rows[i + 2].encoded_data.byte_idx,
+                                        witness_rows[i + 2].encoded_data.value_byte as u64,
+                                        witness_rows[i + 2].bitstream_read_data.bit_start_idx
+                                            as u64,
+                                        witness_rows[i + 2].bitstream_read_data.bit_end_idx as u64,
+                                        witness_rows[i + 2].bitstream_read_data.bit_value,
+                                        witness_rows[i + 2].state.tag.is_reverse() as u64,
+                                    )
+                                } else {
+                                    filler_row
+                                };
+                                rows.push(next_next_row);
+                            }
                         }
                     }
+                }
+
+                for grouped_rows in rows.chunks_exact(N_BYTES) {
+                    let curr_row = grouped_rows[0];
+
+                    let (byte_idx_1, byte_idx_2, byte_idx_3) = match N_BYTES {
+                        1 => (grouped_rows[0].0, 0, 0),
+                        2 => (grouped_rows[0].0, grouped_rows[1].0, 0),
+                        3 => (grouped_rows[0].0, grouped_rows[1].0, grouped_rows[2].0),
+                        v => unreachable!("unexpected N_BYTES={:?}", v),
+                    };
+                    let (byte_1, byte_2, byte_3) = match N_BYTES {
+                        1 => (grouped_rows[0].1, 0, 0),
+                        2 => (grouped_rows[0].1, grouped_rows[1].1, 0),
+                        3 => (grouped_rows[0].1, grouped_rows[1].1, grouped_rows[2].1),
+                        v => unreachable!("unexpected N_BYTES={:?}", v),
+                    };
+
+                    let byte_1_bits = value_bits_le(byte_1 as u8);
+                    let byte_2_bits = value_bits_le(byte_2 as u8);
+                    let byte_3_bits = value_bits_le(byte_3 as u8);
+
+                    let bits = if curr_row.5 > 0 {
+                        // reversed
+                        [
+                            byte_1_bits.into_iter().rev().collect::<Vec<u8>>(),
+                            byte_2_bits.into_iter().rev().collect::<Vec<u8>>(),
+                            byte_3_bits.into_iter().rev().collect::<Vec<u8>>(),
+                        ]
+                        .concat()
+                    } else {
+                        // not reversed
+                        [byte_1_bits, byte_2_bits, byte_3_bits].concat()
+                    };
+
+                    let mut acc: u64 = 0;
+                    let mut bitstring_len: u64 = 0;
+
+                    for (bit_idx, bit) in
+                        bits.into_iter().enumerate().take(N_BYTES * N_BITS_PER_BYTE)
+                    {
+                        region.assign_advice(
+                            || "byte_idx_1",
+                            self.byte_idx_1,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(byte_idx_1)),
+                        )?;
+                        region.assign_advice(
+                            || "byte_idx_2",
+                            self.byte_idx_2,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(byte_idx_2)),
+                        )?;
+                        region.assign_advice(
+                            || "byte_idx_3",
+                            self.byte_idx_3,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(byte_idx_3)),
+                        )?;
+                        region.assign_advice(
+                            || "byte_1",
+                            self.byte_1,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(byte_1)),
+                        )?;
+                        region.assign_advice(
+                            || "byte_2",
+                            self.byte_2,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(byte_2)),
+                        )?;
+                        region.assign_advice(
+                            || "byte_3",
+                            self.byte_3,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(byte_3)),
+                        )?;
+
+                        if bit_idx >= (curr_row.2 as usize) && bit_idx <= (curr_row.3 as usize) {
+                            acc = acc * 2 + (bit as u64);
+                            bitstring_len += 1;
+                        }
+                        region.assign_advice(
+                            || "bit",
+                            self.bit,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(bit as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "bitstring_value",
+                            self.bitstring_value,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(curr_row.4)),
+                        )?;
+                        region.assign_advice(
+                            || "bitstring_value_acc",
+                            self.bitstring_value_acc,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(acc)),
+                        )?;
+                        region.assign_advice(
+                            || "bitstring_len",
+                            self.bitstring_len,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(bitstring_len)),
+                        )?;
+                        region.assign_advice(
+                            || "from_start",
+                            self.from_start,
+                            offset + bit_idx,
+                            || Value::known(Fr::from((bit_idx <= (curr_row.3 as usize)) as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "until_end",
+                            self.until_end,
+                            offset + bit_idx,
+                            || Value::known(Fr::from((bit_idx >= (curr_row.2 as usize)) as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_reverse",
+                            self.is_reverse,
+                            offset + bit_idx,
+                            || Value::known(Fr::from(curr_row.5)),
+                        )?;
+                    }
+
+                    offset += N_BYTES * N_BITS_PER_BYTE;
                 }
 
                 for idx in 0..offset {
@@ -717,7 +718,7 @@ impl BitstringTable {
                         || Value::known(Fr::zero()),
                     )?;
                 }
-                for idx in offset..((1 << k) - 30) {
+                for idx in offset..n_enabled {
                     region.assign_advice(
                         || "is_padding",
                         self.is_padding,
@@ -732,7 +733,7 @@ impl BitstringTable {
     }
 }
 
-impl LookupTable<Fr> for BitstringTable {
+impl<const N_BYTES: usize> LookupTable<Fr> for BitstringTable<N_BYTES> {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.byte_idx_1.into(),

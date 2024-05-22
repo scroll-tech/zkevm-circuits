@@ -21,6 +21,9 @@ pub const CL_WINDOW_LIMIT: usize = 17;
 /// zstd block size target.
 pub const N_BLOCK_SIZE_TARGET: u32 = 124 * 1024;
 
+/// Maximum number of blocks that we can expect in the encoded data.
+pub const N_MAX_BLOCKS: u64 = 10;
+
 /// Zstd encoder configuration
 pub fn init_zstd_encoder(
     target_block_size: Option<u32>,
@@ -32,6 +35,10 @@ pub fn init_zstd_encoder(
         .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
             zstd::zstd_safe::ParamSwitch::Disable,
         ))
+        .expect("infallible");
+    // with a hack in zstd we can set window log <= 17 with single segment kept
+    encoder
+        .set_parameter(zstd::stream::raw::CParameter::WindowLog(17))
         .expect("infallible");
     // set target block size to fit within a single block.
     encoder
