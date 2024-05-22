@@ -10,7 +10,6 @@ pub use types::{ZstdTag::*, *};
 
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
-use zstd::zstd_safe::WriteBuf;
 
 const CMOT_N: u64 = 31;
 
@@ -153,9 +152,6 @@ fn process_block<F: Field>(
         "process block: block_idx={:?}\tbyte_offset={:?}",
         block_idx, byte_offset
     );
-    if block_idx > 10 {
-        unreachable!("not more than 10 blocks");
-    }
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, block_info) =
@@ -297,7 +293,7 @@ type BlockProcessingResult<F> = (
 
 type LiteralsBlockResult<F> = (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>);
 
-#[allow(unused_variables)]
+#[allow(clippy::too_many_arguments)]
 fn process_block_zstd<F: Field>(
     src: &[u8],
     decoded_bytes: &mut Vec<u8>,
@@ -318,7 +314,7 @@ fn process_block_zstd<F: Field>(
         byte_offset,
         rows,
         _literals_block_type,
-        n_streams,
+        _n_streams,
         regen_size,
         compressed_size,
         (branch, sf_max),
@@ -334,58 +330,44 @@ fn process_block_zstd<F: Field>(
         let tag = ZstdTag::ZstdBlockLiteralsRawBytes;
         let tag_next = ZstdTag::ZstdBlockSequenceHeader;
         let literals = src[byte_offset..(byte_offset + regen_size)].to_vec();
-        let value_rlc_iter = literals
-            .iter()
-            .scan(last_row.encoded_data.value_rlc, |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            });
-        let tag_value_iter = literals.iter().scan(Value::known(F::zero()), |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        });
-        let tag_value = tag_value_iter.clone().last().expect("Literals must exist.");
         let tag_rlc_iter = literals.iter().scan(Value::known(F::zero()), |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
         });
-        let tag_rlc = tag_value_iter.clone().last().expect("Literals must exist.");
+        let tag_rlc = tag_rlc_iter.clone().last().expect("Literals must exist.");
 
         (
             byte_offset + regen_size,
             literals
                 .iter()
-                .zip(tag_value_iter)
                 .zip(tag_rlc_iter)
                 .enumerate()
-                .map(
-                    |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
-                        state: ZstdState {
-                            tag,
-                            tag_next,
-                            block_idx,
-                            max_tag_len: tag.max_len(),
-                            tag_len: regen_size as u64,
-                            tag_idx: (i + 1) as u64,
-                            is_tag_change: i == 0,
-                            tag_rlc,
-                            tag_rlc_acc,
-                        },
-                        encoded_data: EncodedData {
-                            byte_idx: (byte_offset + i + 1) as u64,
-                            encoded_len: last_row.encoded_data.encoded_len,
-                            value_byte,
-                            value_rlc,
-                            reverse: false,
-                            ..Default::default()
-                        },
-                        decoded_data: DecodedData {
-                            decoded_len: last_row.decoded_data.decoded_len,
-                        },
-                        bitstream_read_data: BitstreamReadRow::default(),
-                        fse_data: FseDecodingRow::default(),
+                .map(|(i, (&value_byte, tag_rlc_acc))| ZstdWitnessRow {
+                    state: ZstdState {
+                        tag,
+                        tag_next,
+                        block_idx,
+                        max_tag_len: tag.max_len(),
+                        tag_len: regen_size as u64,
+                        tag_idx: (i + 1) as u64,
+                        is_tag_change: i == 0,
+                        tag_rlc,
+                        tag_rlc_acc,
                     },
-                )
+                    encoded_data: EncodedData {
+                        byte_idx: (byte_offset + i + 1) as u64,
+                        encoded_len: last_row.encoded_data.encoded_len,
+                        value_byte,
+                        value_rlc,
+                        reverse: false,
+                        ..Default::default()
+                    },
+                    decoded_data: DecodedData {
+                        decoded_len: last_row.decoded_data.decoded_len,
+                    },
+                    bitstream_read_data: BitstreamReadRow::default(),
+                    fse_data: FseDecodingRow::default(),
+                })
                 .collect::<Vec<_>>(),
             literals.iter().map(|b| *b as u64).collect::<Vec<u64>>(),
             vec![regen_size as u64, 0, 0, 0],
@@ -1777,7 +1759,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             &mut decoded_bytes,
             block_idx,
             byte_offset,
-            rows.last().expect("last row expected to exist"),
+            witness_rows.last().expect("last row expected to exist"),
             randomness,
         );
 

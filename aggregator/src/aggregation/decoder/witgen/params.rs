@@ -21,6 +21,9 @@ pub const CL_WINDOW_LIMIT: usize = 17;
 /// zstd block size target.
 pub const N_BLOCK_SIZE_TARGET: u32 = 124 * 1024;
 
+/// Maximum number of blocks that we can expect in the encoded data.
+pub const N_MAX_BLOCKS: u64 = 10;
+
 /// Zstd encoder configuration
 pub fn init_zstd_encoder(
     target_block_size: Option<u32>,
