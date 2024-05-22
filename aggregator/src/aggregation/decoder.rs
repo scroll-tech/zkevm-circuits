@@ -4150,15 +4150,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
     ) -> Result<AssignedDecoderConfigExports, Error> {
         let mut pow_of_rand: Vec<Value<Fr>> = vec![Value::known(Fr::ONE)];
 
-        assert!(!block_info_arr.is_empty(), "Must have at least 1 block");
-        assert!(!sequence_info_arr.is_empty(), "Must have at least 1 block");
-
-        assert!(address_table_arr.len() == 1, "TODO: multi-block");
-        assert!(sequence_exec_info_arr.len() == 1, "TODO: multi-block");
-
-        let mut curr_block_info = block_info_arr[0];
-        let mut curr_sequence_info = sequence_info_arr[0];
-
         /////////////////////////////////////////
         //////// Load Auxiliary Tables  /////////
         /////////////////////////////////////////
@@ -4545,18 +4536,16 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     let is_block_header = row.state.tag == BlockHeader;
 
                     if is_block || is_block_header {
-                        if block_idx != curr_block_info.block_idx as u64 {
-                            curr_block_info = *block_info_arr
-                                .iter()
-                                .find(|&b| b.block_idx == block_idx as usize)
-                                .expect("Block info should exist");
-                        }
-                        if block_idx != curr_sequence_info.block_idx as u64 {
-                            curr_sequence_info = *sequence_info_arr
-                                .iter()
-                                .find(|&s| s.block_idx == block_idx as usize)
-                                .expect("Sequence info should exist");
-                        }
+                        let curr_block_info = block_info_arr[block_idx as usize - 1];
+                        assert_eq!(
+                            block_idx as usize, curr_block_info.block_idx,
+                            "block_idx mismatch"
+                        );
+                        let curr_sequence_info = sequence_info_arr[block_idx as usize - 1];
+                        assert_eq!(
+                            block_idx as usize, curr_sequence_info.block_idx,
+                            "block_idx mismatch"
+                        );
                         region.assign_advice(
                             || "block_config.block_len",
                             self.block_config.block_len,
@@ -5176,36 +5165,12 @@ mod tests {
         let raw = batches[1].clone();
         let compressed = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
-            let mut encoder =
-                zstd::stream::write::Encoder::new(Vec::new(), 0).expect("Encoder construction");
+            let mut encoder = init_zstd_encoder(Some(1024 * 4));
 
-            // disable compression of literals, i.e. literals will be raw bytes.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                    zstd::zstd_safe::ParamSwitch::Disable,
-                ))
-                .expect("Encoder set_parameter: LiteralCompressionMode");
-            // set target block size to fit within a single block.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(1024 * 4))
-                .expect("Encoder set_parameter: TargetCBlockSize");
-            // do not include the checksum at the end of the encoded data.
-            encoder
-                .include_checksum(false)
-                .expect("Encoder include_checksum: false");
-            // do not include magic bytes at the start of the frame since we will have a single
-            // frame.
-            encoder
-                .include_magicbytes(false)
-                .expect("Encoder include magicbytes: false");
             // set source length, which will be reflected in the frame header.
             encoder
                 .set_pledged_src_size(Some(raw.len() as u64))
                 .expect("Encoder src_size: raw.len()");
-            // include the content size to know at decode time the expected size of decoded data.
-            encoder
-                .include_contentsize(true)
-                .expect("Encoder include_contentsize: true");
 
             encoder.write_all(&raw).expect("Encoder wirte_all");
             encoder.finish().expect("Encoder success")
@@ -5241,36 +5206,12 @@ mod tests {
 
         let encoded_multi_batch_data = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
-            let mut encoder =
-                zstd::stream::write::Encoder::new(Vec::new(), 0).expect("Encoder construction");
+            let mut encoder = init_zstd_encoder(None);
 
-            // disable compression of literals, i.e. literals will be raw bytes.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
-                    zstd::zstd_safe::ParamSwitch::Disable,
-                ))
-                .expect("Encoder set_parameter: LiteralCompressionMode");
-            // set target block size to fit within a single block.
-            encoder
-                .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
-                .expect("Encoder set_parameter: TargetCBlockSize");
-            // do not include the checksum at the end of the encoded data.
-            encoder
-                .include_checksum(false)
-                .expect("Encoder include_checksum: false");
-            // do not include magic bytes at the start of the frame since we will have a single
-            // frame.
-            encoder
-                .include_magicbytes(false)
-                .expect("Encoder include magicbytes: false");
             // set source length, which will be reflected in the frame header.
             encoder
                 .set_pledged_src_size(Some(multi_batch_data.len() as u64))
                 .expect("Encoder src_size: raw.len()");
-            // include the content size to know at decode time the expected size of decoded data.
-            encoder
-                .include_contentsize(true)
-                .expect("Encoder include_contentsize: true");
 
             encoder
                 .write_all(&multi_batch_data)

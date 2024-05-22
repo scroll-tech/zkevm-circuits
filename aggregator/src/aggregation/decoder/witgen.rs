@@ -593,7 +593,6 @@ fn process_sequences<F: Field>(
 
     witness_rows.extend_from_slice(&header_rows);
 
-
     /////////////////////////////////////////////////
     ///// Sequence Section Part 2: FSE Tables  //////
     /////////////////////////////////////////////////
