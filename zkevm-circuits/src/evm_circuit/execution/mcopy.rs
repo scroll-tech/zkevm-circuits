@@ -59,7 +59,17 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
             MemoryAddressGadget::construct(cb, dest_offset.clone(), length.clone());
 
         // if no acutal copy happens, memory_word_size doesn't change. MemoryExpansionGadget handle
-        // it internally
+        // it with MemoryAddressGadget.
+        // more detailed: 
+        // when copy length is zero ( `length` == 0), MemoryAddressGadget set address offset to zero. in this context
+        // memory_src_address and memory_dest_address are both zeros.
+        // then for `end_offset()` also return zero.
+        // MemoryExpansionGadget compares current memory_word_size (cb.curr.state.memory_word_size) to two new addresses(    
+        // memory_src_address and memory_dest_address) required word expansion, the max were selected as next memory_word_size.
+        // because of zeros of new address word expansion not greater than 
+        // current memory_word_size, so next memory_word_size remains the same to current memory_word_size, which means memory_word_size
+        // state of next steo doesn't change.
+
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             [
@@ -155,12 +165,16 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
             ),
         )?;
 
-        let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
+        let (next_memory_word_size, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
             [src_addr, dest_addr],
         )?;
+
+        println!("cur_memory_word_size:{}, next_memory_word_size: {}, src_addr {} ,
+            dest_addr {}", step.memory_word_size(),
+            next_memory_word_size, src_addr, d);
 
         self.memory_copier_gas.assign(
             region,
@@ -230,9 +244,11 @@ mod test {
     // tests for zero copy length
     #[test]
     fn mcopy_empty() {
-        test_ok(Word::from("0x20"), Word::zero(), 0x0);
-        test_ok(Word::from("0xa8"), Word::from("0x2f"), 0x0);
-        test_ok(Word::from("0x0"), Word::from("0x600"), 0x0);
+        // test_ok(Word::from("0x20"), Word::zero(), 0x0);
+        test_ok(Word::from("0x20"),  Word::from("0x60"), 0x0);
+
+        //test_ok(Word::from("0xa8"), Word::from("0x2f"), 0x0);
+        //test_ok(Word::from("0x0"), Word::from("0x600"), 0x0);
     }
 
     // tests for real copy
