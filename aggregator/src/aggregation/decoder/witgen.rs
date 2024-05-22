@@ -61,8 +61,6 @@ fn process_frame_header<F: Field>(
         }
     };
 
-    println!("frame content size = {:?}", fcs);
-
     let tag_rlc_iter = fcs_bytes
         .iter()
         .scan(Value::known(F::zero()), |acc, &byte| {
@@ -139,6 +137,7 @@ type AggregateBlockResult<F> = (
     [FseAuxiliaryTableData; 3], // 3 sequence section FSE tables
     Vec<AddressTableRow>,
     SequenceExecResult,
+    [usize; 3], // repeated offsets are carried forward between blocks.
 );
 fn process_block<F: Field>(
     src: &[u8],
@@ -147,11 +146,8 @@ fn process_block<F: Field>(
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
+    repeated_offset: [usize; 3],
 ) -> AggregateBlockResult<F> {
-    println!(
-        "process block: block_idx={:?}\tbyte_offset={:?}",
-        block_idx, byte_offset
-    );
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, block_info) =
@@ -169,6 +165,7 @@ fn process_block<F: Field>(
         fse_aux_tables,
         address_table_rows,
         sequence_exec_info,
+        repeated_offset,
     ) = match block_info.block_type {
         BlockType::ZstdCompressedBlock => process_block_zstd(
             src,
@@ -179,6 +176,7 @@ fn process_block<F: Field>(
             randomness,
             block_info.block_len,
             block_info.is_last_block,
+            repeated_offset,
         ),
         _ => unreachable!("BlockType::ZstdCompressedBlock expected"),
     };
@@ -195,6 +193,7 @@ fn process_block<F: Field>(
         fse_aux_tables,
         address_table_rows,
         sequence_exec_info,
+        repeated_offset,
     )
 }
 
@@ -289,6 +288,7 @@ type BlockProcessingResult<F> = (
     [FseAuxiliaryTableData; 3], // 3 sequence section FSE tables
     Vec<AddressTableRow>,
     SequenceExecResult,
+    [usize; 3], // repeated offsets are carried forward between blocks
 );
 
 type LiteralsBlockResult<F> = (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>);
@@ -303,6 +303,7 @@ fn process_block_zstd<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
+    repeated_offset: [usize; 3],
 ) -> BlockProcessingResult<F> {
     let expected_end_offset = byte_offset + block_size;
     let mut witness_rows = vec![];
@@ -387,6 +388,7 @@ fn process_block_zstd<F: Field>(
         original_inputs,
         sequence_info,
         sequence_exec_info,
+        repeated_offset,
     ) = process_sequences::<F>(
         src,
         decoded_bytes,
@@ -397,6 +399,7 @@ fn process_block_zstd<F: Field>(
         last_row,
         last_block,
         randomness,
+        repeated_offset,
     );
 
     // sanity check:
@@ -428,6 +431,7 @@ fn process_block_zstd<F: Field>(
             exec_trace: sequence_exec_info,
             recovered_bytes: original_inputs,
         },
+        repeated_offset,
     )
 }
 
@@ -439,6 +443,7 @@ type SequencesProcessingResult<F> = (
     Vec<u8>,                    // Recovered original input
     SequenceInfo,
     Vec<SequenceExec>,
+    [usize; 3], // repeated offsets are carried forward.
 );
 
 #[allow(clippy::too_many_arguments)]
@@ -452,6 +457,7 @@ fn process_sequences<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     last_block: bool,
     randomness: Value<F>,
+    mut repeated_offset: [usize; 3],
 ) -> SequencesProcessingResult<F> {
     // Initialize witness values
     let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
@@ -1470,7 +1476,6 @@ fn process_sequences<F: Field>(
     // Process raw sequence instructions
     let mut address_table_rows: Vec<AddressTableRow> = vec![];
     let mut literal_len_acc: usize = 0;
-    let mut repeated_offset: [usize; 3] = [1, 4, 8];
 
     for (idx, inst) in raw_sequence_instructions.iter().enumerate() {
         let actual_offset = if inst.0 > 3 {
@@ -1594,6 +1599,7 @@ fn process_sequences<F: Field>(
         recovered_inputs,
         sequence_info,
         seq_exec_info,
+        repeated_offset,
     )
 }
 
@@ -1742,6 +1748,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
     witness_rows.extend_from_slice(&rows);
 
     let mut block_idx: u64 = 1;
+    let mut repeated_offset = [1, 4, 8];
     loop {
         let (
             end_offset,
@@ -1754,6 +1761,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             new_fse_aux_tables,
             address_table_rows,
             sequence_exec_info,
+            end_repeated_offset,
         ) = process_block::<F>(
             src,
             &mut decoded_bytes,
@@ -1761,6 +1769,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             byte_offset,
             witness_rows.last().expect("last row expected to exist"),
             randomness,
+            repeated_offset,
         );
 
         witness_rows.extend_from_slice(&rows);
@@ -1780,6 +1789,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             assert!(end_offset >= src.len());
             break;
         } else {
+            repeated_offset = end_repeated_offset;
             block_idx += 1;
             byte_offset = end_offset;
         }
