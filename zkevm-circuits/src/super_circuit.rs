@@ -95,10 +95,7 @@ use crate::{
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
 
 use crate::util::Field;
-use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-    mock::BlockData,
-};
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use eth_types::geth_types::GethData;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -483,7 +480,7 @@ impl<
     > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
 {
     /// Return the number of rows required to verify a given block
-    pub fn get_num_rows_required(block: &Block<Fr>) -> usize {
+    pub fn get_num_rows_required(block: &Block) -> usize {
         let num_rows_evm_circuit = EvmCircuit::<Fr>::get_num_rows_required(block);
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         // FIXME: need to call the SigCircuit::get_num_rows_required instead
@@ -493,7 +490,7 @@ impl<
         num_rows_evm_circuit
     }
     /// Return the minimum number of rows required to prove the block
-    pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> Vec<SubcircuitRowUsage> {
+    pub fn min_num_rows_block_subcircuits(block: &Block) -> Vec<SubcircuitRowUsage> {
         let warning_limit = 1_000_000;
         log::debug!("start min_num_rows_block_subcircuits");
         let mut rows = Vec::new();
@@ -505,37 +502,37 @@ impl<
             }
             rows.push((name, (usage, full_usage)));
         };
-        let evm = EvmCircuit::min_num_rows_block(block);
+        let evm = EvmCircuit::<Fr>::min_num_rows_block(block);
         push("evm", evm);
         if evm.0 >= warning_limit {
             block.print_evm_circuit_row_usage();
         }
-        let state = StateCircuit::min_num_rows_block(block);
+        let state = StateCircuit::<Fr>::min_num_rows_block(block);
         push("state", state);
         if state.0 >= warning_limit {
             block.print_rw_usage();
         }
-        let bytecode = BytecodeCircuit::min_num_rows_block(block);
+        let bytecode = BytecodeCircuit::<Fr>::min_num_rows_block(block);
         push("bytecode", bytecode);
-        let copy = CopyCircuit::min_num_rows_block(block);
+        let copy = CopyCircuit::<Fr>::min_num_rows_block(block);
         push("copy", copy);
-        let keccak = KeccakCircuit::min_num_rows_block(block);
+        let keccak = KeccakCircuit::<Fr>::min_num_rows_block(block);
         push("keccak", keccak);
-        let sha256 = SHA256Circuit::min_num_rows_block(block);
+        let sha256 = SHA256Circuit::<Fr>::min_num_rows_block(block);
         push("sha256", sha256);
-        let tx = TxCircuit::min_num_rows_block(block);
+        let tx = TxCircuit::<Fr>::min_num_rows_block(block);
         push("tx", tx);
-        let rlp = RlpCircuit::min_num_rows_block(block);
+        let rlp = RlpCircuit::<Fr, _>::min_num_rows_block(block);
         push("rlp", rlp);
-        let exp = ExpCircuit::min_num_rows_block(block);
+        let exp = ExpCircuit::<Fr>::min_num_rows_block(block);
         push("exp", exp);
-        let mod_exp = ModExpCircuit::min_num_rows_block(block);
+        let mod_exp = ModExpCircuit::<Fr>::min_num_rows_block(block);
         push("mod_exp", mod_exp);
-        let pi = PiCircuit::min_num_rows_block(block);
+        let pi = PiCircuit::<Fr>::min_num_rows_block(block);
         push("pi", pi);
-        let poseidon = PoseidonCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::<Fr>::min_num_rows_block(block);
         push("poseidon", poseidon);
-        let sig = SigCircuit::min_num_rows_block(block);
+        let sig = SigCircuit::<Fr>::min_num_rows_block(block);
         push("sig", sig);
         let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
         push("ecc", ecc);
@@ -594,7 +591,7 @@ impl<
         .unwrap()
     }
 
-    fn new_from_block(block: &Block<Fr>) -> Self {
+    fn new_from_block(block: &Block) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
         let tx_circuit = TxCircuit::new_from_block(block);
@@ -648,7 +645,7 @@ impl<
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &Block<Fr>) -> (usize, usize) {
+    fn min_num_rows_block(block: &Block) -> (usize, usize) {
         let row_usage = Self::min_num_rows_block_subcircuits(block);
         (
             itertools::max(row_usage.iter().map(|x| x.row_num_real)).unwrap(),
@@ -755,7 +752,7 @@ impl<
     type Params = ();
 
     fn without_witnesses(&self) -> Self {
-        let dummy_block = Block::<Fr> {
+        let dummy_block = Block {
             circuits_params: self.circuit_params,
             ..Default::default()
         };
@@ -826,17 +823,19 @@ impl<
     pub fn build(
         geth_data: GethData,
         circuits_params: CircuitsParams,
-    ) -> Result<(u32, Self, Vec<Vec<Fr>>, CircuitInputBuilder), bus_mapping::Error> {
-        let block_data =
-            BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data_with_params(
+            geth_data.clone(),
+            circuits_params,
+        );
 
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
-        let ret = Self::build_from_circuit_input_builder(&builder)?;
-        Ok((ret.0, ret.1, ret.2, builder))
+        let ret = Self::build_from_circuit_input_builder(builder)?;
+        Ok((ret.0, ret.1, ret.2))
     }
 
     /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
@@ -845,7 +844,7 @@ impl<
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
-        builder: &CircuitInputBuilder,
+        builder: CircuitInputBuilder,
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
@@ -854,7 +853,7 @@ impl<
     }
     /// ..
     pub fn build_from_witness_block(
-        block: Block<Fr>,
+        block: Block,
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
         log::debug!(
             "super circuit build_from_witness_block, circuits_params {:?}",

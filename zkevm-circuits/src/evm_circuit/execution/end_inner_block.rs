@@ -115,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         tx: &Transaction,
         _: &Call,
         step: &ExecStep,

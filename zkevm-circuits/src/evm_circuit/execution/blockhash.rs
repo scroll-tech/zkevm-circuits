@@ -142,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         tx: &Transaction,
         _: &Call,
         step: &ExecStep,

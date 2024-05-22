@@ -1137,7 +1137,7 @@ impl<F: Field> CopyCircuit<F> {
     /// to assign lookup tables.  This constructor is only suitable to be
     /// used by the SuperCircuit, which already assigns the external lookup
     /// tables.
-    pub fn new_from_block_no_external(block: &witness::Block<F>) -> Self {
+    pub fn new_from_block_no_external(block: &witness::Block) -> Self {
         Self::new(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
@@ -1154,7 +1154,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block) -> Self {
         Self::new_with_external_data(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
@@ -1170,7 +1170,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         let row_num = block
             .copy_events
             .iter()

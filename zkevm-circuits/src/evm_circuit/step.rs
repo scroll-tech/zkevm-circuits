@@ -632,7 +632,7 @@ impl<F: Field> Step<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
+        _block: &Block,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

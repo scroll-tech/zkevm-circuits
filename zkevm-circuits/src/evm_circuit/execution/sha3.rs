@@ -110,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

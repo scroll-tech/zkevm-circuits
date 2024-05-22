@@ -266,7 +266,7 @@ fn trace_config_to_witness_block_l2(
     suite: TestSuite,
     circuits_params: CircuitsParams,
     verbose: bool,
-) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
+) -> Result<Option<(Block, CircuitInputBuilder)>, StateTestError> {
     let block_trace = external_tracer::l2trace(&trace_config);
 
     let block_trace = match (block_trace, st.exception) {
@@ -320,10 +320,7 @@ fn trace_config_to_witness_block_l2(
         .expect("could not finalize building block");
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-    zkevm_circuits::witness::block_apply_mpt_state(
-        &mut block,
-        builder.mpt_init_state.as_ref().unwrap(),
-    );
+    block.apply_mpt_updates(builder.mpt_init_state.as_ref().unwrap());
     // as mentioned above, we cannot fit the trace into circuit
     // stop here
     if exceed_max_steps != 0 {
@@ -339,7 +336,7 @@ fn trace_config_to_witness_block_l1(
     suite: TestSuite,
     circuits_params: CircuitsParams,
     verbose: bool,
-) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
+) -> Result<Option<(Block, CircuitInputBuilder)>, StateTestError> {
     use eth_types::geth_types::TxType;
     use ethers_signers::Signer;
 
@@ -431,7 +428,7 @@ fn trace_config_to_witness_block_l1(
         .handle_block(&eth_block, &geth_traces)
         .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-    let block: Block<Fr> =
+    let block: Block =
         zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
             .unwrap();
     Ok(Some((block, builder)))
@@ -549,7 +546,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
     }
 }
 
-fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) {
+fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block) {
     let num_row = C::min_num_rows_block(block).1;
     let k = zkevm_circuits::util::log2_ceil(num_row + 256);
     log::debug!(
@@ -758,7 +755,7 @@ fn set_env_coinbase(coinbase: &Address) -> String {
 }
 
 #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
-fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
+fn mock_prove(test_id: &str, witness_block: &Block) {
     log::info!("{test_id}: mock-prove BEGIN");
     // TODO: do we need to automatically adjust this k?
     let k = 20;

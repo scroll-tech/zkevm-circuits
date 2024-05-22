@@ -6,11 +6,7 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use eth_types::{l2_types::BlockTrace, Address};
 use git_version::git_version;
-use halo2_proofs::{
-    halo2curves::bn256::{Bn256, Fr},
-    poly::kzg::commitment::ParamsKZG,
-    SerdeFormat,
-};
+use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG, SerdeFormat};
 use log::LevelFilter;
 use log4rs::{
     append::{
@@ -146,7 +142,7 @@ pub struct BatchMetric {
     pub num_step: usize,
 }
 
-pub fn metric_of_witness_block(block: &Block<Fr>) -> BatchMetric {
+pub fn metric_of_witness_block(block: &Block) -> BatchMetric {
     BatchMetric {
         num_block: block.context.ctxs.len(),
         num_tx: block.txs.len(),
@@ -154,7 +150,7 @@ pub fn metric_of_witness_block(block: &Block<Fr>) -> BatchMetric {
     }
 }
 
-pub fn chunk_trace_to_witness_block(mut chunk_trace: Vec<BlockTrace>) -> Result<Block<Fr>> {
+pub fn chunk_trace_to_witness_block(mut chunk_trace: Vec<BlockTrace>) -> Result<Block> {
     if chunk_trace.is_empty() {
         bail!("Empty chunk trace");
     }

@@ -220,14 +220,14 @@ impl<F: Field> EvmCircuitConfig<F> {
 #[derive(Clone, Default, Debug)]
 pub struct EvmCircuit<F: Field> {
     /// Block
-    pub block: Option<Block<F>>,
+    pub block: Option<Block>,
     fixed_table_tags: Vec<FixedTableTag>,
     pub(crate) exports: std::cell::RefCell<Option<EvmCircuitExports<Assigned<F>>>>,
 }
 
 impl<F: Field> EvmCircuit<F> {
     /// Return a new EvmCircuit
-    pub fn new(block: Block<F>) -> Self {
+    pub fn new(block: Block) -> Self {
         Self {
             block: Some(block),
             fixed_table_tags: FixedTableTag::iter().collect(),
@@ -235,7 +235,7 @@ impl<F: Field> EvmCircuit<F> {
         }
     }
 
-    pub fn new_dev(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
+    pub fn new_dev(block: Block, fixed_table_tags: Vec<FixedTableTag>) -> Self {
         Self {
             block: Some(block),
             fixed_table_tags,
@@ -244,7 +244,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     /// Calculate which rows are "actually" used in the circuit
-    pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+    pub fn get_active_rows(block: &Block) -> (Vec<usize>, Vec<usize>) {
         let max_offset = Self::get_num_rows_required(block);
         // some gates are enabled on all rows
         let gates_row_ids = (0..max_offset).collect();
@@ -253,7 +253,7 @@ impl<F: Field> EvmCircuit<F> {
         (gates_row_ids, lookup_row_ids)
     }
 
-    pub fn get_num_rows_required_no_padding(block: &Block<F>) -> usize {
+    pub fn get_num_rows_required_no_padding(block: &Block) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
         for transaction in &block.txs {
@@ -265,7 +265,7 @@ impl<F: Field> EvmCircuit<F> {
         num_rows
     }
 
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
+    pub fn get_num_rows_required(block: &Block) -> usize {
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             Self::get_min_num_rows_required(block)
@@ -275,7 +275,7 @@ impl<F: Field> EvmCircuit<F> {
         }
     }
 
-    pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+    pub fn get_min_num_rows_required(block: &Block) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
@@ -300,12 +300,12 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block) -> Self {
         Self::new(block.clone())
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         let num_rows_required_for_execution_steps: usize =
             Self::get_num_rows_required_no_padding(block);
         let mut total_rows = num_rows_required_for_execution_steps;
@@ -347,7 +347,7 @@ fn get_fixed_table_row_num(need_bitwise_lookup: bool) -> usize {
     }
 }
 
-fn need_bitwise_lookup<F: Field>(block: &Block<F>) -> bool {
+fn need_bitwise_lookup(block: &Block) -> bool {
     block.txs.iter().any(|tx| {
         tx.steps.iter().any(|step| {
             matches!(
@@ -361,7 +361,7 @@ fn need_bitwise_lookup<F: Field>(block: &Block<F>) -> bool {
     })
 }
 /// create fixed_table_tags needed given witness block
-pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+pub(crate) fn detect_fixed_table_tags(block: &Block) -> Vec<FixedTableTag> {
     if need_bitwise_lookup(block) {
         FixedTableTag::iter().collect()
     } else {
@@ -427,7 +427,7 @@ pub(crate) mod cached {
     }
 
     impl EvmCircuitCached {
-        pub fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
+        pub fn get_test_cicuit_from_block(block: Block) -> Self {
             Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
         }
     }
@@ -794,7 +794,7 @@ mod evm_circuit_stats {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         let k = block.get_evm_test_circuit_degree();
 
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
@@ -816,7 +816,7 @@ mod evm_circuit_stats {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         let k = block.get_evm_test_circuit_degree();
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();

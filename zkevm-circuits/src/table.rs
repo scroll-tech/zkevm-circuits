@@ -2037,7 +2037,7 @@ impl CopyTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        block: &Block,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -2240,7 +2240,7 @@ impl ExpTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        block: &Block,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "exponentiation table",
@@ -2544,7 +2544,7 @@ impl SigTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        block: &Block,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(

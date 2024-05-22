@@ -3,6 +3,7 @@
 
 mod access;
 mod block;
+mod builder_client;
 mod call;
 mod execution;
 mod input_state_ref;
@@ -17,45 +18,30 @@ use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
-    rpc::GethClient,
-    util::KECCAK_CODE_HASH_EMPTY,
 };
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
+pub use builder_client::{build_state_code_db, BuilderClient};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
     self,
     evm_types::{GasCost, OpcodeId},
-    geth_types::{self, TxType},
-    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    state_db::{self, CodeDB, StateDB},
-    Address, GethExecTrace, ToBigEndian, ToWord, Word, H256,
+    sign_types::get_dummy_tx,
+    state_db::{CodeDB, StateDB},
+    EthBlock, GethExecTrace, Word, H256,
 };
-use ethers_providers::JsonRpcClient;
+use ethers_core::utils::keccak256;
 pub use execution::{
     BigModExp, CopyAccessList, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep,
     EcAddOp, EcMulOp, EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep,
     NumberOrHash, PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP, SHA256,
 };
-use hex::decode_to_slice;
-
-use eth_types::{
-    geth_types::{Account, BlockConstants},
-    sign_types::get_dummy_tx,
-    utils::hash_code_keccak,
-};
-use ethers_core::utils::keccak256;
-use external_tracer::TraceConfig;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
-use log::warn;
 #[cfg(feature = "scroll")]
 use mpt_zktrie::state::ZktrieState;
-use std::{
-    collections::{BTreeMap, HashMap},
-    iter,
-};
+use std::collections::BTreeMap;
 pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
 };
@@ -290,7 +276,7 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-        handle_rwc_reversion: bool,
+        is_final_block: bool,
         check_last_tx: bool,
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
@@ -388,7 +374,7 @@ impl<'a> CircuitInputBuilder {
                 }
             }
         }
-        if handle_rwc_reversion {
+        if is_final_block {
             self.set_value_ops_call_context_rwc_eor();
             self.set_end_block()?;
         }
@@ -459,7 +445,7 @@ impl<'a> CircuitInputBuilder {
         log::debug!("start num: {}", self.block.container.start.len());
     }
 
-    /// ..
+    /// Build the EndBlock step, fill needed rws like reading withdraw root
     pub fn set_end_block(&mut self) -> Result<(), Error> {
         use crate::l2_predeployed::message_queue::{
             ADDRESS as MESSAGE_QUEUE, WITHDRAW_TRIE_ROOT_SLOT,
@@ -514,6 +500,7 @@ impl<'a> CircuitInputBuilder {
         };
 
         let total_rws = state.block_ctx.rwc.0 - 1;
+        // 2 here means we need at least 2 StartOp in state circuit.
         let max_rws = if max_rws == 0 { total_rws + 2 } else { max_rws };
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
@@ -734,75 +721,6 @@ impl CircuitInputBuilder {
     }
 }
 
-/// Return all the keccak inputs used during the processing of the current
-/// block.
-pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
-    let mut keccak_inputs = Vec::new();
-    // Tx Circuit
-    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
-    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs)?);
-    log::debug!(
-        "keccak total len after txs: {}",
-        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
-    );
-    // Ecrecover
-    keccak_inputs.extend_from_slice(&keccak_inputs_sign_verify(
-        &block.precompile_events.get_ecrecover_events(),
-    ));
-    log::debug!(
-        "keccak total len after ecrecover: {}",
-        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
-    );
-    // PI circuit
-    keccak_inputs.extend(keccak_inputs_pi_circuit(
-        block.chain_id,
-        block.start_l1_queue_index,
-        block.prev_state_root,
-        block.withdraw_root,
-        &block.headers,
-        block.txs(),
-    ));
-    // Bytecode Circuit
-    for _bytecode in code_db.0.values() {
-        // keccak_inputs.push(bytecode.clone());
-    }
-    log::debug!(
-        "keccak total len after bytecodes: {}",
-        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
-    );
-    // EVM Circuit
-    keccak_inputs.extend_from_slice(&block.sha3_inputs);
-    log::debug!(
-        "keccak total len after opcodes: {}",
-        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
-    );
-
-    let inputs_len: usize = keccak_inputs.iter().map(|k| k.len()).sum();
-    let inputs_num = keccak_inputs.len();
-    let keccak_inputs: Vec<_> = keccak_inputs.into_iter().unique().collect();
-    let inputs_len2: usize = keccak_inputs.iter().map(|k| k.len()).sum();
-    let inputs_num2 = keccak_inputs.len();
-    log::debug!("keccak inputs after dedup: input num {inputs_num}->{inputs_num2}, input total len {inputs_len}->{inputs_len2}");
-
-    // MPT Circuit
-    // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
-    Ok(keccak_inputs)
-}
-
-/// Generate the keccak inputs required by the SignVerify Chip from the
-/// signature datas.
-pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
-    let mut inputs = Vec::new();
-    let dummy_sign_data = SignData::default();
-    for sig in sigs.iter().chain(iter::once(&dummy_sign_data)) {
-        let pk_le = pk_bytes_le(&sig.pk);
-        let pk_be = pk_bytes_swap_endianness(&pk_le);
-        inputs.push(pk_be.to_vec());
-        inputs.push(sig.msg.to_vec());
-    }
-    inputs
-}
-
 /// Get the tx hash of the dummy tx (nonce=0, gas=0, gas_price=0, to=0, value=0,
 /// data="")
 pub fn get_dummy_tx_hash() -> H256 {
@@ -816,145 +734,6 @@ pub fn get_dummy_tx_hash() -> H256 {
     );
 
     H256(tx_hash)
-}
-
-fn keccak_inputs_pi_circuit(
-    chain_id: u64,
-    start_l1_queue_index: u64,
-    prev_state_root: Word,
-    withdraw_trie_root: Word,
-    block_headers: &BTreeMap<u64, BlockHead>,
-    transactions: &[Transaction],
-) -> Vec<Vec<u8>> {
-    let mut total_l1_popped = start_l1_queue_index;
-    log::debug!(
-        "start_l1_queue_index in keccak_inputs: {}",
-        start_l1_queue_index
-    );
-    let l1transactions = transactions
-        .iter()
-        .filter(|&tx| tx.tx_type == TxType::L1Msg)
-        .collect::<Vec<&Transaction>>();
-    let data_bytes = iter::empty()
-        .chain(block_headers.iter().flat_map(|(&block_num, block)| {
-            let num_l2_txs = transactions
-                .iter()
-                .filter(|tx| !tx.tx_type.is_l1_msg() && tx.block_num == block_num)
-                .count() as u64;
-            let num_l1_msgs = transactions
-                .iter()
-                .filter(|tx| tx.tx_type.is_l1_msg() && tx.block_num == block_num)
-                // tx.nonce alias for queue_index for l1 msg tx
-                .map(|tx| tx.nonce)
-                .max()
-                .map_or(0, |max_queue_index| max_queue_index - total_l1_popped + 1);
-            total_l1_popped += num_l1_msgs;
-
-            let num_txs = (num_l2_txs + num_l1_msgs) as u16;
-            log::debug!(
-                "[block {}] total_l1_popped: {}, num_l1_msgs: {}, num_l2_txs: {}, num_txs: {}",
-                block_num,
-                total_l1_popped,
-                num_l1_msgs,
-                num_l2_txs,
-                num_txs,
-            );
-
-            iter::empty()
-                // Block Values
-                .chain(block.number.as_u64().to_be_bytes())
-                .chain(block.timestamp.as_u64().to_be_bytes())
-                .chain(block.base_fee.to_be_bytes())
-                .chain(block.gas_limit.to_be_bytes())
-                .chain(num_txs.to_be_bytes())
-        }))
-        // Tx Hashes
-        .chain(
-            l1transactions
-                .iter()
-                .flat_map(|&tx| tx.hash.to_fixed_bytes()),
-        )
-        .collect::<Vec<u8>>();
-    let data_hash = H256(keccak256(&data_bytes));
-    log::debug!(
-        "chunk data hash: {}",
-        hex::encode(data_hash.to_fixed_bytes())
-    );
-
-    let chunk_txbytes = transactions
-        .iter()
-        .filter(|&tx| tx.tx_type != TxType::L1Msg)
-        .flat_map(|tx| tx.rlp_bytes.clone())
-        .collect::<Vec<u8>>();
-    let chunk_txbytes_hash = H256(keccak256(chunk_txbytes));
-
-    let after_state_root = block_headers
-        .last_key_value()
-        .map(|(_, blk)| blk.eth_block.state_root)
-        .unwrap_or(H256(prev_state_root.to_be_bytes()));
-    let pi_bytes = iter::empty()
-        .chain(chain_id.to_be_bytes())
-        .chain(prev_state_root.to_be_bytes())
-        .chain(after_state_root.to_fixed_bytes())
-        .chain(withdraw_trie_root.to_be_bytes())
-        .chain(data_hash.to_fixed_bytes())
-        .chain(chunk_txbytes_hash.to_fixed_bytes())
-        .collect::<Vec<u8>>();
-
-    vec![data_bytes, pi_bytes]
-}
-
-/// Generate the keccak inputs required by the Tx Circuit from the transactions.
-pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<Vec<u8>>, Error> {
-    let mut inputs = Vec::new();
-
-    let hash_datas = txs
-        .iter()
-        .filter(|&tx| tx.tx_type == TxType::L1Msg)
-        .map(|tx| tx.rlp_bytes.clone())
-        .collect::<Vec<Vec<u8>>>();
-    let dummy_hash_data = {
-        // dummy tx is a legacy tx.
-        let (dummy_tx, dummy_sig) = get_dummy_tx();
-        dummy_tx.rlp_signed(&dummy_sig).to_vec()
-    };
-    inputs.extend_from_slice(&hash_datas);
-    inputs.push(dummy_hash_data);
-
-    let chunk_txbytes = txs
-        .iter()
-        .filter(|&tx| tx.tx_type != TxType::L1Msg)
-        .flat_map(|tx| tx.rlp_bytes.clone())
-        .collect::<Vec<u8>>();
-    inputs.push(chunk_txbytes);
-
-    let sign_datas: Vec<SignData> = txs
-        .iter()
-        .enumerate()
-        .filter(|(i, tx)| {
-            if !tx.tx_type.is_l1_msg() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
-                warn!(
-                    "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
-                    i
-                );
-                false
-            } else {
-                true
-            }
-        })
-        .map(|(_, tx)| {
-            if tx.tx_type.is_l1_msg() {
-                Ok(SignData::default())
-            } else {
-                tx.sign_data()
-            }
-        })
-        .try_collect()?;
-    // Keccak inputs from SignVerify Chip
-    let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
-    inputs.extend_from_slice(&sign_verify_inputs);
-
-    Ok(inputs)
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
@@ -983,542 +762,5 @@ pub fn get_call_memory_offset_length(
         Ok((0, 0))
     } else {
         Ok((offset.low_u64(), length.low_u64()))
-    }
-}
-
-type EthBlock = eth_types::Block<eth_types::Transaction>;
-
-/// Struct that wraps a GethClient and contains methods to perform all the steps
-/// necessary to generate the circuit inputs for a block by querying geth for
-/// the necessary information and using the CircuitInputBuilder.
-pub struct BuilderClient<P: JsonRpcClient> {
-    cli: GethClient<P>,
-    chain_id: u64,
-    circuits_params: CircuitsParams,
-}
-
-/// Build a partial StateDB from step 3
-pub fn build_state_code_db(
-    proofs: Vec<eth_types::EIP1186ProofResponse>,
-    codes: HashMap<Address, Vec<u8>>,
-) -> (StateDB, CodeDB) {
-    let mut sdb = StateDB::new();
-    for proof in proofs {
-        let mut storage = HashMap::new();
-        for storage_proof in proof.storage_proof {
-            storage.insert(storage_proof.key, storage_proof.value);
-        }
-        sdb.set_account(
-            &proof.address,
-            state_db::Account {
-                nonce: proof.nonce,
-                balance: proof.balance,
-                storage,
-                code_hash: proof.code_hash,
-                keccak_code_hash: proof.keccak_code_hash,
-                code_size: proof.code_size,
-            },
-        )
-    }
-
-    let mut code_db = CodeDB::new();
-    for (_address, code) in codes {
-        code_db.insert(code.clone());
-    }
-    (sdb, code_db)
-}
-
-impl<P: JsonRpcClient> BuilderClient<P> {
-    /// Create a new BuilderClient
-    pub async fn new(
-        client: GethClient<P>,
-        circuits_params: CircuitsParams,
-    ) -> Result<Self, Error> {
-        let chain_id = client.get_chain_id().await?;
-
-        Ok(Self {
-            cli: client,
-            chain_id,
-            circuits_params,
-        })
-    }
-
-    /// Step 1. Query geth for Block, Txs, TxExecTraces, history block hashes
-    /// and previous state root.
-    pub async fn get_block(
-        &self,
-        block_num: u64,
-    ) -> Result<(EthBlock, Vec<eth_types::GethExecTrace>, Vec<Word>, Word), Error> {
-        let eth_block = self.cli.get_block_by_number(block_num.into()).await?;
-        let geth_traces = self.cli.trace_block_by_number(block_num.into()).await?;
-
-        // fetch up to 256 blocks
-        let mut n_blocks = 0; // std::cmp::min(256, block_num as usize);
-        let mut next_hash = eth_block.parent_hash;
-        let mut prev_state_root: Option<Word> = None;
-        let mut history_hashes = vec![Word::default(); n_blocks];
-        while n_blocks > 0 {
-            n_blocks -= 1;
-
-            // TODO: consider replacing it with `eth_getHeaderByHash`, it's faster
-            let header = self.cli.get_block_by_hash(next_hash).await?;
-
-            // set the previous state root
-            if prev_state_root.is_none() {
-                prev_state_root = Some(header.state_root.to_word());
-            }
-
-            // latest block hash is the last item
-            let block_hash = header
-                .hash
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
-                .to_word();
-            history_hashes[n_blocks] = block_hash;
-
-            // continue
-            next_hash = header.parent_hash;
-        }
-
-        Ok((
-            eth_block,
-            geth_traces,
-            history_hashes,
-            prev_state_root.unwrap_or_default(),
-        ))
-    }
-
-    /// Step 2. Get State Accesses from TxExecTraces
-    pub async fn get_state_accesses(&self, eth_block: &EthBlock) -> Result<AccessSet, Error> {
-        let mut access_set = AccessSet::default();
-        access_set.add_account(
-            eth_block
-                .author
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-        );
-        let traces = self
-            .cli
-            .trace_block_prestate_by_hash(
-                eth_block
-                    .hash
-                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-            )
-            .await?;
-        for trace in traces.into_iter() {
-            access_set.extend_from_traces(&trace);
-        }
-
-        Ok(access_set)
-    }
-
-    /// Step 3. Query geth for all accounts, storage keys, and codes from
-    /// Accesses
-    pub async fn get_state(
-        &self,
-        block_num: u64,
-        access_set: AccessSet,
-    ) -> Result<
-        (
-            Vec<eth_types::EIP1186ProofResponse>,
-            HashMap<Address, Vec<u8>>,
-        ),
-        Error,
-    > {
-        let mut proofs = Vec::new();
-        for (address, key_set) in access_set.state {
-            let mut keys: Vec<Word> = key_set.iter().cloned().collect();
-            keys.sort();
-            let proof = self
-                .cli
-                .get_proof(address, keys, (block_num - 1).into())
-                .await
-                .unwrap();
-            proofs.push(proof);
-        }
-        let mut codes: HashMap<Address, Vec<u8>> = HashMap::new();
-        for address in access_set.code {
-            let code = self
-                .cli
-                .get_code(address, (block_num - 1).into())
-                .await
-                .unwrap();
-            codes.insert(address, code);
-        }
-        Ok((proofs, codes))
-    }
-
-    /// Yet-another Step 3. Build account state and codes from geth tracing
-    /// (of which has include the prestate tracing inside)
-    /// the account state is limited since proof is not included,
-    /// but it is enough to build the sdb/cdb
-    /// for a block, it would handle exec traces of every tx in sequence
-    #[allow(clippy::type_complexity)]
-    pub fn get_pre_state<'a>(
-        &self,
-        traces: impl Iterator<Item = &'a GethExecTrace>,
-    ) -> Result<
-        (
-            Vec<eth_types::EIP1186ProofResponse>,
-            HashMap<Address, Vec<u8>>,
-        ),
-        Error,
-    > {
-        let mut account_set =
-            HashMap::<Address, (eth_types::EIP1186ProofResponse, HashMap<Word, Word>)>::new();
-        let mut code_set = HashMap::new();
-
-        for trace in traces.map(|tr| tr.prestate.clone()) {
-            for (addr, prestate) in trace.into_iter() {
-                let (_, storages) = account_set.entry(addr).or_insert_with(|| {
-                    let code_size =
-                        Word::from(prestate.code.as_ref().map(|bt| bt.len()).unwrap_or(0));
-                    let (code_hash, keccak_code_hash) = if let Some(bt) = prestate.code {
-                        let h = CodeDB::hash(&bt);
-                        // only require for L2
-                        let keccak_h = if cfg!(feature = "scroll") {
-                            hash_code_keccak(&bt)
-                        } else {
-                            h
-                        };
-                        code_set.insert(addr, Vec::from(bt.as_ref()));
-                        (h, keccak_h)
-                    } else {
-                        (CodeDB::empty_code_hash(), *KECCAK_CODE_HASH_EMPTY)
-                    };
-
-                    (
-                        eth_types::EIP1186ProofResponse {
-                            address: addr,
-                            balance: prestate.balance.unwrap_or_default(),
-                            nonce: prestate.nonce.unwrap_or_default().into(),
-                            code_hash,
-                            keccak_code_hash,
-                            code_size,
-                            ..Default::default()
-                        },
-                        HashMap::new(),
-                    )
-                });
-
-                if let Some(stg) = prestate.storage {
-                    for (k, v) in stg {
-                        storages.entry(k).or_insert(v);
-                    }
-                }
-            }
-        }
-
-        Ok((
-            account_set
-                .into_iter()
-                .map(|(_, (mut acc_resp, storage_proofs))| {
-                    acc_resp.storage_proof = storage_proofs
-                        .into_iter()
-                        .map(|(key, value)| eth_types::StorageProof {
-                            key,
-                            value,
-                            ..Default::default()
-                        })
-                        .collect();
-                    acc_resp
-                })
-                .collect::<Vec<_>>(),
-            code_set,
-        ))
-    }
-
-    /// Yet-another Step 3-1. (hacking?) replenish the pre state proof
-    /// with coinbase account
-    /// since current the coibase is not touched in prestate tracing
-    pub async fn complete_prestate(
-        &self,
-        eth_block: &EthBlock,
-        mut proofs: Vec<eth_types::EIP1186ProofResponse>,
-    ) -> Result<Vec<eth_types::EIP1186ProofResponse>, Error> {
-        // a hacking? since the coinbase address is not touch in prestate
-        let coinbase_addr = eth_block
-            .author
-            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
-        let block_num = eth_block
-            .number
-            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
-        assert_ne!(
-            block_num.as_u64(),
-            0,
-            "is not expected to access genesis block"
-        );
-
-        if !proofs.iter().any(|pr| pr.address == coinbase_addr) {
-            let coinbase_proof = self
-                .cli
-                .get_proof(coinbase_addr, Vec::new(), (block_num - 1).into())
-                .await?;
-            proofs.push(coinbase_proof);
-        }
-        Ok(proofs)
-    }
-
-    /// Step 4. Build a partial StateDB from step 3
-    pub fn build_state_code_db(
-        proofs: Vec<eth_types::EIP1186ProofResponse>,
-        codes: HashMap<Address, Vec<u8>>,
-    ) -> (StateDB, CodeDB) {
-        build_state_code_db(proofs, codes)
-    }
-
-    /// Step 5. For each step in TxExecTraces, gen the associated ops and state
-    /// circuit inputs
-    pub fn gen_inputs_from_state(
-        &self,
-        sdb: StateDB,
-        code_db: CodeDB,
-        eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
-        history_hashes: Vec<Word>,
-        _prev_state_root: Word,
-    ) -> Result<CircuitInputBuilder, Error> {
-        let block = Block::new(
-            self.chain_id,
-            history_hashes,
-            eth_block,
-            self.circuits_params,
-        )?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, &block);
-        builder.handle_block(eth_block, geth_traces)?;
-        Ok(builder)
-    }
-
-    /// Step 5. For each step in TxExecTraces, gen the associated ops and state
-    /// circuit inputs
-    pub fn gen_inputs_from_state_multi(
-        &self,
-        sdb: StateDB,
-        code_db: CodeDB,
-        blocks_and_traces: &[(EthBlock, Vec<eth_types::GethExecTrace>)],
-    ) -> Result<CircuitInputBuilder, Error> {
-        let mut builder = CircuitInputBuilder::new_from_headers(
-            self.circuits_params,
-            sdb,
-            code_db,
-            Default::default(),
-        );
-        for (idx, (eth_block, geth_traces)) in blocks_and_traces.iter().enumerate() {
-            let is_last = idx == blocks_and_traces.len() - 1;
-            let header = BlockHead::new(self.chain_id, Default::default(), eth_block)?;
-            builder.block.headers.insert(header.number.as_u64(), header);
-            builder.handle_block_inner(eth_block, geth_traces, is_last, is_last)?;
-        }
-        Ok(builder)
-    }
-
-    /// Perform all the steps to generate the circuit inputs
-    pub async fn gen_inputs(
-        &self,
-        block_num: u64,
-    ) -> Result<
-        (
-            CircuitInputBuilder,
-            eth_types::Block<eth_types::Transaction>,
-        ),
-        Error,
-    > {
-        let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
-            self.get_block(block_num).await?;
-
-        let builder = if cfg!(feature = "retrace-tx") {
-            let trace_config = self
-                .get_trace_config(&eth_block, geth_traces.iter(), false)
-                .await?;
-
-            self.trace_to_builder(&eth_block, &trace_config)?
-        } else {
-            let (proofs, codes) = self.get_pre_state(geth_traces.iter())?;
-            let proofs = self.complete_prestate(&eth_block, proofs).await?;
-            let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
-            if eth_block.transactions.len() > self.circuits_params.max_txs {
-                log::error!(
-                    "max_txs too small: {} < {} for block {}",
-                    self.circuits_params.max_txs,
-                    eth_block.transactions.len(),
-                    eth_block.number.unwrap_or_default()
-                );
-                eth_block
-                    .transactions
-                    .truncate(self.circuits_params.max_txs);
-                geth_traces.truncate(self.circuits_params.max_txs);
-            }
-            self.gen_inputs_from_state(
-                state_db,
-                code_db,
-                &eth_block,
-                &geth_traces,
-                history_hashes,
-                prev_state_root,
-            )?
-        };
-        Ok((builder, eth_block))
-    }
-
-    /// Perform all the steps to generate the circuit inputs
-    pub async fn gen_inputs_multi_blocks(
-        &self,
-        block_num_begin: u64,
-        block_num_end: u64,
-    ) -> Result<CircuitInputBuilder, Error> {
-        let mut blocks_and_traces = Vec::new();
-        let mut access_set = AccessSet::default();
-        for block_num in block_num_begin..block_num_end {
-            let (eth_block, geth_traces, _, _) = self.get_block(block_num).await?;
-            let mut access_list = self.get_state_accesses(&eth_block).await?;
-            access_set.extend(&mut access_list);
-            blocks_and_traces.push((eth_block, geth_traces));
-        }
-        let (proofs, codes) = self.get_state(block_num_begin, access_set).await?;
-        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
-        let builder = self.gen_inputs_from_state_multi(state_db, code_db, &blocks_and_traces)?;
-        Ok(builder)
-    }
-
-    /// Perform all the steps to generate the circuit inputs
-    pub async fn gen_inputs_tx(&self, hash_str: &str) -> Result<CircuitInputBuilder, Error> {
-        let mut hash: [u8; 32] = [0; 32];
-        let hash_str = if &hash_str[0..2] == "0x" {
-            &hash_str[2..]
-        } else {
-            hash_str
-        };
-        decode_to_slice(hash_str, &mut hash).unwrap();
-        let tx_hash = H256::from(hash);
-
-        let mut tx: eth_types::Transaction = self.cli.get_tx_by_hash(tx_hash).await?;
-        tx.transaction_index = Some(0.into());
-        let geth_trace = if cfg!(feature = "rpc-legacy-tracer") {
-            self.cli.trace_tx_by_hash_legacy(tx_hash).await
-        } else {
-            self.cli.trace_tx_by_hash(tx_hash).await
-        }?;
-        let mut eth_block = self
-            .cli
-            .get_block_by_number(tx.block_number.unwrap().into())
-            .await?;
-
-        eth_block.transactions = vec![tx.clone()];
-
-        let builder = if cfg!(feature = "retrace-tx") {
-            let trace_config = self
-                .get_trace_config(&eth_block, iter::once(&geth_trace), true)
-                .await?;
-
-            self.trace_to_builder(&eth_block, &trace_config)?
-        } else {
-            let (proofs, codes) = self.get_pre_state(iter::once(&geth_trace))?;
-            let proofs = self.complete_prestate(&eth_block, proofs).await?;
-            let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
-            self.gen_inputs_from_state(
-                state_db,
-                code_db,
-                &eth_block,
-                &[geth_trace],
-                Default::default(),
-                Default::default(),
-            )?
-        };
-
-        Ok(builder)
-    }
-
-    async fn get_trace_config(
-        &self,
-        eth_block: &EthBlock,
-        geth_traces: impl Iterator<Item = &GethExecTrace>,
-        complete_prestate: bool,
-    ) -> Result<TraceConfig, Error> {
-        let (proofs, codes) = self.get_pre_state(geth_traces)?;
-        let proofs = if complete_prestate {
-            self.complete_prestate(eth_block, proofs).await?
-        } else {
-            proofs
-        };
-        Ok(TraceConfig {
-            chain_id: self.chain_id,
-            history_hashes: vec![eth_block.parent_hash.to_word()],
-            block_constants: BlockConstants {
-                coinbase: eth_block.author.unwrap(),
-                timestamp: eth_block.timestamp,
-                number: eth_block.number.unwrap(),
-                difficulty: eth_block.difficulty,
-                gas_limit: eth_block.gas_limit,
-                base_fee: eth_block.base_fee_per_gas.unwrap(),
-            },
-            accounts: proofs
-                .into_iter()
-                .map(|proof| {
-                    let acc = Account {
-                        address: proof.address,
-                        nonce: proof.nonce,
-                        balance: proof.balance,
-                        code: codes
-                            .get(&proof.address)
-                            .cloned()
-                            .unwrap_or_default()
-                            .into(),
-                        storage: proof
-                            .storage_proof
-                            .into_iter()
-                            .map(|proof| (proof.key, proof.value))
-                            .collect(),
-                    };
-                    (proof.address, acc)
-                })
-                .collect(),
-            transactions: eth_block
-                .transactions
-                .iter()
-                .map(geth_types::Transaction::from)
-                .collect(),
-            logger_config: Default::default(),
-            chain_config: None,
-            #[cfg(feature = "scroll")]
-            l1_queue_index: 0,
-        })
-    }
-
-    #[cfg(feature = "scroll")]
-    fn trace_to_builder(
-        &self,
-        _eth_block: &EthBlock,
-        trace_config: &TraceConfig,
-    ) -> Result<CircuitInputBuilder, Error> {
-        let block_trace = external_tracer::l2trace(trace_config)?;
-        let mut builder = CircuitInputBuilder::new_from_l2_trace(
-            self.circuits_params,
-            block_trace,
-            false,
-            false,
-        )?;
-        builder
-            .finalize_building()
-            .expect("could not finalize building block");
-        Ok(builder)
-    }
-
-    #[cfg(not(feature = "scroll"))]
-    fn trace_to_builder(
-        &self,
-        eth_block: &EthBlock,
-        trace_config: &TraceConfig,
-    ) -> Result<CircuitInputBuilder, Error> {
-        let geth_traces = external_tracer::trace(trace_config)?;
-        let geth_data = geth_types::GethData {
-            chain_id: trace_config.chain_id,
-            history_hashes: trace_config.history_hashes.clone(),
-            geth_traces: geth_traces.clone(),
-            accounts: trace_config.accounts.values().cloned().collect(),
-            eth_block: eth_block.clone(),
-        };
-        let block_data =
-            crate::mock::BlockData::new_from_geth_data_with_params(geth_data, self.circuits_params);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder.handle_block(eth_block, &geth_traces)?;
-        Ok(builder)
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    Block, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
+    EthBlock, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
     ToBigEndian, Transaction, Word, H256,
 };
 use ethers_core::types::{
@@ -270,9 +270,6 @@ pub struct StorageTrace {
     /// additional deletion proofs
     pub deletion_proofs: Vec<Bytes>,
 }
-
-/// ...
-pub type EthBlock = Block<Transaction>;
 
 /// extension of `GethExecTrace`, with compatible serialize form
 #[derive(Deserialize, Serialize, Debug, Clone)]

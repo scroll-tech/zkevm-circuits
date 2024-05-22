@@ -2,7 +2,6 @@
 //! A chunk is a list of blocks.
 use eth_types::{base64, ToBigEndian, H256};
 use ethers_core::utils::keccak256;
-use halo2_proofs::halo2curves::bn256::Fr;
 use serde::{Deserialize, Serialize};
 use std::iter;
 use zkevm_circuits::witness::Block;
@@ -36,7 +35,7 @@ pub struct ChunkHash {
 
 impl ChunkHash {
     /// Construct by a witness block.
-    pub fn from_witness_block(block: &Block<Fr>, is_padding: bool) -> Self {
+    pub fn from_witness_block(block: &Block, is_padding: bool) -> Self {
         // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>
 
         let mut total_l1_popped = block.start_l1_queue_index;

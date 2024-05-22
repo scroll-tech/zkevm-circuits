@@ -9,15 +9,10 @@ use eth_types::{
     state_db::{CodeDB, StateDB},
     ToWord, H256,
 };
-use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use mpt_zktrie::state::{ZkTrieHash, ZktrieState};
 use std::{sync::LazyLock, time::Instant};
-use zkevm_circuits::{
-    evm_circuit::witness::{block_apply_mpt_state, Block},
-    util::SubCircuit,
-    witness::block_convert,
-};
+use zkevm_circuits::{evm_circuit::witness::Block, util::SubCircuit, witness::block_convert};
 
 static CHAIN_ID: LazyLock<u64> = LazyLock::new(|| read_env_var("CHAIN_ID", 53077));
 static AUTO_TRUNCATE: LazyLock<bool> = LazyLock::new(|| read_env_var("AUTO_TRUNCATE", false));
@@ -71,7 +66,7 @@ pub fn calculate_row_usage_of_trace(
 }
 
 pub fn calculate_row_usage_of_witness_block(
-    witness_block: &Block<Fr>,
+    witness_block: &Block,
 ) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
     let mut rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block_subcircuits(
         witness_block,
@@ -240,7 +235,7 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
     Ok(())
 }
 
-pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block<Fr>> {
+pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block> {
     let chain_id = block_trace.chain_id;
     if *CHAIN_ID != chain_id {
         bail!(
@@ -266,7 +261,7 @@ pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block<Fr>
     block_traces_to_witness_block_with_updated_state(vec![], &mut builder)
 }
 
-pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block<Fr>> {
+pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block> {
     validite_block_traces(&block_traces)?;
     let block_num = block_traces.len();
     let total_tx_num = block_traces
@@ -321,10 +316,10 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
 pub fn block_traces_to_witness_block_with_updated_state(
     block_traces: Vec<BlockTrace>,
     builder: &mut CircuitInputBuilder,
-) -> Result<Block<Fr>> {
+) -> Result<Block> {
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
-        let block = block_convert(&builder.block, &builder.code_db)?;
+        let block = block_convert(&builder.block.clone(), &builder.code_db)?;
         log::debug!("block convert time {:?}", t.elapsed());
         let rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block(&block);
         log::debug!(
@@ -381,10 +376,10 @@ pub fn block_traces_to_witness_block_with_updated_state(
     if let Some(state) = &mut builder.mpt_init_state {
         if *state.root() != [0u8; 32] {
             log::debug!("block_apply_mpt_state");
-            block_apply_mpt_state(&mut witness_block, state);
+            witness_block.apply_mpt_updates(state);
             log::debug!("block_apply_mpt_state done");
         };
-        let root_after = witness_block.state_root.unwrap_or_default();
+        let root_after = witness_block.post_state_root().to_word();
 
         log::debug!(
             "finish replay trie updates, root {}, root after {:#x?}",

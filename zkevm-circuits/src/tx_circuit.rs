@@ -12,7 +12,6 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::TxCircuitTester as TestTxCircuit;
 
-use crate::util::Field;
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     // sig_circuit::SigCircuit,
@@ -45,7 +44,7 @@ use crate::{
         Transaction,
     },
 };
-use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
+use crate::{util::Field, witness::keccak::keccak_inputs_sign_verify};
 use eth_types::{
     geth_types::{
         access_list_size, TxType,
@@ -4339,7 +4338,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         9
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block) -> Self {
         for tx in &block.txs {
             if tx.chain_id != block.chain_id {
                 panic!(
@@ -4358,7 +4357,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         // Since each call data byte at least takes one row in RLP circuit.
         // For L2 tx, each call data byte takes two row in RLP circuit.
         assert!(block.circuits_params.max_calldata < block.circuits_params.max_rlp_rows);

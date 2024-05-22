@@ -134,10 +134,6 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // We conclude that the number of meaningful entries in the rw_table
         // is total_rws.
 
-        // cb.step_last(|cb| {
-        //     // TODO: Handle reward to coinbase.  Depends on spec:
-        //     // https://github.com/privacy-scaling-explorations/zkevm-specs/issues/290
-        // });
         cb.not_step_last(|cb| {
             // Propagate rw_counter and call_id all the way down.
             cb.require_step_state_transition(StepStateTransition {
@@ -163,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

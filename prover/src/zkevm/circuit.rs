@@ -77,7 +77,7 @@ pub trait TargetCircuit {
 
     /// Build the inner circuit and the instances from the witness block
     fn from_witness_block(
-        witness_block: &witness::Block<Fr>,
+        witness_block: &witness::Block,
     ) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
     where
         Self: Sized;
@@ -92,7 +92,7 @@ pub trait TargetCircuit {
         Ok(Self::estimate_rows_from_witness_block(&witness_block))
     }
 
-    fn estimate_rows_from_witness_block(_witness_block: &witness::Block<Fr>) -> usize {
+    fn estimate_rows_from_witness_block(_witness_block: &witness::Block) -> usize {
         0
     }
 

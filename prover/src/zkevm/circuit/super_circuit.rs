@@ -16,7 +16,7 @@ impl TargetCircuit for SuperCircuit {
     }
 
     fn from_witness_block(
-        witness_block: &witness::Block<Fr>,
+        witness_block: &witness::Block,
     ) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
     where
         Self: Sized,
@@ -32,7 +32,7 @@ impl TargetCircuit for SuperCircuit {
         Ok((inner, instance))
     }
 
-    fn estimate_rows_from_witness_block(witness_block: &witness::Block<Fr>) -> usize {
+    fn estimate_rows_from_witness_block(witness_block: &witness::Block) -> usize {
         Self::Inner::min_num_rows_block(witness_block).1
     }
 

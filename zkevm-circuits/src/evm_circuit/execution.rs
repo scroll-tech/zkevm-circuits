@@ -242,7 +242,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1001,7 +1001,7 @@ impl<F: Field> ExecutionConfig<F> {
         }
     }
 
-    pub fn get_num_rows_required_no_padding(&self, block: &Block<F>) -> usize {
+    pub fn get_num_rows_required_no_padding(&self, block: &Block) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
@@ -1010,7 +1010,7 @@ impl<F: Field> ExecutionConfig<F> {
         }
         num_rows
     }
-    pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
+    pub fn get_num_rows_required(&self, block: &Block) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
         let evm_rows = block.circuits_params.max_evm_rows;
@@ -1073,7 +1073,7 @@ impl<F: Field> ExecutionConfig<F> {
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        block: &Block,
         challenges: &Challenges<Value<F>>,
     ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
         // If the height is not 1, padding to fixed height will be impossible
@@ -1451,7 +1451,7 @@ impl<F: Field> ExecutionConfig<F> {
         region: &mut Region<'_, F>,
         offset_begin: usize,
         offset_end: usize,
-        block: &Block<F>,
+        block: &Block,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1490,7 +1490,7 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1534,7 +1534,7 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1781,7 +1781,7 @@ impl<F: Field> ExecutionConfig<F> {
         step: &ExecStep,
         call: &Call,
         transaction: &Transaction,
-        block: &Block<F>,
+        block: &Block,
         challenges: &Challenges<Value<F>>,
     ) {
         let mut evm_randomness = F::zero();

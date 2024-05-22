@@ -267,7 +267,7 @@ impl<F: Field> RestoreContextGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         call: &Call,
         step: &ExecStep,
         rw_offset: usize,
@@ -1554,7 +1554,7 @@ impl<F: Field> CommonErrorGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         call: &Call,
         step: &ExecStep,
         rw_offset: usize,
@@ -1573,7 +1573,7 @@ impl<F: Field> CommonErrorGadget<F> {
 
     pub(crate) fn get_push_rlc(
         region: &CachedRegion<'_, '_, F>,
-        block: &Block<F>,
+        block: &Block,
         call: &Call,
         step: &ExecStep,
     ) -> Value<F> {

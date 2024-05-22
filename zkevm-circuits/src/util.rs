@@ -219,7 +219,7 @@ pub trait SubCircuit<F: Field> {
     }
 
     /// Create a new SubCircuit from a witness Block
-    fn new_from_block(block: &witness::Block<F>) -> Self;
+    fn new_from_block(block: &witness::Block) -> Self;
 
     /// Returns the instance columns required for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
@@ -238,7 +238,7 @@ pub trait SubCircuit<F: Field> {
 
     /// Return the minimum number of rows required to prove the block.
     /// Row numbers without/with padding are both returned.
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize);
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize);
 }
 
 /// SubCircuit configuration

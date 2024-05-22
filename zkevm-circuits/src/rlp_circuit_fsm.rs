@@ -3275,7 +3275,7 @@ impl<F: Field, RLP> Default for RlpCircuit<F, RLP> {
 impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
     type Config = RlpCircuitConfig<F>;
 
-    fn new_from_block(block: &Block<F>) -> Self {
+    fn new_from_block(block: &Block) -> Self {
         let max_txs = block.circuits_params.max_txs;
         let size = block.circuits_params.max_rlp_rows;
         debug_assert!(block.txs.len() <= max_txs);
@@ -3306,7 +3306,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
         config.assign(layouter, &self.txs, self.size, challenges)
     }
 
-    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &Block) -> (usize, usize) {
         let challenges: Challenges<Value<F>> =
             Challenges::mock(Value::unknown(), Value::unknown(), Value::unknown());
         let sm_rows: usize = block

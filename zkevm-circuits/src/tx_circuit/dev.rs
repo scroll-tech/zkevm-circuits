@@ -131,7 +131,7 @@ impl<F: Field> TxCircuitTester<F> {
 impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
     type Config = TxCircuitTesterConfig<F>;
 
-    fn new_from_block(block: &crate::witness::Block<F>) -> Self {
+    fn new_from_block(block: &crate::witness::Block) -> Self {
         let txs = block.txs.clone();
         let max_txs = block.circuits_params.max_txs;
         let chain_id = block.chain_id;
@@ -149,9 +149,9 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
         unimplemented!("not needed")
     }
 
-    fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &crate::witness::Block) -> (usize, usize) {
         // TODO
-        SigCircuit::min_num_rows_block(block)
+        SigCircuit::<F>::min_num_rows_block(block)
     }
 }
 

@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
