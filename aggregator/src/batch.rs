@@ -7,23 +7,22 @@ use ethers_core::utils::keccak256;
 use crate::{
     blob::{BlobAssignments, BlobData},
     chunk::ChunkHash,
-    constants::MAX_AGG_SNARKS,
 };
 
 #[derive(Default, Debug, Clone)]
-/// A batch is a set of MAX_AGG_SNARKS num of continuous chunks
+/// A batch is a set of N_SNARKS num of continuous chunks
 /// - the first k chunks are from real traces
-/// - the last (#MAX_AGG_SNARKS-k) chunks are from empty traces
+/// - the last (#N_SNARKS-k) chunks are from empty traces
 /// A BatchHash consists of 2 hashes.
 /// - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
 ///   chunk_k-1.withdraw_root || batch_data_hash)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
-pub struct BatchHash {
+pub struct BatchHash<const N_SNARKS: usize> {
     /// Chain ID of the network.
     pub(crate) chain_id: u64,
     /// chunks with padding.
     /// - the first [0..number_of_valid_chunks) are real ones
-    /// - the last [number_of_valid_chunks, MAX_AGG_SNARKS) are padding
+    /// - the last [number_of_valid_chunks, N_SNARKS) are padding
     pub(crate) chunks_with_padding: Vec<ChunkHash>,
     /// The batch data hash:
     /// - keccak256([chunk.hash for chunk in batch])
@@ -40,14 +39,13 @@ pub struct BatchHash {
     pub(crate) versioned_hash: H256,
 }
 
-impl BatchHash {
-    /// Build Batch hash from an ordered list of #MAX_AGG_SNARKS of chunks.
-    #[allow(dead_code)]
+impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
+    /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
     pub fn construct(chunks_with_padding: &[ChunkHash]) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
-            MAX_AGG_SNARKS,
-            "input chunk slice does not match MAX_AGG_SNARKS"
+            N_SNARKS,
+            "input chunk slice does not match N_SNARKS"
         );
 
         let number_of_valid_chunks = match chunks_with_padding
@@ -56,7 +54,7 @@ impl BatchHash {
             .find(|(_index, chunk)| chunk.is_padding)
         {
             Some((index, _)) => index,
-            None => MAX_AGG_SNARKS,
+            None => N_SNARKS,
         };
 
         assert_ne!(
@@ -74,7 +72,7 @@ impl BatchHash {
         // sanity checks
         // ========================
         // todo: return errors instead
-        for i in 0..MAX_AGG_SNARKS - 1 {
+        for i in 0..N_SNARKS - 1 {
             assert_eq!(
                 chunks_with_padding[i].chain_id,
                 chunks_with_padding[i + 1].chain_id,
@@ -118,7 +116,7 @@ impl BatchHash {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
-        let blob_data = BlobData::new(number_of_valid_chunks, chunks_with_padding);
+        let blob_data = BlobData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
         let blob_assignments = BlobAssignments::from(&blob_data);
         let versioned_hash = blob_data.get_versioned_hash();
 
@@ -136,12 +134,8 @@ impl BatchHash {
         let preimage = [
             chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
             chunks_with_padding[0].prev_state_root.as_bytes(),
-            chunks_with_padding[MAX_AGG_SNARKS - 1]
-                .post_state_root
-                .as_bytes(),
-            chunks_with_padding[MAX_AGG_SNARKS - 1]
-                .withdraw_root
-                .as_bytes(),
+            chunks_with_padding[N_SNARKS - 1].post_state_root.as_bytes(),
+            chunks_with_padding[N_SNARKS - 1].withdraw_root.as_bytes(),
             batch_data_hash.as_slice(),
             blob_assignments.challenge.to_be_bytes().as_ref(),
             blob_assignments.evaluation.to_be_bytes().as_ref(),
@@ -174,14 +168,14 @@ impl BatchHash {
     }
 
     /// Extract all the hash inputs that will ever be used.
-    /// There are MAX_AGG_SNARKS + 2 hashes.
+    /// There are N_SNARKS + 2 hashes.
     ///
     /// orders:
     /// - batch_public_input_hash
-    /// - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
+    /// - chunk\[i\].piHash for i in \[0, N_SNARKS)
     /// - batch_data_hash_preimage
     /// - preimage for blob metadata
-    /// - chunk\[i\].flattened_l2_signed_data for i in \[0, MAX_AGG_SNARKS)
+    /// - chunk\[i\].flattened_l2_signed_data for i in \[0, N_SNARKS)
     /// - preimage for challenge digest
     pub(crate) fn extract_hash_preimages(&self) -> Vec<Vec<u8>> {
         let mut res = vec![];
@@ -200,10 +194,10 @@ impl BatchHash {
         let batch_public_input_hash_preimage = [
             self.chain_id.to_be_bytes().as_ref(),
             self.chunks_with_padding[0].prev_state_root.as_bytes(),
-            self.chunks_with_padding[MAX_AGG_SNARKS - 1]
+            self.chunks_with_padding[N_SNARKS - 1]
                 .post_state_root
                 .as_bytes(),
-            self.chunks_with_padding[MAX_AGG_SNARKS - 1]
+            self.chunks_with_padding[N_SNARKS - 1]
                 .withdraw_root
                 .as_bytes(),
             self.data_hash.as_bytes(),
@@ -214,7 +208,7 @@ impl BatchHash {
         .concat();
         res.push(batch_public_input_hash_preimage);
 
-        // compute piHash for each chunk for i in [0..MAX_AGG_SNARKS)
+        // compute piHash for each chunk for i in [0..N_SNARKS)
         // chunk[i].piHash =
         // keccak(
         //     chain id ||
