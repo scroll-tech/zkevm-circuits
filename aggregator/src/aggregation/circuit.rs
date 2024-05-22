@@ -28,7 +28,7 @@ use zkevm_circuits::util::Challenges;
 
 use crate::{
     batch::BatchHash,
-    constants::{ACC_LEN, DIGEST_LEN, MAX_AGG_SNARKS},
+    constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
     AssignedBarycentricEvaluationConfig, ConfigParams,
@@ -38,10 +38,10 @@ use super::AggregationConfig;
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
 #[derive(Clone)]
-pub struct AggregationCircuit {
+pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
-    // it is padded already so it will have a fixed length of MAX_AGG_SNARKS
+    // it is padded already so it will have a fixed length of N_SNARKS
     pub snarks_with_padding: Vec<SnarkWitness>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
@@ -51,15 +51,15 @@ pub struct AggregationCircuit {
     pub as_proof: Value<Vec<u8>>,
     // batch hash circuit for which the snarks are generated
     // the chunks in this batch are also padded already
-    pub batch_hash: BatchHash,
+    pub batch_hash: BatchHash<N_SNARKS>,
 }
 
-impl AggregationCircuit {
+impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
     pub fn new(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
-        batch_hash: BatchHash,
+        batch_hash: BatchHash<N_SNARKS>,
     ) -> Result<Self, snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
@@ -118,8 +118,8 @@ impl AggregationCircuit {
     }
 }
 
-impl Circuit<Fr> for AggregationCircuit {
-    type Config = (AggregationConfig, Challenges);
+impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
+    type Config = (AggregationConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
         unimplemented!()
@@ -281,7 +281,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 },
             )?;
 
-            assert_eq!(snark_inputs.len(), MAX_AGG_SNARKS * DIGEST_LEN);
+            assert_eq!(snark_inputs.len(), N_SNARKS * DIGEST_LEN);
             (accumulator_instances, snark_inputs, barycentric)
         };
         end_timer!(timer);
@@ -293,7 +293,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let assigned_batch_hash = {
+        let assigned_blobs = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -302,7 +302,7 @@ impl Circuit<Fr> for AggregationCircuit {
             let timer = start_timer!(|| "extract hash");
             // orders:
             // - batch_public_input_hash
-            // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
+            // - chunk\[i\].piHash for i in \[0, N_SNARKS)
             // - batch_data_hash_preimage
             // - preimage for blob metadata
             // - preimage of chunk data digest (only for valid chunks)
@@ -310,7 +310,7 @@ impl Circuit<Fr> for AggregationCircuit {
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                4 + MAX_AGG_SNARKS + self.batch_hash.number_of_valid_chunks,
+                4 + N_SNARKS + self.batch_hash.number_of_valid_chunks,
                 "error extracting preimages"
             );
             end_timer!(timer);
@@ -322,36 +322,32 @@ impl Circuit<Fr> for AggregationCircuit {
                 .iter()
                 .map(|chunk| !chunk.is_padding)
                 .collect::<Vec<_>>();
-            let assigned_batch_hash = assign_batch_hashes(
-                &config,
+            let assigned_blobs = assign_batch_hashes::<N_SNARKS>(
+                &config.keccak_circuit_config,
+                &config.rlc_config,
                 &mut layouter,
                 challenges,
                 &chunks_are_valid,
+                self.batch_hash.number_of_valid_chunks,
                 &preimages,
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
 
             end_timer!(timer);
 
-            assigned_batch_hash
+            assigned_blobs
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
-            parse_hash_digest_cells(&assigned_batch_hash.hash_output);
+            parse_hash_digest_cells::<N_SNARKS>(&assigned_blobs.hash_output);
 
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
         // ==============================================
         for (i, chunk) in chunk_pi_hash_digests.iter().enumerate() {
             let hash = self.batch_hash.chunks_with_padding[i].public_input_hash();
-            for j in 0..4 {
-                for k in 0..8 {
-                    log::trace!(
-                        "pi {:02x} {:?}",
-                        hash[j * 8 + k],
-                        chunk[8 * (3 - j) + k].value()
-                    );
-                }
+            for j in 0..DIGEST_LEN {
+                log::trace!("pi {:02x} {:?}", hash[j], chunk[j].value());
             }
         }
 
@@ -369,29 +365,23 @@ impl Circuit<Fr> for AggregationCircuit {
                     return Ok(());
                 }
 
-                for i in 0..MAX_AGG_SNARKS {
-                    for j in 0..4 {
-                        for k in 0..8 {
-                            let mut t1 = Fr::default();
-                            let mut t2 = Fr::default();
-                            chunk_pi_hash_digests[i][j * 8 + k].value().map(|x| t1 = *x);
-                            snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k]
-                                .value()
-                                .map(|x| t2 = *x);
-                            log::trace!(
-                                "{}-th snark: {:?} {:?}",
-                                i,
-                                chunk_pi_hash_digests[i][j * 8 + k].value(),
-                                snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].value()
-                            );
+                for i in 0..N_SNARKS {
+                    for j in 0..DIGEST_LEN {
+                        let mut t1 = Fr::default();
+                        let mut t2 = Fr::default();
+                        chunk_pi_hash_digests[i][j].value().map(|x| t1 = *x);
+                        snark_inputs[i * DIGEST_LEN + j].value().map(|x| t2 = *x);
+                        log::trace!(
+                            "{}-th snark: {:?} {:?}",
+                            i,
+                            chunk_pi_hash_digests[i][j].value(),
+                            snark_inputs[i * DIGEST_LEN + j].value()
+                        );
 
-                            region.constrain_equal(
-                                // in the keccak table, the input and output data have different
-                                // endianess
-                                chunk_pi_hash_digests[i][j * 8 + k].cell(),
-                                snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].cell(),
-                            )?;
-                        }
+                        region.constrain_equal(
+                            chunk_pi_hash_digests[i][j].cell(),
+                            snark_inputs[i * DIGEST_LEN + j].cell(),
+                        )?;
                     }
                 }
 
@@ -412,20 +402,18 @@ impl Circuit<Fr> for AggregationCircuit {
         }
 
         // public input hash
-        for i in 0..4 {
-            for j in 0..8 {
-                log::trace!(
-                    "pi (circuit vs real): {:?} {:?}",
-                    batch_pi_hash_digest[i * 8 + j].value(),
-                    self.instances()[0][(3 - i) * 8 + j + ACC_LEN]
-                );
+        for (index, batch_pi_hash_digest_cell) in batch_pi_hash_digest.iter().enumerate() {
+            log::trace!(
+                "pi (circuit vs real): {:?} {:?}",
+                batch_pi_hash_digest_cell.value(),
+                self.instances()[0][index + ACC_LEN]
+            );
 
-                layouter.constrain_instance(
-                    batch_pi_hash_digest[i * 8 + j].cell(),
-                    config.instance,
-                    (3 - i) * 8 + j + ACC_LEN,
-                )?;
-            }
+            layouter.constrain_instance(
+                batch_pi_hash_digest_cell.cell(),
+                config.instance,
+                index + ACC_LEN,
+            )?;
         }
 
         // blob data config
@@ -439,7 +427,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
-                &assigned_batch_hash.chunks_are_padding,
+                &assigned_blobs.chunks_are_padding,
                 &blob_data,
                 barycentric_assignments,
             )?;
@@ -448,42 +436,46 @@ impl Circuit<Fr> for AggregationCircuit {
                 || "blob checks",
                 |mut region| -> Result<(), Error> {
                     region.constrain_equal(
-                        assigned_batch_hash.num_valid_snarks.cell(),
+                        assigned_blobs.num_valid_snarks.cell(),
                         blob_data_exports.num_valid_chunks.cell(),
                     )?;
 
                     for (chunk_data_digest, expected_chunk_data_digest) in blob_data_exports
                         .chunk_data_digests
                         .iter()
-                        .zip_eq(assigned_batch_hash.blob.chunk_tx_data_digests.iter())
+                        .zip_eq(assigned_blobs.blob.chunk_tx_data_digests.iter())
                     {
                         for (c, ec) in chunk_data_digest
                             .iter()
                             .zip_eq(expected_chunk_data_digest.iter())
                         {
+                            log::trace!("blob chunk tx: {:?} {:?}", c.value(), ec.value());
                             region.constrain_equal(c.cell(), ec.cell())?;
                         }
                     }
 
                     for (c, ec) in evaluation_le
                         .iter()
-                        .zip_eq(assigned_batch_hash.blob.y.iter().rev())
+                        .zip_eq(assigned_blobs.blob.y.iter().rev())
                     {
+                        log::trace!("blob y: {:?} {:?}", c.value(), ec.value());
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
                     for (c, ec) in challenge_le
                         .iter()
-                        .zip_eq(assigned_batch_hash.blob.z.iter().rev())
+                        .zip_eq(assigned_blobs.blob.z.iter().rev())
                     {
+                        log::trace!("blob z: {:?} {:?}", c.value(), ec.value());
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
                     for (c, ec) in blob_data_exports
                         .versioned_hash
                         .iter()
-                        .zip_eq(assigned_batch_hash.blob.versioned_hash.iter())
+                        .zip_eq(assigned_blobs.blob.versioned_hash.iter())
                     {
+                        log::trace!("blob version hash: {:?} {:?}", c.value(), ec.value());
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
@@ -498,7 +490,7 @@ impl Circuit<Fr> for AggregationCircuit {
     }
 }
 
-impl CircuitExt<Fr> for AggregationCircuit {
+impl<const N_SNARKS: usize> CircuitExt<Fr> for AggregationCircuit<N_SNARKS> {
     fn num_instance(&self) -> Vec<usize> {
         // 12 elements from accumulator
         // 32 elements from batch's public_input_hash
@@ -525,6 +517,7 @@ impl CircuitExt<Fr> for AggregationCircuit {
             .chain(
                 [
                     config.0.rlc_config.selector,
+                    config.0.rlc_config.lookup_gate_selector,
                     config.0.rlc_config.enable_challenge1,
                     config.0.rlc_config.enable_challenge2,
                     config.0.blob_data_config.data_selector,

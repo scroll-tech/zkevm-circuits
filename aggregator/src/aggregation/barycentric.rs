@@ -349,7 +349,10 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blob::{BlobData, KZG_TRUSTED_SETUP};
+    use crate::{
+        blob::{BlobData, KZG_TRUSTED_SETUP},
+        MAX_AGG_SNARKS,
+    };
     use c_kzg::{Blob as RethBlob, KzgProof};
     use std::collections::BTreeSet;
 
@@ -386,7 +389,7 @@ mod tests {
 
     #[test]
     fn interpolate_matches_reth_implementation() {
-        let blob = BlobData::from(&vec![
+        let blob = BlobData::<MAX_AGG_SNARKS>::from(&vec![
             vec![30; 56],
             vec![200; 100],
             vec![0; 340],

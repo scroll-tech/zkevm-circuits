@@ -88,6 +88,8 @@ pub enum AdviceColumn {
     // NonEmptyWitness is the BatchedIsZero chip witness that contains the
     // inverse of the non-zero value if any in [committed_value, value]
     NonEmptyWitness,
+    StateRoot,
+    FieldTag,
 }
 
 impl AdviceColumn {
@@ -118,6 +120,8 @@ impl AdviceColumn {
             Self::InitialValue => config.initial_value,
             Self::IsZero => config.is_non_exist.is_zero,
             Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
+            Self::StateRoot => config.state_root,
+            Self::FieldTag => config.rw_table.field_tag,
         }
     }
 }

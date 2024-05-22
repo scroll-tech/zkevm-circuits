@@ -4,7 +4,7 @@ use crate::{
     io::{load_snark, write_snark},
     utils::gen_rng,
 };
-use aggregator::{AggregationCircuit, BatchHash, ChunkHash};
+use aggregator::{AggregationCircuit, BatchHash, ChunkHash, MAX_AGG_SNARKS};
 use anyhow::{anyhow, Result};
 use rand::Rng;
 use snark_verifier_sdk::Snark;
@@ -23,7 +23,7 @@ impl Prover {
 
         let batch_hash = BatchHash::construct(chunk_hashes);
 
-        let circuit =
+        let circuit: AggregationCircuit<MAX_AGG_SNARKS> =
             AggregationCircuit::new(self.params(degree), previous_snarks, &mut rng, batch_hash)
                 .map_err(|err| anyhow!("Failed to construct aggregation circuit: {err:?}"))?;
 
