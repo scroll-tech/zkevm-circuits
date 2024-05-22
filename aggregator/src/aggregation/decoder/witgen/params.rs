@@ -36,6 +36,10 @@ pub fn init_zstd_encoder(
             zstd::zstd_safe::ParamSwitch::Disable,
         ))
         .expect("infallible");
+    // with a hack in zstd we can set window log <= 17 with single segment kept
+    encoder
+        .set_parameter(zstd::stream::raw::CParameter::WindowLog(17))
+        .expect("infallible");
     // set target block size to fit within a single block.
     encoder
         .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(
