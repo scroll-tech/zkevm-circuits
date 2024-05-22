@@ -487,3 +487,55 @@ fn serial_test_super_circuit_precompile_sha256() {
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_eip_1559_tx() {
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 256;
+
+    let block_trace = eip1559_2930::test_block_1559_trace();
+    let circuits_params = eip1559_2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+        block_trace,
+        circuits_params,
+    );
+}
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_eip_2930_tx_no_accesslist() {
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 256;
+
+    // tx with no access list data
+    let block_trace = eip1559_2930::test_block_2930_trace(false);
+    let circuits_params = eip1559_2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+        block_trace,
+        circuits_params,
+    );
+}
+
+// TODO: disable this test for rlp issue now, will enable it after rlp issue fixed.
+// issue tracking here https://github.com/scroll-tech/zkevm-circuits/issues/1138
+// #[ignore]
+// #[cfg(feature = "scroll")]
+// #[test]
+// fn serial_test_super_circuit_eip_2930_tx_accesslist() {
+//     const MAX_TXS: usize = 1;
+//     const MAX_CALLDATA: usize = 256;
+
+//     // tx with access list data
+//     let block_trace = eip1559_2930::test_block_2930_trace(true);
+//     let circuits_params = eip1559_2930::test_circuits_params(MAX_TXS, MAX_CALLDATA);
+
+//     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+//         block_trace,
+//         circuits_params,
+//     );
+// }

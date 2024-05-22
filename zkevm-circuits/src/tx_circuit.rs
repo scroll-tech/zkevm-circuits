@@ -2883,8 +2883,12 @@ impl<F: Field> TxCircuitConfig<F> {
             let sig_s = meta.query_advice(tx_table.value, Rotation(3));
             let sv_address = meta.query_advice(sv_address, Rotation::cur());
 
+            // include eip1559 and eip2930 type tx, sig_v is 0 or 1.
+
             let v = is_eip155(meta) * (sig_v.expr() - 2.expr() * chain_id - 35.expr())
-                + is_pre_eip155(meta) * (sig_v.expr() - 27.expr());
+                + is_pre_eip155(meta) * (sig_v.expr() - 27.expr())
+                + meta.query_advice(is_eip1559, Rotation::cur()) * sig_v.expr()
+                + meta.query_advice(is_eip2930, Rotation::cur()) * sig_v.expr();
 
             let input_exprs = vec![
                 1.expr(),     // q_enable = true

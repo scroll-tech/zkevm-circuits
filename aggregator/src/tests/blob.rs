@@ -2,10 +2,7 @@ use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
     },
-    blob::{
-        BlobAssignments, BlobData, N_BYTES_U256, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA,
-        N_ROWS_METADATA,
-    },
+    blob::{BlobAssignments, BlobData, N_BYTES_U256},
     param::ConfigParams,
     MAX_AGG_SNARKS,
 };
@@ -26,7 +23,7 @@ use zkevm_circuits::{
 
 #[derive(Default)]
 struct BlobCircuit {
-    data: BlobData,
+    data: BlobData<MAX_AGG_SNARKS>,
 
     overwrite_num_valid_chunks: bool,
     overwrite_challenge_digest: Option<usize>,
@@ -46,7 +43,7 @@ struct BlobConfig {
     keccak_table: KeccakTable,
 
     rlc: RlcConfig,
-    blob_data: BlobDataConfig,
+    blob_data: BlobDataConfig<MAX_AGG_SNARKS>,
     barycentric: BarycentricEvaluationConfig,
 }
 
@@ -63,7 +60,7 @@ impl Circuit<Fr> for BlobCircuit {
         let challenges = Challenges::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
 
-        let rlc = RlcConfig::configure(meta, challenges);
+        let rlc = RlcConfig::configure(meta, &keccak_table, challenges);
 
         let parameters = ConfigParams::aggregation_param();
         let range = RangeConfig::<Fr>::configure(
@@ -201,7 +198,8 @@ impl Circuit<Fr> for BlobCircuit {
                 if let Some(i) = self.overwrite_challenge_digest {
                     increment_cell(
                         &mut region,
-                        &assigned_rows[N_ROWS_BLOB_DATA_CONFIG - N_BYTES_U256 + i].byte,
+                        &assigned_rows[BlobData::<MAX_AGG_SNARKS>::n_rows() - N_BYTES_U256 + i]
+                            .byte,
                     )?;
                 }
                 if let Some((i, j)) = self.overwrite_chunk_data_digests {
@@ -229,7 +227,7 @@ fn increment_cell(
     )
 }
 
-fn check_data(data: BlobData) -> Result<(), Vec<VerifyFailure>> {
+fn check_data(data: BlobData<MAX_AGG_SNARKS>) -> Result<(), Vec<VerifyFailure>> {
     let circuit = BlobCircuit {
         data,
         ..Default::default()
@@ -246,7 +244,7 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 #[test]
 fn blob_circuit_completeness() {
     // single chunk in batch, but the chunk has a size of N_ROWS_DATA
-    let full_blob = vec![vec![123; N_ROWS_DATA]];
+    let full_blob = vec![vec![123; BlobData::<MAX_AGG_SNARKS>::n_rows_data()]];
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
     let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
@@ -282,7 +280,7 @@ fn blob_circuit_completeness() {
     }
 }
 
-fn generic_blob_data() -> BlobData {
+fn generic_blob_data() -> BlobData<MAX_AGG_SNARKS> {
     BlobData::from(&vec![
         vec![3, 100, 24, 30],
         vec![],
@@ -364,10 +362,10 @@ fn overwrite_chunk_data_digest_byte() {
 const OVERWRITE_ROWS: [usize; 6] = [
     0,
     10,
-    N_ROWS_METADATA - 1,
-    N_ROWS_METADATA,
-    N_ROWS_METADATA + 100,
-    N_ROWS_METADATA + N_ROWS_DATA - 1,
+    BlobData::<MAX_AGG_SNARKS>::n_rows_metadata() - 1,
+    BlobData::<MAX_AGG_SNARKS>::n_rows_metadata(),
+    BlobData::<MAX_AGG_SNARKS>::n_rows_metadata() + 100,
+    BlobData::<MAX_AGG_SNARKS>::n_rows_metadata() + BlobData::<MAX_AGG_SNARKS>::n_rows_data() - 1,
 ];
 
 #[test]

@@ -42,9 +42,6 @@ impl Circuit<Fr> for DynamicHashCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let challenges = Challenges::construct(meta);
 
-        // RLC configuration
-        let rlc_config = RlcConfig::configure(meta, challenges);
-
         // hash config
         // hash configuration for aggregation circuit
         let keccak_circuit_config = {
@@ -58,6 +55,11 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
             KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
         };
+
+        // RLC configuration
+        let rlc_config =
+            RlcConfig::configure(meta, &keccak_circuit_config.keccak_table, challenges);
+
         // enable equality for the data RLC column
         meta.enable_equality(keccak_circuit_config.keccak_table.input_rlc);
 

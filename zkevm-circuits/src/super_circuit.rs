@@ -49,6 +49,8 @@
 //!   - [x] Bytecode Circuit
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
+#[cfg(feature = "scroll")]
+pub(crate) mod eip1559_2930;
 pub(crate) mod precompile_block_trace;
 #[cfg(any(feature = "test", test))]
 pub(crate) mod test;
