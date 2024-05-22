@@ -396,6 +396,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         rlp_decoding_table: RlpDecodingTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
+        log::debug!("{:?}", rlp_decoding_table);
         let (tx_id, format) = (rlp_table.tx_id, rlp_table.format);
         let tag_length = rlp_table.tag_length;
         let q_enabled = rlp_table.q_enable;
@@ -2399,7 +2400,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             let enable = select::expr(
                 sum::expr([
                     meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::next()),
-                    is_padding_in_dt.expr(Rotation::next())(meta),
+                    is_next_end(meta),
                 ]),
                 0.expr(),
                 meta.query_advice(is_pop_op_lookup, Rotation::cur()),
