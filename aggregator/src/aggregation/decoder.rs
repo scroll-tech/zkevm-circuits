@@ -4981,8 +4981,7 @@ mod tests {
             );
 
             assert_eq!(
-                std::str::from_utf8(&recovered_bytes),
-                std::str::from_utf8(&self.raw),
+                recovered_bytes, self.raw,
                 "witgen recovered bytes do not match original raw bytes",
             );
 

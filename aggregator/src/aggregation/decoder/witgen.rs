@@ -1355,7 +1355,10 @@ fn process_sequences<F: Field>(
                 let wrap_by = match to_bit_idx {
                     15 => 8,
                     16..=23 => 16,
-                    v => unreachable!("unexpected bitstring-length={:?}", v),
+                    v => unreachable!(
+                        "unexpected bit_index_end={:?} in (table={:?}, update_f?={:?}) (bit_index_start={:?}, bitstring_len={:?})",
+                        v, table_kind, (current_decoding_state >= 3), from_bit_idx, to_bit_idx - from_bit_idx + 1,
+                    ),
                 };
                 witness_rows.push(ZstdWitnessRow {
                     state: ZstdState {
@@ -1391,7 +1394,7 @@ fn process_sequences<F: Field>(
                         bit_end_idx: to_bit_idx - wrap_by,
                         bit_value: 0,
                         is_zero_bit_read: false,
-                        is_seq_init: false,
+                        is_seq_init: is_init,
                         seq_idx,
                         states: last_states,
                         symbols: last_symbols,
