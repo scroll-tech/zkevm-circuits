@@ -87,8 +87,12 @@ pub struct DecoderConfig<const L: usize, const R: usize> {
     pow2_table: Pow2Table<20>,
     /// Helper table for decoding the regenerated size from LiteralsHeader.
     literals_header_table: LiteralsHeaderTable,
-    // /// Helper table for decoding bitstreams.
-    bitstring_table: BitstringTable,
+    /// Helper table for decoding bitstreams that span over 1 byte.
+    bitstring_table_1: BitstringTable<1>,
+    /// Helper table for decoding bitstreams that span over 2 bytes.
+    bitstring_table_2: BitstringTable<2>,
+    /// Helper table for decoding bitstreams that span over 3 bytes.
+    bitstring_table_3: BitstringTable<3>,
     /// Helper table for decoding FSE tables.
     fse_table: FseTable<L, R>,
     /// Helper table for sequences as instructions.
@@ -595,6 +599,14 @@ impl BitstreamDecoder {
         not::expr(spans_one_byte) * lt2
     }
 
+    /// A bistring spans 2 bytes if the 8 <= bit_index_end <= 15.
+    fn spans_two_bytes(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
+        let spans_one_byte = self.spans_one_byte(meta, at);
+        let lhs = meta.query_advice(self.bit_index_end, at);
+        let (lt2, eq2) = self.bit_index_end_cmp_15.expr_at(meta, at, lhs, 15.expr());
+        not::expr(spans_one_byte) * (lt2 + eq2)
+    }
+
     /// A bitstring spans 2 bytes and is byte-aligned:
     /// - bit_index_end == 15.
     fn aligned_two_bytes(&self, meta: &mut VirtualCells<Fr>, at: Rotation) -> Expression<Fr> {
@@ -996,7 +1008,9 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         );
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, q_enable, range8, range16);
-        let bitstring_table = BitstringTable::configure(meta, q_enable, range_block_len);
+        let bitstring_table_1 = BitstringTable::configure(meta, q_enable, range_block_len);
+        let bitstring_table_2 = BitstringTable::configure(meta, q_enable, range_block_len);
+        let bitstring_table_3 = BitstringTable::configure(meta, q_enable, range_block_len);
         let fse_table = FseTable::configure(
             meta,
             q_enable,
@@ -1071,7 +1085,9 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             range_block_len,
             pow2_table,
             literals_header_table,
-            bitstring_table,
+            bitstring_table_1,
+            bitstring_table_2,
+            bitstring_table_3,
             fse_table,
 
             sequence_instruction_table,
@@ -4034,23 +4050,123 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         });
 
         meta.lookup_any(
-            "DecoderConfig: Bitstream Decoder (bitstring start)",
+            "DecoderConfig: Bitstream Decoder (bitstring start: bit_index_end <= 7)",
             |meta| {
                 let condition = and::expr([
                     not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
                     not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    config
+                        .bitstream_decoder
+                        .spans_one_byte(meta, Rotation::cur()),
                     sum::expr([
                         meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                         meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
                     ]),
                 ]);
 
-                let (byte_idx0, byte_idx1, byte_idx2) = (
+                let byte_idx = meta.query_advice(config.byte_idx, Rotation(0));
+                let byte = meta.query_advice(config.byte, Rotation(0));
+
+                let (bit_index_start, _bit_index_end, bitstring_value) = (
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+
+                [
+                    byte_idx,
+                    0.expr(), // only 1 byte
+                    0.expr(), // only 1 byte
+                    byte,
+                    0.expr(), // only 1 byte
+                    0.expr(), // only 1 byte
+                    bitstring_value,
+                    1.expr(), // bitstring_len at start
+                    bit_index_start,
+                    1.expr(), // from_start
+                    1.expr(), // until_end
+                    is_reverse,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.bitstring_table_1.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+        meta.lookup_any(
+            "DecoderConfig: Bitstream Decoder (bitstring start: bit_index_end <= 15)",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    config
+                        .bitstream_decoder
+                        .spans_two_bytes(meta, Rotation::cur()),
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    ]),
+                ]);
+
+                let (byte_idx_1, byte_idx_2) = (
+                    meta.query_advice(config.byte_idx, Rotation(0)),
+                    meta.query_advice(config.byte_idx, Rotation(1)),
+                );
+                let (byte_1, byte_2) = (
+                    meta.query_advice(config.byte, Rotation(0)),
+                    meta.query_advice(config.byte, Rotation(1)),
+                );
+                let (bit_index_start, _bit_index_end, bitstring_value) = (
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+
+                [
+                    byte_idx_1,
+                    byte_idx_2,
+                    0.expr(), // only 2 bytes
+                    byte_1,
+                    byte_2,
+                    0.expr(), // only 2 bytes
+                    bitstring_value,
+                    1.expr(), // bitstring_len at start
+                    bit_index_start,
+                    1.expr(), // from_start
+                    1.expr(), // until_end
+                    is_reverse,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.bitstring_table_2.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+        meta.lookup_any(
+            "DecoderConfig: Bitstream Decoder (bitstring start: bit_index_end <= 23)",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    config
+                        .bitstream_decoder
+                        .spans_three_bytes(meta, Rotation::cur()),
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    ]),
+                ]);
+
+                let (byte_idx_1, byte_idx_2, byte_idx_3) = (
                     meta.query_advice(config.byte_idx, Rotation(0)),
                     meta.query_advice(config.byte_idx, Rotation(1)),
                     meta.query_advice(config.byte_idx, Rotation(2)),
                 );
-                let (byte0, byte1, byte2) = (
+                let (byte_1, byte_2, byte_3) = (
                     meta.query_advice(config.byte, Rotation(0)),
                     meta.query_advice(config.byte, Rotation(1)),
                     meta.query_advice(config.byte, Rotation(2)),
@@ -4063,12 +4179,12 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
 
                 [
-                    byte_idx0,
-                    byte_idx1,
-                    byte_idx2,
-                    byte0,
-                    byte1,
-                    byte2,
+                    byte_idx_1,
+                    byte_idx_2,
+                    byte_idx_3,
+                    byte_1,
+                    byte_2,
+                    byte_3,
                     bitstring_value,
                     1.expr(), // bitstring_len at start
                     bit_index_start,
@@ -4078,59 +4194,164 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     0.expr(), // is_padding
                 ]
                 .into_iter()
-                .zip_eq(config.bitstring_table.table_exprs(meta))
+                .zip_eq(config.bitstring_table_3.table_exprs(meta))
                 .map(|(arg, table)| (condition.expr() * arg, table))
                 .collect()
             },
         );
 
-        meta.lookup_any("DecoderConfig: Bitstream Decoder (bitstring end)", |meta| {
-            let condition = and::expr([
-                not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
-                not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
-                sum::expr([
-                    meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                ]),
-            ]);
+        meta.lookup_any(
+            "DecoderConfig: Bitstream Decoder (bitstring end: bit_index_end <= 7)",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    config
+                        .bitstream_decoder
+                        .spans_one_byte(meta, Rotation::cur()),
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    ]),
+                ]);
 
-            let (byte_idx0, byte_idx1, byte_idx2) = (
-                meta.query_advice(config.byte_idx, Rotation(0)),
-                meta.query_advice(config.byte_idx, Rotation(1)),
-                meta.query_advice(config.byte_idx, Rotation(2)),
-            );
-            let (byte0, byte1, byte2) = (
-                meta.query_advice(config.byte, Rotation(0)),
-                meta.query_advice(config.byte, Rotation(1)),
-                meta.query_advice(config.byte, Rotation(2)),
-            );
-            let (bit_index_start, bit_index_end, bitstring_value) = (
-                meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
-                meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
-                meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
-            );
-            let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+                let byte_idx = meta.query_advice(config.byte_idx, Rotation(0));
+                let byte = meta.query_advice(config.byte, Rotation(0));
 
-            [
-                byte_idx0,
-                byte_idx1,
-                byte_idx2,
-                byte0,
-                byte1,
-                byte2,
-                bitstring_value,
-                bit_index_end.expr() - bit_index_start + 1.expr(), // bitstring_len at end
-                bit_index_end,
-                1.expr(), // from_start
-                1.expr(), // until_end
-                is_reverse,
-                0.expr(), // is_padding
-            ]
-            .into_iter()
-            .zip_eq(config.bitstring_table.table_exprs(meta))
-            .map(|(arg, table)| (condition.expr() * arg, table))
-            .collect()
-        });
+                let (bit_index_start, bit_index_end, bitstring_value) = (
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+
+                [
+                    byte_idx,
+                    0.expr(), // only 1 byte
+                    0.expr(), // only 1 byte
+                    byte,
+                    0.expr(), // only 1 byte
+                    0.expr(), // only 1 byte
+                    bitstring_value,
+                    bit_index_end.expr() - bit_index_start + 1.expr(), // bitstring_len at end
+                    bit_index_end,
+                    1.expr(), // from_start
+                    1.expr(), // until_end
+                    is_reverse,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.bitstring_table_1.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+        meta.lookup_any(
+            "DecoderConfig: Bitstream Decoder (bitstring end: bit_index_end <= 15)",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    config
+                        .bitstream_decoder
+                        .spans_two_bytes(meta, Rotation::cur()),
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    ]),
+                ]);
+
+                let (byte_idx_1, byte_idx_2) = (
+                    meta.query_advice(config.byte_idx, Rotation(0)),
+                    meta.query_advice(config.byte_idx, Rotation(1)),
+                );
+                let (byte_1, byte_2) = (
+                    meta.query_advice(config.byte, Rotation(0)),
+                    meta.query_advice(config.byte, Rotation(1)),
+                );
+
+                let (bit_index_start, bit_index_end, bitstring_value) = (
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+
+                [
+                    byte_idx_1,
+                    byte_idx_2,
+                    0.expr(), // only 2 bytes
+                    byte_1,
+                    byte_2,
+                    0.expr(), // only 2 bytes
+                    bitstring_value,
+                    bit_index_end.expr() - bit_index_start + 1.expr(), // bitstring_len at end
+                    bit_index_end,
+                    1.expr(), // from_start
+                    1.expr(), // until_end
+                    is_reverse,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.bitstring_table_2.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
+        meta.lookup_any(
+            "DecoderConfig: Bitstream Decoder (bitstring end: bit_index_end <= 23)",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(config.bitstream_decoder.is_nil(meta, Rotation::cur())),
+                    not::expr(config.bitstream_decoder.is_nb0(meta, Rotation::cur())),
+                    config
+                        .bitstream_decoder
+                        .spans_three_bytes(meta, Rotation::cur()),
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    ]),
+                ]);
+
+                let (byte_idx_1, byte_idx_2, byte_idx_3) = (
+                    meta.query_advice(config.byte_idx, Rotation(0)),
+                    meta.query_advice(config.byte_idx, Rotation(1)),
+                    meta.query_advice(config.byte_idx, Rotation(2)),
+                );
+                let (byte_1, byte_2, byte_3) = (
+                    meta.query_advice(config.byte, Rotation(0)),
+                    meta.query_advice(config.byte, Rotation(1)),
+                    meta.query_advice(config.byte, Rotation(2)),
+                );
+
+                let (bit_index_start, bit_index_end, bitstring_value) = (
+                    meta.query_advice(config.bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(config.bitstream_decoder.bitstring_value, Rotation::cur()),
+                );
+                let is_reverse = meta.query_advice(config.tag_config.is_reverse, Rotation::cur());
+
+                [
+                    byte_idx_1,
+                    byte_idx_2,
+                    byte_idx_3,
+                    byte_1,
+                    byte_2,
+                    byte_3,
+                    bitstring_value,
+                    bit_index_end.expr() - bit_index_start + 1.expr(), // bitstring_len at end
+                    bit_index_end,
+                    1.expr(), // from_start
+                    1.expr(), // until_end
+                    is_reverse,
+                    0.expr(), // is_padding
+                ]
+                .into_iter()
+                .zip_eq(config.bitstring_table_3.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -4170,8 +4391,27 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         //////// Assign FSE and Bitstream Accumulation  /////////
         /////////////////////////////////////////////////////////
         self.fse_table.assign(layouter, fse_aux_tables, k)?;
-        self.bitstring_table
-            .assign(layouter, &block_info_arr, &witness_rows, k)?;
+        self.bitstring_table_1.assign(
+            layouter,
+            &block_info_arr,
+            &witness_rows,
+            k,
+            self.unusable_rows(),
+        )?;
+        self.bitstring_table_2.assign(
+            layouter,
+            &block_info_arr,
+            &witness_rows,
+            k,
+            self.unusable_rows(),
+        )?;
+        self.bitstring_table_3.assign(
+            layouter,
+            &block_info_arr,
+            &witness_rows,
+            k,
+            self.unusable_rows(),
+        )?;
 
         /////////////////////////////////////////
         ///// Assign LiteralHeaderTable  ////////
@@ -5199,6 +5439,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "multi_blob: heavy"]
     fn test_decoder_config_large_multi_block() -> Result<(), std::io::Error> {
         let mut batch_files = fs::read_dir("./data/test_blobs/multi")?
             .map(|entry| entry.map(|e| e.path()))
