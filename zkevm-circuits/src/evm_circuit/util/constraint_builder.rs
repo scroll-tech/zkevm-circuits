@@ -569,6 +569,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         constrain!(memory_word_size);
         constrain!(reversible_write_counter);
         constrain!(log_id);
+        constrain!(end_tx);
     }
 
     // Fixed
