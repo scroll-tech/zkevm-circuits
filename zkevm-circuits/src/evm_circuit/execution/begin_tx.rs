@@ -510,6 +510,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //  - Callee Account Nonce
                 reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta() + 1.expr()),
                 log_id: To(0.expr()),
+                end_tx: To(1.expr()),
                 ..StepStateTransition::new_context()
             });
 
