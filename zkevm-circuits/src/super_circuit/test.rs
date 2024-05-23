@@ -584,7 +584,7 @@ fn serial_test_super_circuit_eip_2930_tx_no_accesslist() {
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_eip_2930_tx_accesslist() {
-    const MAX_TXS: usize = 1;
+    const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 256;
 
     // tx with access list data

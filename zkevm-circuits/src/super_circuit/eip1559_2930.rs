@@ -85,7 +85,7 @@ pub(crate) fn test_block_2930_trace(has_access_list: bool) -> BlockTrace {
         },
     ]);
 
-    TestContext::<2, 1>::new(
+    TestContext::<2, 2>::new(
         None,
         |accs| {
             accs[0].address(addr_b).balance(eth(20));
@@ -93,12 +93,20 @@ pub(crate) fn test_block_2930_trace(has_access_list: bool) -> BlockTrace {
         },
         |mut txs, _accs| {
             txs[0]
-                .from(wallet_a)
+                .from(wallet_a.clone())
                 .to(addr_b)
                 .gas_price(gwei(2))
                 .gas(1_000_000.into())
                 .value(eth(2))
                 .transaction_type(1); // Set tx type to EIP-2930.
+
+            txs[1]
+                .from(wallet_a)
+                .to(addr_b)
+                .gas_price(gwei(2))
+                .gas(100_000.into())
+                .value(eth(2))
+                .input("gift".to_string().into_bytes().into());
 
             if has_access_list {
                 txs[0].access_list(test_access_list);
