@@ -42,6 +42,7 @@ pub enum ExecutionState {
     EndTx,
     EndInnerBlock,
     EndBlock,
+    Padding,
     // Opcode successful cases
     STOP,
     ADD_SUB,     // ADD, SUB

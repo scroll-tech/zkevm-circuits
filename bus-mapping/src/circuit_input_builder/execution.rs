@@ -153,6 +153,8 @@ pub enum ExecState {
     EndTx,
     /// Virtual step End Block
     EndBlock,
+    /// Virtual step Padding
+    Padding,
 }
 
 impl ExecState {
