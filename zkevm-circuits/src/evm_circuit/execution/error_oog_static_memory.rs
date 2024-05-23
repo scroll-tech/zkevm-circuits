@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
+            common_gadget::{CommonErrorGadget, RestoreContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
@@ -31,8 +31,7 @@ pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
@@ -43,7 +42,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
     // Support other OOG due to pure memory including MSTORE, MSTORE8 and MLOAD
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
         cb.stack_pop(memory_address.offset_rlc());
@@ -89,36 +87,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             1.expr(),
         );
 
-        // Current call must fail.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        let rw_counter_end_of_reversion = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(3.expr() + cb.curr.state.reversible_write_counter.expr()),
-                ..StepStateTransition::any()
-            });
-        });
-
-        let restore_context = cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 3.expr());
 
         Self {
             opcode,
@@ -127,8 +96,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             insufficient_gas,
             is_mload,
             is_mstore8,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -188,12 +156,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             F::from(OpcodeId::MLOAD.constant_gas_cost().0 + memory_expansion_cost),
         )?;
 
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-        self.restore_context
+        self.common_error_gadget
             .assign(region, offset, block, call, step, 3)?;
 
         Ok(())
