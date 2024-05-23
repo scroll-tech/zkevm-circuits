@@ -264,7 +264,12 @@ impl BatchDataConfig {
                     * is_padding_curr.expr()
                     * (boundary_count_curr - boundary_count_prev),
                 // bytes rlc is accumulated appropriately
-                is_data.expr() * (bytes_rlc_prev * r + byte - bytes_rlc_curr),
+                is_data.expr()
+                    * is_padding_curr.expr()
+                    * (bytes_rlc_curr.expr() - bytes_rlc_prev.expr()),
+                is_data.expr()
+                    * (1.expr() - is_padding_curr.expr())
+                    * (bytes_rlc_prev * r + byte - bytes_rlc_curr),
             ]
         });
 
@@ -425,8 +430,10 @@ impl BatchDataConfig {
         let mut count = 0u64;
         let mut bytes_rlc_acc = Value::known(Fr::zero());
         for (i, row) in rows.iter().enumerate() {
-            bytes_rlc_acc = bytes_rlc_acc * challenge_value.keccak_input()
-                + Value::known(Fr::from(row.byte as u64));
+            if !row.is_padding {
+                bytes_rlc_acc = bytes_rlc_acc * challenge_value.keccak_input()
+                    + Value::known(Fr::from(row.byte as u64));
+            }
             let byte = region.assign_advice(
                 || "byte",
                 self.byte,

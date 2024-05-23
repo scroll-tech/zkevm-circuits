@@ -116,7 +116,7 @@ impl AggregationConfig {
         let u8_table = U8Table::construct(meta);
         let range_table = RangeTable::construct(meta);
         let challenges_expr = challenges.exprs(meta);
-        let blob_data_config = BlobDataConfig::configure(meta, u8_table);
+        let blob_data_config = BlobDataConfig::configure(meta, &challenges_expr, u8_table);
         let batch_data_config = BatchDataConfig::configure(
             meta,
             &challenges_expr,

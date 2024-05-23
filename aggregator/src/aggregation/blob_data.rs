@@ -1,10 +1,11 @@
 use std::io::Write;
 
+use gadgets::util::Expr;
 use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::Fr,
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -28,8 +29,19 @@ use crate::{
 /// fact the zstd encoded form of the raw batch data represented in BatchDataConfig.
 #[derive(Clone, Debug)]
 pub struct BlobDataConfig {
+    /// Selector to mark the first row in the layout, enabled at offset=0.
+    q_first: Selector,
+    /// Whether the row is enabled or not. We need exactly N_BLOB_BYTES rows, enabled from offset=1
+    /// to offset=N_BLOB_BYTES.
+    q_enabled: Selector,
     /// The byte value at this row.
     byte: Column<Advice>,
+    /// Whether or not this is a padded row. This can be the case if not all bytes in the blob
+    /// (4096 * 31) could be filled. Padded bytes must be 0 and bytes_rlc must continue while in
+    /// the padded region.
+    is_padding: Column<Advice>,
+    /// running RLC of bytes seen so far. It remains unchanged once padded territory starts.
+    bytes_rlc: Column<Advice>,
 }
 
 pub struct AssignedBlobDataExport {
@@ -37,16 +49,70 @@ pub struct AssignedBlobDataExport {
 }
 
 impl BlobDataConfig {
-    pub fn configure(meta: &mut ConstraintSystem<Fr>, u8_table: U8Table) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<Fr>,
+        challenges: &Challenges<Expression<Fr>>,
+        u8_table: U8Table,
+    ) -> Self {
         let config = Self {
+            q_enabled: meta.selector(),
+            q_first: meta.complex_selector(),
             byte: meta.advice_column(),
+            is_padding: meta.advice_column(),
+            bytes_rlc: meta.advice_column_in(SecondPhase),
         };
 
         meta.enable_equality(config.byte);
+        meta.enable_equality(config.bytes_rlc);
 
         meta.lookup("BlobDataConfig (0 < byte < 256)", |meta| {
             let byte_value = meta.query_advice(config.byte, Rotation::cur());
             vec![(byte_value, u8_table.into())]
+        });
+
+        meta.create_gate("BlobDataConfig: first row", |meta| {
+            let is_first = meta.query_selector(config.q_first);
+
+            let byte = meta.query_advice(config.byte, Rotation::cur());
+            let bytes_rlc = meta.query_advice(config.bytes_rlc, Rotation::cur());
+            let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
+
+            vec![
+                is_first.expr() * byte,
+                is_first.expr() * bytes_rlc,
+                is_first.expr() * is_padding_next,
+            ]
+        });
+
+        meta.create_gate("BlobDataConfig: main gate", |meta| {
+            let is_enabled = meta.query_selector(config.q_enabled);
+
+            let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
+            let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
+            let delta = is_padding_curr.expr() - is_padding_prev.expr();
+
+            let byte = meta.query_advice(config.byte, Rotation::cur());
+
+            let bytes_rlc_curr = meta.query_advice(config.bytes_rlc, Rotation::cur());
+            let bytes_rlc_prev = meta.query_advice(config.bytes_rlc, Rotation::prev());
+
+            vec![
+                // if is_padding: byte == 0
+                is_enabled.expr() * is_padding_curr.expr() * byte.expr(),
+                // is_padding is boolean
+                is_enabled.expr() * is_padding_curr.expr() * (1.expr() - is_padding_curr.expr()),
+                // is_padding transitions from 0 -> 1 only once
+                is_enabled.expr() * delta.expr() * (1.expr() - delta.expr()),
+                // bytes_rlc updates in the non-padded territory
+                is_enabled.expr()
+                    * (1.expr() - is_padding_curr.expr())
+                    * (bytes_rlc_prev.expr() * challenges.keccak_input() + byte.expr()
+                        - bytes_rlc_curr.expr()),
+                // bytes_rlc remains unchanged in padded territory
+                is_enabled.expr()
+                    * is_padding_curr.expr()
+                    * (bytes_rlc_curr.expr() - bytes_rlc_prev.expr()),
+            ]
         });
 
         assert!(meta.degree() <= 4);
@@ -62,9 +128,9 @@ impl BlobDataConfig {
         batch_data: &BatchData,
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
-        let assigned_bytes = layouter.assign_region(
+        let (assigned_bytes, bytes_rlc) = layouter.assign_region(
             || "BlobData bytes",
-            |mut region| self.assign_rows(&mut region, batch_data),
+            |mut region| self.assign_rows(&mut region, batch_data, &challenge_value),
         )?;
 
         layouter.assign_region(
@@ -72,20 +138,23 @@ impl BlobDataConfig {
             |mut region| {
                 self.assign_internal_checks(
                     &mut region,
-                    challenge_value,
                     rlc_config,
                     barycentric_assignments,
                     &assigned_bytes,
                 )
             },
-        )
+        )?;
+
+        Ok(AssignedBlobDataExport { bytes_rlc })
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn assign_rows(
         &self,
         region: &mut Region<Fr>,
         batch_data: &BatchData,
-    ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+        challenges: &Challenges<Value<Fr>>,
+    ) -> Result<(Vec<AssignedCell<Fr, Fr>>, AssignedCell<Fr, Fr>), Error> {
         let batch_bytes = batch_data.get_batch_data_bytes();
         let blob_bytes = {
             let mut encoder = init_zstd_encoder(None);
@@ -99,32 +168,74 @@ impl BlobDataConfig {
         };
         assert!(blob_bytes.len() <= N_BLOB_BYTES, "too many blob bytes");
 
+        self.q_first.enable(region, 0)?;
+        for i in 1..=N_BLOB_BYTES {
+            self.q_enabled.enable(region, i)?;
+        }
+
+        for col in [self.byte, self.bytes_rlc, self.is_padding] {
+            region.assign_advice(
+                || "advice at q_first=1",
+                col,
+                0,
+                || Value::known(Fr::zero()),
+            )?;
+        }
+
         let mut assigned_bytes = Vec::with_capacity(N_BLOB_BYTES);
-        for (i, &byte) in blob_bytes
-            .iter()
-            .chain(std::iter::repeat(&0))
-            .take(N_BLOB_BYTES)
-            .enumerate()
-        {
+        let mut bytes_rlc = Value::known(Fr::zero());
+        let mut last_bytes_rlc = None;
+        for (i, &byte) in blob_bytes.iter().enumerate() {
+            let byte_value = Value::known(Fr::from(byte as u64));
+            bytes_rlc = bytes_rlc * challenges.keccak_input() + byte_value;
             assigned_bytes.push(region.assign_advice(
                 || "byte",
                 self.byte,
-                i,
-                || Value::known(Fr::from(byte as u64)),
+                i + 1,
+                || byte_value,
             )?);
+            region.assign_advice(
+                || "is_padding",
+                self.is_padding,
+                i + 1,
+                || Value::known(Fr::zero()),
+            )?;
+            last_bytes_rlc =
+                Some(region.assign_advice(|| "bytes_rlc", self.bytes_rlc, i + 1, || bytes_rlc)?);
         }
 
-        Ok(assigned_bytes)
+        let last_bytes_rlc = last_bytes_rlc.expect("at least 1 byte guaranteed");
+        for i in blob_bytes.len()..N_BLOB_BYTES {
+            assigned_bytes.push(region.assign_advice(
+                || "byte",
+                self.byte,
+                i + 1,
+                || Value::known(Fr::zero()),
+            )?);
+            region.assign_advice(
+                || "is_padding",
+                self.is_padding,
+                i + 1,
+                || Value::known(Fr::one()),
+            )?;
+            region.assign_advice(
+                || "bytes_rlc",
+                self.bytes_rlc,
+                i + 1,
+                || last_bytes_rlc.value().cloned(),
+            )?;
+        }
+
+        Ok((assigned_bytes, last_bytes_rlc))
     }
 
     pub fn assign_internal_checks(
         &self,
         region: &mut Region<Fr>,
-        challenge_value: Challenges<Value<Fr>>,
         rlc_config: &RlcConfig,
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_bytes: &[AssignedCell<Fr, Fr>],
-    ) -> Result<AssignedBlobDataExport, Error> {
+    ) -> Result<(), Error> {
         rlc_config.init(region)?;
         let mut rlc_config_offset = 0;
 
@@ -150,10 +261,6 @@ impl BlobDataConfig {
             }
             pows_of_256
         };
-
-        // read randomness challenges for RLC computations.
-        let r_keccak =
-            rlc_config.read_challenge1(region, challenge_value, &mut rlc_config_offset)?;
 
         ////////////////////////////////////////////////////////////////////////////////
         //////////////////////////////////// LINKING ///////////////////////////////////
@@ -194,12 +301,6 @@ impl BlobDataConfig {
             region.constrain_equal(limb3.cell(), blob_crt.truncation.limbs[2].cell())?;
         }
 
-        ////////////////////////////////////////////////////////////////////////////////
-        //////////////////////////////////// EXPORT ////////////////////////////////////
-        ////////////////////////////////////////////////////////////////////////////////
-
-        let bytes_rlc =
-            rlc_config.rlc(region, assigned_bytes, &r_keccak, &mut rlc_config_offset)?;
-        Ok(AssignedBlobDataExport { bytes_rlc })
+        Ok(())
     }
 }

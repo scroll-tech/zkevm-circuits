@@ -394,22 +394,6 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             cb.gate(condition)
         });
 
-        meta.create_gate("BitstringTable: first row", |meta| {
-            let condition = and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_fixed(config.q_first, Rotation::cur()),
-            ]);
-
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_zero(
-                "cannot start with padding",
-                meta.query_advice(config.is_padding, Rotation::cur()),
-            );
-
-            cb.gate(condition)
-        });
-
         meta.create_gate("BitstringTable: padding", |meta| {
             let condition = and::expr([
                 not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
@@ -472,8 +456,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
         layouter: &mut impl Layouter<Fr>,
         block_info_arr: &Vec<BlockInfo>,
         witness_rows: &[ZstdWitnessRow<Fr>],
-        k: u32,
-        unusable_rows: usize,
+        n_enabled: usize,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "Bitstring Table",
@@ -482,7 +465,6 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(Fr::one()))?;
 
                 // assign fixed columns.
-                let n_enabled = (1 << k) - unusable_rows;
                 for i in 0..n_enabled {
                     let bit_index = i % (N_BYTES * N_BITS_PER_BYTE);
                     if bit_index == 0 {

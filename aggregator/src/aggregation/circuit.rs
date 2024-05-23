@@ -440,7 +440,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
             let batch_data = BatchData::from(&self.batch_hash);
 
-            let _blob_data_exports = config.blob_data_config.assign(
+            let blob_data_exports = config.blob_data_config.assign(
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
@@ -487,9 +487,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 "original and recovered bytes mismatch"
             );
 
-            // TODO: add copy constraints between decoder_exports and batchdataconfig +
-            // blobdataconfig
-            let _decoder_exports = config.decoder_config.assign(
+            let decoder_exports = config.decoder_config.assign(
                 &mut layouter,
                 &batch_bytes,
                 &encoded_batch_bytes,
@@ -548,16 +546,16 @@ impl Circuit<Fr> for AggregationCircuit {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
-                    // // equate rlc (from blob data) with decoder's encoded_rlc
-                    // region.constrain_equal(
-                    //     blob_data_exports.bytes_rlc.cell(),
-                    //     decoder_exports.encoded_rlc.cell(),
-                    // )?;
-                    // // equate rlc (from batch data) with decoder's decoded_rlc
-                    // region.constrain_equal(
-                    //     batch_data_exports.bytes_rlc.cell(),
-                    //     decoder_exports.decoded_rlc.cell(),
-                    // )?;
+                    // equate rlc (from blob data) with decoder's encoded_rlc
+                    region.constrain_equal(
+                        blob_data_exports.bytes_rlc.cell(),
+                        decoder_exports.encoded_rlc.cell(),
+                    )?;
+                    // equate rlc (from batch data) with decoder's decoded_rlc
+                    region.constrain_equal(
+                        batch_data_exports.bytes_rlc.cell(),
+                        decoder_exports.decoded_rlc.cell(),
+                    )?;
 
                     Ok(())
                 },

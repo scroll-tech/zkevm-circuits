@@ -733,7 +733,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
         &self,
         layouter: &mut impl Layouter<Fr>,
         data: Vec<FseAuxiliaryTableData>,
-        k: u32,
+        n_enabled: usize,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "FseTable",
@@ -749,7 +749,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                 let mut fse_offset: usize = 1;
                 let mut sorted_offset: usize = 1;
 
-                for i in (1..((1 << k) - 30)).step_by(1 << 10) {
+                for i in (1..n_enabled).step_by(1 << 10) {
                     region.assign_fixed(
                         || "q_start",
                         self.sorted_table.q_start,
@@ -758,7 +758,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                     )?;
                 }
 
-                for table in data.clone().into_iter() {
+                for table in data.iter() {
                     let target_end_offset = fse_offset + (1 << 10); // reserve enough rows to accommodate skipped states
                                                                     // Assign q_start
 
@@ -1179,7 +1179,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                     sorted_offset = target_end_offset;
                 }
 
-                for idx in fse_offset..((1 << k) - 30) {
+                for idx in fse_offset..n_enabled {
                     region.assign_advice(
                         || "is_padding",
                         self.is_padding,
@@ -1188,7 +1188,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                     )?;
                 }
 
-                for idx in sorted_offset..((1 << k) - 30) {
+                for idx in sorted_offset..n_enabled {
                     region.assign_advice(
                         || "sorted_table.is_padding",
                         self.sorted_table.is_padding,

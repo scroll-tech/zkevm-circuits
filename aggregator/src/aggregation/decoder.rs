@@ -85,6 +85,10 @@ pub struct DecoderConfig<const L: usize, const R: usize> {
     range_block_len: RangeTable<{ N_BLOCK_SIZE_TARGET as usize }>,
     /// Power of 2 lookup table.
     pow2_table: Pow2Table<20>,
+    /// Bitwise operation table (AND only)
+    bitwise_op_table: BitwiseOpTable<1, L, R>,
+    /// power of randomness table.
+    pow_rand_table: PowOfRandTable,
     /// Helper table for decoding the regenerated size from LiteralsHeader.
     literals_header_table: LiteralsHeaderTable,
     /// Helper table for decoding bitstreams that span over 1 byte.
@@ -1084,6 +1088,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             range512,
             range_block_len,
             pow2_table,
+            bitwise_op_table,
+            pow_rand_table,
             literals_header_table,
             bitstring_table_1,
             bitstring_table_2,
@@ -1096,6 +1102,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         };
 
         meta.enable_equality(config.decoded_len);
+        meta.enable_equality(config.encoded_rlc);
 
         macro_rules! is_tag {
             ($var:ident, $tag_variant:ident) => {
@@ -4375,6 +4382,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         challenges: &Challenges<Value<Fr>>,
         k: u32,
     ) -> Result<AssignedDecoderConfigExports, Error> {
+        let n_enabled = (1 << k) - self.unusable_rows();
         let mut pow_of_rand: Vec<Value<Fr>> = vec![Value::known(Fr::ONE)];
 
         /////////////////////////////////////////
@@ -4386,32 +4394,20 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         self.range_block_len.load(layouter)?;
         self.fixed_table.load(layouter)?;
         self.pow2_table.load(layouter)?;
+        self.bitwise_op_table.load(layouter)?;
+        self.pow_rand_table
+            .assign(layouter, challenges, n_enabled)?;
 
         /////////////////////////////////////////////////////////
         //////// Assign FSE and Bitstream Accumulation  /////////
         /////////////////////////////////////////////////////////
-        self.fse_table.assign(layouter, fse_aux_tables, k)?;
-        self.bitstring_table_1.assign(
-            layouter,
-            &block_info_arr,
-            &witness_rows,
-            k,
-            self.unusable_rows(),
-        )?;
-        self.bitstring_table_2.assign(
-            layouter,
-            &block_info_arr,
-            &witness_rows,
-            k,
-            self.unusable_rows(),
-        )?;
-        self.bitstring_table_3.assign(
-            layouter,
-            &block_info_arr,
-            &witness_rows,
-            k,
-            self.unusable_rows(),
-        )?;
+        self.fse_table.assign(layouter, fse_aux_tables, n_enabled)?;
+        self.bitstring_table_1
+            .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
+        self.bitstring_table_2
+            .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
+        self.bitstring_table_3
+            .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
 
         /////////////////////////////////////////
         ///// Assign LiteralHeaderTable  ////////
@@ -4461,7 +4457,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             ));
         }
         self.literals_header_table
-            .assign(k, self.unusable_rows(), layouter, literal_headers)?;
+            .assign(layouter, literal_headers, n_enabled)?;
 
         /////////////////////////////////////////
         //// Assign Sequence-related Configs ////
@@ -4469,7 +4465,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         self.sequence_instruction_table.assign(
             layouter,
             address_table_arr.iter().map(|rows| rows.iter()),
-            (1 << k) - self.unusable_rows(),
+            n_enabled,
         )?;
         let (exported_len, exported_rlc) = self.sequence_execution_config.assign(
             layouter,
@@ -4480,7 +4476,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 .zip(&sequence_exec_info_arr)
                 .map(|((lit, seq_info), exec)| (lit.as_slice(), seq_info, exec.as_slice())),
             raw_bytes,
-            (1 << k) - self.unusable_rows(),
+            n_enabled,
         )?;
 
         /////////////////////////////////////////
@@ -4503,7 +4499,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 /////////// Assign First Row  ///////////
                 /////////////////////////////////////////
                 region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(Fr::one()))?;
-                for i in 0..((1 << k) - self.unusable_rows()) {
+                for i in 0..n_enabled {
                     region.assign_fixed(
                         || "q_enable",
                         self.q_enable,
@@ -4999,7 +4995,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 /////////////////////////////////////////
                 ///////// Assign Padding Rows  //////////
                 /////////////////////////////////////////
-                for idx in witness_rows.len()..((1 << k) - self.unusable_rows()) {
+                for idx in witness_rows.len()..n_enabled {
                     if idx == witness_rows.len() {
                         region.assign_advice(
                             || "is_tag_change",
@@ -5114,7 +5110,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
     }
 
     pub fn unusable_rows(&self) -> usize {
-        30
+        64
     }
 }
 
@@ -5142,13 +5138,7 @@ mod tests {
     }
 
     impl<const L: usize, const R: usize> Circuit<Fr> for DecoderConfigTester<L, R> {
-        type Config = (
-            DecoderConfig<L, R>,
-            U8Table,
-            BitwiseOpTable<1, L, R>,
-            PowOfRandTable,
-            Challenges,
-        );
+        type Config = (DecoderConfig<L, R>, U8Table, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -5183,13 +5173,7 @@ mod tests {
                 },
             );
 
-            (
-                config,
-                u8_table,
-                bitwise_op_table,
-                pow_rand_table,
-                challenges,
-            )
+            (config, u8_table, challenges)
         }
 
         fn synthesize(
@@ -5197,7 +5181,7 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            let (config, u8_table, bitwise_op_table, pow_rand_table, challenge) = config;
+            let (config, u8_table, challenge) = config;
             let challenges = challenge.values(&layouter);
 
             let (
@@ -5226,8 +5210,6 @@ mod tests {
             );
 
             u8_table.load(&mut layouter)?;
-            bitwise_op_table.load(&mut layouter)?;
-            pow_rand_table.assign(&mut layouter, &challenges, 1 << (self.k - 1))?;
             let decoder_config_exports = config.assign(
                 &mut layouter,
                 &self.raw,

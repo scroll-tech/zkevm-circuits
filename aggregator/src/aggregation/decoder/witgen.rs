@@ -1774,7 +1774,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessR
             randomness,
             repeated_offset,
         );
-        println!("processed block={:?}: offset={:?}", block_idx, end_offset);
+        log::debug!("processed block={:?}: offset={:?}", block_idx, end_offset);
 
         witness_rows.extend_from_slice(&rows);
         literals.push(new_literals);

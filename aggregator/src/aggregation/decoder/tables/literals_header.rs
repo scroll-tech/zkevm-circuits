@@ -191,10 +191,9 @@ impl LiteralsHeaderTable {
     /// Assign witness to the literals header table.
     pub fn assign<F: Field>(
         &self,
-        k: u32,
-        unusable_rows: usize,
         layouter: &mut impl Layouter<F>,
         literals_headers: Vec<(u64, u64, (u64, u64, u64))>,
+        n_enabled: usize,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "LiteralsHeaderTable",
@@ -257,7 +256,7 @@ impl LiteralsHeaderTable {
                     }
                 }
 
-                for offset in literals_headers.len()..((1 << k) - unusable_rows) {
+                for offset in literals_headers.len()..n_enabled {
                     region.assign_advice(
                         || "is_padding",
                         self.is_padding,

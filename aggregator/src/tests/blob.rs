@@ -87,7 +87,7 @@ impl Circuit<Fr> for BlobCircuit {
             range_table,
             &keccak_table,
         );
-        let blob_data = BlobDataConfig::configure(meta, u8_table);
+        let blob_data = BlobDataConfig::configure(meta, &challenge_expressions, u8_table);
 
         BlobConfig {
             challenges,
