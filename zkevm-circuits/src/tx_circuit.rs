@@ -4272,7 +4272,7 @@ impl<F: Field> TxCircuit<F> {
                     }
                     let is_last_tx = i == (sigs.len() - 1);
                     let next_tx = if is_last_tx {
-                        self.txs.iter().find(|tx| !tx.call_data.is_empty() || tx.access_list.is_some())
+                        self.txs.iter().find(|tx| !tx.call_data.is_empty() || (tx.access_list.as_ref().map_or(false, |al| !al.0.is_empty())))
                     } else {
                         Some(get_tx(i+1))
                     };
