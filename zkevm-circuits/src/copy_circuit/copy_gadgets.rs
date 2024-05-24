@@ -503,7 +503,9 @@ pub fn constrain_rw_counter<F: Field>(
 ) {
     // Decrement rwc_inc_left for the next row, when an RW operation happens.
     let rwc_diff = is_rw_type.expr() * is_row_end.expr();
-    let new_value = meta.query_advice(rwc_inc_left, CURRENT) - rwc_diff;
+    let cur_rwc_inc_left = meta.query_advice(rwc_inc_left, CURRENT);
+    let new_value = cur_rwc_inc_left.clone() - rwc_diff;
+
     let is_last = meta.query_advice(is_last_col, CURRENT);
     let is_last_two = meta.query_advice(is_last_col, NEXT_ROW);
 
@@ -528,12 +530,23 @@ pub fn constrain_rw_counter<F: Field>(
     // normal case( `rwc_inc_left` decrease by 1 or 0 for consecutive read steps--> write step
     // --> read step -->write step ...).
     cb.condition(
-        is_memory_copy * not::expr(is_last_two) * not::expr(is_last.clone()),
+        is_memory_copy.clone() * not::expr(is_last_two.clone()) * not::expr(is_last.clone()),
         |cb| {
             cb.require_equal(
                 "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
                 new_value,
                 update_or_finish_mcopy,
+            );
+        },
+    );
+
+    cb.condition(
+        is_memory_copy * is_last.clone(),
+        |cb| {
+            cb.require_equal(
+                "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
+                cur_rwc_inc_left,
+                1.expr(),
             );
         },
     );
