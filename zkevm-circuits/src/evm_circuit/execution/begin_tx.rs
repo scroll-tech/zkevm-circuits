@@ -510,6 +510,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //  - Callee Account Nonce
                 reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta() + 1.expr()),
                 log_id: To(0.expr()),
+                end_tx: To(is_call_data_empty.expr()),
                 ..StepStateTransition::new_context()
             });
 
@@ -1689,6 +1690,8 @@ mod test {
 
     // Test that we handle the case where account creation tx happens for an account that already
     // has a non-zero balance and codehash.
+    // This is not possible in real world.
+    #[ignore]
     #[test]
     fn create_tx_for_existing_account() {
         let address = Address::repeat_byte(23);

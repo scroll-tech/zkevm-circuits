@@ -720,10 +720,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 },
             );
 
+            let is_tag_dynamic = sum::expr([
+                meta.query_advice(is_calldata, Rotation::cur()),
+                meta.query_advice(is_access_list, Rotation::cur()),
+            ]);
+            let is_next_tag_dynamic = sum::expr([
+                meta.query_advice(is_calldata, Rotation::next()),
+                meta.query_advice(is_access_list, Rotation::next()),
+            ]);
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
-                not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                not::expr(is_tag_dynamic),
+                not::expr(is_next_tag_dynamic),
             ]))
         });
 
@@ -1387,11 +1395,16 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.lookup("block_num is non-decreasing till padding txs", |meta| {
             // Block nums like this [1, 3, 5, 4, 0] is rejected by this. But [1, 2, 3, 5, 0] is
             // acceptable.
+            let is_next_tag_dynamic = sum::expr([
+                meta.query_advice(is_calldata, Rotation::next()),
+                meta.query_advice(is_access_list, Rotation::next()),
+            ]);
+
             let lookup_condition = and::expr([
                 // next row should not belong to a padding tx
                 not::expr(meta.query_advice(is_padding_tx, Rotation::next())),
-                // next row should not be in the calldata region
-                not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                // next row should also belong to fixed region
+                not::expr(is_next_tag_dynamic),
                 meta.query_advice(is_tag_block_num, Rotation::cur()),
             ]);
 
@@ -1404,6 +1417,16 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("num_all_txs in a block", |meta| {
             let mut cb = BaseConstraintBuilder::default();
             let queue_index = tx_nonce;
+
+            let is_tag_dynamic = sum::expr([
+                meta.query_advice(is_calldata, Rotation::cur()),
+                meta.query_advice(is_access_list, Rotation::cur()),
+            ]);
+            let is_next_tag_dynamic = sum::expr([
+                meta.query_advice(is_calldata, Rotation::next()),
+                meta.query_advice(is_access_list, Rotation::next()),
+            ]);
+
             // first tx in tx table
             cb.condition(meta.query_fixed(q_first, Rotation::cur()), |cb| {
                 cb.require_equal(
@@ -1424,7 +1447,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.condition(
                 and::expr([
                     // see the comment below
-                    not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                    not::expr(is_next_tag_dynamic.clone()),
                     block_num_unchanged.expr(),
                 ]),
                 |cb| {
@@ -1467,7 +1490,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     // (e.g. block_num, tx_type, is_padding_tx, ....). The witness assignment of
                     // calldata part need only make sure that (is_final,
                     // calldata_gas_cost_acc) are correctly assigned.
-                    not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                    not::expr(is_next_tag_dynamic),
                     not::expr(block_num_unchanged.expr()),
                 ]),
                 |cb| {
@@ -1503,7 +1526,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(and::expr([
                 meta.query_fixed(tx_table.q_enable, Rotation::cur()),
                 // we are in the fixed part of tx table
-                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
+                not::expr(is_tag_dynamic),
                 // calculate num_all_txs at tag = BlockNum row
                 meta.query_advice(is_tag_block_num, Rotation::cur()),
             ]))
@@ -1772,7 +1795,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         ////////////////////////////////////////////////////////////////////////
         ////////  Dynamic Section Init and Transition Conditions  //////////////
         ////////////////////////////////////////////////////////////////////////
-        meta.create_gate("Dymamic section init with calldata", |meta| {
+        meta.create_gate("Dynamic section init with calldata", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             let value_is_zero = value_is_zero.expr(Rotation::cur())(meta);
@@ -1801,7 +1824,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("Dymamic section init with access_list", |meta| {
+        meta.create_gate("Dynamic section init with access_list", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
@@ -1811,12 +1834,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             );
             cb.require_zero(
                 "sks_acc starts with 0",
-                meta.query_advice(sks_acc, Rotation::next()),
+                meta.query_advice(sks_acc, Rotation::cur()),
             );
             cb.require_equal(
                 "section_rlc::cur == field_rlc::cur",
-                meta.query_advice(section_rlc, Rotation::next()),
-                meta.query_advice(field_rlc, Rotation::next()),
+                meta.query_advice(section_rlc, Rotation::cur()),
+                meta.query_advice(field_rlc, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -2273,6 +2296,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("One chunk_txbytes_len_acc, chunk_txbytes_rlc value and pow_of_rand for each tx (in fixed section)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
+            let is_tag_dynamic = sum::expr([
+                meta.query_advice(is_calldata, Rotation::cur()),
+                meta.query_advice(is_access_list, Rotation::cur()),
+            ]);
+
             // chunk_txbytes_len_acc, chunk_txbytes_rlc and pow_of_rand stay the same for the same tx
             cb.require_equal(
                 "chunk_txbytes_len_acc' == chunk_txbytes_len_acc",
@@ -2294,7 +2322,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_fixed(q_first, Rotation::cur())),
                 not::expr(is_nonce(meta)),
-                not::expr(meta.query_advice(is_calldata, Rotation::cur()))
+                // we're in the fixed section
+                not::expr(is_tag_dynamic),
             ]))
         });
 
@@ -4243,7 +4272,7 @@ impl<F: Field> TxCircuit<F> {
                     }
                     let is_last_tx = i == (sigs.len() - 1);
                     let next_tx = if is_last_tx {
-                        self.txs.iter().find(|tx| !tx.call_data.is_empty())
+                        self.txs.iter().find(|tx| !tx.call_data.is_empty() || tx.access_list.is_some())
                     } else {
                         Some(get_tx(i+1))
                     };

@@ -195,11 +195,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         bytecode_table.annotate_columns(meta);
         copy_table.annotate_columns(meta);
 
-        let is_id_unchange = IsEqualChip::configure(
+        let is_id_unchange = IsEqualChip::configure_with_value_inv(
             meta,
             |meta| meta.query_selector(q_step) * not::expr(meta.query_advice(is_last, CURRENT)),
             |meta| meta.query_advice(id, CURRENT),
             |meta| meta.query_advice(id, NEXT_ROW),
+            |meta| meta.advice_column_in(SecondPhase),
         );
 
         let is_src_end = IsEqualChip::configure(
