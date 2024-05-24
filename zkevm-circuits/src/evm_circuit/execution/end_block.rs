@@ -56,6 +56,19 @@ impl<F: Clone> Clone for EndBlockGadget<F> {
 
 const EMPTY_BLOCK_N_RWS: u64 = 0;
 
+/*
+The goal of EndBlockGadget is to:
+    0. expose withdraw root. Then it can be copied into pi circuit.
+    1. constrain rws of evm circuit is same to rws of state circuit.
+        We use 2 StartOp rw lookup to do this.
+    2. constrain all txs inside tx circuit are processed inside evm circuit.
+        (We don't need to constrain txs in evm circuit are not in tx circuit,
+        since there are tx lookups)
+To achieve the above goal:
+    We need to pass "rwc" and "call_id" all the way to EndBlock.
+    Then "rwc" can be used for goal1.
+    For goal2 this gadget can read tx_id from CallContext using call_id.
+ */
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const NAME: &'static str = "EndBlock";
 

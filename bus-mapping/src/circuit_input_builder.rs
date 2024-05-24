@@ -461,10 +461,10 @@ impl<'a> CircuitInputBuilder {
             .1;
 
         let max_rws = self.block.circuits_params.max_rws;
-        let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
-        let mut end_block_last = self.block.block_steps.end_block_last.clone();
-        end_block_not_last.rwc = self.block_ctx.rwc;
-        end_block_last.rwc = self.block_ctx.rwc;
+        let mut padding_step = self.block.block_steps.padding_step.clone();
+        let mut end_block_step = self.block.block_steps.end_block_step.clone();
+        padding_step.rwc = self.block_ctx.rwc;
+        end_block_step.rwc = self.block_ctx.rwc;
 
         let mut dummy_tx = Transaction::dummy();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -473,7 +473,7 @@ impl<'a> CircuitInputBuilder {
         let dummy_tx_id = state.block.txs.len();
         if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
             state.call_context_read(
-                &mut end_block_last,
+                &mut end_block_step,
                 call_id,
                 CallContextField::TxId,
                 Word::from(dummy_tx_id as u64),
@@ -482,7 +482,7 @@ impl<'a> CircuitInputBuilder {
 
         // increase the total rwc by 1
         state.push_op(
-            &mut end_block_last,
+            &mut end_block_step,
             RW::READ,
             StorageOp::new(
                 *MESSAGE_QUEUE,
@@ -516,9 +516,9 @@ impl<'a> CircuitInputBuilder {
                 }
             };
         }
-        push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
+        push_op(&mut end_block_step, RWCounter(1), RW::READ, StartOp {});
         push_op(
-            &mut end_block_last,
+            &mut end_block_step,
             RWCounter(max_rws - total_rws),
             RW::READ,
             StartOp {},
@@ -526,8 +526,8 @@ impl<'a> CircuitInputBuilder {
 
         self.block.withdraw_root = withdraw_root;
         self.block.prev_withdraw_root = withdraw_root_before;
-        self.block.block_steps.end_block_not_last = end_block_not_last;
-        self.block.block_steps.end_block_last = end_block_last;
+        self.block.block_steps.padding_step = padding_step;
+        self.block.block_steps.end_block_step = end_block_step;
         Ok(())
     }
 

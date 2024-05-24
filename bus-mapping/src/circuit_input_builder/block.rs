@@ -46,21 +46,21 @@ impl BlockContext {
 /// Block-wise execution steps that don't belong to any Transaction.
 #[derive(Debug, Clone)]
 pub struct BlockSteps {
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub padding_step: ExecStep,
+    /// EndBlock step that appears in the last EVM row.
+    pub end_block_step: ExecStep,
 }
 
 impl Default for BlockSteps {
     fn default() -> Self {
         Self {
-            end_block_not_last: ExecStep {
-                exec_state: ExecState::EndBlock,
+            padding_step: ExecStep {
+                exec_state: ExecState::Padding,
                 ..ExecStep::default()
             },
-            end_block_last: ExecStep {
+            end_block_step: ExecStep {
                 exec_state: ExecState::EndBlock,
                 ..ExecStep::default()
             },
@@ -223,16 +223,7 @@ impl Block {
     /// ...
     pub fn from_headers(headers: &[BlockHead], circuits_params: CircuitsParams) -> Self {
         Self {
-            block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-            },
+            block_steps: BlockSteps::default(),
             headers: headers
                 .iter()
                 .map(|b| (b.number.as_u64(), b.clone()))
@@ -249,16 +240,7 @@ impl Block {
         circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         let mut block = Self {
-            block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-            },
+            block_steps: BlockSteps::default(),
             exp_events: Vec::new(),
             chain_id,
             circuits_params,
@@ -278,16 +260,7 @@ impl Block {
         circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         let mut block = Self {
-            block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-            },
+            block_steps: BlockSteps::default(),
             exp_events: Vec::new(),
             chain_id,
             start_l1_queue_index,

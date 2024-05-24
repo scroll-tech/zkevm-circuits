@@ -38,11 +38,11 @@ pub struct Block {
     pub txs: Vec<Transaction>,
     /// Signatures in the block
     pub sigs: Vec<Signature>,
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub padding_step: ExecStep,
+    /// EndBlock step that appears in the last EVM row.
+    pub end_block_step: ExecStep,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -495,15 +495,15 @@ pub fn block_convert(
         .unwrap_or_default();
     let chain_id = block.chain_id();
     rws.check_rw_counter_sanity();
-    let end_block_not_last = step_convert(&block.block_steps.end_block_not_last, last_block_num);
-    let end_block_last = step_convert(&block.block_steps.end_block_last, last_block_num);
+    let padding_step = step_convert(&block.block_steps.padding_step, last_block_num);
+    let end_block_step = step_convert(&block.block_steps.end_block_step, last_block_num);
     log::trace!(
-        "witness block: end_block_not_last {:?}, end_block_last {:?}",
-        end_block_not_last,
-        end_block_last
+        "witness block: padding_step {:?}, end_block_step {:?}",
+        padding_step,
+        end_block_step
     );
     let max_rws = if block.circuits_params.max_rws == 0 {
-        end_block_last.rw_counter + end_block_last.rw_indices.len() + 1
+        end_block_step.rw_counter + end_block_step.rw_indices.len() + 1
     } else {
         block.circuits_params.max_rws
     };
@@ -514,10 +514,10 @@ pub fn block_convert(
         block.end_state_root(),
     );
 
-    let _withdraw_root_check_rw = if end_block_last.rw_counter == 0 {
+    let _withdraw_root_check_rw = if end_block_step.rw_counter == 0 {
         0
     } else {
-        end_block_last.rw_counter + 1
+        end_block_step.rw_counter + 1
     };
     let total_tx_as_txid = num_txs;
     let withdraw_root_entry = mpt_updates.get(&super::rw::Rw::AccountStorage {
@@ -561,8 +561,8 @@ pub fn block_convert(
             })
             .collect(),
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
-        end_block_not_last,
-        end_block_last,
+        padding_step,
+        end_block_step,
         bytecodes: code_db
             .0
             .iter()
