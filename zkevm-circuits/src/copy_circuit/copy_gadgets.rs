@@ -540,16 +540,13 @@ pub fn constrain_rw_counter<F: Field>(
         },
     );
 
-    cb.condition(
-        is_memory_copy * is_last.clone(),
-        |cb| {
-            cb.require_equal(
-                "constrain last rwc_inc_left == 1 ",
-                cur_rwc_inc_left,
-                1.expr(),
-            );
-        },
-    );
+    cb.condition(is_memory_copy * is_last.clone(), |cb| {
+        cb.require_equal(
+            "constrain last rwc_inc_left == 1 ",
+            cur_rwc_inc_left,
+            1.expr(),
+        );
+    });
 
     // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
     cb.condition(not::expr(is_last.expr()), |cb| {
