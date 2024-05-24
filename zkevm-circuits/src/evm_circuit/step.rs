@@ -614,6 +614,7 @@ impl<F: Field> Step<F> {
                 end_tx: cell_manager.query_cell(CellType::StoragePhase1),
             }
         };
+        assert_eq!(cell_manager.get_height(), STEP_STATE_HEIGHT);
         Self {
             state,
             cell_manager,

@@ -1094,7 +1094,7 @@ impl<F: Field> ExecutionConfig<F> {
         //    1 step.
         // 3. EndBlock
         let region1_height = self.get_num_rows_required_no_padding(block);
-        let region3_height = 2; // EndBlock, plus a dummy "next" row used for Rotation
+        let region3_height = ExecutionState::EndBlock.get_step_height() + 1; // plus a dummy "next" row used for Rotation
         let region2_height = if no_padding {
             1
         } else {
@@ -1363,6 +1363,7 @@ impl<F: Field> ExecutionConfig<F> {
                     region3_is_first_time = false;
                     return assign_shape_fn(&mut region, region3_height);
                 }
+                let height = end_block_step.execution_state.get_step_height();
                 self.assign_exec_step(
                     &mut region,
                     offset,
@@ -1370,26 +1371,26 @@ impl<F: Field> ExecutionConfig<F> {
                     &dummy_tx,
                     &last_call,
                     end_block_step,
-                    1,
+                    height,
                     None,
                     challenges,
                 )?;
-                self.assign_q_step(&mut region, &inverter, offset, 1)?;
+                self.assign_q_step(&mut region, &inverter, offset, height)?;
                 self.q_step_last.enable(&mut region, offset)?;
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
                     self.num_rows_until_next_step,
-                    1,
+                    height,
                     || Value::known(F::zero()),
                 )?;
                 region.assign_advice(
                     || "step height inv",
                     self.q_step,
-                    1,
+                    height,
                     || Value::known(F::zero()),
                 )?;
-                Ok(2) // region height
+                Ok(height + 1) // region height
             },
         )?;
 
