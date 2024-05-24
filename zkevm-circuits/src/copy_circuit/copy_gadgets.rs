@@ -544,7 +544,7 @@ pub fn constrain_rw_counter<F: Field>(
         is_memory_copy * is_last.clone(),
         |cb| {
             cb.require_equal(
-                "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
+                "constrain last rwc_inc_left == 1 ",
                 cur_rwc_inc_left,
                 1.expr(),
             );
