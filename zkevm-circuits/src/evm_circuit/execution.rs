@@ -120,6 +120,7 @@ mod mulmod;
 #[path = "execution/not.rs"]
 mod opcode_not;
 mod origin;
+mod padding;
 mod pc;
 mod pop;
 mod precompiles;
@@ -141,7 +142,6 @@ mod swap;
 mod tload;
 mod tstore;
 
-use self::{logs::LogGadget, precompiles::BasePrecompileGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -182,6 +182,7 @@ use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_memory_copy::ErrorOOGMemoryCopyGadget;
+use error_oog_precompile::ErrorOOGPrecompileGadget;
 use error_oog_sha3::ErrorOOGSha3Gadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
@@ -199,8 +200,7 @@ use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
-
-use crate::evm_circuit::execution::error_oog_precompile::ErrorOOGPrecompileGadget;
+use logs::LogGadget;
 use mcopy::MCopyGadget;
 use memory::MemoryGadget;
 use msize::MsizeGadget;
@@ -208,11 +208,12 @@ use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
 use opcode_not::NotGadget;
 use origin::OriginGadget;
+use padding::PaddingGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use precompiles::{
-    EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget, ModExpGadget,
-    SHA256Gadget,
+    BasePrecompileGadget, EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget,
+    IdentityGadget, ModExpGadget, SHA256Gadget,
 };
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
@@ -221,6 +222,7 @@ use returndatasize::ReturnDataSizeGadget;
 use sar::SarGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
+use sha3::Sha3Gadget;
 use shl_shr::ShlShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
@@ -274,6 +276,7 @@ pub(crate) struct ExecutionConfig<F> {
     // internal state gadgets
     begin_tx_gadget: Box<BeginTxGadget<F>>,
     end_block_gadget: Box<EndBlockGadget<F>>,
+    padding_gadget: Box<PaddingGadget<F>>,
     end_inner_block_gadget: Box<EndInnerBlockGadget<F>>,
     end_tx_gadget: Box<EndTxGadget<F>>,
     // opcode gadgets
@@ -437,11 +440,11 @@ impl<F: Field> ExecutionConfig<F> {
 
             // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
             let first_step_check = {
-                let begin_tx_end_block_selector = step_curr
-                    .execution_state_selector([ExecutionState::BeginTx, ExecutionState::EndBlock]);
+                let begin_tx_or_padding_selector = step_curr
+                    .execution_state_selector([ExecutionState::BeginTx, ExecutionState::Padding]);
                 iter::once((
-                    "First step should be BeginTx or EndBlock",
-                    q_step_first * (1.expr() - begin_tx_end_block_selector),
+                    "First step should be BeginTx or Padding",
+                    q_step_first * (1.expr() - begin_tx_or_padding_selector),
                 ))
             };
 
@@ -571,6 +574,7 @@ impl<F: Field> ExecutionConfig<F> {
             end_block_gadget: configure_gadget!(),
             end_inner_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
+            padding_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
             addmod_gadget: configure_gadget!(),
@@ -858,14 +862,14 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock],
                         ),
                         (
-                            "EndInnerBlock can only transition to BeginTx, EndInnerBlock or EndBlock",
+                            "EndInnerBlock can only transition to BeginTx, EndInnerBlock or Padding",
                             ExecutionState::EndInnerBlock,
-                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock, ExecutionState::EndBlock],
+                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock, ExecutionState::Padding],
                         ),
                         (
-                            "EndBlock can only transit to EndBlock",
-                            ExecutionState::EndBlock,
-                            vec![ExecutionState::EndBlock],
+                            "Padding can only transit to Padding or EndBlock",
+                            ExecutionState::Padding,
+                            vec![ExecutionState::Padding, ExecutionState::EndBlock],
                         ),
                     ])
                     .filter(move |(_, from, _)| *from == execution_state)
@@ -888,9 +892,9 @@ impl<F: Field> ExecutionConfig<F> {
                                 .collect(),
                         ),
                         (
-                            "Only EndInnerBlock or EndBlock can transit to EndBlock",
+                            "Only Padding can transit to EndBlock",
                             ExecutionState::EndBlock,
-                            vec![ExecutionState::EndInnerBlock, ExecutionState::EndBlock],
+                            vec![ExecutionState::Padding],
                         ),
                         (
                             // Empty block can result multiple EndInnerBlock states.
@@ -911,9 +915,9 @@ impl<F: Field> ExecutionConfig<F> {
                             step_next.state.block_number.expr() - step_curr.state.block_number.expr() - 1.expr(),
                         ),
                         (
-                            "EndInnerBlock -> EndBlock: block number does not change",
+                            "EndInnerBlock -> Padding: block number does not change",
                             ExecutionState::EndInnerBlock,
-                            vec![ExecutionState::EndBlock],
+                            vec![ExecutionState::Padding],
                             step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
                         ),
                     ])
@@ -1020,7 +1024,7 @@ impl<F: Field> ExecutionConfig<F> {
                     num_rows += step.execution_state.get_step_height();
                 }
             }
-            num_rows += 1; // EndBlock
+            num_rows += 1; // At least 1 Padding needed
         } else {
             num_rows = block.circuits_params.max_evm_rows;
         }
@@ -1077,7 +1081,7 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
         // If the height is not 1, padding to fixed height will be impossible
-        debug_assert_eq!(ExecutionState::EndBlock.get_step_height(), 1);
+        debug_assert_eq!(ExecutionState::Padding.get_step_height(), 1);
 
         let inverter = Inverter::new(MAX_STEP_HEIGHT as u64);
         let evm_rows = block.circuits_params.max_evm_rows;
@@ -1086,11 +1090,11 @@ impl<F: Field> ExecutionConfig<F> {
 
         // There should be 3 group of regions
         // 1. real steps
-        // 2. padding EndBlocks. For the ease of implementation, even for `no_padding` case, we will
-        //    still pad 1 end_block_not_last.
-        // 3. final EndBlock
+        // 2. padding. For the ease of implementation, even for `no_padding` case, we will still pad
+        //    1 step.
+        // 3. EndBlock
         let region1_height = self.get_num_rows_required_no_padding(block);
-        let region3_height = 2; // EndBlock, plus a dummy "next" row used for Rotation
+        let region3_height = ExecutionState::EndBlock.get_step_height() + 1; // plus a dummy "next" row used for Rotation
         let region2_height = if no_padding {
             1
         } else {
@@ -1123,8 +1127,8 @@ impl<F: Field> ExecutionConfig<F> {
             .last()
             .map(|tx| tx.calls[0].clone())
             .unwrap_or_default();
-        let end_block_not_last = &block.end_block_not_last;
-        let end_block_last = &block.end_block_last;
+        let padding_step = &block.padding_step;
+        let end_block_step = &block.end_block_step;
 
         // A helper struct used for parallel assignment
         struct StepAssignment {
@@ -1259,7 +1263,7 @@ impl<F: Field> ExecutionConfig<F> {
                                 log_step_fn(transaction, step, offset);
 
                                 let next = match step_assignments.get(step_idx + 1) {
-                                    None => (&dummy_tx, &last_call, end_block_not_last),
+                                    None => (&dummy_tx, &last_call, padding_step),
                                     Some(step_assignment) => {
                                         let transaction = &block.txs[step_assignment.tx_idx];
                                         let step =
@@ -1296,14 +1300,14 @@ impl<F: Field> ExecutionConfig<F> {
 
         debug_assert_eq!(region1_height, region1_height_sum);
 
-        // part2: assign non-last EndBlock steps when padding needed
+        // part2: assign paddings steps when padding needed
         assert!(region2_height >= 1);
         let (region2_chunk_size, region2_chunk_num) = chunking_fn("region2", region2_height, 300);
         let mut region2_is_first_time: Vec<(usize, bool)> = (0..region2_chunk_num)
             .map(|chunk_idx| (chunk_idx, true))
             .collect();
         log::trace!(
-            "assign non-last EndBlock in range [{},{})",
+            "assign padding steps in range [{},{})",
             region1_height,
             region1_height + region2_height
         );
@@ -1331,7 +1335,7 @@ impl<F: Field> ExecutionConfig<F> {
                             block,
                             &dummy_tx,
                             &last_call,
-                            end_block_not_last,
+                            padding_step,
                             1,
                             challenges,
                         )?;
@@ -1344,10 +1348,10 @@ impl<F: Field> ExecutionConfig<F> {
                 .collect_vec(),
         )?;
 
-        // part3: assign the last EndBlock at offset `evm_rows - 1`
+        // part3: assign the EndBlock at offset `evm_rows - 1`
         // This region don't need to be parallelized
         log::trace!(
-            "assign last EndBlock at offset {}",
+            "assign EndBlock at offset {}",
             region1_height + region2_height
         );
 
@@ -1359,33 +1363,34 @@ impl<F: Field> ExecutionConfig<F> {
                     region3_is_first_time = false;
                     return assign_shape_fn(&mut region, region3_height);
                 }
+                let height = end_block_step.execution_state.get_step_height();
                 self.assign_exec_step(
                     &mut region,
                     offset,
                     block,
                     &dummy_tx,
                     &last_call,
-                    end_block_last,
-                    1,
+                    end_block_step,
+                    height,
                     None,
                     challenges,
                 )?;
-                self.assign_q_step(&mut region, &inverter, offset, 1)?;
+                self.assign_q_step(&mut region, &inverter, offset, height)?;
                 self.q_step_last.enable(&mut region, offset)?;
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
                     self.num_rows_until_next_step,
-                    1,
+                    height,
                     || Value::known(F::zero()),
                 )?;
                 region.assign_advice(
                     || "step height inv",
                     self.q_step,
-                    1,
+                    height,
                     || Value::known(F::zero()),
                 )?;
-                Ok(2) // region height
+                Ok(height + 1) // region height
             },
         )?;
 
@@ -1463,7 +1468,7 @@ impl<F: Field> ExecutionConfig<F> {
         }
         assert_eq!(height, 1);
         assert!(step.rw_indices.is_empty());
-        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
+        assert!(matches!(step.execution_state, ExecutionState::Padding));
 
         // Disable access to next step deliberately for "repeatable" step
         let region = &mut CachedRegion::<'_, '_, F>::new(
@@ -1541,7 +1546,7 @@ impl<F: Field> ExecutionConfig<F> {
         verbose: bool,
     ) -> Result<(), Error> {
         if verbose
-            && !(matches!(step.execution_state, ExecutionState::EndBlock)
+            && !(matches!(step.execution_state, ExecutionState::Padding)
                 && step.rw_indices.is_empty())
         {
             log::trace!(
@@ -1568,6 +1573,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndInnerBlock => assign_exec_step!(self.end_inner_block_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
+            ExecutionState::Padding => assign_exec_step!(self.padding_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
@@ -1736,7 +1742,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `CHECK_RW_LOOKUP=true`
         if *CHECK_RW_LOOKUP && verbose {
-            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+            let is_padding_step = matches!(step.execution_state, ExecutionState::Padding)
                 && step.rw_indices.is_empty();
             if !is_padding_step {
                 // expensive function call

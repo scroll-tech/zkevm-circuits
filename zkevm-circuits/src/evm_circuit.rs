@@ -253,38 +253,29 @@ impl<F: Field> EvmCircuit<F> {
         (gates_row_ids, lookup_row_ids)
     }
 
-    pub fn get_num_rows_required_no_padding(block: &Block) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
-        for transaction in &block.txs {
-            for step in &transaction.steps {
-                num_rows += step.execution_state.get_step_height();
-            }
-        }
-        num_rows += 1; // EndBlock
-        num_rows
-    }
-
     pub fn get_num_rows_required(block: &Block) -> usize {
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
-            Self::get_min_num_rows_required(block)
+            Self::get_num_rows_required_no_padding(block)
         } else {
             // It must have at least one unused row.
             block.circuits_params.max_evm_rows + 1
         }
     }
 
-    pub fn get_min_num_rows_required(block: &Block) -> usize {
+    pub fn get_num_rows_required_no_padding(block: &Block) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
+                // EndInnerBlock included
                 num_rows += step.execution_state.get_step_height();
             }
         }
-
         // It must have one row for EndBlock and at least one unused one
-        num_rows + 2
+        num_rows += 1;
+        num_rows += ExecutionState::EndBlock.get_step_height();
+        num_rows += 1;
+        num_rows
     }
 }
 
