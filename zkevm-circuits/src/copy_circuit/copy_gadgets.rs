@@ -540,6 +540,7 @@ pub fn constrain_rw_counter<F: Field>(
         },
     );
 
+    // the last row is write row.
     cb.condition(is_memory_copy * is_last.clone(), |cb| {
         cb.require_equal(
             "constrain last rwc_inc_left == 1 ",
