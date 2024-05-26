@@ -44,13 +44,12 @@ pub struct LtConfig<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> LtConfig<F, N_BYTES> {
     /// Returns an expression that denotes whether lhs < rhs, or not.
-    pub fn is_lt(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
-        meta.query_advice(self.lt, rotation.unwrap_or_else(Rotation::cur))
+    pub fn is_lt(&self, meta: &mut VirtualCells<F>, rotation: Rotation) -> Expression<F> {
+        meta.query_advice(self.lt, rotation)
     }
 
     /// Returns an expression representing the difference between LHS and RHS.
-    pub fn diff(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
-        let rotation = rotation.unwrap_or_else(Rotation::cur);
+    pub fn diff(&self, meta: &mut VirtualCells<F>, rotation: Rotation) -> Expression<F> {
         sum::expr(self.diff.iter().map(|c| meta.query_advice(*c, rotation)))
     }
 }
@@ -288,7 +287,7 @@ mod test {
                     // This verifies lt(value::cur, value::next) is calculated correctly
                     let check = meta.query_advice(config.check, Rotation::cur());
 
-                    vec![q_enable * (config.lt.is_lt(meta, None) - check)]
+                    vec![q_enable * (config.lt.is_lt(meta, Rotation::cur()) - check)]
                 });
 
                 config
@@ -413,7 +412,7 @@ mod test {
                     // This verifies lt(lhs, rhs) is calculated correctly
                     let check = meta.query_advice(config.check, Rotation::cur());
 
-                    vec![q_enable * (config.lt.is_lt(meta, None) - check)]
+                    vec![q_enable * (config.lt.is_lt(meta, Rotation::cur()) - check)]
                 });
 
                 config
