@@ -12,6 +12,8 @@ mod config;
 mod decoder;
 /// config for RLC circuit
 mod rlc;
+/// Utility module
+mod util;
 
 pub(crate) use barycentric::{
     interpolate, AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BLS_MODULUS,

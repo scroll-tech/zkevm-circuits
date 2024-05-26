@@ -1,5 +1,3 @@
-use super::tables;
-use crate::aggregation::decoder::witgen;
 use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -15,6 +13,9 @@ use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
     util::Field,
 };
+
+use super::tables;
+use crate::aggregation::{decoder::witgen, util::BooleanAdvice};
 
 /// TODO: This is in fact part of the `BlockConfig` in
 /// Decoder, we can use BlockConfig if it is decoupled
@@ -272,13 +273,13 @@ pub struct SeqExecConfig<F: Field> {
 
     // the flag indicate current seq is the special one
     // (copying the rest bytes in literal section)
-    s_last_lit_cp_phase: Column<Advice>,
+    s_last_lit_cp_phase: BooleanAdvice,
     // the flag indicate the execution is under
     // "literal copying" phase
-    s_lit_cp_phase: Column<Advice>,
+    s_lit_cp_phase: BooleanAdvice,
     // the flag indicate the execution is under
     // back reference phase
-    s_back_ref_phase: Column<Advice>,
+    s_back_ref_phase: BooleanAdvice,
     // the copied index in literal section
     literal_pos: Column<Advice>,
     // the back-ref pos
@@ -306,10 +307,12 @@ impl<F: Field> SeqExecConfig<F> {
         let decoded_len = meta.advice_column();
         let decoded_byte = meta.advice_column();
         let decoded_rlc = meta.advice_column_in(SecondPhase);
-        //let decoded_len_acc = meta.advice_column();
-        let s_last_lit_cp_phase = meta.advice_column();
-        let s_lit_cp_phase = meta.advice_column();
-        let s_back_ref_phase = meta.advice_column();
+        let s_last_lit_cp_phase =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
+        let s_lit_cp_phase =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
+        let s_back_ref_phase =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
         let backref_offset = meta.advice_column();
         let backref_progress = meta.advice_column();
         let literal_pos = meta.advice_column();
@@ -361,15 +364,12 @@ impl<F: Field> SeqExecConfig<F> {
         meta.create_gate("phases", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let s_lit_cp_phase_next = meta.query_advice(s_lit_cp_phase, Rotation::next());
-            let s_back_ref_phase_next = meta.query_advice(s_back_ref_phase, Rotation::next());
-            let s_lit_cp_phase_prev = meta.query_advice(s_lit_cp_phase, Rotation::prev());
-            let s_back_ref_phase_prev = meta.query_advice(s_back_ref_phase, Rotation::prev());
-            let s_lit_cp_phase = meta.query_advice(s_lit_cp_phase, Rotation::cur());
-            let s_back_ref_phase = meta.query_advice(s_back_ref_phase, Rotation::cur());
-
-            cb.require_boolean("phase is boolean", s_lit_cp_phase.expr());
-            cb.require_boolean("phase is boolean", s_back_ref_phase.expr());
+            let s_lit_cp_phase_next = s_lit_cp_phase.expr_at(meta, Rotation::next());
+            let s_back_ref_phase_next = s_back_ref_phase.expr_at(meta, Rotation::next());
+            let s_lit_cp_phase_prev = s_lit_cp_phase.expr_at(meta, Rotation::prev());
+            let s_back_ref_phase_prev = s_back_ref_phase.expr_at(meta, Rotation::prev());
+            let s_lit_cp_phase = s_lit_cp_phase.expr_at(meta, Rotation::cur());
+            let s_back_ref_phase = s_back_ref_phase.expr_at(meta, Rotation::cur());
 
             is_padding = 1.expr() - s_lit_cp_phase.expr() - s_back_ref_phase.expr();
             // constraint padding is boolean, so cp/back_ref phase is excluded
@@ -421,9 +421,8 @@ impl<F: Field> SeqExecConfig<F> {
         meta.create_gate("last literal cp phase", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let s_last_lit_cp_phase_prev = meta.query_advice(s_last_lit_cp_phase, Rotation::prev());
-            let s_last_lit_cp_phase = meta.query_advice(s_last_lit_cp_phase, Rotation::cur());
-            cb.require_boolean("last lit_cp phase is boolean", s_last_lit_cp_phase.expr());
+            let s_last_lit_cp_phase_prev = s_last_lit_cp_phase.expr_at(meta, Rotation::prev());
+            let s_last_lit_cp_phase = s_last_lit_cp_phase.expr_at(meta, Rotation::cur());
 
             cb.condition(
                 and::expr([
@@ -456,7 +455,7 @@ impl<F: Field> SeqExecConfig<F> {
             cb.condition(s_last_lit_cp_phase.expr(), |cb| {
                 cb.require_equal(
                     "lit cp must actived if last lit cp is actived",
-                    meta.query_advice(s_lit_cp_phase, Rotation::cur()),
+                    s_lit_cp_phase.expr_at(meta, Rotation::cur()),
                     1.expr(),
                 );
             });
@@ -470,7 +469,7 @@ impl<F: Field> SeqExecConfig<F> {
 
             let literal_pos_prev = meta.query_advice(literal_pos, Rotation::prev());
             let literal_pos = meta.query_advice(literal_pos, Rotation::cur());
-            let s_lit_cp_phase = meta.query_advice(s_lit_cp_phase, Rotation::cur());
+            let s_lit_cp_phase = s_lit_cp_phase.expr_at(meta, Rotation::cur());
 
             cb.require_equal(
                 "lit cp is increment in one block",
@@ -487,7 +486,7 @@ impl<F: Field> SeqExecConfig<F> {
             let backref_progress_prev = meta.query_advice(backref_progress, Rotation::prev());
             let backref_progress = meta.query_advice(backref_progress, Rotation::cur());
 
-            let s_back_ref_phase = meta.query_advice(s_back_ref_phase, Rotation::cur());
+            let s_back_ref_phase = s_back_ref_phase.expr_at(meta, Rotation::cur());
 
             cb.require_equal(
                 "backref progress is increment in one inst",
@@ -559,8 +558,7 @@ impl<F: Field> SeqExecConfig<F> {
 
             let block_index = meta.query_advice(block_index, Rotation::prev());
             let seq_index = meta.query_advice(seq_index, Rotation::prev());
-            let not_last_lit_cp =
-                not::expr(meta.query_advice(s_last_lit_cp_phase, Rotation::prev()));
+            let not_last_lit_cp = not::expr(s_last_lit_cp_phase.expr_at(meta, Rotation::prev()));
             let literal_pos_at_inst_end = meta.query_advice(literal_pos, Rotation::prev());
             let backref_offset_at_inst_end = meta.query_advice(backref_offset, Rotation::prev());
             let backref_len_at_inst_end = meta.query_advice(backref_progress, Rotation::prev());
@@ -588,7 +586,7 @@ impl<F: Field> SeqExecConfig<F> {
         debug_assert!(meta.degree() <= 9);
         meta.lookup_any("lit cp char", |meta| {
             let enabled = meta.query_fixed(q_enabled, Rotation::cur())
-                * meta.query_advice(s_lit_cp_phase, Rotation::cur());
+                * s_lit_cp_phase.expr_at(meta, Rotation::cur());
 
             let block_index = meta.query_advice(block_index, Rotation::cur());
             let literal_pos = meta.query_advice(literal_pos, Rotation::cur());
@@ -624,9 +622,7 @@ impl<F: Field> SeqExecConfig<F> {
                 .zip([1.expr(), ref_pos, cp_byte])
                 .map(|(lookup_expr, src_expr)| {
                     (
-                        src_expr
-                            * enabled.expr()
-                            * meta.query_advice(s_back_ref_phase, Rotation::cur()),
+                        src_expr * enabled.expr() * s_back_ref_phase.expr_at(meta, Rotation::cur()),
                         lookup_expr,
                     )
                 })
@@ -666,7 +662,7 @@ impl<F: Field> SeqExecConfig<F> {
             let seq_index_at_block_end = meta.query_advice(seq_index, Rotation::prev())
                 // if we have a additional literal copying phase, we 
                 // in fact has one extra instruction
-                - meta.query_advice(s_last_lit_cp_phase, Rotation::prev());
+                - s_last_lit_cp_phase.expr_at(meta, Rotation::prev());
 
             seq_config
                 .lookup_tbl(meta)
@@ -730,9 +726,9 @@ impl<F: Field> SeqExecConfig<F> {
 
             for col in [
                 self.decoded_byte,
-                self.s_last_lit_cp_phase,
-                self.s_lit_cp_phase,
-                self.s_back_ref_phase,
+                self.s_last_lit_cp_phase.column,
+                self.s_lit_cp_phase.column,
+                self.s_back_ref_phase.column,
                 self.backref_offset,
                 self.backref_progress,
                 self.literal_pos,
@@ -797,7 +793,7 @@ impl<F: Field> SeqExecConfig<F> {
                 (self.block_index, F::from(block_ind as u64)),
                 (self.seq_index, F::from(inst_ind as u64)),
                 (
-                    self.s_last_lit_cp_phase,
+                    self.s_last_lit_cp_phase.column,
                     if inst_ind > seq_info.num_sequences {
                         F::one()
                     } else {
@@ -865,15 +861,15 @@ impl<F: Field> SeqExecConfig<F> {
 
                 for (col, val) in base_rows.into_iter().chain(decodes).chain(if is_literal {
                     [
-                        (self.s_lit_cp_phase, F::one()),
-                        (self.s_back_ref_phase, F::zero()),
+                        (self.s_lit_cp_phase.column, F::one()),
+                        (self.s_back_ref_phase.column, F::zero()),
                         (self.literal_pos, F::from(pos as u64)),
                         (self.backref_progress, F::zero()),
                     ]
                 } else {
                     [
-                        (self.s_lit_cp_phase, F::zero()),
-                        (self.s_back_ref_phase, F::one()),
+                        (self.s_lit_cp_phase.column, F::zero()),
+                        (self.s_back_ref_phase.column, F::one()),
                         (self.literal_pos, F::from(cur_literal_cp as u64)),
                         (self.backref_progress, F::from(i as u64 + 1)),
                     ]
@@ -915,9 +911,8 @@ impl<F: Field> SeqExecConfig<F> {
             self.decoded_rlc,
             self.block_index,
             self.seq_index,
-            self.s_back_ref_phase,
-            self.s_lit_cp_phase,
-            self.s_back_ref_phase,
+            self.s_back_ref_phase.column,
+            self.s_lit_cp_phase.column,
             self.backref_offset,
             self.literal_pos,
             self.backref_progress,

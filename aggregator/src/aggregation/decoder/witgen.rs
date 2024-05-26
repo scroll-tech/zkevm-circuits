@@ -6,7 +6,7 @@ mod params;
 pub use params::*;
 
 mod types;
-pub use types::{ZstdTag::*, *};
+pub use types::*;
 
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};

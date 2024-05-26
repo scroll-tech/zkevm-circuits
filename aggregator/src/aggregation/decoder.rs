@@ -1,9 +1,7 @@
 mod seq_exec;
 mod tables;
 pub mod witgen;
-use witgen::*;
 
-use crate::aggregation::decoder::tables::FixedLookupTag;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -29,15 +27,16 @@ use zkevm_circuits::{
 
 use self::{
     tables::{
-        BitstringTable, FixedTable, FseTable, LiteralsHeaderTable,
+        BitstringTable, FixedLookupTag, FixedTable, FseTable, LiteralsHeaderTable,
         SeqInstTable as SequenceInstructionTable,
     },
-    util::value_bits_le,
     witgen::{
-        FseTableKind, ZstdTag, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG, N_BITS_ZSTD_TAG,
-        N_BLOCK_HEADER_BYTES,
+        util::value_bits_le, AddressTableRow, BlockInfo, FseAuxiliaryTableData, FseTableKind,
+        SequenceExec, SequenceInfo, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG,
+        N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_BLOCK_SIZE_TARGET,
     },
 };
+use super::util::BooleanAdvice;
 
 use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
 
@@ -56,13 +55,13 @@ pub struct DecoderConfig<const L: usize, const R: usize> {
     /// The byte value decomposed in its bits. The endianness of bits depends on whether or not we
     /// are processing a chunk of bytes from back-to-front or not. The bits follow
     /// little-endianness if bytes are processed from back-to-front, otherwise big-endianness.
-    bits: [Column<Advice>; N_BITS_PER_BYTE],
+    bits: [BooleanAdvice; N_BITS_PER_BYTE],
     /// The RLC of the zstd encoded bytes.
     encoded_rlc: Column<Advice>,
     /// The size of the final decoded bytes.
     decoded_len: Column<Advice>,
     /// Once all the encoded bytes are decoded, we append the layout with padded rows.
-    is_padding: Column<Advice>,
+    is_padding: BooleanAdvice,
     /// Zstd tag related config.
     tag_config: TagConfig,
     /// Block related config.
@@ -141,7 +140,7 @@ struct TagConfig {
     /// The only exception is the first row in the layout where for the FrameHeaderDescriptor we do
     /// not set this boolean value. We instead use the q_first fixed column to conditionally
     /// constrain the first row.
-    is_change: Column<Advice>,
+    is_change: BooleanAdvice,
     /// Degree reduction: FrameContentSize
     is_frame_content_size: Column<Advice>,
     /// Degree reduction: BlockHeader
@@ -177,7 +176,9 @@ impl TagConfig {
             tag_rlc: meta.advice_column_in(SecondPhase),
             rpow_tag_len: meta.advice_column_in(SecondPhase),
             is_reverse: meta.advice_column(),
-            is_change: meta.advice_column(),
+            is_change: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
             // degree reduction.
             is_frame_content_size: meta.advice_column(),
             is_block_header: meta.advice_column(),
@@ -349,7 +350,7 @@ impl SequencesHeaderDecoder {
         &self,
         meta: &mut VirtualCells<Fr>,
         byte: Column<Advice>,
-        bits: &[Column<Advice>; N_BITS_PER_BYTE],
+        bits: &[BooleanAdvice; N_BITS_PER_BYTE],
     ) -> DecodedSequencesHeader {
         let byte0_lt_0x80 = self.byte0_lt_0x80.is_lt(meta, Rotation::cur());
         let byte0_lt_0xff = self.byte0_lt_0xff.is_lt(meta, Rotation::cur());
@@ -378,58 +379,58 @@ impl SequencesHeaderDecoder {
 
         let comp_mode_bit0_ll = select::expr(
             byte0_lt_0x80.expr(),
-            meta.query_advice(bits[6], Rotation(1)),
+            bits[6].expr_at(meta, Rotation(1)),
             select::expr(
                 byte0_lt_0xff.expr(),
-                meta.query_advice(bits[6], Rotation(2)),
-                meta.query_advice(bits[6], Rotation(3)),
+                bits[6].expr_at(meta, Rotation(2)),
+                bits[6].expr_at(meta, Rotation(3)),
             ),
         );
         let comp_mode_bit1_ll = select::expr(
             byte0_lt_0x80.expr(),
-            meta.query_advice(bits[7], Rotation(1)),
+            bits[7].expr_at(meta, Rotation(1)),
             select::expr(
                 byte0_lt_0xff.expr(),
-                meta.query_advice(bits[7], Rotation(2)),
-                meta.query_advice(bits[7], Rotation(3)),
+                bits[7].expr_at(meta, Rotation(2)),
+                bits[7].expr_at(meta, Rotation(3)),
             ),
         );
 
         let comp_mode_bit0_om = select::expr(
             byte0_lt_0x80.expr(),
-            meta.query_advice(bits[4], Rotation(1)),
+            bits[4].expr_at(meta, Rotation(1)),
             select::expr(
                 byte0_lt_0xff.expr(),
-                meta.query_advice(bits[4], Rotation(2)),
-                meta.query_advice(bits[4], Rotation(3)),
+                bits[4].expr_at(meta, Rotation(2)),
+                bits[4].expr_at(meta, Rotation(3)),
             ),
         );
         let comp_mode_bit1_om = select::expr(
             byte0_lt_0x80.expr(),
-            meta.query_advice(bits[5], Rotation(1)),
+            bits[5].expr_at(meta, Rotation(1)),
             select::expr(
                 byte0_lt_0xff.expr(),
-                meta.query_advice(bits[5], Rotation(2)),
-                meta.query_advice(bits[5], Rotation(3)),
+                bits[5].expr_at(meta, Rotation(2)),
+                bits[5].expr_at(meta, Rotation(3)),
             ),
         );
 
         let comp_mode_bit0_ml = select::expr(
             byte0_lt_0x80.expr(),
-            meta.query_advice(bits[2], Rotation(1)),
+            bits[2].expr_at(meta, Rotation(1)),
             select::expr(
                 byte0_lt_0xff.expr(),
-                meta.query_advice(bits[2], Rotation(2)),
-                meta.query_advice(bits[2], Rotation(3)),
+                bits[2].expr_at(meta, Rotation(2)),
+                bits[2].expr_at(meta, Rotation(3)),
             ),
         );
         let comp_mode_bit1_ml = select::expr(
             byte0_lt_0x80.expr(),
-            meta.query_advice(bits[3], Rotation(1)),
+            bits[3].expr_at(meta, Rotation(1)),
             select::expr(
                 byte0_lt_0xff.expr(),
-                meta.query_advice(bits[3], Rotation(2)),
-                meta.query_advice(bits[3], Rotation(3)),
+                bits[3].expr_at(meta, Rotation(2)),
+                bits[3].expr_at(meta, Rotation(3)),
             ),
         );
 
@@ -472,12 +473,12 @@ pub struct BitstreamDecoder {
     /// - The bitstring that we have read in the current row is byte-aligned up to the next or the
     /// next-to-next byte. In this case, the next or the next-to-next following row(s) should have
     /// the is_nil field set.
-    is_nil: Column<Advice>,
+    is_nil: BooleanAdvice,
     /// Boolean that is set for a special case:
     /// - We don't read from the bitstream, i.e. we read 0 number of bits. We can witness such a
     /// case while applying an FSE table to bitstream, where the number of bits to be read from
     /// the bitstream is 0. This can happen when we decode sequences in the SequencesData tag.
-    is_nb0: Column<Advice>,
+    is_nb0: BooleanAdvice,
     /// Helper gadget to check when bit_index_start has not changed.
     start_unchanged: IsEqualConfig<Fr>,
 }
@@ -523,8 +524,12 @@ impl BitstreamDecoder {
                 |_| 3.expr(),
             ),
             bitstring_value,
-            is_nil: meta.advice_column(),
-            is_nb0: meta.advice_column(),
+            is_nil: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
+            is_nb0: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
             start_unchanged: IsEqualChip::configure(
                 meta,
                 |meta| {
@@ -544,7 +549,7 @@ impl BitstreamDecoder {
     /// If we skip reading any bitstring at this row, because of byte-alignment over multiple bytes
     /// from the previously read bitstring.
     fn is_nil(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
-        meta.query_advice(self.is_nil, rotation)
+        self.is_nil.expr_at(meta, rotation)
     }
 
     /// If we expect to read a bitstring at this row.
@@ -555,7 +560,7 @@ impl BitstreamDecoder {
     /// If the number of bits to be read from the bitstream is nb=0. This scenario occurs in the
     /// SequencesData tag section, when we are applying the FSE tables to decode sequences.
     fn is_nb0(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
-        meta.query_advice(self.is_nb0, rotation)
+        self.is_nb0.expr_at(meta, rotation)
     }
 
     /// Whether the 2-bits repeat flag was [1, 1]. In this case, the repeat flag is followed by
@@ -703,9 +708,9 @@ pub struct FseDecoder {
     /// This is the normalised probability for the symbol.
     probability_acc: Column<Advice>,
     /// Whether we are in the repeat bits loop.
-    is_repeat_bits_loop: Column<Advice>,
+    is_repeat_bits_loop: BooleanAdvice,
     /// Whether this row represents the 0-7 trailing bits that should be ignored.
-    is_trailing_bits: Column<Advice>,
+    is_trailing_bits: BooleanAdvice,
     /// Helper gadget to know when the decoded value is 0. This contributes to an edge-case in
     /// decoding and reconstructing the FSE table from normalised distributions, where a value=0
     /// implies prob=-1 ("less than 1" probability). In this case, the symbol is allocated a state
@@ -726,8 +731,12 @@ impl FseDecoder {
             symbol: meta.advice_column(),
             value_decoded,
             probability_acc: meta.advice_column(),
-            is_repeat_bits_loop: meta.advice_column(),
-            is_trailing_bits: meta.advice_column(),
+            is_repeat_bits_loop: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
+            is_trailing_bits: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
             value_decoded_eq_0: IsEqualChip::configure(
                 meta,
                 |meta| meta.query_fixed(q_enable, Rotation::cur()),
@@ -795,7 +804,7 @@ pub struct SequencesDataDecoder {
     /// This is tricky since the order is not the same as the below interleaved order of decoding
     /// sequences. The is_init_state flag is set only while reading the first 3 bitstrings (after
     /// the sentinel bitstring) to compute the initial states of LLT -> MOT -> MLT in this order.
-    is_init_state: Column<Advice>,
+    is_init_state: BooleanAdvice,
     /// A boolean column to help us determine the exact purpose of the bitstring we are currently
     /// reading. Since the sequences data is interleaved with 6 possible variants:
     /// 1. MOT Code to Value
@@ -812,7 +821,7 @@ pub struct SequencesDataDecoder {
     /// )
     ///
     /// tells us exactly which variant we are at currently.
-    is_update_state: Column<Advice>,
+    is_update_state: BooleanAdvice,
     /// The states (LLT, MLT, MOT) at this row.
     states: [Column<Advice>; 3],
     /// The symbols emitted at this state (LLT, MLT, MOT).
@@ -824,11 +833,15 @@ pub struct SequencesDataDecoder {
 }
 
 impl SequencesDataDecoder {
-    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
+    fn configure(meta: &mut ConstraintSystem<Fr>, q_enable: Column<Fixed>) -> Self {
         Self {
             idx: meta.advice_column(),
-            is_init_state: meta.advice_column(),
-            is_update_state: meta.advice_column(),
+            is_init_state: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
+            is_update_state: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
             states: [
                 meta.advice_column(),
                 meta.advice_column(),
@@ -851,11 +864,11 @@ impl SequencesDataDecoder {
 
 impl SequencesDataDecoder {
     fn is_init_state(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
-        meta.query_advice(self.is_init_state, rotation)
+        self.is_init_state.expr_at(meta, rotation)
     }
 
     fn is_update_state(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
-        meta.query_advice(self.is_update_state, rotation)
+        self.is_update_state.expr_at(meta, rotation)
     }
 
     fn is_code_to_value(&self, meta: &mut VirtualCells<Fr>, rotation: Rotation) -> Expression<Fr> {
@@ -1003,13 +1016,14 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         // Fixed table
         let fixed_table = FixedTable::construct(meta);
 
-        let (q_enable, q_first, byte_idx, byte, is_padding) = (
+        let (q_enable, q_first, byte_idx, byte) = (
             meta.fixed_column(),
             meta.fixed_column(),
-            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
         );
+        let is_padding =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enable, Rotation::cur()));
         // Helper tables
         let literals_header_table = LiteralsHeaderTable::configure(meta, q_enable, range8, range16);
         let bitstring_table_1 = BitstringTable::configure(meta, q_enable, range_block_len);
@@ -1036,7 +1050,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             SequencesHeaderDecoder::configure(meta, byte, q_enable, u8_table);
         let bitstream_decoder = BitstreamDecoder::configure(meta, q_enable, q_first, u8_table);
         let fse_decoder = FseDecoder::configure(meta, q_enable);
-        let sequences_data_decoder = SequencesDataDecoder::configure(meta);
+        let sequences_data_decoder = SequencesDataDecoder::configure(meta, q_enable);
         let sequence_execution_config = SequenceExecutionConfig::configure(
             meta,
             challenges.keccak_input(),
@@ -1046,8 +1060,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 block_config.block_idx.into(),
                 tag_config.tag_idx.into(),
                 byte.into(),
-                tag_config.is_change.into(),
-                is_padding.into(),
+                tag_config.is_change.column.into(),
+                is_padding.column.into(),
             ]),
             &sequence_instruction_table,
             &SequenceConfig::construct([
@@ -1070,7 +1084,11 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             byte_idx,
             byte,
             bits: (0..N_BITS_PER_BYTE)
-                .map(|_| meta.advice_column())
+                .map(|_| {
+                    BooleanAdvice::construct(meta, |meta| {
+                        meta.query_fixed(q_enable, Rotation::cur())
+                    })
+                })
                 .collect::<Vec<_>>()
                 .try_into()
                 .expect("N_BITS_PER_BYTE advice columns into array"),
@@ -1155,7 +1173,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             // The first row is not padded row.
             cb.require_zero(
                 "is_padding is False on the first row",
-                meta.query_advice(config.is_padding, Rotation::cur()),
+                config.is_padding.expr_at(meta, Rotation::cur()),
             );
 
             // byte_idx initialises at 1.
@@ -1196,11 +1214,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 
             let mut cb = BaseConstraintBuilder::default();
 
-            let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
-            let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
-
-            // is_padding is boolean.
-            cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
+            let is_padding_curr = config.is_padding.expr_at(meta, Rotation::cur());
+            let is_padding_prev = config.is_padding.expr_at(meta, Rotation::prev());
 
             // is_padding transitions from 0 -> 1 only once, i.e. is_padding_delta is boolean.
             let is_padding_delta = is_padding_curr - is_padding_prev;
@@ -1212,18 +1227,13 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         meta.create_gate("DecoderConfig: all non-padded rows", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
 
             // byte decomposed into bits.
-            let bits = config
-                .bits
-                .map(|bit| meta.query_advice(bit, Rotation::cur()));
-            for bit in bits.iter() {
-                cb.require_boolean("bit in [0, 1]", bit.expr());
-            }
+            let bits = config.bits.map(|bit| bit.expr_at(meta, Rotation::cur()));
             cb.require_equal(
                 "bits are the binary decomposition of byte",
                 meta.query_advice(config.byte, Rotation::cur()),
@@ -1248,12 +1258,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                         + bits[6].expr() * 64.expr()
                         + bits[7].expr() * 128.expr(),
                 ),
-            );
-
-            // Constrain boolean columns.
-            cb.require_boolean(
-                "TagConfig::is_change in [0, 1]",
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
             );
 
             // Degree reduction columns.
@@ -1287,7 +1291,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
                     not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
-                    not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                    not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
                 ]);
 
                 let mut cb = BaseConstraintBuilder::default();
@@ -1322,7 +1326,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 cb.condition(and::expr([byte_idx_delta, tag_idx_eq_tag_len_prev]), |cb| {
                     cb.require_equal(
                         "is_change is set",
-                        meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                        config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                         1.expr(),
                     );
                 });
@@ -1341,8 +1345,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         meta.create_gate("DecoderConfig: padded rows", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
-                meta.query_advice(config.is_padding, Rotation::prev()),
-                meta.query_advice(config.is_padding, Rotation::cur()),
+                config.is_padding.expr_at(meta, Rotation::prev()),
+                config.is_padding.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -1365,7 +1369,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 sum::expr([
                     meta.query_fixed(config.q_first, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]),
             ]);
 
@@ -1387,7 +1391,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         meta.create_gate("DecoderConfig: new tag", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -1429,11 +1433,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             cb.require_equal(
                 "tag_idx::cur == 1 (if not padding)",
                 meta.query_advice(config.tag_config.tag_idx, Rotation::cur()),
-                select::expr(
-                    meta.query_advice(config.is_padding, Rotation::cur()),
-                    0.expr(),
-                    1.expr(),
-                ),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             );
 
             // If the new tag is not processed from back-to-front, the RLC of the tag bytes
@@ -1463,8 +1463,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
-                not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -1544,8 +1544,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         meta.lookup_any("DecoderConfig: keccak randomness power tag_len", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             [
@@ -1587,33 +1587,33 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             // Hence is_reverse is False and we have BE bytes.
             cb.require_equal(
                 "FHD: Single_Segment_Flag",
-                meta.query_advice(config.bits[5], Rotation::cur()),
+                config.bits[5].expr_at(meta, Rotation::cur()),
                 1.expr(),
             );
             cb.require_zero(
                 "FHD: Unused_Bit",
-                meta.query_advice(config.bits[4], Rotation::cur()),
+                config.bits[4].expr_at(meta, Rotation::cur()),
             );
             cb.require_zero(
                 "FHD: Reserved_Bit",
-                meta.query_advice(config.bits[3], Rotation::cur()),
+                config.bits[3].expr_at(meta, Rotation::cur()),
             );
             cb.require_zero(
                 "FHD: Content_Checksum_Flag",
-                meta.query_advice(config.bits[2], Rotation::cur()),
+                config.bits[2].expr_at(meta, Rotation::cur()),
             );
             cb.require_zero(
                 "FHD: Dictionary_ID_Flag",
-                meta.query_advice(config.bits[1], Rotation::cur()),
+                config.bits[1].expr_at(meta, Rotation::cur()),
             );
             cb.require_zero(
                 "FHD: Dictionary_ID_Flag",
-                meta.query_advice(config.bits[0], Rotation::cur()),
+                config.bits[0].expr_at(meta, Rotation::cur()),
             );
 
             // Checks for the next tag, i.e. FrameContentSize.
-            let fcs_flag0 = meta.query_advice(config.bits[7], Rotation::cur());
-            let fcs_flag1 = meta.query_advice(config.bits[6], Rotation::cur());
+            let fcs_flag0 = config.bits[7].expr_at(meta, Rotation::cur());
+            let fcs_flag1 = config.bits[6].expr_at(meta, Rotation::cur());
             let fcs_field_size = select::expr(
                 fcs_flag0.expr() * fcs_flag1.expr(),
                 8.expr(),
@@ -1641,14 +1641,14 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_frame_content_size, Rotation::cur()),
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
 
             // The previous row is FrameHeaderDescriptor.
-            let fcs_flag0 = meta.query_advice(config.bits[7], Rotation::prev());
-            let fcs_flag1 = meta.query_advice(config.bits[6], Rotation::prev());
+            let fcs_flag0 = config.bits[7].expr_at(meta, Rotation::prev());
+            let fcs_flag1 = config.bits[6].expr_at(meta, Rotation::prev());
 
             // - [1, 1]: 8 bytes
             // - [1, 0]: 4 bytes
@@ -1721,7 +1721,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_block_header, Rotation::cur()),
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -1739,9 +1739,9 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             // |------------|------------|------------|
             // | bit 0      | bits 1-2   | bits 3-23  |
             //
-            let is_last_block = meta.query_advice(config.bits[0], Rotation::cur());
-            let block_type_bit1 = meta.query_advice(config.bits[1], Rotation::cur());
-            let block_type_bit2 = meta.query_advice(config.bits[2], Rotation::cur());
+            let is_last_block = config.bits[0].expr_at(meta, Rotation::cur());
+            let block_type_bit1 = config.bits[1].expr_at(meta, Rotation::cur());
+            let block_type_bit2 = config.bits[2].expr_at(meta, Rotation::cur());
 
             // We expect a Block_Type of Compressed_Block, i.e. Block_Type == 2.
             cb.require_equal(
@@ -1827,7 +1827,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         meta.lookup("DecoderConfig: tag BlockHeader (Block_Size)", |meta| {
             let condition = and::expr([
                 meta.query_advice(config.tag_config.is_block_header, Rotation::cur()),
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             // block_size == block_header >> 3
@@ -1899,20 +1899,20 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 is_zb_literals_header(meta),
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
 
-            let literals_block_type_bit0 = meta.query_advice(config.bits[0], Rotation::cur());
-            let literals_block_type_bit1 = meta.query_advice(config.bits[1], Rotation::cur());
+            let literals_block_type_bit0 = config.bits[0].expr_at(meta, Rotation::cur());
+            let literals_block_type_bit1 = config.bits[1].expr_at(meta, Rotation::cur());
 
             // We expect a Raw_Literals_Block, i.e. bit0 and bit1 are both 0.
             cb.require_zero("Raw_Literals_Block: bit0", literals_block_type_bit0);
             cb.require_zero("Raw_Literals_Block: bit1", literals_block_type_bit1);
 
-            let size_format_bit0 = meta.query_advice(config.bits[2], Rotation::cur());
-            let size_format_bit1 = meta.query_advice(config.bits[3], Rotation::cur());
+            let size_format_bit0 = config.bits[2].expr_at(meta, Rotation::cur());
+            let size_format_bit1 = config.bits[3].expr_at(meta, Rotation::cur());
 
             // - Size_Format is 00 or 10: Size_Format uses 1 bit, literals header is 1 byte
             // - Size_Format is 01: Size_Format uses 2 bits, literals header is 2 bytes
@@ -1936,11 +1936,11 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             |meta| {
                 let condition = and::expr([
                     is_zb_literals_header(meta),
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
 
-                let size_format_bit0 = meta.query_advice(config.bits[2], Rotation::cur());
-                let size_format_bit1 = meta.query_advice(config.bits[3], Rotation::cur());
+                let size_format_bit0 = config.bits[2].expr_at(meta, Rotation::cur());
+                let size_format_bit1 = config.bits[3].expr_at(meta, Rotation::cur());
 
                 // - byte0 is the first byte of the literals header
                 // - byte1 is either the second byte of the literals header or 0
@@ -2019,7 +2019,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 is_zb_sequence_header(meta),
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -2095,7 +2095,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
                     is_zb_sequence_header(meta),
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
                 let (block_idx, num_sequences) = (
                     meta.query_advice(config.block_config.block_idx, Rotation::cur()),
@@ -2126,7 +2126,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
 
                 let mut cb = BaseConstraintBuilder::default();
@@ -2159,7 +2159,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 // The is_repeat_bits_loop inits at 0 after the AL 4-bits.
                 cb.require_zero(
                     "fse(init): is_repeat_bits_loop=0",
-                    meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::next()),
+                    config
+                        .fse_decoder
+                        .is_repeat_bits_loop
+                        .expr_at(meta, Rotation::next()),
                 );
 
                 // We will always start reading bits from the bitstream for the first symbol.
@@ -2177,7 +2180,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             |meta| {
                 let condition = and::expr([
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
 
                 let (cmode_llt, cmode_mot, cmode_mlt) = (
@@ -2209,7 +2212,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
 
                 // accuracy_log == 4bits + 5
@@ -2233,9 +2236,12 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     not::expr(
-                        meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
+                        config
+                            .fse_decoder
+                            .is_trailing_bits
+                            .expr_at(meta, Rotation::cur()),
                     ),
                 ]);
 
@@ -2292,8 +2298,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 //
                 // If we are not in a repeat-bits loop and encounter a value=1 (prob=0) bitstring,
                 // then we enter a repeat bits loop.
-                let is_repeat_bits_loop =
-                    meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur());
+                let is_repeat_bits_loop = config
+                    .fse_decoder
+                    .is_repeat_bits_loop
+                    .expr_at(meta, Rotation::cur());
                 cb.condition(
                     and::expr([
                         not::expr(is_repeat_bits_loop.expr()),
@@ -2302,10 +2310,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     |cb| {
                         cb.require_equal(
                             "fse: enter repeat-bits loop",
-                            meta.query_advice(
-                                config.fse_decoder.is_repeat_bits_loop,
-                                Rotation::next(),
-                            ),
+                            config
+                                .fse_decoder
+                                .is_repeat_bits_loop
+                                .expr_at(meta, Rotation::next()),
                             1.expr(),
                         );
                     },
@@ -2319,10 +2327,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     |cb| {
                         cb.require_equal(
                             "fse: continue repeat-bits loop",
-                            meta.query_advice(
-                                config.fse_decoder.is_repeat_bits_loop,
-                                Rotation::next(),
-                            ),
+                            config
+                                .fse_decoder
+                                .is_repeat_bits_loop
+                                .expr_at(meta, Rotation::next()),
                             1.expr(),
                         );
                     },
@@ -2335,10 +2343,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     |cb| {
                         cb.require_zero(
                             "fse: break out of repeat-bits loop",
-                            meta.query_advice(
-                                config.fse_decoder.is_repeat_bits_loop,
-                                Rotation::next(),
-                            ),
+                            config
+                                .fse_decoder
+                                .is_repeat_bits_loop
+                                .expr_at(meta, Rotation::next()),
                         );
                     },
                 );
@@ -2405,7 +2413,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                             "fse: symbol increments",
                             fse_symbol_cur.expr(),
                             select::expr(
-                                meta.query_advice(config.tag_config.is_change, Rotation::prev()),
+                                config.tag_config.is_change.expr_at(meta, Rotation::prev()),
                                 0.expr(),
                                 fse_symbol_prev.expr() + 1.expr(),
                             ),
@@ -2449,7 +2457,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_change, Rotation::next()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::next()),
                 ]);
 
                 let mut cb = BaseConstraintBuilder::default();
@@ -2469,8 +2477,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 //      - aligned_one_byte(0)
                 //      - aligned_two_bytes(-1)
                 //      - aligned_three_bytes(-2)
-                let is_trailing_bits =
-                    meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur());
+                let is_trailing_bits = config
+                    .fse_decoder
+                    .is_trailing_bits
+                    .expr_at(meta, Rotation::cur());
                 cb.require_equal(
                     "last bitstring is either byte-aligned or the 0-7 trailing bits",
                     sum::expr([
@@ -2502,7 +2512,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             |meta| {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
+                    config
+                        .fse_decoder
+                        .is_trailing_bits
+                        .expr_at(meta, Rotation::cur()),
                 ]);
 
                 let mut cb = BaseConstraintBuilder::default();
@@ -2517,7 +2530,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 // 2. trailing bits only occur on the last row of the tag=FseCode section.
                 cb.require_equal(
                     "is_change'=true",
-                    meta.query_advice(config.tag_config.is_change, Rotation::next()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::next()),
                     1.expr(),
                 );
 
@@ -2560,12 +2573,18 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     meta.query_fixed(config.q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     not::expr(
-                        meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur()),
+                        config
+                            .fse_decoder
+                            .is_repeat_bits_loop
+                            .expr_at(meta, Rotation::cur()),
                     ),
                     not::expr(
-                        meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
+                        config
+                            .fse_decoder
+                            .is_trailing_bits
+                            .expr_at(meta, Rotation::cur()),
                     ),
                 ]);
 
@@ -2608,13 +2627,19 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     meta.query_fixed(config.q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_fse_code, Rotation::cur()),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     not::expr(config.fse_decoder.is_prob0(meta, Rotation::cur())),
                     not::expr(
-                        meta.query_advice(config.fse_decoder.is_repeat_bits_loop, Rotation::cur()),
+                        config
+                            .fse_decoder
+                            .is_repeat_bits_loop
+                            .expr_at(meta, Rotation::cur()),
                     ),
                     not::expr(
-                        meta.query_advice(config.fse_decoder.is_trailing_bits, Rotation::cur()),
+                        config
+                            .fse_decoder
+                            .is_trailing_bits
+                            .expr_at(meta, Rotation::cur()),
                     ),
                 ]);
 
@@ -2667,7 +2692,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
 
                 let mut cb = BaseConstraintBuilder::default();
@@ -2720,18 +2745,21 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
                 ]);
 
                 let (table_kind_prev, table_kind_curr, is_init_state, is_update_state) = (
                     meta.query_advice(config.fse_decoder.table_kind, Rotation::prev()),
                     meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
-                    meta.query_advice(config.sequences_data_decoder.is_init_state, Rotation::cur()),
-                    meta.query_advice(
-                        config.sequences_data_decoder.is_update_state,
-                        Rotation::cur(),
-                    ),
+                    config
+                        .sequences_data_decoder
+                        .is_init_state
+                        .expr_at(meta, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_update_state
+                        .expr_at(meta, Rotation::cur()),
                 );
 
                 [
@@ -2756,7 +2784,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
                 ]);
 
@@ -3045,7 +3073,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_change, Rotation::next()),
+                    config.tag_config.is_change.expr_at(meta, Rotation::next()),
                 ]);
 
                 let mut cb = BaseConstraintBuilder::default();
@@ -3053,14 +3081,17 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 // last operation is: code-to-value for LLT.
                 cb.require_zero(
                     "last operation (sequences data): is_init",
-                    meta.query_advice(config.sequences_data_decoder.is_init_state, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_init_state
+                        .expr_at(meta, Rotation::cur()),
                 );
                 cb.require_zero(
                     "last operation (sequences data): is_update_state",
-                    meta.query_advice(
-                        config.sequences_data_decoder.is_update_state,
-                        Rotation::cur(),
-                    ),
+                    config
+                        .sequences_data_decoder
+                        .is_update_state
+                        .expr_at(meta, Rotation::cur()),
                 );
                 cb.require_equal(
                     "last operation (sequences data): table_kind",
@@ -3146,8 +3177,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     config.fse_decoder.table_kind,
                     config.fse_decoder.table_size,
                     config.sequences_data_decoder.idx,
-                    config.sequences_data_decoder.is_init_state,
-                    config.sequences_data_decoder.is_update_state,
+                    config.sequences_data_decoder.is_init_state.column,
+                    config.sequences_data_decoder.is_update_state.column,
                     config.sequences_data_decoder.states[0],
                     config.sequences_data_decoder.states[1],
                     config.sequences_data_decoder.states[2],
@@ -3188,7 +3219,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
                     config
                         .sequences_data_decoder
@@ -3297,7 +3328,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
                     config.fse_decoder.is_llt(meta, Rotation::cur()),
                     config
@@ -3335,7 +3366,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
                     meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(meta.query_advice(config.tag_config.is_change, Rotation::cur())),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
                     config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
                     not::expr(
                         config
@@ -3408,11 +3439,11 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             // tag=Null also is the start of padding.
             cb.require_zero(
                 "is_null: is_padding_prev=false",
-                meta.query_advice(config.is_padding, Rotation::prev()),
+                config.is_padding.expr_at(meta, Rotation::prev()),
             );
             cb.require_equal(
                 "is_null: is_padding=true",
-                meta.query_advice(config.is_padding, Rotation::cur()),
+                config.is_padding.expr_at(meta, Rotation::cur()),
                 1.expr(),
             );
 
@@ -3420,7 +3451,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             // implies that the previous tag in fact ended correctly.
             cb.require_equal(
                 "is_null: is_tag_change=true",
-                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 1.expr(),
             );
 
@@ -4516,7 +4547,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 for (i, row) in witness_rows.iter().enumerate() {
                     region.assign_advice(
                         || "is_padding",
-                        self.is_padding,
+                        self.is_padding.column,
                         i,
                         || Value::known(Fr::zero()),
                     )?;
@@ -4538,7 +4569,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     for (idx, col) in self.bits.iter().rev().enumerate() {
                         region.assign_advice(
                             || "value_bits",
-                            *col,
+                            col.column,
                             i,
                             || {
                                 Value::known(Fr::from(
@@ -4599,13 +4630,13 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     )?;
                     region.assign_advice(
                         || "is_nb0",
-                        self.bitstream_decoder.is_nb0,
+                        self.bitstream_decoder.is_nb0.column,
                         i,
                         || Value::known(Fr::from(row.bitstream_read_data.is_zero_bit_read as u64)),
                     )?;
                     region.assign_advice(
                         || "is_nil",
-                        self.bitstream_decoder.is_nil,
+                        self.bitstream_decoder.is_nil.column,
                         i,
                         || Value::known(Fr::from(row.bitstream_read_data.is_nil as u64)),
                     )?;
@@ -4721,7 +4752,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 
                     region.assign_advice(
                         || "tag_config.is_change",
-                        self.tag_config.is_change,
+                        self.tag_config.is_change.column,
                         i,
                         || Value::known(Fr::from((row.state.is_tag_change && i > 0) as u64)),
                     )?;
@@ -4776,7 +4807,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     /////////////////////////////////////////
                     let block_idx = row.state.block_idx;
                     let is_block = row.state.tag.is_block();
-                    let is_block_header = row.state.tag == BlockHeader;
+                    let is_block_header = row.state.tag == ZstdTag::BlockHeader;
 
                     if is_block || is_block_header {
                         let curr_block_info = block_info_arr[block_idx as usize - 1];
@@ -4854,7 +4885,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     )?;
                     region.assign_advice(
                         || "sequence_data_decoder.is_init_state",
-                        self.sequences_data_decoder.is_init_state,
+                        self.sequences_data_decoder.is_init_state.column,
                         i,
                         || Value::known(Fr::from(row.bitstream_read_data.is_seq_init as u64)),
                     )?;
@@ -4885,7 +4916,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     }
                     region.assign_advice(
                         || "sequence_data_decoder.is_update_state",
-                        self.sequences_data_decoder.is_update_state,
+                        self.sequences_data_decoder.is_update_state.column,
                         i,
                         || Value::known(Fr::from(row.bitstream_read_data.is_update_state)),
                     )?;
@@ -4947,13 +4978,13 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     )?;
                     region.assign_advice(
                         || "fse_decoder.is_repeat_bits_loop",
-                        self.fse_decoder.is_repeat_bits_loop,
+                        self.fse_decoder.is_repeat_bits_loop.column,
                         i,
                         || Value::known(Fr::from(row.fse_data.is_repeat_bits_loop)),
                     )?;
                     region.assign_advice(
                         || "fse_decoder.is_trailing_bits",
-                        self.fse_decoder.is_trailing_bits,
+                        self.fse_decoder.is_trailing_bits.column,
                         i,
                         || Value::known(Fr::from(row.fse_data.is_trailing_bits)),
                     )?;
@@ -4999,7 +5030,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     if idx == witness_rows.len() {
                         region.assign_advice(
                             || "is_tag_change",
-                            self.tag_config.is_change,
+                            self.tag_config.is_change.column,
                             idx,
                             || Value::known(Fr::one()),
                         )?;
@@ -5031,7 +5062,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     )?;
                     region.assign_advice(
                         || "is_padding",
-                        self.is_padding,
+                        self.is_padding.column,
                         idx,
                         || Value::known(Fr::one()),
                     )?;
@@ -5116,8 +5147,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 
 #[cfg(test)]
 mod tests {
-    use super::process;
-    use crate::{witgen::init_zstd_encoder, DecoderConfig, DecoderConfigArgs};
+    use crate::{
+        witgen::{init_zstd_encoder, process},
+        DecoderConfig, DecoderConfigArgs,
+    };
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,

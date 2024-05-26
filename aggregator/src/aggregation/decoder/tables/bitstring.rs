@@ -11,10 +11,12 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    aggregation::decoder::{
-        util::value_bits_le,
-        witgen::{ZstdTag, ZstdWitnessRow},
-        BlockInfo,
+    aggregation::{
+        decoder::{
+            witgen::{util::value_bits_le, ZstdTag, ZstdWitnessRow},
+            BlockInfo,
+        },
+        util::BooleanAdvice,
     },
     witgen::{N_BITS_PER_BYTE, N_BLOCK_SIZE_TARGET},
 };
@@ -90,7 +92,7 @@ pub struct BitstringTable<const N_BYTES: usize> {
     /// - Accumulation of bits from 0 <= bit_index <= 7 denotes byte_1.
     /// - Accumulation of bits from 8 <= bit_index <= 15 denotes byte_2.
     /// - Accumulation of bits from 16 <= bit_index <= 23 denotes byte_3.
-    pub bit: Column<Advice>,
+    pub bit: BooleanAdvice,
     /// The binary value of the bits in the current bitstring.
     pub bitstring_value: Column<Advice>,
     /// The accumulator over bits from is_start to is_end, i.e. while is_set == 1.
@@ -98,15 +100,15 @@ pub struct BitstringTable<const N_BYTES: usize> {
     /// The length of the bitstring, i.e. the number of bits in the bitstring.
     pub bitstring_len: Column<Advice>,
     /// Boolean that is set from start of bit chunk to bit_index == 15.
-    pub from_start: Column<Advice>,
+    pub from_start: BooleanAdvice,
     /// Boolean that is set from bit_index == 0 to end of bit chunk.
-    pub until_end: Column<Advice>,
+    pub until_end: BooleanAdvice,
     /// Boolean to mark if the bitstring is a part of bytes that are read from front-to-back or
     /// back-to-front. For the back-to-front case, the is_reverse boolean is set.
-    pub is_reverse: Column<Advice>,
+    pub is_reverse: BooleanAdvice,
     /// After all rows of meaningful bytes are done, we mark the remaining rows by a padding
     /// boolean where our constraints are skipped.
-    pub is_padding: Column<Advice>,
+    pub is_padding: BooleanAdvice,
 }
 
 impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
@@ -134,27 +136,35 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             byte_3: meta.advice_column(),
             bit_index: meta.fixed_column(),
             q_start: meta.fixed_column(),
-            bit: meta.advice_column(),
+            bit: BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enable, Rotation::cur())),
             bitstring_value: meta.advice_column(),
             bitstring_value_acc: meta.advice_column(),
             bitstring_len: meta.advice_column(),
-            from_start: meta.advice_column(),
-            until_end: meta.advice_column(),
-            is_reverse: meta.advice_column(),
-            is_padding: meta.advice_column(),
+            from_start: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
+            until_end: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
+            is_reverse: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
+            is_padding: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
         };
 
         meta.create_gate("BitstringTable: bit_index == 0", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(config.q_start, Rotation::cur()),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
 
             let bits = (0..(3 * N_BITS_PER_BYTE))
-                .map(|i| meta.query_advice(config.bit, Rotation(i as i32)))
+                .map(|i| config.bit.expr_at(meta, Rotation(i as i32)))
                 .collect::<Vec<Expression<Fr>>>();
 
             let (byte_1, byte_2, byte_3) = (
@@ -167,7 +177,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 "byte1 is the binary accumulation of 0 <= bit_index <= 7",
                 byte_1,
                 select::expr(
-                    meta.query_advice(config.is_reverse, Rotation::cur()),
+                    config.is_reverse.expr_at(meta, Rotation::cur()),
                     bits[7].expr()
                         + bits[6].expr() * 2.expr()
                         + bits[5].expr() * 4.expr()
@@ -192,7 +202,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                     "byte2 is the binary accumulation of 8 <= bit_index <= 15",
                     byte_2,
                     select::expr(
-                        meta.query_advice(config.is_reverse, Rotation::cur()),
+                        config.is_reverse.expr_at(meta, Rotation::cur()),
                         bits[15].expr()
                             + bits[14].expr() * 2.expr()
                             + bits[13].expr() * 4.expr()
@@ -218,7 +228,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                     "byte3 is the binary accumulation of 16 <= bit_index <= 23",
                     byte_3,
                     select::expr(
-                        meta.query_advice(config.is_reverse, Rotation::cur()),
+                        config.is_reverse.expr_at(meta, Rotation::cur()),
                         bits[23].expr()
                             + bits[22].expr() * 2.expr()
                             + bits[21].expr() * 4.expr()
@@ -239,15 +249,10 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 );
             }
 
-            cb.require_boolean(
-                "is_reverse is boolean",
-                meta.query_advice(config.is_reverse, Rotation::cur()),
-            );
-
             // from_start initialises at 1
             cb.require_equal(
                 "if bit_index == 0: from_start == 1",
-                meta.query_advice(config.from_start, Rotation::cur()),
+                config.from_start.expr_at(meta, Rotation::cur()),
                 1.expr(),
             );
 
@@ -258,7 +263,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_fixed(config.q_start, Rotation::cur())),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -272,8 +277,8 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 config.byte_2,
                 config.byte_3,
                 config.bitstring_value,
-                config.is_reverse,
-                config.is_padding,
+                config.is_reverse.column,
+                config.is_padding.column,
             ] {
                 cb.require_equal(
                     "unchanged columns from 0 < bit_idx <= 23",
@@ -283,8 +288,8 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             }
 
             // from_start transitions from 1 to 0 only once, i.e. delta is boolean
-            let delta = meta.query_advice(config.from_start, Rotation::prev())
-                - meta.query_advice(config.from_start, Rotation::cur());
+            let delta = config.from_start.expr_at(meta, Rotation::prev())
+                - config.from_start.expr_at(meta, Rotation::cur());
             cb.require_boolean("from_start delta is boolean", delta);
 
             cb.gate(condition)
@@ -293,7 +298,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
         meta.create_gate("BitstringTable: bitstring_value accumulation", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -301,30 +306,14 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             let is_start = meta.query_fixed(config.q_start, Rotation::cur());
             let is_end = meta.query_fixed(config.q_start, Rotation::next());
 
-            // bit value is boolean.
-            cb.require_boolean(
-                "bit is boolean",
-                meta.query_advice(config.bit, Rotation::cur()),
-            );
-
-            // Columns from_start and until_end are boolean.
-            cb.require_boolean(
-                "from_start is boolean",
-                meta.query_advice(config.from_start, Rotation::cur()),
-            );
-            cb.require_boolean(
-                "until_end is boolean",
-                meta.query_advice(config.until_end, Rotation::cur()),
-            );
-
             // until_end transitions from 0 to 1 only once, i.e. delta is boolean
-            let delta = meta.query_advice(config.until_end, Rotation::next())
-                - meta.query_advice(config.until_end, Rotation::cur());
+            let delta = config.until_end.expr_at(meta, Rotation::next())
+                - config.until_end.expr_at(meta, Rotation::cur());
 
             cb.condition(is_end.expr(), |cb| {
                 cb.require_equal(
                     "if bit_index == 23: until_end == 1",
-                    meta.query_advice(config.until_end, Rotation::cur()),
+                    config.until_end.expr_at(meta, Rotation::cur()),
                     1.expr(),
                 );
             });
@@ -334,13 +323,13 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
 
             // Constraints at meaningful bits.
             let is_set = and::expr([
-                meta.query_advice(config.from_start, Rotation::cur()),
-                meta.query_advice(config.until_end, Rotation::cur()),
+                config.from_start.expr_at(meta, Rotation::cur()),
+                config.until_end.expr_at(meta, Rotation::cur()),
             ]);
             cb.condition(is_start.expr() * is_set.expr(), |cb| {
                 cb.require_equal(
                     "if is_start && is_set: bit == bitstring_value_acc",
-                    meta.query_advice(config.bit, Rotation::cur()),
+                    config.bit.expr_at(meta, Rotation::cur()),
                     meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
                 );
                 cb.require_equal(
@@ -354,7 +343,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                     "is_set: bitstring_value_acc == bitstring_value_acc::prev * 2 + bit",
                     meta.query_advice(config.bitstring_value_acc, Rotation::cur()),
                     meta.query_advice(config.bitstring_value_acc, Rotation::prev()) * 2.expr()
-                        + meta.query_advice(config.bit, Rotation::cur()),
+                        + config.bit.expr_at(meta, Rotation::cur()),
                 );
                 cb.require_equal(
                     "is_set: bitstring_len == bitstring_len::prev + 1",
@@ -364,7 +353,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             });
 
             // Constraints at bits to be ignored (at the start).
-            let is_ignored_start = not::expr(meta.query_advice(config.until_end, Rotation::cur()));
+            let is_ignored_start = not::expr(config.until_end.expr_at(meta, Rotation::cur()));
             cb.condition(is_ignored_start, |cb| {
                 cb.require_zero(
                     "while until_end == 0: bitstring_len == 0",
@@ -377,7 +366,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             });
 
             // Constraints at bits to be ignored (towards the end).
-            let is_ignored_end = not::expr(meta.query_advice(config.from_start, Rotation::cur()));
+            let is_ignored_end = not::expr(config.from_start.expr_at(meta, Rotation::cur()));
             cb.condition(is_ignored_end, |cb| {
                 cb.require_equal(
                     "bitstring_len unchanged at the last ignored bits",
@@ -403,12 +392,9 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             let mut cb = BaseConstraintBuilder::default();
 
             let (is_padding_curr, is_padding_prev) = (
-                meta.query_advice(config.is_padding, Rotation::cur()),
-                meta.query_advice(config.is_padding, Rotation::prev()),
+                config.is_padding.expr_at(meta, Rotation::cur()),
+                config.is_padding.expr_at(meta, Rotation::prev()),
             );
-
-            // padding is boolean
-            cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
 
             // padding transitions from 0 to 1 only once.
             let delta = is_padding_curr - is_padding_prev;
@@ -433,7 +419,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(config.q_start, Rotation::cur()),
                 not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let (byte_idx_1_curr, byte_idx_1_prev) = (
@@ -647,7 +633,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                         }
                         region.assign_advice(
                             || "bit",
-                            self.bit,
+                            self.bit.column,
                             offset + bit_idx,
                             || Value::known(Fr::from(bit as u64)),
                         )?;
@@ -671,19 +657,19 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                         )?;
                         region.assign_advice(
                             || "from_start",
-                            self.from_start,
+                            self.from_start.column,
                             offset + bit_idx,
                             || Value::known(Fr::from((bit_idx <= (curr_row.3 as usize)) as u64)),
                         )?;
                         region.assign_advice(
                             || "until_end",
-                            self.until_end,
+                            self.until_end.column,
                             offset + bit_idx,
                             || Value::known(Fr::from((bit_idx >= (curr_row.2 as usize)) as u64)),
                         )?;
                         region.assign_advice(
                             || "is_reverse",
-                            self.is_reverse,
+                            self.is_reverse.column,
                             offset + bit_idx,
                             || Value::known(Fr::from(curr_row.5)),
                         )?;
@@ -695,7 +681,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 for idx in 0..offset {
                     region.assign_advice(
                         || "is_padding",
-                        self.is_padding,
+                        self.is_padding.column,
                         idx,
                         || Value::known(Fr::zero()),
                     )?;
@@ -703,7 +689,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 for idx in offset..n_enabled {
                     region.assign_advice(
                         || "is_padding",
-                        self.is_padding,
+                        self.is_padding.column,
                         idx,
                         || Value::known(Fr::one()),
                     )?;
@@ -727,10 +713,10 @@ impl<const N_BYTES: usize> LookupTable<Fr> for BitstringTable<N_BYTES> {
             self.bitstring_value.into(),
             self.bitstring_len.into(),
             self.bit_index.into(),
-            self.from_start.into(),
-            self.until_end.into(),
-            self.is_reverse.into(),
-            self.is_padding.into(),
+            self.from_start.column.into(),
+            self.until_end.column.into(),
+            self.is_reverse.column.into(),
+            self.is_padding.column.into(),
         ]
     }
 

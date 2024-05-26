@@ -1,4 +1,3 @@
-use crate::aggregation::decoder::witgen;
 use gadgets::{
     is_equal::*,
     is_zero::*,
@@ -9,12 +8,13 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use witgen::AddressTableRow;
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::LookupTable,
     util::Field,
 };
+
+use crate::aggregation::{decoder::witgen::AddressTableRow, util::BooleanAdvice};
 
 /// Table used carry the raw sequence instructions parsed from sequence section
 /// and would be later transformed as the back-reference instructions
@@ -81,7 +81,7 @@ pub struct SeqInstTable<F: Field> {
     // each block with seq_index is 0
     seq_index: Column<Advice>,
     // the flag for the first row in each block (i.e. seq_index is 0)
-    s_beginning: Column<Advice>,
+    s_beginning: BooleanAdvice,
 
     // the value directly decoded from bitstream, one row
     // for one sequence
@@ -103,13 +103,13 @@ pub struct SeqInstTable<F: Field> {
 
     // 3 mode on update ref table, corresponding to
     // 1: offset = 1 (if lt_len != 0)
-    ref_update_mode_1: Column<Advice>,
+    ref_update_mode_1: BooleanAdvice,
     // 2: offset = 2 or offset = 1 (if lt_len == 0)
-    ref_update_mode_2: Column<Advice>,
+    ref_update_mode_2: BooleanAdvice,
     // 3: offset = 3 or offset = 2 (if lt_len == 0)
-    ref_update_mode_3: Column<Advice>,
+    ref_update_mode_3: BooleanAdvice,
     // 4: special case of offset = 3 (if lt_len == 0)
-    ref_update_mode_4: Column<Advice>,
+    ref_update_mode_4: BooleanAdvice,
 
     // detect if literal_len is zero
     literal_is_zero: IsZeroConfig<F>,
@@ -132,7 +132,7 @@ impl<F: Field> LookupTable<F> for SeqInstTable<F> {
             self.q_enabled.into(),
             self.block_index.into(),
             self.n_seq.into(),
-            self.s_beginning.into(),
+            self.s_beginning.column.into(),
             self.seq_index.into(),
             self.literal_len.into(),
             self.match_offset.into(),
@@ -204,7 +204,7 @@ impl<F: Field> SeqInstTable<F> {
         vec![
             meta.query_fixed(self.q_enabled, Rotation::cur()),
             meta.query_advice(self.block_index, Rotation::cur()),
-            meta.query_advice(self.s_beginning, Rotation::cur()),
+            self.s_beginning.expr_at(meta, Rotation::cur()),
             meta.query_advice(self.n_seq, Rotation::cur()),
         ]
     }
@@ -227,7 +227,7 @@ impl<F: Field> SeqInstTable<F> {
         vec![
             meta.query_fixed(self.q_enabled, Rotation::cur()),
             meta.query_advice(self.block_index, Rotation::cur()),
-            meta.query_advice(self.s_beginning, Rotation::cur()),
+            self.s_beginning.expr_at(meta, Rotation::cur()),
             meta.query_advice(self.seq_index, Rotation::cur()),
             meta.query_advice(self.literal_len, Rotation::cur()),
             meta.query_advice(self.match_offset, Rotation::cur()),
@@ -257,15 +257,20 @@ impl<F: Field> SeqInstTable<F> {
         let match_len = meta.advice_column();
         let offset = meta.advice_column();
         let acc_literal_len = meta.advice_column();
-        let s_beginning = meta.advice_column();
+        let s_beginning =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
         let seq_index = meta.advice_column();
         let rep_offset_1 = meta.advice_column();
         let rep_offset_2 = meta.advice_column();
         let rep_offset_3 = meta.advice_column();
-        let ref_update_mode_1 = meta.advice_column();
-        let ref_update_mode_2 = meta.advice_column();
-        let ref_update_mode_3 = meta.advice_column();
-        let ref_update_mode_4 = meta.advice_column();
+        let ref_update_mode_1 =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
+        let ref_update_mode_2 =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
+        let ref_update_mode_3 =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
+        let ref_update_mode_4 =
+            BooleanAdvice::construct(meta, |meta| meta.query_fixed(q_enabled, Rotation::cur()));
 
         let [literal_is_zero, ref_offset_1_is_zero] = [literal_len, rep_offset_1].map(|col| {
             let inv_col = meta.advice_column();
@@ -305,8 +310,7 @@ impl<F: Field> SeqInstTable<F> {
                 seq_index_next.expr(),
             );
 
-            let s_beginning = meta.query_advice(s_beginning, Rotation::next());
-            cb.require_boolean("s_beginning is boolean", s_beginning.expr());
+            let s_beginning = s_beginning.expr_at(meta, Rotation::next());
 
             cb.condition(not::expr(is_seq_border.expr()), |cb| {
                 cb.require_zero(
@@ -347,7 +351,7 @@ impl<F: Field> SeqInstTable<F> {
         // so, we enforce s_beginning enabled for valid block index
         meta.create_gate("border constaints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            let s_beginning = meta.query_advice(s_beginning, Rotation::cur());
+            let s_beginning = s_beginning.expr_at(meta, Rotation::cur());
 
             let repeated_offset_pairs = [rep_offset_1, rep_offset_2, rep_offset_3].map(|col| {
                 (
@@ -386,7 +390,7 @@ impl<F: Field> SeqInstTable<F> {
             cb.require_equal(
                 "ref update mode 1",
                 and::expr([not::expr(literal_is_zero.expr()), offset_is_1.expr()]),
-                meta.query_advice(ref_update_mode_1, Rotation::cur()),
+                ref_update_mode_1.expr_at(meta, Rotation::cur()),
             );
 
             cb.require_equal(
@@ -396,7 +400,7 @@ impl<F: Field> SeqInstTable<F> {
                     offset_is_1.expr(),
                     offset_is_2.expr(),
                 ),
-                meta.query_advice(ref_update_mode_2, Rotation::cur()),
+                ref_update_mode_2.expr_at(meta, Rotation::cur()),
             );
 
             cb.require_equal(
@@ -406,13 +410,13 @@ impl<F: Field> SeqInstTable<F> {
                     offset_is_2.expr(),
                     offset_is_3.expr(),
                 ),
-                meta.query_advice(ref_update_mode_3, Rotation::cur()),
+                ref_update_mode_3.expr_at(meta, Rotation::cur()),
             );
 
             cb.require_equal(
                 "ref update mode 4",
                 and::expr([literal_is_zero.expr(), offset_is_3.expr()]),
-                meta.query_advice(ref_update_mode_4, Rotation::cur()),
+                ref_update_mode_4.expr_at(meta, Rotation::cur()),
             );
 
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
@@ -433,17 +437,14 @@ impl<F: Field> SeqInstTable<F> {
                 [rep_offset_1, rep_offset_2, rep_offset_3]
                     .map(|col| meta.query_advice(col, Rotation::cur()));
 
-            let ref_update_mode_1 = meta.query_advice(ref_update_mode_1, Rotation::cur());
-            let ref_update_mode_2 = meta.query_advice(ref_update_mode_2, Rotation::cur());
-            let ref_update_mode_3 = meta.query_advice(ref_update_mode_3, Rotation::cur());
-            let ref_update_mode_4 = meta.query_advice(ref_update_mode_4, Rotation::cur());
+            let ref_update_mode_1 = ref_update_mode_1.expr_at(meta, Rotation::cur());
+            let ref_update_mode_2 = ref_update_mode_2.expr_at(meta, Rotation::cur());
+            let ref_update_mode_3 = ref_update_mode_3.expr_at(meta, Rotation::cur());
+            let ref_update_mode_4 = ref_update_mode_4.expr_at(meta, Rotation::cur());
             let s_is_offset_ref = ref_update_mode_1.expr()
                 + ref_update_mode_2.expr()
                 + ref_update_mode_3.expr()
                 + ref_update_mode_4.expr();
-
-            // should not need this since all ref update modes are exclusive
-            // cb.require_boolean("is offset is boolean", s_is_offset_ref.expr());
 
             // and ref in offset_1 is updated by current value
             cb.require_equal(
@@ -551,7 +552,7 @@ impl<F: Field> SeqInstTable<F> {
 
             cb.gate(
                 meta.query_fixed(q_enabled, Rotation::cur())
-                    * not::expr(meta.query_advice(s_beginning, Rotation::cur())),
+                    * not::expr(s_beginning.expr_at(meta, Rotation::cur())),
             )
         });
 
@@ -616,10 +617,10 @@ impl<F: Field> SeqInstTable<F> {
             self.acc_literal_len,
             self.offset,
             self.seq_index,
-            self.ref_update_mode_1,
-            self.ref_update_mode_2,
-            self.ref_update_mode_3,
-            self.ref_update_mode_4,
+            self.ref_update_mode_1.column,
+            self.ref_update_mode_2.column,
+            self.ref_update_mode_3.column,
+            self.ref_update_mode_4.column,
         ] {
             region.assign_advice(|| "padding values", col, offset, || Value::known(F::zero()))?;
         }
@@ -659,7 +660,7 @@ impl<F: Field> SeqInstTable<F> {
 
         region.assign_advice(
             || "set beginning flag",
-            self.s_beginning,
+            self.s_beginning.column,
             offset,
             || Value::known(F::one()),
         )?;
@@ -749,7 +750,7 @@ impl<F: Field> SeqInstTable<F> {
             offset_table[2] = table_row.repeated_offset3;
 
             for (name, col, val) in [
-                ("beginning flag", self.s_beginning, F::zero()),
+                ("beginning flag", self.s_beginning.column, F::zero()),
                 (
                     "offset table 1",
                     self.rep_offset_1,
@@ -779,7 +780,7 @@ impl<F: Field> SeqInstTable<F> {
                 ("n_seq", self.n_seq, F::from(n_seq as u64)),
                 (
                     "ref update mode",
-                    self.ref_update_mode_1,
+                    self.ref_update_mode_1.column,
                     if ref_update_mode == 1 {
                         F::one()
                     } else {
@@ -788,7 +789,7 @@ impl<F: Field> SeqInstTable<F> {
                 ),
                 (
                     "ref update mode",
-                    self.ref_update_mode_2,
+                    self.ref_update_mode_2.column,
                     if ref_update_mode == 2 {
                         F::one()
                     } else {
@@ -797,7 +798,7 @@ impl<F: Field> SeqInstTable<F> {
                 ),
                 (
                     "ref update mode",
-                    self.ref_update_mode_3,
+                    self.ref_update_mode_3.column,
                     if ref_update_mode == 3 {
                         F::one()
                     } else {
@@ -806,7 +807,7 @@ impl<F: Field> SeqInstTable<F> {
                 ),
                 (
                     "ref update mode",
-                    self.ref_update_mode_4,
+                    self.ref_update_mode_4.column,
                     if ref_update_mode == 4 {
                         F::one()
                     } else {

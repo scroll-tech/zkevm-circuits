@@ -1,7 +1,3 @@
-use crate::aggregation::decoder::witgen::{
-    util::{le_bits_to_value, value_bits_le},
-    BlockType,
-};
 use eth_types::Field;
 use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
@@ -13,6 +9,14 @@ use halo2_proofs::{
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{LookupTable, RangeTable},
+};
+
+use crate::aggregation::{
+    decoder::witgen::{
+        util::{le_bits_to_value, value_bits_le},
+        BlockType,
+    },
+    util::BooleanAdvice,
 };
 
 /// Helper table to decode the regenerated size from the Literals Header.
@@ -41,7 +45,7 @@ pub struct LiteralsHeaderTable {
     /// Regenerated size.
     pub regen_size: Column<Advice>,
     /// Set if padded row
-    pub is_padding: Column<Advice>,
+    pub is_padding: BooleanAdvice,
 }
 
 impl LiteralsHeaderTable {
@@ -63,7 +67,9 @@ impl LiteralsHeaderTable {
             byte0_rs_3: meta.advice_column(),
             byte0_rs_4: meta.advice_column(),
             regen_size: meta.advice_column(),
-            is_padding: meta.advice_column(),
+            is_padding: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
         };
 
         meta.create_gate("LiteralsHeaderTable: first row", |meta| {
@@ -73,7 +79,7 @@ impl LiteralsHeaderTable {
 
             cb.require_zero(
                 "is_padding=0 on first row",
-                meta.query_advice(config.is_padding, Rotation::cur()),
+                config.is_padding.expr_at(meta, Rotation::cur()),
             );
 
             cb.require_equal(
@@ -88,7 +94,7 @@ impl LiteralsHeaderTable {
         meta.create_gate("LiteralsHeaderTable: main gate", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -136,11 +142,10 @@ impl LiteralsHeaderTable {
                 let mut cb = BaseConstraintBuilder::default();
 
                 // padding transitions from 0 -> 1 only once.
-                let is_padding_cur = meta.query_advice(config.is_padding, Rotation::cur());
-                let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
+                let is_padding_cur = config.is_padding.expr_at(meta, Rotation::cur());
+                let is_padding_prev = config.is_padding.expr_at(meta, Rotation::prev());
                 let is_padding_delta = is_padding_cur.expr() - is_padding_prev;
 
-                cb.require_boolean("is_padding is boolean", is_padding_cur.expr());
                 cb.require_boolean("is_padding delta is boolean", is_padding_delta);
 
                 // block_idx increments.
@@ -162,7 +167,7 @@ impl LiteralsHeaderTable {
         meta.lookup("LiteralsHeaderTable: byte0 >> 3", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let range_value = meta.query_advice(config.byte0, Rotation::cur())
@@ -174,7 +179,7 @@ impl LiteralsHeaderTable {
         meta.lookup("LiteralsHeaderTable: byte0 >> 4", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
             ]);
 
             let range_value = meta.query_advice(config.byte0, Rotation::cur())
@@ -259,7 +264,7 @@ impl LiteralsHeaderTable {
                 for offset in literals_headers.len()..n_enabled {
                     region.assign_advice(
                         || "is_padding",
-                        self.is_padding,
+                        self.is_padding.column,
                         offset,
                         || Value::known(F::one()),
                     )?;
@@ -281,7 +286,7 @@ impl LookupTable<Fr> for LiteralsHeaderTable {
             self.size_format_bit0.into(),
             self.size_format_bit1.into(),
             self.regen_size.into(),
-            self.is_padding.into(),
+            self.is_padding.column.into(),
         ]
     }
 
