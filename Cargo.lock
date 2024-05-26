@@ -94,9 +94,9 @@ checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
 
 [[package]]
 name = "alloy-primitives"
-version = "0.7.0"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99bbad0a6b588ef4aec1b5ddbbfdacd9ef04e00b979617765b03174318ee1f3a"
+checksum = "db8aa973e647ec336810a9356af8aea787249c9d00b1525359f3db29a68d231b"
 dependencies = [
  "alloy-rlp",
  "bytes",
@@ -655,9 +655,9 @@ dependencies = [
 
 [[package]]
 name = "c-kzg"
-version = "1.0.0"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3130f3d8717cc02e668a896af24984d5d5d4e8bf12e278e982e0f1bd88a0f9af"
+checksum = "cdf100c4cea8f207e883ff91ca886d621d8a166cb04971dfaa9bb8fd99ed95df"
 dependencies = [
  "blst",
  "cc",
@@ -3674,8 +3674,8 @@ dependencies = [
 
 [[package]]
 name = "revm-precompile"
-version = "6.0.0"
-source = "git+https://github.com/scroll-tech/revm?rev=e1e8f7a#e1e8f7a2eb7ab7f0626713b7e33984881f8f7534"
+version = "7.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#8543dd627348907773d8057807b6a310b276bb30"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
@@ -3683,15 +3683,15 @@ dependencies = [
  "once_cell",
  "revm-primitives",
  "ripemd",
- "secp256k1 0.28.2",
+ "secp256k1 0.29.0",
  "sha2",
  "substrate-bn",
 ]
 
 [[package]]
 name = "revm-primitives"
-version = "3.1.1"
-source = "git+https://github.com/scroll-tech/revm?rev=e1e8f7a#e1e8f7a2eb7ab7f0626713b7e33984881f8f7534"
+version = "4.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#8543dd627348907773d8057807b6a310b276bb30"
 dependencies = [
  "alloy-primitives",
  "auto_impl",
@@ -4038,12 +4038,12 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.28.2"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d24b59d129cdadea20aea4fb2352fa053712e5d713eee47d700cd4b2bc002f10"
+checksum = "0e0cc0f1cf93f4969faf3ea1c7d8a9faed25918d96affa959720823dfe86d4f3"
 dependencies = [
  "rand",
- "secp256k1-sys 0.9.2",
+ "secp256k1-sys 0.10.0",
 ]
 
 [[package]]
@@ -4057,9 +4057,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.9.2"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5d1746aae42c19d583c3c1a8c646bfad910498e2051c551a7f2e3c0c9fbb7eb"
+checksum = "1433bd67156263443f14d603720b082dd3121779323fce20cba2aa07b874bc1b"
 dependencies = [
  "cc",
 ]

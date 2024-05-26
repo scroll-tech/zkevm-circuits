@@ -211,7 +211,7 @@ impl From<&TransactionTrace> for revm_primitives::TxEnv {
             gas_price: revm_primitives::U256::from_be_bytes(tx.gas_price.to_be_bytes()),
             transact_to: match tx.to {
                 Some(to) => revm_primitives::TransactTo::Call(to.0.into()),
-                None => revm_primitives::TransactTo::Create(revm_primitives::CreateScheme::Create),
+                None => revm_primitives::TransactTo::Create,
             },
             value: revm_primitives::U256::from_be_bytes(tx.value.to_be_bytes()),
             data: revm_primitives::Bytes::copy_from_slice(tx.data.as_ref()),
@@ -239,10 +239,7 @@ impl From<&TransactionTrace> for revm_primitives::TxEnv {
             gas_priority_fee: tx
                 .gas_tip_cap
                 .map(|g| revm_primitives::U256::from_be_bytes(g.to_be_bytes())),
-            blob_hashes: vec![],
-            max_fee_per_blob_gas: None,
-            #[cfg(feature = "scroll")]
-            scroll: revm_primitives::ScrollFields::default(),
+            ..Default::default()
         }
     }
 }
