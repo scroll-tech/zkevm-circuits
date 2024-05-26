@@ -41,6 +41,9 @@ pub const N_ROWS_NUM_CHUNKS: usize = 2;
 /// we explicitly set the most-significant byte to 0, effectively utilising only 31 bytes.
 pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 
+/// Allow up to 5x compression via zstd encoding of the batch data.
+pub const N_BATCH_BYTES: usize = N_BLOB_BYTES * 5;
+
 /// KZG trusted setup
 pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
     Arc::new(
@@ -162,12 +165,12 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
 
     /// The number of rows in Blob Data config's layout to represent the "chunk data" section.
     pub const fn n_rows_data() -> usize {
-        N_BLOB_BYTES - Self::n_rows_metadata()
+        N_BATCH_BYTES - Self::n_rows_metadata()
     }
 
     /// The total number of rows used in Blob Data config's layout.
     pub const fn n_rows() -> usize {
-        N_BLOB_BYTES + Self::n_rows_digest()
+        N_BATCH_BYTES + Self::n_rows_digest()
     }
 
     pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkHash]) -> Self {
