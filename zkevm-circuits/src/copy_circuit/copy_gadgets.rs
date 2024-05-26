@@ -495,6 +495,7 @@ pub fn constrain_rw_counter<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
     is_last_col: Column<Advice>,
+    is_first: Expression<F>,
     is_rw_type: Expression<F>,
     is_row_end: Expression<F>,
     is_memory_copy: Expression<F>,
@@ -541,13 +542,23 @@ pub fn constrain_rw_counter<F: Field>(
     );
 
     // the last row is write row.
-    cb.condition(is_memory_copy * is_last.clone(), |cb| {
+    cb.condition(is_memory_copy.clone() * is_last.clone(), |cb| {
         cb.require_equal(
             "constrain last rwc_inc_left == 1 ",
             cur_rwc_inc_left,
             1.expr(),
         );
     });
+    cb.condition(
+        is_memory_copy * is_first,
+        |cb| {
+            cb.require_equal(
+                "rwc_inc_left[0] ==  2 * rwc_inc_left[1] ",
+                meta.query_advice(rwc_inc_left, CURRENT),
+                2.expr() * meta.query_advice(rwc_inc_left, NEXT_ROW),
+            );
+        },
+    );
 
     // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
     cb.condition(not::expr(is_last.expr()), |cb| {

@@ -365,6 +365,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     cb,
                     meta,
                     is_last_col,
+                    is_first,
                     is_rw_type.expr(),
                     is_row_end.expr(),
                     is_memory_copy.expr(),
