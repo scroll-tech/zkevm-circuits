@@ -5,6 +5,8 @@ mod access;
 mod block;
 mod builder_client;
 mod call;
+/// Curie hardfork
+pub mod curie;
 mod execution;
 mod input_state_ref;
 #[cfg(feature = "scroll")]
@@ -276,7 +278,7 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-        is_final_block: bool,
+        is_last_block: bool,
         check_last_tx: bool,
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
@@ -374,7 +376,7 @@ impl<'a> CircuitInputBuilder {
                 }
             }
         }
-        if is_final_block {
+        if is_last_block {
             self.set_value_ops_call_context_rwc_eor();
             self.set_end_block()?;
         }
@@ -493,6 +495,19 @@ impl<'a> CircuitInputBuilder {
                 withdraw_root_before,
             ),
         )?;
+        let last_block_num = state
+            .block
+            .headers
+            .last_key_value()
+            .map(|(_, v)| v.number)
+            .unwrap_or_default();
+
+        // Curie sys contract upgrade
+        let is_curie_fork_block =
+            curie::is_curie_fork(state.block.chain_id, last_block_num.as_u64());
+        if is_curie_fork_block {
+            curie::apply_curie(&mut state, &mut end_block_step)?;
+        }
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
