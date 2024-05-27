@@ -23,6 +23,8 @@ use crate::aggregation::{
     util::BooleanAdvice,
 };
 
+const N_ROWS_PER_FSE: usize = 1 << 10;
+
 /// The FSE table verifies that given the symbols and the states allocated to those symbols, the
 /// baseline and number of bits (nb) are assigned correctly to them.
 ///
@@ -125,6 +127,8 @@ pub struct FseTable<const L: usize, const R: usize> {
     baseline: Column<Advice>,
     /// The number of bits to read from bitstream when at this state.
     nb: Column<Advice>,
+    /// Boolean advice to trigger the FSE state transition check.
+    enable_lookup: BooleanAdvice,
 }
 
 impl<const L: usize, const R: usize> FseTable<L, R> {
@@ -168,6 +172,9 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
             }),
             baseline: meta.advice_column(),
             nb: meta.advice_column(),
+            enable_lookup: BooleanAdvice::construct(meta, |meta| {
+                meta.query_fixed(q_enable, Rotation::cur())
+            }),
         };
 
         // Check that on the starting row of each FSE table, i.e. q_start=true:
@@ -202,7 +209,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
         // is in fact a valid transition. All valid transitions are provided in the fixed-table
         // RomFseTableTransition.
         meta.lookup_any(
-            "FseSortedStatesTable: start row (ROM block_idx and table_kind transition)",
+            "FseTable: start row (ROM block_idx and table_kind transition)",
             |meta| {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
@@ -699,6 +706,26 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
             cb.gate(condition)
         });
 
+        meta.create_gate("FseTable: enable state transition lookup", |meta| {
+            let condition = meta.query_fixed(q_enable, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "enable_lookup for state transition?",
+                config.enable_lookup.expr_at(meta, Rotation::cur()),
+                and::expr([
+                    not::expr(meta.query_fixed(config.sorted_table.q_first, Rotation::cur())),
+                    not::expr(meta.query_fixed(config.sorted_table.q_start, Rotation::cur())),
+                    not::expr(config.is_prob_less_than1.expr_at(meta, Rotation::cur())),
+                    not::expr(config.is_prob_less_than1.expr_at(meta, Rotation::prev())),
+                    not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
+                ]),
+            );
+
+            cb.gate(condition)
+        });
+
         // Constraint for state' calculation. We wish to constrain:
         //
         // - state' == state'' & (table_size - 1)
@@ -706,11 +733,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
         meta.lookup_any("FseTable: state transition", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_fixed(config.sorted_table.q_first, Rotation::cur())),
-                not::expr(meta.query_fixed(config.sorted_table.q_start, Rotation::cur())),
-                not::expr(config.is_prob_less_than1.expr_at(meta, Rotation::cur())),
-                not::expr(config.is_prob_less_than1.expr_at(meta, Rotation::prev())),
-                not::expr(config.is_padding.expr_at(meta, Rotation::cur())),
+                config.enable_lookup.expr_at(meta, Rotation::cur()),
             ]);
 
             let state_prime = meta.query_advice(config.state, Rotation::cur());
@@ -734,6 +757,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
         });
 
         debug_assert!(meta.degree() <= 9);
+        debug_assert!(meta.clone().chunk_lookups().degree() <= 9);
 
         config
     }
@@ -759,7 +783,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                 let mut fse_offset: usize = 1;
                 let mut sorted_offset: usize = 1;
 
-                for i in (1..n_enabled).step_by(1 << 10) {
+                for i in (1..n_enabled).step_by(N_ROWS_PER_FSE) {
                     region.assign_fixed(
                         || "q_start",
                         self.sorted_table.q_start,
@@ -769,11 +793,12 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                 }
 
                 for table in data.iter() {
-                    let target_end_offset = fse_offset + (1 << 10); // reserve enough rows to accommodate skipped states
-                                                                    // Assign q_start
+                    // reserve enough rows to accommodate skipped states Assign q_start
+                    let target_end_offset = fse_offset + N_ROWS_PER_FSE;
 
                     let states_to_symbol = table.parse_state_table();
                     let mut state_idx: usize = 0;
+                    let mut first_regular_prob = true;
 
                     // Assign the symbols with negative normalised probability
                     let tail_states_count = table
@@ -871,6 +896,12 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                 fse_offset,
                                 || Value::known(Fr::from(table.table_size >> 3)),
                             )?;
+                            region.assign_advice(
+                                || "enable_lookup",
+                                self.enable_lookup.column,
+                                fse_offset,
+                                || Value::known(Fr::zero()),
+                            )?;
 
                             fse_offset += 1;
                         }
@@ -965,7 +996,21 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                 fse_offset,
                                 || Value::known(Fr::from(table.table_size >> 3)),
                             )?;
+                            let is_start = (fse_offset - 1) % N_ROWS_PER_FSE == 0;
+                            region.assign_advice(
+                                || "enable_lookup",
+                                self.enable_lookup.column,
+                                fse_offset,
+                                || {
+                                    Value::known(if is_start || first_regular_prob {
+                                        Fr::zero()
+                                    } else {
+                                        Fr::one()
+                                    })
+                                },
+                            )?;
 
+                            first_regular_prob = false;
                             fse_offset += 1;
                         }
                     }
@@ -1152,6 +1197,12 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                             offset,
                             || Value::known(Fr::from(state_idx as u64)),
                         )?;
+                        region.assign_advice(
+                            || "enable_lookup",
+                            self.enable_lookup.column,
+                            fse_offset,
+                            || Value::known(Fr::zero()),
+                        )?;
                     }
                     for offset in sorted_offset..target_end_offset {
                         region.assign_advice(
@@ -1195,6 +1246,12 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                         self.is_padding.column,
                         idx,
                         || Value::known(Fr::one()),
+                    )?;
+                    region.assign_advice(
+                        || "enable_lookup",
+                        self.enable_lookup.column,
+                        idx,
+                        || Value::known(Fr::zero()),
                     )?;
                 }
 
@@ -1755,6 +1812,9 @@ impl FseSortedStatesTable {
 
             cb.gate(condition)
         });
+
+        debug_assert!(meta.degree() <= 9);
+        debug_assert!(meta.clone().chunk_lookups().degree() <= 9);
 
         config
     }

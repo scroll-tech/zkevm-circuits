@@ -150,7 +150,7 @@ fn process_block<F: Field>(
 ) -> AggregateBlockResult<F> {
     let mut witness_rows = vec![];
 
-    let (byte_offset, rows, block_info) =
+    let (byte_offset, rows, mut block_info) =
         process_block_header(src, block_idx, byte_offset, last_row, randomness);
     witness_rows.extend_from_slice(&rows);
 
@@ -165,7 +165,8 @@ fn process_block<F: Field>(
         address_table_rows,
         sequence_exec_result,
         repeated_offset,
-    } = match block_info.block_type {
+        regen_size,
+    ) = match block_info.block_type {
         BlockType::ZstdCompressedBlock => process_block_zstd(
             src,
             decoded_bytes,
@@ -179,6 +180,7 @@ fn process_block<F: Field>(
         ),
         _ => unreachable!("BlockType::ZstdCompressedBlock expected"),
     };
+    block_info.regen_size = regen_size;
     witness_rows.extend_from_slice(&rows);
 
     AggregateBlockResult {
@@ -285,6 +287,7 @@ pub struct BlockProcessingResult<F> {
     pub address_table_rows: Vec<AddressTableRow>,
     pub sequence_exec_result: SequenceExecResult,
     pub repeated_offset: [usize; 3], // repeated offsets are carried forward between blocks
+    pub regen_size: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -422,6 +425,7 @@ fn process_block_zstd<F: Field>(
             recovered_bytes: original_bytes,
         },
         repeated_offset,
+        regen_size: regen_size as u64,
     }
 }
 
