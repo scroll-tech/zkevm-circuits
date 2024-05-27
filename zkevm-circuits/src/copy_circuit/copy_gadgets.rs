@@ -549,6 +549,7 @@ pub fn constrain_rw_counter<F: Field>(
             1.expr(),
         );
     });
+    // second(write) step's rwc_inc_left is half of the first.
     cb.condition(is_memory_copy * is_first, |cb| {
         cb.require_equal(
             "rwc_inc_left[0] ==  2 * rwc_inc_left[1] ",
