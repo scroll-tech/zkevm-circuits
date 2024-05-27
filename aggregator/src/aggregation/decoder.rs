@@ -114,7 +114,6 @@ struct LookupsEnabled {
     enable_fse_var_bit_packing: Column<Advice>,
     enable_fse_norm_prob: Column<Advice>,
     enable_seq_data_rom: Column<Advice>,
-    enable_seq_data_init: Column<Advice>,
     enable_seq_data_instruction: Column<Advice>,
     enable_seq_data_fse_table: Column<Advice>,
     enable_bs_2_bytes: Column<Advice>,
@@ -294,15 +293,20 @@ impl BlockConfig {
         fse_decoder: &FseDecoder,
         rotation: Rotation,
     ) -> Expression<Fr> {
-        select::expr(
-            fse_decoder.is_llt(meta, rotation),
-            self.is_predefined_llt(meta, rotation),
-            select::expr(
+        sum::expr([
+            and::expr([
+                fse_decoder.is_llt(meta, rotation),
+                self.is_predefined_llt(meta, rotation),
+            ]),
+            and::expr([
                 fse_decoder.is_mlt(meta, rotation),
                 self.is_predefined_mlt(meta, rotation),
+            ]),
+            and::expr([
+                fse_decoder.is_mot(meta, rotation),
                 self.is_predefined_mot(meta, rotation),
-            ),
-        )
+            ]),
+        ])
     }
 
     fn is_empty_sequences(
@@ -753,6 +757,7 @@ impl FseDecoder {
         block_config: &BlockConfig,
         is_fse_code: Column<Advice>,
         is_sequence_data: Column<Advice>,
+        is_change: BooleanAdvice,
         q_enable: Column<Fixed>,
     ) -> Self {
         let value_decoded = meta.advice_column();
@@ -788,8 +793,13 @@ impl FseDecoder {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 sum::expr([
+                    // for every tag=FseCode row.
                     meta.query_advice(is_fse_code, Rotation::cur()),
-                    meta.query_advice(is_sequence_data, Rotation::cur()),
+                    // for every tag=SequenceData row, except the sentinel row.
+                    and::expr([
+                        not::expr(is_change.expr_at(meta, Rotation::cur())),
+                        meta.query_advice(is_sequence_data, Rotation::cur()),
+                    ]),
                 ]),
             ]);
 
@@ -975,15 +985,20 @@ impl SequencesDataDecoder {
         fse_decoder: &FseDecoder,
         rotation: Rotation,
     ) -> Expression<Fr> {
-        select::expr(
-            fse_decoder.is_llt(meta, rotation),
-            self.state_llt(meta, Rotation(rotation.0 - 1)),
-            select::expr(
+        sum::expr([
+            and::expr([
+                fse_decoder.is_llt(meta, rotation),
+                self.state_llt(meta, Rotation(rotation.0 - 1)),
+            ]),
+            and::expr([
                 fse_decoder.is_mlt(meta, rotation),
                 self.state_mlt(meta, Rotation(rotation.0 - 1)),
+            ]),
+            and::expr([
+                fse_decoder.is_mot(meta, rotation),
                 self.state_mot(meta, Rotation(rotation.0 - 1)),
-            ),
-        )
+            ]),
+        ])
     }
 
     fn symbol(
@@ -992,15 +1007,20 @@ impl SequencesDataDecoder {
         fse_decoder: &FseDecoder,
         rotation: Rotation,
     ) -> Expression<Fr> {
-        select::expr(
-            fse_decoder.is_llt(meta, rotation),
-            self.symbol_llt(meta, rotation),
-            select::expr(
+        sum::expr([
+            and::expr([
+                fse_decoder.is_llt(meta, rotation),
+                self.symbol_llt(meta, rotation),
+            ]),
+            and::expr([
                 fse_decoder.is_mlt(meta, rotation),
                 self.symbol_mlt(meta, rotation),
+            ]),
+            and::expr([
+                fse_decoder.is_mot(meta, rotation),
                 self.symbol_mot(meta, rotation),
-            ),
-        )
+            ]),
+        ])
     }
 
     fn symbol_at_prev(
@@ -1009,15 +1029,20 @@ impl SequencesDataDecoder {
         fse_decoder: &FseDecoder,
         rotation: Rotation,
     ) -> Expression<Fr> {
-        select::expr(
-            fse_decoder.is_llt(meta, rotation),
-            self.symbol_llt(meta, Rotation(rotation.0 - 1)),
-            select::expr(
+        sum::expr([
+            and::expr([
+                fse_decoder.is_llt(meta, rotation),
+                self.symbol_llt(meta, Rotation(rotation.0 - 1)),
+            ]),
+            and::expr([
                 fse_decoder.is_mlt(meta, rotation),
                 self.symbol_mlt(meta, Rotation(rotation.0 - 1)),
+            ]),
+            and::expr([
+                fse_decoder.is_mot(meta, rotation),
                 self.symbol_mot(meta, Rotation(rotation.0 - 1)),
-            ),
-        )
+            ]),
+        ])
     }
 }
 
@@ -1109,6 +1134,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             &block_config,
             tag_config.is_fse_code,
             tag_config.is_sequence_data,
+            tag_config.is_change,
             q_enable,
         );
         let sequences_data_decoder = SequencesDataDecoder::configure(meta, q_enable);
@@ -1143,7 +1169,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             enable_fse_var_bit_packing: meta.advice_column(),
             enable_fse_norm_prob: meta.advice_column(),
             enable_seq_data_rom: meta.advice_column(),
-            enable_seq_data_init: meta.advice_column(),
             enable_seq_data_instruction: meta.advice_column(),
             enable_seq_data_fse_table: meta.advice_column(),
             enable_bs_2_bytes: meta.advice_column(),
@@ -1411,6 +1436,45 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                             .is_trailing_bits
                             .expr_at(meta, Rotation::cur()),
                     ),
+                ])
+            );
+            lookups_enabled_check!(
+                config.lookups_enabled.enable_seq_data_instruction,
+                and::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    config.fse_decoder.is_llt(meta, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_code_to_value(meta, Rotation::cur()),
+                ])
+            );
+            lookups_enabled_check!(
+                config.lookups_enabled.enable_seq_data_rom,
+                and::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    config
+                        .sequences_data_decoder
+                        .is_code_to_value(meta, Rotation::cur()),
+                ])
+            );
+            lookups_enabled_check!(
+                config.lookups_enabled.enable_seq_data_fse_table,
+                and::expr([
+                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
+                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
+                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
+                    not::expr(
+                        config
+                            .sequences_data_decoder
+                            .is_init_state(meta, Rotation::cur()),
+                    ),
+                    config
+                        .sequences_data_decoder
+                        .is_update_state(meta, Rotation::cur()),
                 ])
             );
             lookups_enabled_check!(
@@ -3351,12 +3415,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 // which is used in the next lookup to the SequenceInstructionTable.
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
-                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-                    config
-                        .sequences_data_decoder
-                        .is_code_to_value(meta, Rotation::cur()),
+                    meta.query_advice(config.lookups_enabled.enable_seq_data_rom, Rotation::cur()),
                 ]);
 
                 let (table_kind, code, baseline, nb) = (
@@ -3433,9 +3492,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     meta.query_advice(config.fse_decoder.table_size, Rotation::cur()),
                 );
                 let is_predefined_mode =
-                    config
-                        .block_config
-                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
+                    meta.query_advice(config.fse_decoder.is_predefined, Rotation::cur());
 
                 [
                     0.expr(), // q_first=0
@@ -3460,13 +3517,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 // all of match offset, match length and literal length.
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
-                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-                    config.fse_decoder.is_llt(meta, Rotation::cur()),
-                    config
-                        .sequences_data_decoder
-                        .is_code_to_value(meta, Rotation::cur()),
+                    meta.query_advice(
+                        config.lookups_enabled.enable_seq_data_instruction,
+                        Rotation::cur(),
+                    ),
                 ]);
                 let (block_idx, sequence_idx) = (
                     meta.query_advice(config.block_config.block_idx, Rotation::cur()),
@@ -3498,29 +3552,25 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             |meta| {
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
-                    meta.query_advice(config.tag_config.is_sequence_data, Rotation::cur()),
-                    not::expr(config.tag_config.is_change.expr_at(meta, Rotation::cur())),
-                    config.bitstream_decoder.is_not_nil(meta, Rotation::cur()),
-                    not::expr(
-                        config
-                            .sequences_data_decoder
-                            .is_init_state(meta, Rotation::cur()),
+                    meta.query_advice(
+                        config.lookups_enabled.enable_seq_data_fse_table,
+                        Rotation::cur(),
                     ),
-                    config
-                        .sequences_data_decoder
-                        .is_update_state(meta, Rotation::cur()),
                 ]);
 
-                let state = config.sequences_data_decoder.state_at_prev(
-                    meta,
-                    &config.fse_decoder,
-                    Rotation::cur(),
+                let (state, symbol) = (
+                    config.sequences_data_decoder.state_at_prev(
+                        meta,
+                        &config.fse_decoder,
+                        Rotation::cur(),
+                    ),
+                    config.sequences_data_decoder.symbol_at_prev(
+                        meta,
+                        &config.fse_decoder,
+                        Rotation::cur(),
+                    ),
                 );
-                let symbol = config.sequences_data_decoder.symbol_at_prev(
-                    meta,
-                    &config.fse_decoder,
-                    Rotation::cur(),
-                );
+
                 let (block_idx, table_kind, table_size, baseline, nb) = (
                     meta.query_advice(config.block_config.block_idx, Rotation::cur()),
                     meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
@@ -3531,9 +3581,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                         .bitstring_len(meta, Rotation::cur()),
                 );
                 let is_predefined_mode =
-                    config
-                        .block_config
-                        .is_predefined(meta, &config.fse_decoder, Rotation::cur());
+                    meta.query_advice(config.fse_decoder.is_predefined, Rotation::cur());
 
                 [
                     0.expr(), // q_first=0
@@ -5189,6 +5237,43 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                         self.lookups_enabled.enable_fse_norm_prob,
                         i,
                         || Value::known(Fr::from(enable_fse_norm_prob as u64)),
+                    )?;
+
+                    let enable_seq_data_fse_table = is_sequence_data
+                        && !row.state.is_tag_change
+                        && !row.bitstream_read_data.is_nil
+                        && !row.bitstream_read_data.is_seq_init
+                        && (row.bitstream_read_data.is_update_state == 1);
+                    region.assign_advice(
+                        || "lookups_enable.enable_seq_data_fse_table",
+                        self.lookups_enabled.enable_seq_data_fse_table,
+                        i,
+                        || Value::known(Fr::from(enable_seq_data_fse_table as u64)),
+                    )?;
+
+                    let enable_seq_data_instruction = is_sequence_data
+                        && !row.state.is_tag_change
+                        && !row.bitstream_read_data.is_nil
+                        && (row.fse_data.table_kind == 1)
+                        && !row.bitstream_read_data.is_seq_init
+                        && (row.bitstream_read_data.is_update_state != 1);
+                    region.assign_advice(
+                        || "lookups_enable.enable_seq_data_instruction",
+                        self.lookups_enabled.enable_seq_data_instruction,
+                        i,
+                        || Value::known(Fr::from(enable_seq_data_instruction as u64)),
+                    )?;
+
+                    let enable_seq_data_rom = is_sequence_data
+                        && !row.state.is_tag_change
+                        && !row.bitstream_read_data.is_nil
+                        && !row.bitstream_read_data.is_seq_init
+                        && (row.bitstream_read_data.is_update_state != 1);
+                    region.assign_advice(
+                        || "lookups_enable.enable_seq_data_rom",
+                        self.lookups_enabled.enable_seq_data_rom,
+                        i,
+                        || Value::known(Fr::from(enable_seq_data_rom as u64)),
                     )?;
 
                     let enable_bs_2_bytes = !row.bitstream_read_data.is_nil
