@@ -549,16 +549,13 @@ pub fn constrain_rw_counter<F: Field>(
             1.expr(),
         );
     });
-    cb.condition(
-        is_memory_copy * is_first,
-        |cb| {
-            cb.require_equal(
-                "rwc_inc_left[0] ==  2 * rwc_inc_left[1] ",
-                meta.query_advice(rwc_inc_left, CURRENT),
-                2.expr() * meta.query_advice(rwc_inc_left, NEXT_ROW),
-            );
-        },
-    );
+    cb.condition(is_memory_copy * is_first, |cb| {
+        cb.require_equal(
+            "rwc_inc_left[0] ==  2 * rwc_inc_left[1] ",
+            meta.query_advice(rwc_inc_left, CURRENT),
+            2.expr() * meta.query_advice(rwc_inc_left, NEXT_ROW),
+        );
+    });
 
     // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
     cb.condition(not::expr(is_last.expr()), |cb| {
