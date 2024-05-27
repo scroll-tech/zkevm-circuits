@@ -166,7 +166,7 @@ fn process_block<F: Field>(
         sequence_exec_result,
         repeated_offset,
         regen_size,
-    ) = match block_info.block_type {
+    } = match block_info.block_type {
         BlockType::ZstdCompressedBlock => process_block_zstd(
             src,
             decoded_bytes,
