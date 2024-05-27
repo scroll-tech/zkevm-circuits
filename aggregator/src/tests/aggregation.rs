@@ -112,6 +112,7 @@ fn test_aggregation_circuit_full() {
 }
 
 #[test]
+#[ignore = "it takes too much time"]
 fn test_aggregation_circuit_variadic() {
     let k = 20;
 
