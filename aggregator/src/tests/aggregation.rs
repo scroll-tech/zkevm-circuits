@@ -111,6 +111,22 @@ fn test_aggregation_circuit_full() {
     log::trace!("finished verification for circuit");
 }
 
+#[test]
+fn test_aggregation_circuit_variadic() {
+    let k = 20;
+
+    let circuit1: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(5, k);
+    let instance1 = circuit1.instances();
+    let prover1 = MockProver::<Fr>::run(k, &circuit1, instance1).unwrap();
+
+    let circuit2: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(10, k);
+    let instance2 = circuit2.instances();
+    let prover2 = MockProver::<Fr>::run(k, &circuit2, instance2).unwrap();
+
+    assert_eq!(prover1.fixed(), prover2.fixed());
+    assert_eq!(prover1.permutation(), prover2.permutation());
+}
+
 fn build_new_aggregation_circuit<const N_SNARKS: usize>(
     num_real_chunks: usize,
     _k: u32,

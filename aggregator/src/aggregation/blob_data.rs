@@ -204,7 +204,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                 Some(region.assign_advice(|| "bytes_rlc", self.bytes_rlc, i + 1, || bytes_rlc)?);
         }
 
-        let last_bytes_rlc = last_bytes_rlc.expect("at least 1 byte guaranteed");
+        let mut last_bytes_rlc = last_bytes_rlc.expect("at least 1 byte guaranteed");
         for i in blob_bytes.len()..N_BLOB_BYTES {
             assigned_bytes.push(region.assign_advice(
                 || "byte",
@@ -218,7 +218,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                 i + 1,
                 || Value::known(Fr::one()),
             )?;
-            region.assign_advice(
+            last_bytes_rlc = region.assign_advice(
                 || "bytes_rlc",
                 self.bytes_rlc,
                 i + 1,
