@@ -135,6 +135,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             // circuit does the lookup to poseidon table.
             let code_hash = cb.query_cell_phase2();
             let deployed_bytecode_rlc = cb.query_cell_phase2();
+            // if contract is deployed, there must be some code bytes
+            // need to be copied
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),

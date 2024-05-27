@@ -583,18 +583,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
                 // - to the precompile input.
                 let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                cb.copy_table_lookup(
-                    tx_id.expr(), //cb.curr.state.call_id.expr(),
-                    CopyDataType::TxCalldata.expr(),
-                    call_id.expr(),
-                    CopyDataType::RlcAcc.expr(),
-                    0.expr(),
-                    precompile_input_len.expr(),
-                    0.expr(),
-                    precompile_input_len.expr(),
-                    precompile_input_bytes_rlc.expr(),
-                    0.expr(), // notice copy from calldata -> rlc do not cost rwc
-                ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
+                cb.condition(not::expr(is_call_data_empty.expr()), |cb| {
+                    cb.copy_table_lookup(
+                        tx_id.expr(), //cb.curr.state.call_id.expr(),
+                        CopyDataType::TxCalldata.expr(),
+                        call_id.expr(),
+                        CopyDataType::RlcAcc.expr(),
+                        0.expr(),
+                        precompile_input_len.expr(),
+                        0.expr(),
+                        precompile_input_len.expr(),
+                        precompile_input_bytes_rlc.expr(),
+                        0.expr(), // notice copy from calldata -> rlc do not cost rwc
+                    )
+                }); // rwc_delta += `call_gadget.cd_address.length()` for precompile
 
                 cb.require_step_state_transition(StepStateTransition {
                     // 23 reads and writes + input data copy:
