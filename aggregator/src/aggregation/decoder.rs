@@ -147,6 +147,8 @@ struct TagConfig {
     is_block_header: Column<Advice>,
     /// Degree reduction: LiteralsHeader
     is_literals_header: Column<Advice>,
+    /// Degree reduction: SequencesHeader
+    is_sequence_header: Column<Advice>,
     /// Degree reduction: SequenceFseCode
     is_fse_code: Column<Advice>,
     /// Degree reduction: SequencesData
@@ -185,6 +187,7 @@ impl TagConfig {
             is_frame_content_size: meta.advice_column(),
             is_block_header: meta.advice_column(),
             is_literals_header: meta.advice_column(),
+            is_sequence_header: meta.advice_column(),
             is_fse_code: meta.advice_column(),
             is_sequence_data: meta.advice_column(),
             is_null: meta.advice_column(),
@@ -1286,6 +1289,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 config.tag_config.is_literals_header,
                 is_zb_literals_header(meta)
             );
+            degree_reduction_check!(
+                config.tag_config.is_sequence_header,
+                is_zb_sequence_header(meta)
+            );
             degree_reduction_check!(config.tag_config.is_fse_code, is_zb_sequence_fse(meta));
             degree_reduction_check!(
                 config.tag_config.is_sequence_data,
@@ -2044,7 +2051,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         meta.create_gate("DecoderConfig: tag ZstdBlockSequenceHeader", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
-                is_zb_sequence_header(meta),
+                meta.query_advice(config.tag_config.is_sequence_header, Rotation::cur()),
                 config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
@@ -2120,7 +2127,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             |meta| {
                 let condition = and::expr([
                     meta.query_fixed(config.q_enable, Rotation::cur()),
-                    is_zb_sequence_header(meta),
+                    meta.query_advice(config.tag_config.is_sequence_header, Rotation::cur()),
                     config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
                 let (block_idx, num_sequences) = (
@@ -4766,6 +4773,14 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                         self.tag_config.is_literals_header,
                         i,
                         || Value::known(Fr::from(is_literals_header as u64)),
+                    )?;
+
+                    let is_sequence_header = row.state.tag == ZstdTag::ZstdBlockSequenceHeader;
+                    region.assign_advice(
+                        || "tag_config.is_sequence_header",
+                        self.tag_config.is_sequence_header,
+                        i,
+                        || Value::known(Fr::from(is_sequence_header as u64)),
                     )?;
 
                     let is_fse_code = row.state.tag == ZstdTag::ZstdBlockSequenceFseCode;
