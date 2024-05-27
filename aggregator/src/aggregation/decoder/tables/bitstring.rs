@@ -432,6 +432,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
         });
 
         debug_assert!(meta.degree() <= 9);
+        debug_assert!(meta.clone().chunk_lookups().degree() <= 9);
 
         config
     }

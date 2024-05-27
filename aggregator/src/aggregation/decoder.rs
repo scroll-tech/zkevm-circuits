@@ -145,6 +145,8 @@ struct TagConfig {
     is_frame_content_size: Column<Advice>,
     /// Degree reduction: BlockHeader
     is_block_header: Column<Advice>,
+    /// Degree reduction: LiteralsHeader
+    is_literals_header: Column<Advice>,
     /// Degree reduction: SequenceFseCode
     is_fse_code: Column<Advice>,
     /// Degree reduction: SequencesData
@@ -182,6 +184,7 @@ impl TagConfig {
             // degree reduction.
             is_frame_content_size: meta.advice_column(),
             is_block_header: meta.advice_column(),
+            is_literals_header: meta.advice_column(),
             is_fse_code: meta.advice_column(),
             is_sequence_data: meta.advice_column(),
             is_null: meta.advice_column(),
@@ -197,6 +200,8 @@ struct BlockConfig {
     block_idx: Column<Advice>,
     /// Whether this block is the last block in the zstd encoded data.
     is_last_block: Column<Advice>,
+    /// The regenerated size of the block, i.e. the length of raw literals.
+    regen_size: Column<Advice>,
     /// Helper boolean column to tell us whether we are in the block's contents. This field is not
     /// set for FrameHeaderDescriptor and FrameContentSize. For the tags that occur while decoding
     /// the block's contents, this field is set.
@@ -224,6 +229,7 @@ impl BlockConfig {
             block_len: meta.advice_column(),
             block_idx: meta.advice_column(),
             is_last_block: meta.advice_column(),
+            regen_size: meta.advice_column(),
             is_block: meta.advice_column(),
             num_sequences,
             is_empty_sequences: IsEqualChip::configure(
@@ -1073,6 +1079,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         );
 
         debug_assert!(meta.degree() <= 9);
+        debug_assert!(meta.clone().chunk_lookups().degree() <= 9);
 
         // Main config
         let _const_col = meta.fixed_column();
@@ -1275,6 +1282,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 is_frame_content_size(meta)
             );
             degree_reduction_check!(config.tag_config.is_block_header, is_block_header(meta));
+            degree_reduction_check!(
+                config.tag_config.is_literals_header,
+                is_zb_literals_header(meta)
+            );
             degree_reduction_check!(config.tag_config.is_fse_code, is_zb_sequence_fse(meta));
             degree_reduction_check!(
                 config.tag_config.is_sequence_data,
@@ -1878,6 +1889,13 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 meta.query_advice(config.block_config.num_sequences, Rotation::prev()),
             );
 
+            // the regen size column remains unchanged.
+            cb.require_equal(
+                "regen_size::cur == regen_size::prev",
+                meta.query_advice(config.block_config.regen_size, Rotation::cur()),
+                meta.query_advice(config.block_config.regen_size, Rotation::prev()),
+            );
+
             // the compression modes are remembered throughout the block's context.
             for column in config.block_config.compression_modes {
                 cb.require_equal(
@@ -1898,7 +1916,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         meta.create_gate("DecoderConfig: tag ZstdBlockLiteralsHeader", |meta| {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
-                is_zb_literals_header(meta),
+                meta.query_advice(config.tag_config.is_literals_header, Rotation::cur()),
                 config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
@@ -1918,14 +1936,32 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             // - Size_Format is 01: Size_Format uses 2 bits, literals header is 2 bytes
             // - Size_Format is 10: Size_Format uses 2 bits, literals header is 3 bytes
             let expected_tag_len = select::expr(
-                not::expr(size_format_bit0),
+                not::expr(size_format_bit0.expr()),
                 1.expr(),
-                select::expr(size_format_bit1, 3.expr(), 2.expr()),
+                select::expr(size_format_bit1.expr(), 3.expr(), 2.expr()),
             );
             cb.require_equal(
                 "ZstdBlockLiteralsHeader: tag_len == expected_tag_len",
                 meta.query_advice(config.tag_config.tag_len, Rotation::cur()),
                 expected_tag_len,
+            );
+
+            // The regenerated size is in fact the tag length of the ZstdBlockLiteralsRawBytes
+            // tag. But depending on how many bytes are in the literals header, we select the
+            // appropriate offset to read the tag_len from.
+            let regen_size = select::expr(
+                size_format_bit0.expr() * not::expr(size_format_bit1.expr()),
+                meta.query_advice(config.tag_config.tag_len, Rotation(2)),
+                select::expr(
+                    size_format_bit0.expr() * size_format_bit1.expr(),
+                    meta.query_advice(config.tag_config.tag_len, Rotation(3)),
+                    meta.query_advice(config.tag_config.tag_len, Rotation(1)),
+                ),
+            );
+            cb.require_equal(
+                "regen size check",
+                regen_size,
+                meta.query_advice(config.block_config.regen_size, Rotation::cur()),
             );
 
             cb.gate(condition)
@@ -1935,7 +1971,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             "DecoderConfig: tag ZstdBlockLiteralsHeader decomposition to regen size",
             |meta| {
                 let condition = and::expr([
-                    is_zb_literals_header(meta),
+                    meta.query_advice(config.tag_config.is_literals_header, Rotation::cur()),
                     config.tag_config.is_change.expr_at(meta, Rotation::cur()),
                 ]);
 
@@ -1957,20 +1993,10 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     0.expr(),
                 );
 
-                // The regenerated size is in fact the tag length of the ZstdBlockLiteralsRawBytes
-                // tag. But depending on how many bytes are in the literals header, we select the
-                // appropriate offset to read the tag_len from.
-                let regen_size = select::expr(
-                    size_format_bit0.expr() * not::expr(size_format_bit1.expr()),
-                    meta.query_advice(config.tag_config.tag_len, Rotation(2)),
-                    select::expr(
-                        size_format_bit0.expr() * size_format_bit1.expr(),
-                        meta.query_advice(config.tag_config.tag_len, Rotation(3)),
-                        meta.query_advice(config.tag_config.tag_len, Rotation(1)),
-                    ),
+                let (block_idx, regen_size) = (
+                    meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                    meta.query_advice(config.block_config.regen_size, Rotation::cur()),
                 );
-
-                let block_idx = meta.query_advice(config.block_config.block_idx, Rotation::cur());
                 [
                     block_idx,
                     byte0,
@@ -4734,6 +4760,14 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                         || Value::known(Fr::from(is_block_header as u64)),
                     )?;
 
+                    let is_literals_header = row.state.tag == ZstdTag::ZstdBlockLiteralsHeader;
+                    region.assign_advice(
+                        || "tag_config.is_literals_header",
+                        self.tag_config.is_literals_header,
+                        i,
+                        || Value::known(Fr::from(is_literals_header as u64)),
+                    )?;
+
                     let is_fse_code = row.state.tag == ZstdTag::ZstdBlockSequenceFseCode;
                     region.assign_advice(
                         || "tag_config.is_fse_code",
@@ -4849,6 +4883,12 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                             self.block_config.num_sequences,
                             i,
                             || Value::known(Fr::from(curr_sequence_info.num_sequences as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "block_config.regen_size",
+                            self.block_config.regen_size,
+                            i,
+                            || Value::known(Fr::from(curr_block_info.regen_size)),
                         )?;
 
                         let table_names = ["LLT", "MOT", "MLT"];
