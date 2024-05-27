@@ -11,8 +11,6 @@ pub use types::*;
 pub mod util;
 use util::{be_bits_to_value, increment_idx, le_bits_to_value, value_bits_le};
 
-use crate::aggregation::decoder::seq_exec;
-
 const CMOT_N: u64 = 31;
 
 /// FrameHeaderDescriptor and FrameContentSize
@@ -317,7 +315,7 @@ fn process_block_zstd<F: Field>(
         offset: byte_offset,
         witness_rows: rows,
         regen_size,
-        compressed_size,
+        compressed_size: _,
     } = process_block_zstd_literals_header::<F>(src, block_idx, byte_offset, last_row, randomness);
 
     witness_rows.extend_from_slice(&rows);
@@ -326,7 +324,7 @@ fn process_block_zstd<F: Field>(
         offset: byte_offset,
         witness_rows: rows,
         literals,
-        regen_size,
+        regen_size: _,
     } = {
         let last_row = rows.last().cloned().unwrap();
         let multiplier =
@@ -1623,9 +1621,8 @@ fn process_block_zstd_literals_header<F: Field>(
 
     let literals_block_type = BlockType::from(lh_bytes[0] & 0x3);
     let size_format = (lh_bytes[0] >> 2) & 3;
-    let sf_max = size_format == 3;
 
-    let [n_bits_fmt, n_bits_regen, n_bits_compressed, n_streams, n_bytes_header, branch]: [usize;
+    let [n_bits_fmt, n_bits_regen, n_bits_compressed, _n_streams, n_bytes_header, _branch]: [usize;
         6] = match literals_block_type {
         BlockType::RawBlock => match size_format {
             0b00 | 0b10 => [1, 5, 0, 1, 1, 0],
@@ -1885,12 +1882,12 @@ mod tests {
             };
 
             let MultiBlockProcessResult {
-                witness_rows,
-                literal_bytes: _decoded_literals,
-                fse_aux_tables,
-                block_info_arr,
-                sequence_info_arr,
-                address_table_rows,
+                witness_rows: _w,
+                literal_bytes: _l,
+                fse_aux_tables: _f,
+                block_info_arr: _b,
+                sequence_info_arr: _s,
+                address_table_rows: _a,
                 sequence_exec_results,
             } = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
 
