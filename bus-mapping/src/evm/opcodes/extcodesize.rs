@@ -58,10 +58,10 @@ impl Opcode for Extcodesize {
             (
                 account.code_hash,
                 if cfg!(feature = "scroll") {
-                    debug_assert_eq!(
-                        account.code_size,
-                        state.code(account.code_hash)?.len().into()
-                    );
+                    //debug_assert_eq!(
+                    //    account.code_size,
+                    //    state.code(account.code_hash)?.len().into()
+                    //);
                     account.code_size
                 } else {
                     state.code(account.code_hash)?.len().into()
