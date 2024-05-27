@@ -4404,7 +4404,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         _compressed_bytes: &[u8],
         witness_rows: Vec<ZstdWitnessRow<Fr>>,
         literal_datas: Vec<Vec<u64>>,
-        _aux_data: Vec<u64>,
         fse_aux_tables: Vec<FseAuxiliaryTableData>,
         block_info_arr: Vec<BlockInfo>,
         sequence_info_arr: Vec<SequenceInfo>,
@@ -5148,7 +5147,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        witgen::{init_zstd_encoder, process},
+        witgen::{init_zstd_encoder, process, MultiBlockProcessResult},
         DecoderConfig, DecoderConfigArgs,
     };
     use halo2_proofs::{
@@ -5217,18 +5216,17 @@ mod tests {
             let (config, u8_table, challenge) = config;
             let challenges = challenge.values(&layouter);
 
-            let (
+            let MultiBlockProcessResult {
                 witness_rows,
-                decoded_literals,
-                aux_data,
+                literal_bytes: decoded_literals,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
-                address_table_arr,
-                sequence_exec_result,
-            ) = process(&self.compressed, challenges.keccak_input());
+                address_table_rows: address_table_arr,
+                sequence_exec_results,
+            } = process(&self.compressed, challenges.keccak_input());
 
-            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
                 (Vec::new(), Vec::new()),
                 |(mut out_byte, mut out_exec), res| {
                     out_byte.extend(res.recovered_bytes);
@@ -5249,7 +5247,6 @@ mod tests {
                 &self.compressed,
                 witness_rows,
                 decoded_literals,
-                aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
