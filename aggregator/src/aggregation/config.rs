@@ -211,6 +211,9 @@ fn aggregation_circuit_degree() {
     );
     cs = cs.chunk_lookups();
     let stats = zkevm_circuits::util::circuit_stats(&cs);
+    let degree = cs.degree();
+    assert!(degree <= 9);
+    //assert!(stats.max_phase <= 1);
     log::info!("stats {stats:#?}");
-    log::info!("agg circuit degree: {}", cs.degree());
+    log::info!("agg circuit degree: {}", degree);
 }
