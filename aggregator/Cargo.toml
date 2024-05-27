@@ -37,7 +37,7 @@ num-bigint.workspace = true
 
 # da-compression
 bitstream-io = "2.2.0"
-zstd = { git = "https://github.com/scroll-tech/zstd-rs", branch = "hack/mul-block", features = ["experimental"]}
+zstd-encoder = { package = "encoder", git = "https://github.com/scroll-tech/da-codec.git", tag = "v0.1.0" }
 
 [dev-dependencies]
 
