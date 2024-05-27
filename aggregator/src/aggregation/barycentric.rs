@@ -350,7 +350,7 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 mod tests {
     use super::*;
     use crate::{
-        blob::{BlobData, KZG_TRUSTED_SETUP},
+        blob::{BatchData, KZG_TRUSTED_SETUP},
         MAX_AGG_SNARKS,
     };
     use c_kzg::{Blob as RethBlob, KzgProof};
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn interpolate_matches_reth_implementation() {
-        let blob = BlobData::<MAX_AGG_SNARKS>::from(&vec![
+        let batch = BatchData::<MAX_AGG_SNARKS>::from(&vec![
             vec![30; 56],
             vec![200; 100],
             vec![0; 340],
@@ -399,8 +399,8 @@ mod tests {
         for z in 0..10 {
             let z = Scalar::from(u64::try_from(13241234 + z).unwrap());
             assert_eq!(
-                reth_point_evaluation(z, &blob.get_coefficients().map(|c| Scalar::from_raw(c.0))),
-                interpolate(z, &blob.get_coefficients().map(|c| Scalar::from_raw(c.0)))
+                reth_point_evaluation(z, &batch.get_coefficients().map(|c| Scalar::from_raw(c.0))),
+                interpolate(z, &batch.get_coefficients().map(|c| Scalar::from_raw(c.0)))
             );
         }
     }

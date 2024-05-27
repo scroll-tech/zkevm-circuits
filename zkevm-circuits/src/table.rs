@@ -26,7 +26,7 @@ use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H2
 use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{and, not, split_u256, split_u256_limb64, Expr},
+    util::{and, not, pow_of_two, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -3209,5 +3209,186 @@ impl<const MAX: usize> RangeTable<MAX> {
 impl<const MAX: usize> From<RangeTable<MAX>> for TableColumn {
     fn from(table: RangeTable<MAX>) -> TableColumn {
         table.0
+    }
+}
+
+/// Lookup table for powers of 2.
+#[derive(Clone, Copy, Debug)]
+pub struct Pow2Table<const N: usize> {
+    exponent: Column<Fixed>,
+    exponentiation: Column<Fixed>,
+}
+
+impl<const N: usize> Pow2Table<N> {
+    /// Construct the Pow2 table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            exponent: meta.fixed_column(),
+            exponentiation: meta.fixed_column(),
+        }
+    }
+
+    /// Assign values to the Pow2 table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "Pow2 table",
+            |mut region| {
+                for i in 0..N {
+                    let exponentiation: F = pow_of_two(i);
+                    region.assign_fixed(
+                        || format!("Pow2: exponent at offset = {i}"),
+                        self.exponent,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || format!("Pow2: exponentiation at offset = {i}"),
+                        self.exponentiation,
+                        i,
+                        || Value::known(exponentiation),
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field, const N: usize> LookupTable<F> for Pow2Table<N> {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.exponent.into(), self.exponentiation.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("pow2table: exponent"),
+            String::from("pow2table: exponentiation"),
+        ]
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+/// Bitwise operation types.
+pub enum BitwiseOp {
+    /// AND
+    AND = 0,
+    /// OR
+    OR,
+    /// XOR
+    XOR,
+}
+
+impl_expr!(BitwiseOp);
+
+/// Lookup table for bitwise AND/OR/XOR operations.
+#[derive(Clone, Copy, Debug)]
+pub struct BitwiseOpTable<const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize> {
+    /// Denotes op: AND == 0, OR == 1, XOR == 2.
+    pub op: Column<Fixed>,
+    /// Denotes the left operand.
+    pub lhs: Column<Fixed>,
+    /// Denotes the right operand.
+    pub rhs: Column<Fixed>,
+    /// Denotes the bitwise operation on lhs and rhs.
+    pub output: Column<Fixed>,
+}
+
+impl<const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize>
+    BitwiseOpTable<OP_CHOICE, RANGE_L, RANGE_R>
+{
+    /// Construct the bitwise ops table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            op: meta.fixed_column(),
+            lhs: meta.fixed_column(),
+            rhs: meta.fixed_column(),
+            output: meta.fixed_column(),
+        }
+    }
+
+    /// Assign values to the BitwiseOp table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "BitwiseOp table",
+            |mut region| {
+                let mut offset = 0;
+                let chosen_ops = match OP_CHOICE {
+                    1 => vec![BitwiseOp::AND],
+                    2 => vec![BitwiseOp::OR],
+                    3 => vec![BitwiseOp::XOR],
+                    4 => vec![BitwiseOp::AND, BitwiseOp::OR],
+                    5 => vec![BitwiseOp::AND, BitwiseOp::XOR],
+                    6 => vec![BitwiseOp::OR, BitwiseOp::XOR],
+                    7 => vec![BitwiseOp::AND, BitwiseOp::OR, BitwiseOp::XOR],
+                    _ => unreachable!("OP_CHOICE in 1..=7"),
+                };
+                for op in chosen_ops {
+                    for [lhs, rhs, out] in (0..RANGE_L).flat_map(move |lhs| {
+                        (0..RANGE_R).map(move |rhs| {
+                            [
+                                lhs,
+                                rhs,
+                                match op {
+                                    BitwiseOp::AND => lhs & rhs,
+                                    BitwiseOp::OR => lhs | rhs,
+                                    BitwiseOp::XOR => lhs ^ rhs,
+                                },
+                            ]
+                        })
+                    }) {
+                        region.assign_fixed(
+                            || "op",
+                            self.op,
+                            offset,
+                            || Value::known(F::from(op as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "lhs",
+                            self.lhs,
+                            offset,
+                            || Value::known(F::from(lhs as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "rhs",
+                            self.rhs,
+                            offset,
+                            || Value::known(F::from(rhs as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "output",
+                            self.output,
+                            offset,
+                            || Value::known(F::from(out as u64)),
+                        )?;
+                        offset += 1;
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field, const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize> LookupTable<F>
+    for BitwiseOpTable<OP_CHOICE, RANGE_L, RANGE_R>
+{
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.op.into(),
+            self.lhs.into(),
+            self.rhs.into(),
+            self.output.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("op"),
+            String::from("lhs"),
+            String::from("rhs"),
+            String::from("output"),
+        ]
     }
 }

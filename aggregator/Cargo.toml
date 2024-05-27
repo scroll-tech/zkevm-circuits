@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+
 eth-types = { path = "../eth-types" }
+gadgets = { path = "../gadgets" }
 zkevm-circuits = { path = "../zkevm-circuits" }
 
 ark-std.workspace = true
@@ -25,11 +25,22 @@ halo2-ecc.workspace = true
 halo2_proofs.workspace = true
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
+strum.workspace = true
+strum_macros.workspace = true
 
+# da-4844
 revm-precompile.workspace = true
 revm-primitives.workspace = true
 c-kzg.workspace = true
 num-bigint.workspace = true
+
+# da-compression
+bitstream-io = "2.2.0"
+zstd = { git = "https://github.com/scroll-tech/zstd-rs", branch = "hack/mul-block", features = ["experimental"]}
+
+[dev-dependencies]
+
+csv = "1.1"
 
 [features]
 default = ["revm-precompile/c-kzg"]
