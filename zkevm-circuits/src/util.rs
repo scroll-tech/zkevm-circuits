@@ -283,6 +283,7 @@ pub struct CircuitStats {
     num_selectors: usize,
     num_simple_selectors: usize,
     num_permutation_columns: usize,
+    num_vk_commitment: usize,
     degree: usize,
     blinding_factors: usize,
     num_challenges: usize,
@@ -313,6 +314,9 @@ pub fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStats {
         num_selectors: meta.num_selectors,
         num_simple_selectors: meta.num_simple_selectors,
         num_permutation_columns: meta.permutation.columns.len(),
+        num_vk_commitment: meta.num_fixed_columns
+            + meta.num_selectors
+            + meta.permutation.columns.len(),
         degree: meta.degree(),
         blinding_factors: meta.blinding_factors(),
         num_challenges: meta.num_challenges(),
