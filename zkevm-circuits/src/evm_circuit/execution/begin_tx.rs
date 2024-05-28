@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_nonce.expr(),
                 sender_nonce.expr(),
             );
-            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_signed_hash_length.expr())
+            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr(),tx_signed_hash_length.expr())
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());

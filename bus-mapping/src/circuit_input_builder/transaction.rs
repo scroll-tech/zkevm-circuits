@@ -432,6 +432,7 @@ impl Transaction {
 
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
+        //TODO: check if need to update for curie
         let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
 
         self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
@@ -477,11 +478,11 @@ pub struct TxL1Fee {
     /// L1 fee scalar
     pub fee_scalar: u64,
     #[cfg(feature = "l1_fee_curie")]
-    pub l1BlobBaseFee: u64, // TODO: rename
+    pub l1blob_baseFee: u64, 
     #[cfg(feature = "l1_fee_curie")]
-    pub commitScalar: u64,
+    pub commit_scalar: u64,
     #[cfg(feature = "l1_fee_curie")]
-    pub blobScalar: u64,
+    pub blob_scalar: u64,
 }
 
 impl TxL1Fee {
@@ -508,11 +509,9 @@ impl TxL1Fee {
                 .1
                 .as_u64()
         });
-        //if cfg!(feature = "l1_fee_curie") {
         #[cfg(feature = "l1_fee_curie")]
         {
-            let [base_fee, l1BlobBaseFee, commitScalar, blobScalar] = [
-                &l1_gas_price_oracle::BASE_FEE_SLOT,
+            let [l1blob_baseFee, commit_scalar, blob_scalar] = [
                 &l1_gas_price_oracle::l1BlobBaseFee,
                 &l1_gas_price_oracle::commitScalar,
                 &l1_gas_price_oracle::blobScalar,
@@ -529,11 +528,11 @@ impl TxL1Fee {
             fee_overhead,
             fee_scalar,
             #[cfg(feature = "l1_fee_curie")]
-            l1BlobBaseFee,
+            l1blob_basefee,
             #[cfg(feature = "l1_fee_curie")]
-            commitScalar,
+            commit_scalar,
             #[cfg(feature = "l1_fee_curie")]
-            blobScalar,
+            blob_scalar,
         }
     }
 
@@ -551,8 +550,7 @@ impl TxL1Fee {
 
         #[cfg(feature = "l1_fee_curie")]
         {
-            let [base_fee, l1BlobBaseFee, commitScalar, blobScalar] = [
-                &l1_gas_price_oracle::BASE_FEE_SLOT,
+            let [l1blob_basefee, commit_scalar, blob_scalar] = [
                 &l1_gas_price_oracle::l1BlobBaseFee,
                 &l1_gas_price_oracle::commitScalar,
                 &l1_gas_price_oracle::blobScalar,
@@ -569,11 +567,11 @@ impl TxL1Fee {
             fee_overhead,
             fee_scalar,
             #[cfg(feature = "l1_fee_curie")]
-            l1BlobBaseFee,
+            l1blob_basefee,
             #[cfg(feature = "l1_fee_curie")]
-            commitScalar,
+            commit_scalar,
             #[cfg(feature = "l1_fee_curie")]
-            blobScalar,
+            blob_scalar,
         }
     }
 }
