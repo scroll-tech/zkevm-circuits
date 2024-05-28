@@ -5,9 +5,9 @@ use crate::{
 };
 use eth_types::{
     self,
-    l2_types::{BlockTrace, EthBlock, StorageTrace},
+    l2_types::{BlockTrace, StorageTrace},
     state_db::{self, CodeDB, StateDB},
-    Address, ToWord, Word,
+    Address, EthBlock, ToWord, Word,
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::ZktrieState;

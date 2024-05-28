@@ -1,11 +1,5 @@
 use super::circuit::{
-    MAX_BYTECODE, MAX_CALLDATA, MAX_EXP_STEPS, MAX_KECCAK_ROWS, MAX_MPT_ROWS, MAX_POSEIDON_ROWS,
-    MAX_RWS, MAX_VERTICAL_ROWS,
-};
-
-use super::circuit::{
     block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_witness_block,
-    get_super_circuit_params,
 };
 use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
 use eth_types::{
@@ -16,6 +10,9 @@ use eth_types::{
 use itertools::Itertools;
 use mpt_zktrie::state::ZktrieState;
 use serde_derive::{Deserialize, Serialize};
+use zkevm_circuits::super_circuit::params::{
+    get_sub_circuit_limit_and_confidence, get_super_circuit_params,
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SubCircuitRowUsage {
@@ -48,24 +45,10 @@ impl RowUsage {
     }
     // We treat 1M as 100%
     pub fn normalize(&self) -> Self {
-        let real_available_rows = [
-            (MAX_RWS, 0.95),           // evm
-            (MAX_RWS, 0.95),           // state
-            (MAX_BYTECODE, 0.95),      // bytecode
-            (MAX_RWS, 0.95),           // copy
-            (MAX_KECCAK_ROWS, 0.95),   // keccak
-            (MAX_KECCAK_ROWS, 0.95),   // sha256
-            (MAX_VERTICAL_ROWS, 0.95), // tx
-            (MAX_CALLDATA, 0.95),      // rlp
-            (7 * MAX_EXP_STEPS, 0.95), // exp
-            (MAX_KECCAK_ROWS, 0.95),   // modexp
-            (MAX_RWS, 0.95),           // pi
-            (MAX_POSEIDON_ROWS, 0.95), // poseidon
-            (MAX_VERTICAL_ROWS, 0.95), // sig
-            (MAX_VERTICAL_ROWS, 1.0),  // ecc
-            (MAX_MPT_ROWS, 0.95),      // mpt
-        ]
-        .map(|(limit, confidence)| (limit as f32 * confidence) as usize);
+        let real_available_rows: Vec<_> = get_sub_circuit_limit_and_confidence()
+            .into_iter()
+            .map(|(limit, confidence)| (limit as f64 * confidence) as usize)
+            .collect();
         let details = self
             .row_usage_details
             .iter()

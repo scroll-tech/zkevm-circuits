@@ -26,7 +26,7 @@ use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H2
 use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{and, not, split_u256, split_u256_limb64, Expr},
+    util::{and, not, pow_of_two, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -1837,6 +1837,14 @@ impl CopyTable {
 
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
+        // for memory copy (mcopy) case, first half of ops are reading, the other half are
+        // writing parts, so for write ops, `rw_counter_write` starts from half too.
+        let mut rw_counter_write = rw_counter + rwc_inc_left / 2;
+        let mut rwc_inc_left_write = rwc_inc_left - rwc_inc_left / 2;
+
+        let is_memory_copy = copy_event.src_id == copy_event.dst_id
+            && copy_event.src_type.eq(&CopyDataType::Memory)
+            && copy_event.dst_type.eq(&CopyDataType::Memory);
 
         let mut reader = CopyThread {
             tag: copy_event.src_type,
@@ -1963,6 +1971,14 @@ impl CopyTable {
                 F::from(thread.addr)
             };
 
+            // rw_counter value in `rw_counter` copytable column.
+            let (rw_counter_in_column, rwc_inc_left_in_column) = if is_memory_copy && !is_read_step
+            {
+                (rw_counter_write, rwc_inc_left_write)
+            } else {
+                (rw_counter, rwc_inc_left)
+            };
+
             assignments.push((
                 thread.tag,
                 [
@@ -1972,8 +1988,11 @@ impl CopyTable {
                     (Value::known(F::from(thread.addr_end)), "src_addr_end"),
                     (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
                     (rlc_acc, "rlc_acc"),
-                    (Value::known(F::from(rw_counter)), "rw_counter"),
-                    (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
+                    (Value::known(F::from(rw_counter_in_column)), "rw_counter"),
+                    (
+                        Value::known(F::from(rwc_inc_left_in_column)),
+                        "rwc_inc_left",
+                    ),
                 ],
                 [
                     (Value::known(F::from(is_last)), "is_last"),
@@ -2001,8 +2020,14 @@ impl CopyTable {
             let is_row_end = is_access_list || (step_idx / 2) % 32 == 31;
             // Update the RW counter.
             if is_row_end && thread.is_rw {
-                rw_counter += 1;
-                rwc_inc_left -= 1;
+                // if write step in memory_copy case, and update rw_counter_write
+                if is_memory_copy && !is_read_step {
+                    rw_counter_write += 1;
+                    rwc_inc_left_write -= 1;
+                } else {
+                    rw_counter += 1;
+                    rwc_inc_left -= 1;
+                }
             }
         }
         assignments
@@ -2012,7 +2037,7 @@ impl CopyTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        block: &Block,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -2215,7 +2240,7 @@ impl ExpTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        block: &Block,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "exponentiation table",
@@ -2519,7 +2544,7 @@ impl SigTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        block: &Block,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -3184,5 +3209,186 @@ impl<const MAX: usize> RangeTable<MAX> {
 impl<const MAX: usize> From<RangeTable<MAX>> for TableColumn {
     fn from(table: RangeTable<MAX>) -> TableColumn {
         table.0
+    }
+}
+
+/// Lookup table for powers of 2.
+#[derive(Clone, Copy, Debug)]
+pub struct Pow2Table<const N: usize> {
+    exponent: Column<Fixed>,
+    exponentiation: Column<Fixed>,
+}
+
+impl<const N: usize> Pow2Table<N> {
+    /// Construct the Pow2 table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            exponent: meta.fixed_column(),
+            exponentiation: meta.fixed_column(),
+        }
+    }
+
+    /// Assign values to the Pow2 table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "Pow2 table",
+            |mut region| {
+                for i in 0..N {
+                    let exponentiation: F = pow_of_two(i);
+                    region.assign_fixed(
+                        || format!("Pow2: exponent at offset = {i}"),
+                        self.exponent,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || format!("Pow2: exponentiation at offset = {i}"),
+                        self.exponentiation,
+                        i,
+                        || Value::known(exponentiation),
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field, const N: usize> LookupTable<F> for Pow2Table<N> {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.exponent.into(), self.exponentiation.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("pow2table: exponent"),
+            String::from("pow2table: exponentiation"),
+        ]
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+/// Bitwise operation types.
+pub enum BitwiseOp {
+    /// AND
+    AND = 0,
+    /// OR
+    OR,
+    /// XOR
+    XOR,
+}
+
+impl_expr!(BitwiseOp);
+
+/// Lookup table for bitwise AND/OR/XOR operations.
+#[derive(Clone, Copy, Debug)]
+pub struct BitwiseOpTable<const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize> {
+    /// Denotes op: AND == 0, OR == 1, XOR == 2.
+    pub op: Column<Fixed>,
+    /// Denotes the left operand.
+    pub lhs: Column<Fixed>,
+    /// Denotes the right operand.
+    pub rhs: Column<Fixed>,
+    /// Denotes the bitwise operation on lhs and rhs.
+    pub output: Column<Fixed>,
+}
+
+impl<const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize>
+    BitwiseOpTable<OP_CHOICE, RANGE_L, RANGE_R>
+{
+    /// Construct the bitwise ops table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            op: meta.fixed_column(),
+            lhs: meta.fixed_column(),
+            rhs: meta.fixed_column(),
+            output: meta.fixed_column(),
+        }
+    }
+
+    /// Assign values to the BitwiseOp table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "BitwiseOp table",
+            |mut region| {
+                let mut offset = 0;
+                let chosen_ops = match OP_CHOICE {
+                    1 => vec![BitwiseOp::AND],
+                    2 => vec![BitwiseOp::OR],
+                    3 => vec![BitwiseOp::XOR],
+                    4 => vec![BitwiseOp::AND, BitwiseOp::OR],
+                    5 => vec![BitwiseOp::AND, BitwiseOp::XOR],
+                    6 => vec![BitwiseOp::OR, BitwiseOp::XOR],
+                    7 => vec![BitwiseOp::AND, BitwiseOp::OR, BitwiseOp::XOR],
+                    _ => unreachable!("OP_CHOICE in 1..=7"),
+                };
+                for op in chosen_ops {
+                    for [lhs, rhs, out] in (0..RANGE_L).flat_map(move |lhs| {
+                        (0..RANGE_R).map(move |rhs| {
+                            [
+                                lhs,
+                                rhs,
+                                match op {
+                                    BitwiseOp::AND => lhs & rhs,
+                                    BitwiseOp::OR => lhs | rhs,
+                                    BitwiseOp::XOR => lhs ^ rhs,
+                                },
+                            ]
+                        })
+                    }) {
+                        region.assign_fixed(
+                            || "op",
+                            self.op,
+                            offset,
+                            || Value::known(F::from(op as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "lhs",
+                            self.lhs,
+                            offset,
+                            || Value::known(F::from(lhs as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "rhs",
+                            self.rhs,
+                            offset,
+                            || Value::known(F::from(rhs as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "output",
+                            self.output,
+                            offset,
+                            || Value::known(F::from(out as u64)),
+                        )?;
+                        offset += 1;
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field, const OP_CHOICE: usize, const RANGE_L: usize, const RANGE_R: usize> LookupTable<F>
+    for BitwiseOpTable<OP_CHOICE, RANGE_L, RANGE_R>
+{
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.op.into(),
+            self.lhs.into(),
+            self.rhs.into(),
+            self.output.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("op"),
+            String::from("lhs"),
+            String::from("rhs"),
+            String::from("output"),
+        ]
     }
 }

@@ -10,11 +10,11 @@ use eth_types::{
     evm_types::{stack::Stack, Gas, Memory, OpcodeId},
     geth_types::GethData,
     state_db::Account,
-    word, Bytecode, GethExecError, GethExecStep, Hash, ToAddress, ToWord, Word,
+    word, Address, Bytecode, GethExecError, GethExecStep, Hash, ToAddress, ToWord, Word,
 };
 use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
 use pretty_assertions::assert_eq;
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 
 // Helper struct that contains a CircuitInputBuilder, a particular tx and a
 // particular execution step so that we can easily get a

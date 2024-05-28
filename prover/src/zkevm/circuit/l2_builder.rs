@@ -1,110 +1,64 @@
 use super::TargetCircuit;
-use crate::{config::INNER_DEGREE, utils::read_env_var};
+use crate::utils::read_env_var;
 use anyhow::{bail, Result};
-use bus_mapping::circuit_input_builder::{
-    self, CircuitInputBuilder, CircuitsParams, PrecompileEcParams,
-};
+use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
 use eth_types::{
     l2_types::BlockTrace,
     state_db::{CodeDB, StateDB},
     ToWord, H256,
 };
-use halo2_proofs::halo2curves::bn256::Fr;
-use itertools::Itertools;
 use mpt_zktrie::state::{ZkTrieHash, ZktrieState};
 use std::{sync::LazyLock, time::Instant};
 use zkevm_circuits::{
-    evm_circuit::witness::{block_apply_mpt_state, Block},
+    evm_circuit::witness::Block,
+    super_circuit::params::{get_super_circuit_params, MAX_TXS},
     util::SubCircuit,
     witness::block_convert,
 };
 
 static CHAIN_ID: LazyLock<u64> = LazyLock::new(|| read_env_var("CHAIN_ID", 53077));
-static AUTO_TRUNCATE: LazyLock<bool> = LazyLock::new(|| read_env_var("AUTO_TRUNCATE", false));
-
-////// params for degree = 20 ////////////
-pub const MAX_TXS: usize = 100;
-pub const MAX_INNER_BLOCKS: usize = 100;
-pub const MAX_EXP_STEPS: usize = 10_000;
-pub const MAX_CALLDATA: usize = 350_000;
-pub const MAX_RLP_ROWS: usize = 800_000;
-pub const MAX_BYTECODE: usize = 600_000;
-pub const MAX_MPT_ROWS: usize = 1_000_000;
-pub const MAX_KECCAK_ROWS: usize = 1_000_000;
-pub const MAX_POSEIDON_ROWS: usize = 1_000_000;
-pub const MAX_VERTICAL_ROWS: usize = 1_000_000;
-pub const MAX_RWS: usize = 1_000_000;
-pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
-pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
-pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
-
-/// default params for super circuit
-pub fn get_super_circuit_params() -> CircuitsParams {
-    CircuitsParams {
-        max_evm_rows: MAX_RWS,
-        max_rws: MAX_RWS,
-        max_copy_rows: MAX_RWS,
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
-        max_bytecode: MAX_BYTECODE,
-        max_inner_blocks: MAX_INNER_BLOCKS,
-        max_keccak_rows: MAX_KECCAK_ROWS,
-        max_poseidon_rows: MAX_POSEIDON_ROWS,
-        max_vertical_circuit_rows: MAX_VERTICAL_ROWS,
-        max_exp_steps: MAX_EXP_STEPS,
-        max_mpt_rows: MAX_MPT_ROWS,
-        max_rlp_rows: MAX_RLP_ROWS,
-        max_ec_ops: PrecompileEcParams {
-            ec_add: MAX_PRECOMPILE_EC_ADD,
-            ec_mul: MAX_PRECOMPILE_EC_MUL,
-            ec_pairing: MAX_PRECOMPILE_EC_PAIRING,
-        },
-    }
-}
-
-// TODO: optimize it later
-pub fn calculate_row_usage_of_trace(
-    block_trace: BlockTrace,
-) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
-    let witness_block = block_traces_to_witness_block(vec![block_trace])?;
-    calculate_row_usage_of_witness_block(&witness_block)
-}
 
 pub fn calculate_row_usage_of_witness_block(
-    witness_block: &Block<Fr>,
+    witness_block: &Block,
 ) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
     let mut rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block_subcircuits(
         witness_block,
     );
-    assert_eq!(rows[11].name, "poseidon");
-    assert_eq!(rows[14].name, "mpt");
-    // We collected real metrics from Scroll mainnet, and here is the graph
-    // https://ibb.co/gVfvW7h
-    // 6 is already very very conservative. Besides, considering a chunk consists of many txs,
-    // using this number is safe.
-    let poseidon_estimate_ratio = if witness_block.txs.len() > 1 {
-        // follower ccc
-        6
-    } else {
-        // singer ccc or single tx block follower ccc,
-        // even i think 6 is safe, here we still keep the old value
-        12
-    };
-    let mpt_poseidon_rows = rows[14].row_num_real * poseidon_estimate_ratio;
+    // Check whether we need to "estimate" poseidon sub circuit row usage
     if witness_block.mpt_updates.smt_traces.is_empty() {
+        assert_eq!(rows[11].name, "poseidon");
+        assert_eq!(rows[14].name, "mpt");
+        // We collected real metrics from Scroll mainnet, and here is the graph
+        // https://ibb.co/gVfvW7h
+        // 6 is already very very conservative. Besides, considering a chunk consists of many txs,
+        // using this number is safe.
+        let poseidon_estimate_ratio = if witness_block.txs.len() > 1 {
+            // follower ccc
+            6
+        } else {
+            // singer ccc or single tx block follower ccc,
+            // even i think 6 is safe, here we still keep the old value
+            12
+        };
+        let mpt_poseidon_rows = rows[14].row_num_real * poseidon_estimate_ratio;
         rows[11].row_num_real += mpt_poseidon_rows;
         log::debug!("calculate_row_usage_of_witness_block light mode, adding {mpt_poseidon_rows} poseidon rows");
     } else {
-        log::debug!("calculate_row_usage_of_witness_block normal mode, skip adding {mpt_poseidon_rows} poseidon rows");
+        log::debug!("calculate_row_usage_of_witness_block normal mode, skip adding poseidon rows");
     }
-
+    let first_block_num = witness_block
+        .context
+        .ctxs
+        .first_key_value()
+        .map_or(0.into(), |(_, ctx)| ctx.number);
+    let last_block_num = witness_block
+        .context
+        .ctxs
+        .last_key_value()
+        .map_or(0.into(), |(_, ctx)| ctx.number);
     log::debug!(
-        "row usage of block {:?}, tx num {:?}, tx calldata len sum {}, rows needed {:?}",
-        witness_block
-            .context
-            .ctxs
-            .first_key_value()
-            .map_or(0.into(), |(_, ctx)| ctx.number),
+        "row usage of block range {:?}, tx num {:?}, tx calldata len sum {}, rows needed {:?}",
+        (first_block_num, last_block_num),
         witness_block.txs.len(),
         witness_block
             .txs
@@ -116,85 +70,22 @@ pub fn calculate_row_usage_of_witness_block(
     Ok(rows)
 }
 
-// FIXME: we need better API name for this.
-// This function also mutates the block trace.
-pub fn check_batch_capacity(block_traces: &mut Vec<BlockTrace>) -> Result<()> {
-    let block_traces_len = block_traces.len();
-    let total_tx_count = block_traces
+pub fn print_chunk_stats(block_traces: &[BlockTrace]) {
+    let num_blocks = block_traces.len();
+    let num_txs = block_traces
         .iter()
         .map(|b| b.transactions.len())
         .sum::<usize>();
-    let total_tx_len_sum = block_traces
+    let total_tx_len = block_traces
         .iter()
         .flat_map(|b| b.transactions.iter().map(|t| t.data.len()))
         .sum::<usize>();
     log::info!(
         "check capacity of block traces, num_block {}, num_tx {}, tx total len {}",
-        block_traces_len,
-        total_tx_count,
-        total_tx_len_sum
+        num_blocks,
+        num_txs,
+        total_tx_len
     );
-
-    if block_traces_len > MAX_INNER_BLOCKS {
-        bail!("too many blocks");
-    }
-
-    if !*AUTO_TRUNCATE {
-        log::debug!("AUTO_TRUNCATE=false, keep batch as is");
-        return Ok(());
-    }
-
-    let t = Instant::now();
-    let mut acc: Vec<crate::zkevm::SubCircuitRowUsage> = Vec::new();
-    let mut n_txs = 0;
-    let mut truncate_idx = block_traces.len();
-    for (idx, block) in block_traces.iter().enumerate() {
-        let usage = calculate_row_usage_of_trace(block.clone())?
-            .into_iter()
-            .map(|x| crate::zkevm::SubCircuitRowUsage {
-                name: x.name,
-                row_number: x.row_num_real,
-            })
-            .collect_vec();
-        if acc.is_empty() {
-            acc = usage.clone();
-        } else {
-            acc.iter_mut().zip(usage.iter()).for_each(|(acc, usage)| {
-                acc.row_number += usage.row_number;
-            });
-        }
-        let rows: usize = itertools::max(acc.iter().map(|x| x.row_number)).unwrap();
-        log::debug!(
-            "row usage after block {}({:?}): {}, {:?}",
-            idx,
-            block.header.number,
-            rows,
-            usage
-        );
-        n_txs += block.transactions.len();
-        if rows > (1 << *INNER_DEGREE) - 256 || n_txs > MAX_TXS {
-            log::warn!(
-                "truncate blocks [{}..{}), n_txs {}, rows {}",
-                idx,
-                block_traces_len,
-                n_txs,
-                rows
-            );
-            truncate_idx = idx;
-            break;
-        }
-    }
-    log::debug!("check_batch_capacity takes {:?}", t.elapsed());
-    block_traces.truncate(truncate_idx);
-    let total_tx_count2 = block_traces
-        .iter()
-        .map(|b| b.transactions.len())
-        .sum::<usize>();
-    if total_tx_count != 0 && total_tx_count2 == 0 {
-        // the circuit cannot even prove the first non-empty block...
-        bail!("circuit capacity not enough");
-    }
-    Ok(())
 }
 
 // prepare an empty builder which can updated by more trace
@@ -240,7 +131,7 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
     Ok(())
 }
 
-pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block<Fr>> {
+pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block> {
     let chain_id = block_trace.chain_id;
     if *CHAIN_ID != chain_id {
         bail!(
@@ -266,7 +157,7 @@ pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block<Fr>
     block_traces_to_witness_block_with_updated_state(vec![], &mut builder)
 }
 
-pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block<Fr>> {
+pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block> {
     validite_block_traces(&block_traces)?;
     let block_num = block_traces.len();
     let total_tx_num = block_traces
@@ -314,17 +205,17 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
     }
 }
 
-/// update the builder with another batch of trace and then *FINALIZE* it
+/// update the builder with another chunk of trace and then *FINALIZE* it
 /// (so the buidler CAN NOT be update any more)
 /// light_mode skip the time consuming calculation on mpt root for each
 /// tx, currently used in row estimation
 pub fn block_traces_to_witness_block_with_updated_state(
     block_traces: Vec<BlockTrace>,
     builder: &mut CircuitInputBuilder,
-) -> Result<Block<Fr>> {
+) -> Result<Block> {
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
-        let block = block_convert(&builder.block, &builder.code_db)?;
+        let block = block_convert(&builder.block.clone(), &builder.code_db)?;
         log::debug!("block convert time {:?}", t.elapsed());
         let rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block(&block);
         log::debug!(
@@ -381,10 +272,10 @@ pub fn block_traces_to_witness_block_with_updated_state(
     if let Some(state) = &mut builder.mpt_init_state {
         if *state.root() != [0u8; 32] {
             log::debug!("block_apply_mpt_state");
-            block_apply_mpt_state(&mut witness_block, state);
+            witness_block.apply_mpt_updates(state);
             log::debug!("block_apply_mpt_state done");
         };
-        let root_after = witness_block.state_root.unwrap_or_default();
+        let root_after = witness_block.post_state_root().to_word();
 
         log::debug!(
             "finish replay trie updates, root {}, root after {:#x?}",

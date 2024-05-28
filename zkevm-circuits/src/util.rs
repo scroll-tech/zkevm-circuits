@@ -219,7 +219,7 @@ pub trait SubCircuit<F: Field> {
     }
 
     /// Create a new SubCircuit from a witness Block
-    fn new_from_block(block: &witness::Block<F>) -> Self;
+    fn new_from_block(block: &witness::Block) -> Self;
 
     /// Returns the instance columns required for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
@@ -238,7 +238,7 @@ pub trait SubCircuit<F: Field> {
 
     /// Return the minimum number of rows required to prove the block.
     /// Row numbers without/with padding are both returned.
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize);
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize);
 }
 
 /// SubCircuit configuration
@@ -333,7 +333,7 @@ pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStat
 /// - 3 comes from minimum number of distinct queries to permutation argument witness column
 /// - 1 comes from queries at x_3 during multiopen
 /// - 1 comes as slight defense against off-by-one errors
-/// - 1 comes from reservation for last row for grand-product boundray check, hence not copy-able or
+/// - 1 comes from reservation for last row for grand-product boundary check, hence not copy-able or
 ///   lookup-able. Note this 1 is not considered in [`ConstraintSystem::blinding_factors`], so below
 ///   we need to add an extra 1.
 ///

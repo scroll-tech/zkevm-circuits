@@ -34,6 +34,7 @@ pub(crate) struct EndBlockGadget<F> {
     max_txs: Cell<F>,
     phase2_withdraw_root: Cell<F>,
     phase2_withdraw_root_prev: Cell<F>,
+    is_curie_fork_block: Cell<F>,
     pub withdraw_root_assigned: Mutex<Option<AssignedCell>>,
 }
 
@@ -50,12 +51,26 @@ impl<F: Clone> Clone for EndBlockGadget<F> {
             max_txs: self.max_txs.clone(),
             phase2_withdraw_root: self.phase2_withdraw_root.clone(),
             phase2_withdraw_root_prev: self.phase2_withdraw_root_prev.clone(),
+            is_curie_fork_block: self.is_curie_fork_block.clone(),
         }
     }
 }
 
 const EMPTY_BLOCK_N_RWS: u64 = 0;
 
+/*
+The goal of EndBlockGadget is to:
+    0. expose withdraw root. Then it can be copied into pi circuit.
+    1. constrain rws of evm circuit is same to rws of state circuit.
+        We use 2 StartOp rw lookup to do this.
+    2. constrain all txs inside tx circuit are processed inside evm circuit.
+        (We don't need to constrain txs in evm circuit are not in tx circuit,
+        since there are tx lookups)
+To achieve the above goal:
+    We need to pass "rwc" and "call_id" all the way to EndBlock.
+    Then "rwc" can be used for goal1.
+    For goal2 this gadget can read tx_id from CallContext using call_id.
+ */
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const NAME: &'static str = "EndBlock";
 
@@ -68,6 +83,10 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
         let phase2_withdraw_root = cb.query_copy_cell_phase2();
         let phase2_withdraw_root_prev = cb.query_cell_phase2();
+
+        // TODO: add constraints for this
+        let is_curie_fork_block = cb.query_cell();
+
         // Note that rw_counter starts at 1
         let is_empty_block =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
@@ -76,7 +95,11 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // and add 1 withdraw_root lookup
         let total_rws = not::expr(is_empty_block.expr())
             * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr())
-            + 1.expr();
+            + 1.expr()
+            + is_curie_fork_block.expr() * 7.expr();
+
+        // TODO: implement the 7 rws
+        // The values should be constants
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -134,10 +157,6 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // We conclude that the number of meaningful entries in the rw_table
         // is total_rws.
 
-        // cb.step_last(|cb| {
-        //     // TODO: Handle reward to coinbase.  Depends on spec:
-        //     // https://github.com/privacy-scaling-explorations/zkevm-specs/issues/290
-        // });
         cb.not_step_last(|cb| {
             // Propagate rw_counter and call_id all the way down.
             cb.require_step_state_transition(StepStateTransition {
@@ -155,6 +174,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             total_txs,
             total_txs_is_max_txs,
             is_empty_block,
+            is_curie_fork_block,
             withdraw_root_assigned: Default::default(),
         }
     }
@@ -163,7 +183,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
@@ -180,6 +200,19 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         self.total_txs_is_max_txs
             .assign(region, offset, total_txs, max_txs)?;
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
+
+        let last_block_number = block
+            .context
+            .ctxs
+            .last_key_value()
+            .map(|(_, b)| b.number)
+            .unwrap_or_default();
+        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_fork(
+            block.chain_id,
+            last_block_number.as_u64(),
+        );
+        self.is_curie_fork_block
+            .assign(region, offset, Value::known(F::from(is_curie as u64)))?;
 
         let withdraw_root = self.phase2_withdraw_root.assign(
             region,

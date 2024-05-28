@@ -1,22 +1,20 @@
-use super::{TargetCircuit, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_TXS};
+use super::TargetCircuit;
 use crate::config::INNER_DEGREE;
 use anyhow::bail;
 use halo2_proofs::halo2curves::bn256::Fr;
-use zkevm_circuits::{super_circuit::SuperCircuit as SuperCircuitTpl, util::SubCircuit, witness};
-
-type SuperCircuitImpl = SuperCircuitTpl<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x1000>;
+use zkevm_circuits::{super_circuit::params::ScrollSuperCircuit, util::SubCircuit, witness};
 
 pub struct SuperCircuit {}
 
 impl TargetCircuit for SuperCircuit {
-    type Inner = SuperCircuitImpl;
+    type Inner = ScrollSuperCircuit;
 
     fn name() -> String {
         "super".to_string()
     }
 
     fn from_witness_block(
-        witness_block: &witness::Block<Fr>,
+        witness_block: &witness::Block,
     ) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
     where
         Self: Sized,
@@ -32,7 +30,7 @@ impl TargetCircuit for SuperCircuit {
         Ok((inner, instance))
     }
 
-    fn estimate_rows_from_witness_block(witness_block: &witness::Block<Fr>) -> usize {
+    fn estimate_rows_from_witness_block(witness_block: &witness::Block) -> usize {
         Self::Inner::min_num_rows_block(witness_block).1
     }
 

@@ -14,27 +14,12 @@ use l1_builder as builder;
 mod super_circuit;
 pub use self::builder::{
     block_trace_to_witness_block, block_traces_to_witness_block,
-    block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_trace,
-    calculate_row_usage_of_witness_block, check_batch_capacity, get_super_circuit_params,
-    validite_block_traces,
+    block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_witness_block,
+    print_chunk_stats, validite_block_traces,
 };
 pub use super_circuit::SuperCircuit;
 
-////// params for Super Circuit of degree = 20 ////////////
-pub const MAX_TXS: usize = 100;
-pub const MAX_INNER_BLOCKS: usize = 100;
-pub const MAX_EXP_STEPS: usize = 10_000;
-pub const MAX_CALLDATA: usize = 350_000;
-pub const MAX_RLP_ROWS: usize = 800_000;
-pub const MAX_BYTECODE: usize = 600_000;
-pub const MAX_MPT_ROWS: usize = 1_000_000;
-pub const MAX_KECCAK_ROWS: usize = 1_000_000;
-pub const MAX_POSEIDON_ROWS: usize = 1_000_000;
-pub const MAX_VERTICAL_ROWS: usize = 1_000_000;
-pub const MAX_RWS: usize = 1_000_000;
-pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
-pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
-pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
+pub use zkevm_circuits::super_circuit::params::{MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_TXS};
 
 /// A target circuit trait is a wrapper of inner circuit, with convenient APIs for building
 /// circuits from traces.
@@ -77,7 +62,7 @@ pub trait TargetCircuit {
 
     /// Build the inner circuit and the instances from the witness block
     fn from_witness_block(
-        witness_block: &witness::Block<Fr>,
+        witness_block: &witness::Block,
     ) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
     where
         Self: Sized;
@@ -92,7 +77,7 @@ pub trait TargetCircuit {
         Ok(Self::estimate_rows_from_witness_block(&witness_block))
     }
 
-    fn estimate_rows_from_witness_block(_witness_block: &witness::Block<Fr>) -> usize {
+    fn estimate_rows_from_witness_block(_witness_block: &witness::Block) -> usize {
         0
     }
 

@@ -32,7 +32,7 @@ use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
 fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>(
     k: u32,
-    block: Block<F>,
+    block: Block,
 ) -> Result<(), Vec<VerifyFailure>> {
     let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
         MAX_TXS,
@@ -50,7 +50,7 @@ fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNE
     prover.verify()
 }
 
-fn block_1tx() -> Block<Fr> {
+fn block_1tx() -> Block {
     use crate::super_circuit::test::block_1tx;
 
     let block = block_1tx();
@@ -61,7 +61,7 @@ fn block_1tx() -> Block<Fr> {
     block_convert(&builder.block, &builder.code_db).unwrap()
 }
 
-fn block_2txs() -> Block<Fr> {
+fn block_2txs() -> Block {
     use crate::super_circuit::test::block_1tx;
 
     let block = block_2tx();
@@ -77,8 +77,8 @@ fn block_2txs() -> Block<Fr> {
     block_convert(&builder.block, &builder.code_db).unwrap()
 }
 
-fn empty_block() -> Block<Fr> {
-    Block::<Fr> {
+fn empty_block() -> Block {
+    Block {
         txs: vec![],
         sigs: vec![],
         ..Default::default()
@@ -112,7 +112,7 @@ fn run_size_check<
     const MAX_CALLDATA: usize,
     const MAX_INNER_BLOCKS: usize,
 >(
-    blocks: [Block<F>; 2],
+    blocks: [Block; 2],
 ) {
     let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
         MAX_TXS,

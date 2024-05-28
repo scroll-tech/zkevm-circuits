@@ -54,7 +54,7 @@ impl Prover {
 
         let (params, pk) = self.params_and_pk(id, degree, &circuit)?;
         log::info!(
-            "super_circuit vk transcript_repr {:?}",
+            "gen_evm_proof vk transcript_repr {:?}",
             pk.get_vk().transcript_repr()
         );
         let instances = circuit.instances();

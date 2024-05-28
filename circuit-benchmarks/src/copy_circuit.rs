@@ -106,7 +106,7 @@ mod tests {
     }
 
     /// generate enough copy events to fillup copy circuit
-    fn generate_full_events_block(degree: u32) -> Block<Fr> {
+    fn generate_full_events_block(degree: u32) -> Block {
         // A empiric value 55 here to let the code generate enough copy event without
         // exceed the max_rws limit.
         let copy_event_num = (1 << degree) / 55;

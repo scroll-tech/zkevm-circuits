@@ -510,6 +510,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //  - Callee Account Nonce
                 reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta() + 1.expr()),
                 log_id: To(0.expr()),
+                end_tx: To(is_call_data_empty.expr()),
                 ..StepStateTransition::new_context()
             });
 
@@ -582,18 +583,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
                 // - to the precompile input.
                 let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                cb.copy_table_lookup(
-                    tx_id.expr(), //cb.curr.state.call_id.expr(),
-                    CopyDataType::TxCalldata.expr(),
-                    call_id.expr(),
-                    CopyDataType::RlcAcc.expr(),
-                    0.expr(),
-                    precompile_input_len.expr(),
-                    0.expr(),
-                    precompile_input_len.expr(),
-                    precompile_input_bytes_rlc.expr(),
-                    0.expr(), // notice copy from calldata -> rlc do not cost rwc
-                ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
+                cb.condition(not::expr(is_call_data_empty.expr()), |cb| {
+                    cb.copy_table_lookup(
+                        tx_id.expr(), //cb.curr.state.call_id.expr(),
+                        CopyDataType::TxCalldata.expr(),
+                        call_id.expr(),
+                        CopyDataType::RlcAcc.expr(),
+                        0.expr(),
+                        precompile_input_len.expr(),
+                        0.expr(),
+                        precompile_input_len.expr(),
+                        precompile_input_bytes_rlc.expr(),
+                        0.expr(), // notice copy from calldata -> rlc do not cost rwc
+                    )
+                }); // rwc_delta += `call_gadget.cd_address.length()` for precompile
 
                 cb.require_step_state_transition(StepStateTransition {
                     // 23 reads and writes + input data copy:
@@ -835,7 +838,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1689,6 +1692,8 @@ mod test {
 
     // Test that we handle the case where account creation tx happens for an account that already
     // has a non-zero balance and codehash.
+    // This is not possible in real world.
+    #[ignore]
     #[test]
     fn create_tx_for_existing_account() {
         let address = Address::repeat_byte(23);

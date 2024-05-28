@@ -220,7 +220,7 @@ pub struct SigCircuit<F: Field> {
 impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
-    fn new_from_block(block: &crate::witness::Block<F>) -> Self {
+    fn new_from_block(block: &crate::witness::Block) -> Self {
         assert!(block.circuits_params.max_txs <= MAX_NUM_SIG);
 
         SigCircuit {
@@ -256,7 +256,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
 
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
-    fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &crate::witness::Block) -> (usize, usize) {
         let row_num = if block.circuits_params.max_vertical_circuit_rows == 0 {
             Self::min_num_rows()
         } else {

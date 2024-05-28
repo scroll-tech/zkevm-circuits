@@ -13,9 +13,17 @@ use itertools::Itertools;
 use std::{collections::BTreeMap, env, str::FromStr, sync::LazyLock};
 use thiserror::Error;
 use zkevm_circuits::{
-    bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
-    modexp_circuit::ModExpCircuit, sig_circuit::SigCircuit, super_circuit::SuperCircuit,
-    test_util::CircuitTestBuilder, util::SubCircuit, witness::Block,
+    bytecode_circuit::circuit::BytecodeCircuit,
+    ecc_circuit::EccCircuit,
+    modexp_circuit::ModExpCircuit,
+    sig_circuit::SigCircuit,
+    super_circuit::params::{
+        get_sub_circuit_limit_and_confidence, get_super_circuit_params, ScrollSuperCircuit,
+        MAX_VERTICAL_ROWS,
+    },
+    test_util::CircuitTestBuilder,
+    util::SubCircuit,
+    witness::Block,
 };
 
 /// Read env var with default value
@@ -265,7 +273,7 @@ fn trace_config_to_witness_block_l2(
     suite: TestSuite,
     circuits_params: CircuitsParams,
     verbose: bool,
-) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
+) -> Result<Option<(Block, CircuitInputBuilder)>, StateTestError> {
     let block_trace = external_tracer::l2trace(&trace_config);
 
     let block_trace = match (block_trace, st.exception) {
@@ -319,10 +327,7 @@ fn trace_config_to_witness_block_l2(
         .expect("could not finalize building block");
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-    zkevm_circuits::witness::block_apply_mpt_state(
-        &mut block,
-        builder.mpt_init_state.as_ref().unwrap(),
-    );
+    block.apply_mpt_updates(builder.mpt_init_state.as_ref().unwrap());
     // as mentioned above, we cannot fit the trace into circuit
     // stop here
     if exceed_max_steps != 0 {
@@ -338,7 +343,7 @@ fn trace_config_to_witness_block_l1(
     suite: TestSuite,
     circuits_params: CircuitsParams,
     verbose: bool,
-) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
+) -> Result<Option<(Block, CircuitInputBuilder)>, StateTestError> {
     use eth_types::geth_types::TxType;
     use ethers_signers::Signer;
 
@@ -430,79 +435,13 @@ fn trace_config_to_witness_block_l1(
         .handle_block(&eth_block, &geth_traces)
         .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-    let block: Block<Fr> =
+    let block: Block =
         zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
             .unwrap();
     Ok(Some((block, builder)))
 }
 
-////// params for degree = 20 ////////////
-pub const MAX_TXS: usize = 100;
-pub const MAX_INNER_BLOCKS: usize = 100;
-pub const MAX_EXP_STEPS: usize = 10_000;
-pub const MAX_CALLDATA: usize = 350_000;
-pub const MAX_RLP_ROWS: usize = 800_000;
-pub const MAX_BYTECODE: usize = 600_000;
-pub const MAX_MPT_ROWS: usize = 1_000_000;
-pub const MAX_KECCAK_ROWS: usize = 1_000_000;
-pub const MAX_SHA256_ROWS: usize = 1_000_000;
-pub const MAX_POSEIDON_ROWS: usize = 1_000_000;
-pub const MAX_VERTICAL_ROWS: usize = 1_000_000;
-pub const MAX_RWS: usize = 1_000_000;
-pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
-pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
-pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
-
-// TODO: refactor & usage
-fn get_sub_circuit_limit() -> Vec<usize> {
-    #[allow(unused_mut)]
-    let mut limit = vec![
-        MAX_RWS,           // evm
-        MAX_RWS,           // state
-        MAX_BYTECODE,      // bytecode
-        MAX_RWS,           // copy
-        MAX_KECCAK_ROWS,   // keccak
-        MAX_SHA256_ROWS,   // sha256
-        MAX_RWS,           // tx
-        MAX_RLP_ROWS,      // rlp
-        8 * MAX_EXP_STEPS, // exp
-        MAX_KECCAK_ROWS,   // modexp
-        MAX_RWS,           // pi
-        MAX_POSEIDON_ROWS, // poseidon
-        MAX_VERTICAL_ROWS, // sig
-        MAX_VERTICAL_ROWS, // ecc
-    ];
-    #[cfg(feature = "scroll")]
-    {
-        limit.push(MAX_MPT_ROWS); // mpt
-    }
-    limit
-}
-
-fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
-    CircuitsParams {
-        max_evm_rows: MAX_RWS,
-        max_rws: MAX_RWS,
-        max_copy_rows: MAX_RWS,
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
-        max_bytecode: MAX_BYTECODE,
-        max_inner_blocks: MAX_INNER_BLOCKS,
-        max_keccak_rows: MAX_KECCAK_ROWS,
-        max_poseidon_rows: MAX_POSEIDON_ROWS,
-        max_vertical_circuit_rows: MAX_VERTICAL_ROWS,
-        max_exp_steps: MAX_EXP_STEPS,
-        max_mpt_rows: MAX_MPT_ROWS,
-        max_rlp_rows: MAX_RLP_ROWS,
-        max_ec_ops: PrecompileEcParams {
-            ec_add: MAX_PRECOMPILE_EC_ADD,
-            ec_mul: MAX_PRECOMPILE_EC_MUL,
-            ec_pairing: MAX_PRECOMPILE_EC_PAIRING,
-        },
-    }
-}
-
-#[cfg(not(feature = "scroll"))]
+/*
 fn get_params_for_super_circuit_test() -> CircuitsParams {
     CircuitsParams {
         max_txs: MAX_TXS,
@@ -525,6 +464,7 @@ fn get_params_for_super_circuit_test() -> CircuitsParams {
         },
     }
 }
+*/
 
 fn get_params_for_sub_circuit_test() -> CircuitsParams {
     CircuitsParams {
@@ -549,7 +489,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
     }
 }
 
-fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) {
+fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block) {
     let num_row = C::min_num_rows_block(block).1;
     let k = zkevm_circuits::util::log2_ceil(num_row + 256);
     log::debug!(
@@ -562,21 +502,12 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) {
     prover.assert_satisfied_par();
 }
 
-type ScrollSuperCircuit = SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>;
-
 pub fn run_test(
     st: StateTest,
     suite: TestSuite,
     circuits_config: CircuitsConfig,
 ) -> Result<(), StateTestError> {
     let test_id = st.id.clone();
-
-    // FIXME
-    if st.max_priority_fee_per_gas.is_some() || st.access_list.is_some() {
-        log::warn!("SKIP TXTYPE {test_id} {st:?}");
-        return Ok(());
-    }
-
     log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
     // get the geth traces
@@ -599,12 +530,12 @@ pub fn run_test(
         get_params_for_sub_circuit_test()
     } else {
         // params for super circuit
-        #[cfg(feature = "scroll")]
-        let circuits_params = get_params_for_super_circuit_test_l2();
-        #[cfg(not(feature = "scroll"))]
-        let circuits_params = get_params_for_super_circuit_test();
-
-        circuits_params
+        if cfg!(feature = "scroll") {
+            get_super_circuit_params()
+        } else {
+            unreachable!("why are we testing super circuit with L1 mode?");
+            //get_params_for_super_circuit_test()
+        }
     };
 
     #[cfg(feature = "scroll")]
@@ -637,7 +568,11 @@ pub fn run_test(
 
     let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
     let mut overflow = false;
-    for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit().iter()) {
+    for (num, limit) in row_usage.iter().zip_eq(
+        get_sub_circuit_limit_and_confidence()
+            .iter()
+            .map(|(limit, _)| limit),
+    ) {
         if num.row_num_real > *limit {
             log::warn!(
                 "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
@@ -673,9 +608,7 @@ pub fn run_test(
 
     if !circuits_config.super_circuit {
         if (*CIRCUIT).is_empty() {
-            CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
-                .copy_checks(None)
-                .run();
+            CircuitTestBuilder::<1, 1>::new_from_block(witness_block).run();
         } else {
             match (*CIRCUIT).as_str() {
                 "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
@@ -771,7 +704,7 @@ fn set_env_coinbase(coinbase: &Address) -> String {
 }
 
 #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
-fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
+fn mock_prove(test_id: &str, witness_block: &Block) {
     log::info!("{test_id}: mock-prove BEGIN");
     // TODO: do we need to automatically adjust this k?
     let k = 20;

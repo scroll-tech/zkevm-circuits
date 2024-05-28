@@ -20,6 +20,8 @@ use gadgets::{
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     util::{not, select, Expr},
 };
+
+use crate::copy_circuit::util::number_or_hash_to_field;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
@@ -46,10 +48,10 @@ use crate::{
 
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_first_last,
-    constrain_forward_parameters, constrain_is_pad, constrain_mask, constrain_masked_value,
-    constrain_must_terminate, constrain_non_pad_non_mask, constrain_rw_counter,
-    constrain_rw_word_complete, constrain_tag, constrain_value_rlc, constrain_word_index,
-    constrain_word_rlc,
+    constrain_forward_parameters, constrain_is_memory_copy, constrain_is_pad, constrain_mask,
+    constrain_masked_value, constrain_must_terminate, constrain_non_pad_non_mask,
+    constrain_rw_counter, constrain_rw_word_complete, constrain_tag, constrain_value_rlc,
+    constrain_word_index, constrain_word_rlc,
 };
 
 /// The current row.
@@ -97,6 +99,8 @@ pub struct CopyCircuitConfig<F> {
     pub is_bytecode: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
     pub is_memory: Column<Advice>,
+    /// Booleans to indicate if mcopy data type exists at the current row.
+    pub is_memory_copy: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
     pub is_tx_log: Column<Advice>,
     /// Booleans to indicate if `CopyDataType::AccessListAddresses` exists at
@@ -110,6 +114,8 @@ pub struct CopyCircuitConfig<F> {
     /// The Copy Table contains the columns that are exposed via the lookup
     /// expressions
     pub copy_table: CopyTable,
+    /// Detect if copy src_id equals dst_id for current row and next row.
+    pub is_id_unchange: IsEqualConfig<F>,
     /// Detect when the address reaches the limit src_addr_end.
     pub is_src_end: IsEqualConfig<F>,
     /// Whether this is the end of a word (last byte).
@@ -167,7 +173,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
         let value_acc = meta.advice_column_in(SecondPhase);
 
-        let [is_pad, is_tx_calldata, is_bytecode, is_memory, is_tx_log, is_access_list_address, is_access_list_storage_key] =
+        let [is_pad, is_tx_calldata, is_bytecode, is_memory, is_memory_copy, is_tx_log, is_access_list_address, is_access_list_storage_key] =
             array_init(|_| meta.advice_column());
         let is_first = copy_table.is_first;
         let id = copy_table.id;
@@ -188,6 +194,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         rw_table.annotate_columns(meta);
         bytecode_table.annotate_columns(meta);
         copy_table.annotate_columns(meta);
+
+        let is_id_unchange = IsEqualChip::configure_with_value_inv(
+            meta,
+            |meta| meta.query_selector(q_step) * not::expr(meta.query_advice(is_last, CURRENT)),
+            |meta| meta.query_advice(id, CURRENT),
+            |meta| meta.query_advice(id, NEXT_ROW),
+            |meta| meta.advice_column_in(SecondPhase),
+        );
 
         let is_src_end = IsEqualChip::configure(
             meta,
@@ -345,16 +359,30 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     is_word_end.expr(),
                 );
 
+                let is_memory_copy = meta.query_advice(is_memory_copy, CURRENT);
+
                 constrain_rw_counter(
                     cb,
                     meta,
-                    is_last.expr(),
+                    is_last_col,
+                    is_first,
                     is_rw_type.expr(),
                     is_row_end.expr(),
+                    is_memory_copy.expr(),
                     rw_counter,
                     rwc_inc_left,
                 );
 
+                // constrain is_memory_copy = src_id == dst_id && src_type == dst_type ==
+                // memory
+                constrain_is_memory_copy(
+                    cb,
+                    meta,
+                    is_last_col,
+                    &is_id_unchange,
+                    is_memory,
+                    is_memory_copy,
+                );
                 constrain_rw_word_complete(cb, is_last_step, is_rw_word_type.expr(), is_word_end);
             }
 
@@ -566,11 +594,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_tx_calldata,
             is_bytecode,
             is_memory,
+            is_memory_copy,
             is_tx_log,
             is_access_list_address,
             is_access_list_storage_key,
             q_enable,
             copy_table,
+            is_id_unchange,
             is_src_end,
             is_word_end,
             non_pad_non_mask,
@@ -589,6 +619,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         region: &mut Region<F>,
         offset: &mut usize,
         tag_chip: &BinaryNumberChip<F, CopyDataType, { CopyDataType::N_BITS }>,
+        is_id_unchange: &IsEqualChip<F>,
         is_src_end_chip: &IsEqualChip<F>,
         lt_word_end_chip: &IsEqualChip<F>,
         challenges: Challenges<Value<F>>,
@@ -665,6 +696,20 @@ impl<F: Field> CopyCircuitConfig<F> {
                 )?;
             }
 
+            let (id, id_next) = if is_read {
+                (&copy_event.src_id, &copy_event.dst_id)
+            } else {
+                (&copy_event.dst_id, &copy_event.src_id)
+            };
+
+            // assign id, id_next
+            is_id_unchange.assign(
+                region,
+                *offset,
+                number_or_hash_to_field(id, challenges.evm_word()),
+                number_or_hash_to_field(id_next, challenges.evm_word()),
+            )?;
+
             lt_word_end_chip.assign(
                 region,
                 *offset,
@@ -700,6 +745,16 @@ impl<F: Field> CopyCircuitConfig<F> {
                 *offset,
                 || Value::known(F::from(tag.eq(&CopyDataType::Memory))),
             )?;
+            let is_memory_copy = copy_event.src_id == copy_event.dst_id
+                && copy_event.src_type.eq(&CopyDataType::Memory)
+                && copy_event.dst_type.eq(&CopyDataType::Memory);
+            region.assign_advice(
+                || format!("is_memory_copy at row: {}", *offset),
+                self.is_memory_copy,
+                *offset,
+                || Value::known(F::from(is_memory_copy)),
+            )?;
+
             region.assign_advice(
                 || format!("is_tx_log at row: {}", *offset),
                 self.is_tx_log,
@@ -750,6 +805,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         let filler_rows = max_copy_rows - copy_rows_needed - DISABLED_ROWS;
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
+        let is_id_unchange = IsEqualChip::construct(self.is_id_unchange.clone());
         let is_src_end_chip = IsEqualChip::construct(self.is_src_end.clone());
         let lt_word_end_chip = IsEqualChip::construct(self.is_word_end.clone());
 
@@ -785,6 +841,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &mut region,
                         &mut offset,
                         &tag_chip,
+                        &is_id_unchange,
                         &is_src_end_chip,
                         &lt_word_end_chip,
                         challenges,
@@ -792,13 +849,13 @@ impl<F: Field> CopyCircuitConfig<F> {
                     )?;
                     log::trace!("offset after {}th copy event: {}", ev_idx, offset);
                 }
-
                 for _ in 0..filler_rows {
                     self.assign_padding_row(
                         &mut region,
                         &mut offset,
                         true,
                         &tag_chip,
+                        &is_id_unchange,
                         &is_src_end_chip,
                         &lt_word_end_chip,
                     )?;
@@ -811,6 +868,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &mut offset,
                         false,
                         &tag_chip,
+                        &is_id_unchange,
                         &is_src_end_chip,
                         &lt_word_end_chip,
                     )?;
@@ -828,6 +886,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         offset: &mut usize,
         enabled: bool,
         tag_chip: &BinaryNumberChip<F, CopyDataType, { CopyDataType::N_BITS }>,
+        is_id_unchange_chip: &IsEqualChip<F>,
         is_src_end_chip: &IsEqualChip<F>,
         lt_word_end_chip: &IsEqualChip<F>,
     ) -> Result<(), Error> {
@@ -974,6 +1033,12 @@ impl<F: Field> CopyCircuitConfig<F> {
         // tag
         tag_chip.assign(region, *offset, &CopyDataType::Padding)?;
         // Assign IsEqual gadgets
+        is_id_unchange_chip.assign(
+            region,
+            *offset,
+            Value::known(F::zero()),
+            Value::known(F::one()),
+        )?;
         is_src_end_chip.assign(
             region,
             *offset,
@@ -997,6 +1062,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             self.is_tx_calldata,
             self.is_bytecode,
             self.is_memory,
+            self.is_memory_copy,
             self.is_tx_log,
             self.is_access_list_address,
             self.is_access_list_storage_key,
@@ -1073,7 +1139,7 @@ impl<F: Field> CopyCircuit<F> {
     /// to assign lookup tables.  This constructor is only suitable to be
     /// used by the SuperCircuit, which already assigns the external lookup
     /// tables.
-    pub fn new_from_block_no_external(block: &witness::Block<F>) -> Self {
+    pub fn new_from_block_no_external(block: &witness::Block) -> Self {
         Self::new(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
@@ -1090,7 +1156,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block) -> Self {
         Self::new_with_external_data(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
@@ -1106,7 +1172,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         let row_num = block
             .copy_events
             .iter()

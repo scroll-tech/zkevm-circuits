@@ -2,7 +2,6 @@ use super::Prover;
 use crate::{config::LayerId, utils::gen_rng};
 use aggregator::extract_proof_and_instances_with_pairing_check;
 use anyhow::{anyhow, Result};
-use halo2_proofs::halo2curves::bn256::Fr;
 use snark_verifier_sdk::Snark;
 use zkevm_circuits::evm_circuit::witness::Block;
 
@@ -10,7 +9,7 @@ impl Prover {
     pub fn load_or_gen_final_chunk_snark(
         &mut self,
         name: &str,
-        witness_block: &Block<Fr>,
+        witness_block: &Block,
         inner_id: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<Snark> {
@@ -36,7 +35,7 @@ impl Prover {
     pub fn load_or_gen_last_chunk_snark(
         &mut self,
         name: &str,
-        witness_block: &Block<Fr>,
+        witness_block: &Block,
         inner_id: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<Snark> {

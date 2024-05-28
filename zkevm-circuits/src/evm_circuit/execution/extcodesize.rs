@@ -115,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

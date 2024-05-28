@@ -62,6 +62,9 @@ use crate::evm_types::Stack;
 #[cfg(feature = "enable-storage")]
 use crate::evm_types::Storage;
 
+/// Main Block type
+pub type EthBlock = Block<Transaction>;
+
 /// Used for FFI with Golang. Bytes in golang will be serialized as base64 by default.
 pub mod base64 {
     use base64::{decode, encode};

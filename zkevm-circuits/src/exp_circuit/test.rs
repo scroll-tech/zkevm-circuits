@@ -24,12 +24,12 @@ fn exp_circuit_unusable_rows() {
 }
 
 /// Test exponentiation circuit with the provided block witness
-pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) {
-    let circuit = ExpCircuit::<F>::new(
+pub fn test_exp_circuit(k: u32, block: Block) {
+    let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
         block.circuits_params.max_exp_steps,
     );
-    let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+    let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par()
 }
 
@@ -64,14 +64,14 @@ fn gen_data(code: Bytecode) -> CircuitInputBuilder {
 fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
     let code = gen_code_single(base, exponent);
     let builder = gen_data(code);
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
     test_exp_circuit(k.unwrap_or(18), block);
 }
 
 fn test_ok_multiple(args: Vec<(Word, Word)>) {
     let code = gen_code_multiple(args);
     let builder = gen_data(code);
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
     test_exp_circuit(20, block);
 }
 
@@ -122,7 +122,7 @@ fn variadic_size_check() {
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
         block.circuits_params.max_exp_steps,
@@ -140,7 +140,7 @@ fn variadic_size_check() {
         STOP
     };
     let builder = gen_data(code);
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
         block.circuits_params.max_exp_steps,

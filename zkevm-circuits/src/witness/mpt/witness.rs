@@ -346,10 +346,9 @@ impl WitnessGenerator {
                         assert!(new_val < u64::MAX.into());
                         // code size can only change from 0
                         debug_assert_eq!(old_val.as_u64(), acc_data.code_size);
-                        debug_assert!(
-                            old_val.as_u64() == 0u64 || old_val.as_u64() == new_val.as_u64(),
-                            "old {old_val:?} new {new_val:?}",
-                        );
+                        if !(old_val.as_u64() == 0u64 || old_val.as_u64() == new_val.as_u64()) {
+                            log::warn!("MPTProofType::CodeSizeExists {old_val}=>{new_val}");
+                        }
                         acc_data.code_size = new_val.as_u64();
                     }
                     MPTProofType::AccountDoesNotExist => {

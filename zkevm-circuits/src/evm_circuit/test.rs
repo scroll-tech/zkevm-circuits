@@ -30,7 +30,7 @@ pub(crate) fn rand_word() -> Word {
 }
 
 impl<F: Field> EvmCircuit<F> {
-    pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
+    pub fn get_test_cicuit_from_block(block: Block) -> Self {
         let fixed_table_tags = detect_fixed_table_tags(&block);
         EvmCircuit::<F>::new_dev(block, fixed_table_tags)
     }

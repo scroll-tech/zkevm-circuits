@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _transaction: &Transaction,
         _call: &Call,
         step: &ExecStep,

@@ -13,7 +13,7 @@ use crate::{
     evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable, util::Field,
 };
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{geth_types::TxType, Address, Hash, ToBigEndian, ToWord, Word, H256};
+use eth_types::{geth_types::TxType, Address, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
@@ -1785,22 +1785,12 @@ impl<F: Field> PiCircuit<F> {
         max_txs: usize,
         max_calldata: usize,
         max_inner_blocks: usize,
-        block: &Block<F>,
+        block: &Block,
     ) -> Self {
         let chain_id = block.chain_id;
-        let next_state_root = block
-            .context
-            .ctxs
-            .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root)
-            .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
-        if block.mpt_updates.new_root().to_be_bytes() != next_state_root.to_fixed_bytes() {
-            log::error!(
-                "replayed root {:?} != block head root {:?}",
-                block.mpt_updates.new_root().to_word(),
-                next_state_root
-            );
-        }
+        let prev_state_root_in_trie = H256(block.mpt_updates.old_root().to_be_bytes());
+        let prev_state_root_in_header = H256(block.prev_state_root.to_be_bytes());
+        assert_eq!(prev_state_root_in_trie, prev_state_root_in_header);
         let public_data = PublicData {
             max_txs,
             max_calldata,
@@ -1809,8 +1799,8 @@ impl<F: Field> PiCircuit<F> {
             start_l1_queue_index: block.start_l1_queue_index,
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
-            prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),
-            next_state_root,
+            prev_state_root: prev_state_root_in_trie,
+            next_state_root: block.post_state_root(),
             withdraw_trie_root: H256(block.withdraw_root.to_be_bytes()),
         };
 
@@ -1890,7 +1880,7 @@ impl<F: Field> PiCircuit<F> {
 impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
-    fn new_from_block(block: &Block<F>) -> Self {
+    fn new_from_block(block: &Block) -> Self {
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
@@ -1900,7 +1890,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         let tx_usage = block.txs.len() as f32 / block.circuits_params.max_txs as f32;
         let max_inner_blocks = block.circuits_params.max_inner_blocks;
         let max_txs = block.circuits_params.max_txs;

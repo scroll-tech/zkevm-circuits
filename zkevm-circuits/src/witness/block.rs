@@ -8,6 +8,7 @@ use crate::{
     evm_circuit::util::rlc,
     table::{BlockContextFieldTag, RwTableTag},
     util::{Field, SubCircuit},
+    witness::keccak::keccak_inputs,
 };
 use bus_mapping::{
     circuit_input_builder::{
@@ -16,8 +17,10 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{sign_types::SignData, Address, ToLittleEndian, ToScalar, Word, U256};
-use halo2_proofs::circuit::Value;
+use eth_types::{
+    sign_types::SignData, Address, ToBigEndian, ToLittleEndian, ToScalar, Word, H256, U256,
+};
+use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
 use super::{
@@ -30,18 +33,16 @@ use crate::util::Challenges;
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
 #[derive(Debug, Clone, Default)]
-pub struct Block<F> {
-    /// For historical reasons..
-    pub _marker: std::marker::PhantomData<F>,
+pub struct Block {
     /// Transactions in the block
     pub txs: Vec<Transaction>,
     /// Signatures in the block
     pub sigs: Vec<Signature>,
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub padding_step: ExecStep,
+    /// EndBlock step that appears in the last EVM row.
+    pub end_block_step: ExecStep,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -58,14 +59,10 @@ pub struct Block<F> {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
-    /// State root after the block, is set if block_apply_mpt_state is called
-    pub state_root: Option<Word>, // TODO: Make this H256
     /// Withdraw root
     pub withdraw_root: Word,
     /// Withdraw roof of the previous block
     pub prev_withdraw_root: Word,
-    /// Keccak inputs
-    pub keccak_inputs: Vec<Vec<u8>>,
     /// Mpt updates
     pub mpt_updates: MptUpdates,
     /// Chain ID
@@ -85,7 +82,29 @@ pub struct BlockContexts {
     pub relax_mode: bool,
 }
 
-impl<F: Field> Block<F> {
+impl Block {
+    /// The state root after this chunk
+    pub fn post_state_root(&self) -> H256 {
+        let post_state_root_in_trie = H256(self.mpt_updates.new_root().to_be_bytes());
+        let post_state_root_in_header = self
+            .context
+            .ctxs
+            .last_key_value()
+            .map(|(_, blk)| blk.eth_block.state_root)
+            .unwrap_or(H256(self.prev_state_root.to_be_bytes()));
+        if post_state_root_in_trie != post_state_root_in_header {
+            log::error!(
+                "replayed root {:?} != block head root {:?}",
+                post_state_root_in_trie,
+                post_state_root_in_header
+            );
+        }
+        post_state_root_in_trie
+    }
+    /// Replay mpt updates to generate mpt witness
+    pub fn apply_mpt_updates(&mut self, mpt_state: &MptState) {
+        self.mpt_updates.fill_state_roots(mpt_state);
+    }
     /// For each tx, for each step, print the rwc at the beginning of the step,
     /// and all the rw operations of the step.
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
@@ -246,17 +265,17 @@ use crate::tx_circuit::TX_LEN;
 use crate::util::log2_ceil;
 
 #[cfg(feature = "test")]
-impl<F: Field> Block<F> {
+impl Block {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
     pub fn get_evm_test_circuit_degree(&self) -> u32 {
         let num_rows_required_for_execution_steps: usize =
-            EvmCircuit::<F>::get_num_rows_required(self);
+            EvmCircuit::<Fr>::get_num_rows_required(self);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(self)
             .iter()
-            .map(|tag| tag.build::<F>().count())
+            .map(|tag| tag.build::<Fr>().count())
             .sum();
         let num_rows_required_for_bytecode_table: usize = self
             .bytecodes
@@ -268,7 +287,7 @@ impl<F: Field> Block<F> {
             .iter()
             .map(|c| c.copy_bytes.bytes.len() * 2)
             .sum();
-        let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
+        let num_rows_required_for_keccak_table: usize = keccak_inputs(self).unwrap().len();
         // tx_table load only does tx padding, no calldata padding
         let num_rows_required_for_tx_table: usize = self.circuits_params.max_txs * TX_LEN
             + self.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>();
@@ -290,7 +309,7 @@ impl<F: Field> Block<F> {
         ])
         .unwrap();
 
-        let k = log2_ceil(EvmCircuit::<F>::unusable_rows() + rows_needed);
+        let k = log2_ceil(EvmCircuit::<Fr>::unusable_rows() + rows_needed);
         log::debug!(
             "num_rows_required_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
@@ -461,10 +480,10 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
 }
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
-pub fn block_convert<F: Field>(
+pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &eth_types::state_db::CodeDB,
-) -> Result<Block<F>, Error> {
+) -> Result<Block, Error> {
     let rws = RwMap::from(&block.container);
     rws.check_value()?;
     let num_txs = block.txs().len();
@@ -476,15 +495,15 @@ pub fn block_convert<F: Field>(
         .unwrap_or_default();
     let chain_id = block.chain_id();
     rws.check_rw_counter_sanity();
-    let end_block_not_last = step_convert(&block.block_steps.end_block_not_last, last_block_num);
-    let end_block_last = step_convert(&block.block_steps.end_block_last, last_block_num);
+    let padding_step = step_convert(&block.block_steps.padding_step, last_block_num);
+    let end_block_step = step_convert(&block.block_steps.end_block_step, last_block_num);
     log::trace!(
-        "witness block: end_block_not_last {:?}, end_block_last {:?}",
-        end_block_not_last,
-        end_block_last
+        "witness block: padding_step {:?}, end_block_step {:?}",
+        padding_step,
+        end_block_step
     );
     let max_rws = if block.circuits_params.max_rws == 0 {
-        end_block_last.rw_counter + end_block_last.rw_indices.len() + 1
+        end_block_step.rw_counter + end_block_step.rw_indices.len() + 1
     } else {
         block.circuits_params.max_rws
     };
@@ -495,10 +514,10 @@ pub fn block_convert<F: Field>(
         block.end_state_root(),
     );
 
-    let _withdraw_root_check_rw = if end_block_last.rw_counter == 0 {
+    let _withdraw_root_check_rw = if end_block_step.rw_counter == 0 {
         0
     } else {
-        end_block_last.rw_counter + 1
+        end_block_step.rw_counter + 1
     };
     let total_tx_as_txid = num_txs;
     let withdraw_root_entry = mpt_updates.get(&super::rw::Rw::AccountStorage {
@@ -526,8 +545,7 @@ pub fn block_convert<F: Field>(
     }
 
     Ok(Block {
-        _marker: Default::default(),
-        context: block.into(),
+        context: BlockContexts::from(block),
         rws,
         txs: block
             .txs()
@@ -543,8 +561,8 @@ pub fn block_convert<F: Field>(
             })
             .collect(),
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
-        end_block_not_last,
-        end_block_last,
+        padding_step,
+        end_block_step,
         bytecodes: code_db
             .0
             .iter()
@@ -567,41 +585,11 @@ pub fn block_convert<F: Field>(
             ..block.circuits_params
         },
         prev_state_root: block.prev_state_root,
-        state_root: None,
         withdraw_root: block.withdraw_root,
         prev_withdraw_root: block.prev_withdraw_root,
-        keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
         start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
     })
-}
-
-/// Convert a block struct in bus-mapping to a witness block used in circuits
-pub fn block_convert_with_l1_queue_index<F: Field>(
-    block: &circuit_input_builder::Block,
-    code_db: &eth_types::state_db::CodeDB,
-    start_l1_queue_index: u64,
-) -> Result<Block<F>, Error> {
-    let mut block = block.clone();
-    // keccak_inputs_pi_circuit needs correct start_l1_queue_index
-    // but at this time it can be start_l1_queue_index of last block inside the chunk
-    // TODO kunxian: any better solution
-    block.start_l1_queue_index = start_l1_queue_index;
-    let witness_block = block_convert(&block, code_db)?;
-    Ok(witness_block)
-}
-
-/// Attach witness block with mpt states
-pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) {
-    block.mpt_updates.fill_state_roots(mpt_state);
-    block.state_root = Some(block.mpt_updates.new_root());
-}
-
-/// Mocking generate mpt witness from mpt states
-pub fn block_mocking_apply_mpt<F: Field>(block: &mut Block<F>) {
-    block.mpt_updates.mock_fill_state_roots();
-    block.state_root = Some(block.mpt_updates.new_root());
-    block.prev_state_root = block.mpt_updates.old_root();
 }

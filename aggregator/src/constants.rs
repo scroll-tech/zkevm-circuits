@@ -1,5 +1,4 @@
 // A chain_id is u64 and uses 8 bytes
-#[allow(dead_code)]
 pub(crate) const CHAIN_ID_LEN: usize = 8;
 
 // ================================
@@ -8,8 +7,6 @@ pub(crate) const CHAIN_ID_LEN: usize = 8;
 
 /// Digest length
 pub(crate) const DIGEST_LEN: usize = 32;
-/// Input length per round
-pub(crate) const INPUT_LEN_PER_ROUND: usize = 136;
 
 // TODO(ZZ): update to the right degree
 pub(crate) const LOG_DEGREE: u32 = 19;

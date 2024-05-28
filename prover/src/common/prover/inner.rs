@@ -6,7 +6,6 @@ use crate::{
     zkevm::circuit::{SuperCircuit, TargetCircuit},
 };
 use anyhow::Result;
-use halo2_proofs::halo2curves::bn256::Fr;
 use rand::Rng;
 use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 use zkevm_circuits::evm_circuit::witness::Block;
@@ -16,7 +15,7 @@ impl Prover {
         &mut self,
         id: &str,
         mut rng: impl Rng + Send,
-        witness_block: &Block<Fr>,
+        witness_block: &Block,
     ) -> Result<Snark> {
         log::info!(
             "Proving the chunk: {:?}",
@@ -43,7 +42,7 @@ impl Prover {
         &mut self,
         name: &str,
         id: &str,
-        witness_block: &Block<Fr>,
+        witness_block: &Block,
         output_dir: Option<&str>,
     ) -> Result<Snark> {
         let file_path = format!(

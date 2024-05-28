@@ -2,7 +2,6 @@
 //! A chunk is a list of blocks.
 use eth_types::{base64, ToBigEndian, H256};
 use ethers_core::utils::keccak256;
-use halo2_proofs::halo2curves::bn256::Fr;
 use serde::{Deserialize, Serialize};
 use std::iter;
 use zkevm_circuits::witness::Block;
@@ -36,7 +35,7 @@ pub struct ChunkHash {
 
 impl ChunkHash {
     /// Construct by a witness block.
-    pub fn from_witness_block(block: &Block<Fr>, is_padding: bool) -> Self {
+    pub fn from_witness_block(block: &Block, is_padding: bool) -> Self {
         // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>
 
         let mut total_l1_popped = block.start_l1_queue_index;
@@ -125,6 +124,13 @@ impl ChunkHash {
     /// Sample a chunk hash from random (for testing)
     #[cfg(test)]
     pub(crate) fn mock_random_chunk_hash_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
+        use eth_types::Address;
+        use ethers_core::types::TransactionRequest;
+        use rand::{
+            distributions::{Distribution, Standard},
+            Rng,
+        };
+
         let mut prev_state_root = [0u8; 32];
         r.fill_bytes(&mut prev_state_root);
         let mut post_state_root = [0u8; 32];
@@ -133,15 +139,55 @@ impl ChunkHash {
         r.fill_bytes(&mut withdraw_root);
         let mut data_hash = [0u8; 32];
         r.fill_bytes(&mut data_hash);
-        let mut tx_bytes = [0u8; 1024];
-        r.fill_bytes(&mut tx_bytes);
+
+        const N_TXS: usize = 10;
+        const N_SENDERS: usize = 2;
+        const N_RECIPIENTS: usize = 3;
+        let senders = (0..N_SENDERS)
+            .map(|_| Address::random_using(r))
+            .collect::<Vec<_>>();
+        let recipients = (0..N_RECIPIENTS)
+            .map(|_| Address::random_using(r))
+            .collect::<Vec<_>>();
+        const N_TX_DATA_LEN: usize = 1024;
+        struct TxDataByte(u8);
+        impl Distribution<TxDataByte> for Standard {
+            fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> TxDataByte {
+                match rng.gen_range(0..5) {
+                    0 => TxDataByte(0),
+                    1 => TxDataByte(4),
+                    2 => TxDataByte(127),
+                    3 => TxDataByte(255),
+                    _ => TxDataByte(rng.gen()),
+                }
+            }
+        }
+
+        let mut txs = Vec::with_capacity(N_TXS);
+        for _ in 0..N_TXS {
+            let i = r.gen_range(0..N_SENDERS * N_RECIPIENTS);
+            txs.push(
+                TransactionRequest::new()
+                    .from(senders[i % N_SENDERS])
+                    .to(recipients[i % N_RECIPIENTS])
+                    .data(
+                        (0..N_TX_DATA_LEN)
+                            .map(|_| {
+                                let tx_data_byte: TxDataByte = rand::random();
+                                tx_data_byte.0
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+            )
+        }
+
         Self {
             chain_id: 0,
             prev_state_root: prev_state_root.into(),
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
-            tx_bytes: tx_bytes.to_vec(),
+            tx_bytes: txs.iter().flat_map(|tx| tx.rlp_unsigned()).collect(),
             is_padding: false,
         }
     }

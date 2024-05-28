@@ -1007,7 +1007,7 @@ impl<F: Field> BytecodeCircuit<F> {
     }
 
     /// Creates bytecode circuit from block and bytecode_size.
-    pub fn new_from_block_sized(block: &witness::Block<F>, bytecode_size: usize) -> Self {
+    pub fn new_from_block_sized(block: &witness::Block, bytecode_size: usize) -> Self {
         let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .iter()
@@ -1032,13 +1032,13 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block) -> Self {
         let bytecode_size = block.circuits_params.max_bytecode;
         Self::new_from_block_sized(block, bytecode_size)
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         (
             block
                 .bytecodes
