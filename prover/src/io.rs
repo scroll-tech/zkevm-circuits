@@ -156,8 +156,10 @@ pub fn serialize_verify_circuit_final_pair(pair: &(G1Affine, G1Affine, Vec<Fr>))
 }
 
 pub fn write_snark(file_path: &str, snark: &Snark) {
+    log::debug!("write_snark to {file_path}");
     let mut fd = std::fs::File::create(file_path).unwrap();
     serde_json::to_writer(&mut fd, snark).unwrap()
+    log::debug!("write_snark to {file_path} done");
 }
 
 pub fn load_snark(file_path: &str) -> anyhow::Result<Option<Snark>> {
