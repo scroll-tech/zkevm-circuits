@@ -457,7 +457,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 sequence_info_arr,
                 address_table_rows: address_table_arr,
                 sequence_exec_results,
-            } = = process(&encoded_batch_bytes, challenges.keccak_input());
+            } = process(&encoded_batch_bytes, challenges.keccak_input());
 
             // sanity check:
             let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
