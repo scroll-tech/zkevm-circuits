@@ -42,10 +42,13 @@ pub struct BlobDataConfig<const N_SNARKS: usize> {
     is_padding: Column<Advice>,
     /// running RLC of bytes seen so far. It remains unchanged once padded territory starts.
     bytes_rlc: Column<Advice>,
+    /// running accumulator of the number of bytes in the blob.
+    bytes_len: Column<Advice>,
 }
 
 pub struct AssignedBlobDataExport {
     pub bytes_rlc: AssignedCell<Fr, Fr>,
+    pub bytes_len: AssignedCell<Fr, Fr>,
 }
 
 impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
@@ -60,10 +63,12 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             byte: meta.advice_column(),
             is_padding: meta.advice_column(),
             bytes_rlc: meta.advice_column_in(SecondPhase),
+            bytes_len: meta.advice_column(),
         };
 
         meta.enable_equality(config.byte);
         meta.enable_equality(config.bytes_rlc);
+        meta.enable_equality(config.bytes_len);
 
         meta.lookup("BlobDataConfig (0 < byte < 256)", |meta| {
             let byte_value = meta.query_advice(config.byte, Rotation::cur());
@@ -75,11 +80,13 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
 
             let byte = meta.query_advice(config.byte, Rotation::cur());
             let bytes_rlc = meta.query_advice(config.bytes_rlc, Rotation::cur());
+            let bytes_len = meta.query_advice(config.bytes_len, Rotation::cur());
             let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
 
             vec![
                 is_first.expr() * byte,
                 is_first.expr() * bytes_rlc,
+                is_first.expr() * bytes_len,
                 is_first.expr() * is_padding_next,
             ]
         });
@@ -95,6 +102,9 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
 
             let bytes_rlc_curr = meta.query_advice(config.bytes_rlc, Rotation::cur());
             let bytes_rlc_prev = meta.query_advice(config.bytes_rlc, Rotation::prev());
+
+            let bytes_len_curr = meta.query_advice(config.bytes_len, Rotation::cur());
+            let bytes_len_prev = meta.query_advice(config.bytes_len, Rotation::prev());
 
             vec![
                 // if is_padding: byte == 0
@@ -112,6 +122,14 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                 is_enabled.expr()
                     * is_padding_curr.expr()
                     * (bytes_rlc_curr.expr() - bytes_rlc_prev.expr()),
+                // bytes_len increments in the non-padded territory
+                is_enabled.expr()
+                    * (1.expr() - is_padding_curr.expr())
+                    * (bytes_len_prev.expr() + 1.expr() - bytes_len_curr.expr()),
+                // bytes_len remains unchanged in padded territory
+                is_enabled.expr()
+                    * is_padding_curr.expr()
+                    * (bytes_len_curr.expr() - bytes_len_prev.expr()),
             ]
         });
 
@@ -128,12 +146,12 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         batch_data: &BatchData<N_SNARKS>,
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
-        let (assigned_bytes, bytes_rlc) = layouter.assign_region(
+        let (assigned_bytes, bytes_rlc, bytes_len) = layouter.assign_region(
             || "BlobData bytes",
             |mut region| self.assign_rows(&mut region, batch_data, &challenge_value),
         )?;
 
-        layouter.assign_region(
+        let cooked_bytes_len = layouter.assign_region(
             || "BlobData internal checks",
             |mut region| {
                 self.assign_internal_checks(
@@ -141,11 +159,15 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                     rlc_config,
                     barycentric_assignments,
                     &assigned_bytes,
+                    &bytes_len,
                 )
             },
         )?;
 
-        Ok(AssignedBlobDataExport { bytes_rlc })
+        Ok(AssignedBlobDataExport {
+            bytes_rlc,
+            bytes_len: cooked_bytes_len,
+        })
     }
 
     #[allow(clippy::type_complexity)]
@@ -154,7 +176,14 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         region: &mut Region<Fr>,
         batch_data: &BatchData<N_SNARKS>,
         challenges: &Challenges<Value<Fr>>,
-    ) -> Result<(Vec<AssignedCell<Fr, Fr>>, AssignedCell<Fr, Fr>), Error> {
+    ) -> Result<
+        (
+            Vec<AssignedCell<Fr, Fr>>,
+            AssignedCell<Fr, Fr>,
+            AssignedCell<Fr, Fr>,
+        ),
+        Error,
+    > {
         let batch_bytes = batch_data.get_batch_data_bytes();
         let blob_bytes = {
             let mut encoder = init_zstd_encoder(None);
@@ -173,7 +202,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             self.q_enabled.enable(region, i)?;
         }
 
-        for col in [self.byte, self.bytes_rlc, self.is_padding] {
+        for col in [self.byte, self.bytes_rlc, self.bytes_len, self.is_padding] {
             region.assign_advice(
                 || "advice at q_first=1",
                 col,
@@ -185,9 +214,11 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         let mut assigned_bytes = Vec::with_capacity(N_BLOB_BYTES);
         let mut bytes_rlc = Value::known(Fr::zero());
         let mut last_bytes_rlc = None;
+        let mut last_bytes_len = None;
         for (i, &byte) in blob_bytes.iter().enumerate() {
             let byte_value = Value::known(Fr::from(byte as u64));
             bytes_rlc = bytes_rlc * challenges.keccak_input() + byte_value;
+
             assigned_bytes.push(region.assign_advice(
                 || "byte",
                 self.byte,
@@ -202,9 +233,16 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             )?;
             last_bytes_rlc =
                 Some(region.assign_advice(|| "bytes_rlc", self.bytes_rlc, i + 1, || bytes_rlc)?);
+            last_bytes_len = Some(region.assign_advice(
+                || "bytes_len",
+                self.bytes_len,
+                i + 1,
+                || Value::known(Fr::from(i as u64 + 1)),
+            )?);
         }
 
         let mut last_bytes_rlc = last_bytes_rlc.expect("at least 1 byte guaranteed");
+        let mut last_bytes_len = last_bytes_len.expect("at least 1 byte guaranteed");
         for i in blob_bytes.len()..N_BLOB_BYTES {
             assigned_bytes.push(region.assign_advice(
                 || "byte",
@@ -224,9 +262,15 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                 i + 1,
                 || last_bytes_rlc.value().cloned(),
             )?;
+            last_bytes_len = region.assign_advice(
+                || "bytes_len",
+                self.bytes_len,
+                i + 1,
+                || last_bytes_len.value().cloned(),
+            )?;
         }
 
-        Ok((assigned_bytes, last_bytes_rlc))
+        Ok((assigned_bytes, last_bytes_rlc, last_bytes_len))
     }
 
     pub fn assign_internal_checks(
@@ -235,7 +279,8 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         rlc_config: &RlcConfig,
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_bytes: &[AssignedCell<Fr, Fr>],
-    ) -> Result<(), Error> {
+        bytes_len: &AssignedCell<Fr, Fr>,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
         rlc_config.init(region)?;
         let mut rlc_config_offset = 0;
 
@@ -302,6 +347,11 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             region.constrain_equal(limb3.cell(), blob_crt.truncation.limbs[2].cell())?;
         }
 
-        Ok(())
+        // The zstd decoder (DecoderConfig) exports an encoded length that is 1 more than the
+        // actual number of bytes in encoded data. Accordingly we "cook" the actual len(bytes) here
+        // by adding +1 to it before exporting.
+        let cooked_bytes_len = rlc_config.add(region, bytes_len, &one, &mut rlc_config_offset)?;
+
+        Ok(cooked_bytes_len)
     }
 }
