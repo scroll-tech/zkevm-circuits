@@ -1,4 +1,4 @@
-use crate::blob::BatchData;
+use crate::{blob::BatchData, witgen::MultiBlockProcessResult};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -448,19 +448,19 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
             let batch_bytes = batch_data.get_batch_data_bytes();
             let encoded_batch_bytes = batch_data.get_encoded_batch_data_bytes();
-            let (
+
+            let MultiBlockProcessResult {
                 witness_rows,
-                decoded_literals,
-                aux_data,
+                literal_bytes: decoded_literals,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
-                address_table_arr,
-                sequence_exec_result,
-            ) = process(&encoded_batch_bytes, challenges.keccak_input());
+                address_table_rows: address_table_arr,
+                sequence_exec_results,
+            } = = process(&encoded_batch_bytes, challenges.keccak_input());
 
             // sanity check:
-            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
                 (Vec::new(), Vec::new()),
                 |(mut out_byte, mut out_exec), res| {
                     out_byte.extend(res.recovered_bytes);
@@ -479,7 +479,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 &encoded_batch_bytes,
                 witness_rows,
                 decoded_literals,
-                aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
