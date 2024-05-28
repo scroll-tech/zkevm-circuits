@@ -514,7 +514,7 @@ impl TxL1Fee {
         });
         #[cfg(feature = "l1_fee_curie")]
         let [l1blob_basefee, commit_scalar, blob_scalar] = [
-            &l1_gas_price_oracle::BlOB_BASEFEE,
+            &l1_gas_price_oracle::BLOB_BASEFEE,
             &l1_gas_price_oracle::COMMIT_SCALAR,
             &l1_gas_price_oracle::BLOB_SCALAR,
         ]
@@ -551,7 +551,7 @@ impl TxL1Fee {
 
         #[cfg(feature = "l1_fee_curie")]
         let [l1blob_basefee, commit_scalar, blob_scalar] = [
-            &l1_gas_price_oracle::BlOB_BASEFEE,
+            &l1_gas_price_oracle::BLOB_BASEFEE,
             &l1_gas_price_oracle::COMMIT_SCALAR,
             &l1_gas_price_oracle::BLOB_SCALAR,
         ]
