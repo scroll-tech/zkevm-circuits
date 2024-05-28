@@ -5461,7 +5461,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let challenges = Challenges::construct(meta);
+            let challenges = Challenges::construct_p1(meta);
             let challenges_expr = challenges.exprs(meta);
 
             let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);

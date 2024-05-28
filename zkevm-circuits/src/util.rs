@@ -48,12 +48,14 @@ pub(crate) fn rlc_be_bytes<F: Field>(bytes: &[u8], rand: Value<F>) -> Value<F> {
     })
 }
 
-/// All challenges used in `SuperCircuit`.
+/// Wrap multiple challenges:
+/// `construct`: the default consturct route to provide all challenges used in `SuperCircuit`.
+/// `construct_p1`: construct challenge up to second phase
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {
     evm_word: T,
     keccak_input: T,
-    lookup_input: T,
+    lookup_input: Option<T>,
 }
 
 /// ..
@@ -61,16 +63,23 @@ pub struct Challenges<T = Challenge> {
 pub struct MockChallenges {
     evm_word: u64,
     keccak_input: u64,
-    lookup_input: u64,
+    lookup_input: Option<u64>,
 }
 
 impl MockChallenges {
     /// ..
-    pub fn construct<F: Field>(_meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            lookup_input: Some(0x100),
+            ..Self::construct_p1(meta)
+        }
+    }
+    /// ..
+    pub fn construct_p1<F: Field>(_meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             evm_word: 0x100,
             keccak_input: 0x101,
-            lookup_input: 0x100,
+            lookup_input: None,
         }
     }
     /// ..
@@ -78,7 +87,7 @@ impl MockChallenges {
         Challenges {
             evm_word: Expression::Constant(F::from(self.evm_word)),
             keccak_input: Expression::Constant(F::from(self.keccak_input)),
-            lookup_input: Expression::Constant(F::from(self.lookup_input)),
+            lookup_input: self.lookup_input.map(|c| Expression::Constant(F::from(c))),
         }
     }
     /// ..
@@ -86,12 +95,27 @@ impl MockChallenges {
         Challenges {
             evm_word: Value::known(F::from(self.evm_word)),
             keccak_input: Value::known(F::from(self.keccak_input)),
-            lookup_input: Value::known(F::from(self.lookup_input)),
+            lookup_input: self.lookup_input.map(|c| Value::known(F::from(c))),
         }
     }
 }
 
 impl Challenges {
+    /// Construct `Challenges` by allocating challenges only to secondary phases.
+    pub fn construct_p1<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        #[cfg(any(not(feature = "onephase"), feature = "test", test))]
+        let _dummy_cols = [
+            meta.advice_column(),
+            meta.advice_column_in(halo2_proofs::plonk::SecondPhase),
+        ];
+
+        Self {
+            evm_word: meta.challenge_usable_after(FirstPhase),
+            keccak_input: meta.challenge_usable_after(FirstPhase),
+            lookup_input: None,
+        }
+    }
+
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         #[cfg(any(not(feature = "onephase"), feature = "test", test))]
@@ -104,16 +128,18 @@ impl Challenges {
         Self {
             evm_word: meta.challenge_usable_after(FirstPhase),
             keccak_input: meta.challenge_usable_after(FirstPhase),
-            lookup_input: meta.challenge_usable_after(SecondPhase),
+            lookup_input: Some(meta.challenge_usable_after(SecondPhase)),
         }
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
     pub fn exprs<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
-        let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
-            [self.evm_word, self.keccak_input, self.lookup_input]
-                .map(|challenge| meta.query_challenge(challenge))
+        let [evm_word, keccak_input] = query_expression(meta, |meta| {
+            [self.evm_word, self.keccak_input].map(|challenge| meta.query_challenge(challenge))
         });
+        let lookup_input = self
+            .lookup_input
+            .map(|c| query_expression(meta, |meta| meta.query_challenge(c)));
         Challenges {
             evm_word,
             keccak_input,
@@ -126,7 +152,7 @@ impl Challenges {
         Challenges {
             evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),
-            lookup_input: layouter.get_challenge(self.lookup_input),
+            lookup_input: self.lookup_input.map(|c| layouter.get_challenge(c)),
         }
     }
 }
@@ -144,12 +170,21 @@ impl<T: Clone> Challenges<T> {
 
     /// Returns challenge of `lookup_input`.
     pub fn lookup_input(&self) -> T {
-        self.lookup_input.clone()
+        self.lookup_input
+            .as_ref()
+            .expect("created for supercircuit")
+            .clone()
     }
 
     /// Returns the challenges indexed by the challenge index
     pub fn indexed(&self) -> [&T; 3] {
-        [&self.evm_word, &self.keccak_input, &self.lookup_input]
+        [
+            &self.evm_word,
+            &self.keccak_input,
+            self.lookup_input
+                .as_ref()
+                .expect("created for supercircuit"),
+        ]
     }
 
     /// ..
@@ -157,7 +192,7 @@ impl<T: Clone> Challenges<T> {
         Self {
             evm_word,
             keccak_input,
-            lookup_input,
+            lookup_input: Some(lookup_input),
         }
     }
 }
@@ -186,7 +221,12 @@ impl<F: Field> Challenges<Expression<F>> {
 
     /// Returns powers of randomness for lookups
     pub fn lookup_input_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
-        Self::powers_of(self.lookup_input.clone())
+        Self::powers_of(
+            self.lookup_input
+                .as_ref()
+                .expect("created for supercircuit")
+                .clone(),
+        )
     }
 }
 

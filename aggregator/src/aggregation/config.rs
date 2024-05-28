@@ -205,15 +205,16 @@ fn aggregation_circuit_degree() {
         limb_bits: 88,
         num_limbs: 3,
     };
-    let challenges = Challenges::construct(&mut cs);
+    let challenges = Challenges::construct_p1(&mut cs);
     AggregationConfig::<{ crate::constants::MAX_AGG_SNARKS }>::configure(
         &mut cs, &param, challenges,
     );
     cs = cs.chunk_lookups();
     let stats = zkevm_circuits::util::circuit_stats(&cs);
     let degree = cs.degree();
+    let phases = cs.max_phase();
     assert!(degree <= 9);
-    //assert!(stats.max_phase <= 1);
+    assert!(phases <= 1);
     log::info!("stats {stats:#?}");
     log::info!("agg circuit degree: {}", degree);
 }

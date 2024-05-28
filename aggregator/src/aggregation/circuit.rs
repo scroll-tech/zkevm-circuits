@@ -136,7 +136,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             },
         );
 
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let config = AggregationConfig::configure(meta, &params, challenges);
         log::info!(
             "aggregation circuit configured with k = {} and {:?} advice columns",
