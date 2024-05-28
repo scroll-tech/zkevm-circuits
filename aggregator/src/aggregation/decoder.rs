@@ -1218,6 +1218,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 
         meta.enable_equality(config.decoded_len);
         meta.enable_equality(config.encoded_rlc);
+        meta.enable_equality(config.byte_idx);
 
         macro_rules! is_tag {
             ($var:ident, $tag_variant:ident) => {
@@ -5405,7 +5406,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     )?;
                 }
 
-                // dbg: decoded length from SeqExecConfig and decoder config must match.
+                // decoded length from SeqExecConfig and decoder config must match.
                 region.constrain_equal(exported_len.cell(), decoded_len_cell.unwrap().cell())?;
 
                 Ok(AssignedDecoderConfigExports {
