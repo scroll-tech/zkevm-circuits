@@ -246,6 +246,13 @@ impl<F: Field> TxL1FeeGadget<F> {
         let base_fee_word = cb.query_word_rlc();
         let fee_overhead_word = cb.query_word_rlc();
         let fee_scalar_word = cb.query_word_rlc();
+        // curie fields
+        #[cfg(feature = "l1_fee_curie")]
+        let l1blob_basefee_word = cb.query_word_rlc();
+        #[cfg(feature = "l1_fee_curie")]
+        let commit_scalar_word = cb.query_word_rlc();
+        #[cfg(feature = "l1_fee_curie")]
+        let blob_scalar_word = cb.query_word_rlc();
 
         let tx_l1_fee = from_bytes::expr(&tx_l1_fee_word.cells[..N_BYTES_U64]);
         let [remainder, base_fee, fee_overhead, fee_scalar] = [
@@ -256,17 +263,40 @@ impl<F: Field> TxL1FeeGadget<F> {
         ]
         .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
+        #[cfg(feature = "l1_fee_curie")]
+        let [l1blob_basefee, commit_scalar, blob_scalar] =
+            [&l1blob_basefee_word, &commit_scalar_word, &blob_scalar_word]
+                .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
+
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
         let tx_l1_gas = tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead;
-        cb.require_equal(
-            "fee_scalar * base_fee * tx_l1_gas == tx_l1_fee * 10e9 + remainder",
+        if cfg!(feature = "l1_fee_curie") {
+            // TODO: new formula for curie
+            cb.require_equal(
+            "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee == tx_l1_fee * 10e9 + remainder",
             fee_scalar * base_fee * tx_l1_gas,
+            //   * tx_l1_gas,
             tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
         );
+        } else {
+            // before curie formula
+            cb.require_equal(
+                "fee_scalar * base_fee * tx_l1_gas == tx_l1_fee * 10e9 + remainder",
+                fee_scalar * base_fee * tx_l1_gas,
+                tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
+            );
+        }
 
         let base_fee_committed = cb.query_cell_phase2();
         let fee_overhead_committed = cb.query_cell_phase2();
         let fee_scalar_committed = cb.query_cell_phase2();
+        // curie fields
+        #[cfg(feature = "l1_fee_curie")]
+        let l1blob_basefee_committed = cb.query_cell_phase2();
+        #[cfg(feature = "l1_fee_curie")]
+        let commit_scalar_committed = cb.query_cell_phase2();
+        #[cfg(feature = "l1_fee_curie")]
+        let blob_scalar_committed = cb.query_cell_phase2();
 
         Self {
             tx_l1_fee_word,
@@ -277,6 +307,12 @@ impl<F: Field> TxL1FeeGadget<F> {
             base_fee_committed,
             fee_overhead_committed,
             fee_scalar_committed,
+            #[cfg(feature = "l1_fee_curie")]
+            l1blob_basefee_committed,
+            #[cfg(feature = "l1_fee_curie")]
+            commit_scalar_committed,
+            #[cfg(feature = "l1_fee_curie")]
+            blob_scalar_committed,
         }
     }
 }
