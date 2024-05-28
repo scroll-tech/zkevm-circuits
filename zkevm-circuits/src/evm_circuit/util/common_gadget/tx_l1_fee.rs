@@ -391,7 +391,9 @@ mod tests {
             let tx_data_gas_cost = cb.query_cell();
             let expected_tx_l1_fee = cb.query_cell();
 
-            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr());
+            // for non "l1_fee_curie" feature, tx_signed_hash_length is not used, can 
+            // set to zero
+            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr(), 0.expr());
 
             cb.require_equal(
                 "tx_l1_fee must be correct",
