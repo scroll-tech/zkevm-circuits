@@ -31,12 +31,30 @@ pub(crate) struct TxL1FeeGadget<F> {
     fee_overhead_word: U64Word<F>,
     /// Current value of L1 fee scalar
     fee_scalar_word: U64Word<F>,
-    /// Committed value of L1 base fee
+    #[cfg(feature = "l1_fee_curie")]
+    /// Current value of L1 blob base fee
+    l1BlobBaseFee: Cell<F>,
+    #[cfg(feature = "l1_fee_curie")]
+    /// Current value of L1 scalar fee
+    commitScalar: Cell<F>,
+    #[cfg(feature = "l1_fee_curie")]
+    /// Current value of L1 blob scalar fee
+    blobScalar: Cell<F>,
+    /// Current value of L1 base fee
     base_fee_committed: Cell<F>,
     /// Committed value of L1 fee overhead
     fee_overhead_committed: Cell<F>,
     /// Committed value of L1 fee scalar
     fee_scalar_committed: Cell<F>,
+    #[cfg(feature = "l1_fee_curie")]
+    /// Committed value of L1 blob base fee
+    l1BlobBaseFee_committed: Cell<F>,
+    #[cfg(feature = "l1_fee_curie")]
+    /// Committed value of L1 scalar fee
+    commitScalar_committed: Cell<F>,
+    #[cfg(feature = "l1_fee_curie")]
+    /// Committed value of L1 blob scalar fee
+    blobScalar_committed: Cell<F>,
 }
 
 impl<F: Field> TxL1FeeGadget<F> {
@@ -51,6 +69,7 @@ impl<F: Field> TxL1FeeGadget<F> {
             "Unexpected address of l2 gasprice oracle contract -> Scalar conversion failure",
         ));
 
+        //TODO: add curie fork fields
         let [base_fee_slot, overhead_slot, scalar_slot] = [
             &l1_gas_price_oracle::BASE_FEE_SLOT,
             &l1_gas_price_oracle::OVERHEAD_SLOT,

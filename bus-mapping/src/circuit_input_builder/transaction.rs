@@ -490,11 +490,11 @@ impl TxL1Fee {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
         let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
         let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
-
+        // TODO: check if the calculation changes for curie upgrade
         (
-            (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
-            (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
-        )
+                (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
+                (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
+        )  
     }
 
     fn get_current_values_from_state_db(sdb: &StateDB) -> Self {
