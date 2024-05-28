@@ -477,7 +477,7 @@ pub struct TxL1Fee {
     /// L1 fee scalar
     pub fee_scalar: u64,
     #[cfg(feature = "l1_fee_curie")]
-    pub l1BlobBaseFee: u64,
+    pub l1BlobBaseFee: u64, // TODO: rename
     #[cfg(feature = "l1_fee_curie")]
     pub commitScalar: u64,
     #[cfg(feature = "l1_fee_curie")]
@@ -492,9 +492,9 @@ impl TxL1Fee {
         let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
         // TODO: check if the calculation changes for curie upgrade
         (
-                (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
-                (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
-        )  
+            (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
+            (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
+        )
     }
 
     fn get_current_values_from_state_db(sdb: &StateDB) -> Self {
@@ -510,7 +510,8 @@ impl TxL1Fee {
         });
         //if cfg!(feature = "l1_fee_curie") {
         #[cfg(feature = "l1_fee_curie")]
-        {    let [base_fee, l1BlobBaseFee, commitScalar, blobScalar] = [
+        {
+            let [base_fee, l1BlobBaseFee, commitScalar, blobScalar] = [
                 &l1_gas_price_oracle::BASE_FEE_SLOT,
                 &l1_gas_price_oracle::l1BlobBaseFee,
                 &l1_gas_price_oracle::commitScalar,
@@ -549,7 +550,8 @@ impl TxL1Fee {
         });
 
         #[cfg(feature = "l1_fee_curie")]
-        {    let [base_fee, l1BlobBaseFee, commitScalar, blobScalar] = [
+        {
+            let [base_fee, l1BlobBaseFee, commitScalar, blobScalar] = [
                 &l1_gas_price_oracle::BASE_FEE_SLOT,
                 &l1_gas_price_oracle::l1BlobBaseFee,
                 &l1_gas_price_oracle::commitScalar,
@@ -561,8 +563,6 @@ impl TxL1Fee {
                     .as_u64()
             });
         }
-        
-
 
         Self {
             base_fee,

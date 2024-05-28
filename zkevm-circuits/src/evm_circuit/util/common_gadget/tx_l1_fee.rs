@@ -76,7 +76,7 @@ impl<F: Field> TxL1FeeGadget<F> {
             &l1_gas_price_oracle::SCALAR_SLOT,
         ]
         .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
-       
+
         #[cfg(feature = "l1_fee_curie")]
         let [l1blob_baseFee, commit_scalar, blob_scalar] = [
             &l1_gas_price_oracle::l1BlobBaseFee,
@@ -84,7 +84,7 @@ impl<F: Field> TxL1FeeGadget<F> {
             &l1_gas_price_oracle::blobScalar,
         ]
         .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
-   
+
         // Read L1 base fee
         cb.account_storage_read(
             l1_fee_address.expr(),
@@ -117,7 +117,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         // for curie hard fork
         #[cfg(feature = "l1_fee_curie")]
         // Read l1blob_baseFee_committed
-         cb.account_storage_read(
+        cb.account_storage_read(
             l1_fee_address.expr(),
             l1blob_baseFee,
             this.l1blob_basefee_word.expr(),
@@ -167,6 +167,20 @@ impl<F: Field> TxL1FeeGadget<F> {
             .assign(region, offset, Some(l1_fee.fee_overhead.to_le_bytes()))?;
         self.fee_scalar_word
             .assign(region, offset, Some(l1_fee.fee_scalar.to_le_bytes()))?;
+        // curie fields
+        #[cfg(feature = "l1_fee_curie")]
+        self.l1blob_basefee_word.assign(
+            region,
+            offset,
+            Some(l1_fee.l1BlobBaseFee.to_le_bytes()),
+        )?;
+        #[cfg(feature = "l1_fee_curie")]
+        self.commit_scalar_word
+            .assign(region, offset, Some(l1_fee.commitScalar.to_le_bytes()))?;
+        #[cfg(feature = "l1_fee_curie")]
+        self.blob_scalar_word
+            .assign(region, offset, Some(l1_fee.blobScalar.to_le_bytes()))?;
+
         self.base_fee_committed.assign(
             region,
             offset,
@@ -182,8 +196,26 @@ impl<F: Field> TxL1FeeGadget<F> {
             offset,
             region.word_rlc(l1_fee_committed.fee_scalar.into()),
         )?;
-        
-        // TODO: add curie fields assignment
+
+        // curie fields
+        #[cfg(feature = "l1_fee_curie")]
+        self.l1blob_basefee_word.assign(
+            region,
+            offset,
+            Some(l1_fee_committed.l1BlobBaseFee.to_le_bytes()),
+        )?;
+        #[cfg(feature = "l1_fee_curie")]
+        self.commit_scalar_word.assign(
+            region,
+            offset,
+            Some(l1_fee_committed.commitScalar.to_le_bytes()),
+        )?;
+        #[cfg(feature = "l1_fee_curie")]
+        self.blob_scalar_word.assign(
+            region,
+            offset,
+            Some(l1_fee_committed.blobScalar.to_le_bytes()),
+        )?;
 
         Ok(())
     }
@@ -192,7 +224,11 @@ impl<F: Field> TxL1FeeGadget<F> {
         // L1 base fee Read
         // L1 fee overhead Read
         // L1 fee scalar Read
-        3.expr()
+        // + curie fields
+        // l1 blob baseFee
+        // commit scalar
+        // blob scalar
+        6.expr()
     }
 
     pub(crate) fn tx_l1_fee(&self) -> Expression<F> {
