@@ -165,6 +165,7 @@ fn dummy_protocol() -> Protocol<G1Affine> {
         evaluations: vec![],
         queries: vec![],
         quotient: QuotientPolynomial {
+            num_chunk: 0,
             chunk_degree: 0,
             numerator: Expression::Challenge(1),
         },
