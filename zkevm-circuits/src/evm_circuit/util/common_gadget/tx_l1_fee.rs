@@ -62,8 +62,9 @@ impl<F: Field> TxL1FeeGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         tx_id: Expression<F>,
         tx_data_gas_cost: Expression<F>,
+        tx_signed_hash_length: Expression<F>,
     ) -> Self {
-        let this = Self::raw_construct(cb, tx_data_gas_cost);
+        let this = Self::raw_construct(cb, tx_data_gas_cost, tx_signed_hash_length);
 
         let l1_fee_address = Expression::Constant(l1_gas_price_oracle::ADDRESS.to_scalar().expect(
             "Unexpected address of l2 gasprice oracle contract -> Scalar conversion failure",
@@ -239,7 +240,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         &self.tx_l1_fee_word
     }
 
-    fn raw_construct(cb: &mut EVMConstraintBuilder<F>, tx_data_gas_cost: Expression<F>) -> Self {
+    fn raw_construct(cb: &mut EVMConstraintBuilder<F>, tx_data_gas_cost: Expression<F>, tx_signed_hash_length: Expression<F>) -> Self {
         let tx_l1_fee_word = cb.query_word_rlc();
         let remainder_word = cb.query_word_rlc();
 
@@ -269,23 +270,28 @@ impl<F: Field> TxL1FeeGadget<F> {
                 .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead;
-        if cfg!(feature = "l1_fee_curie") {
-            // TODO: new formula for curie
+        let tx_l1_gas =  if cfg!(feature = "l1_fee_curie"){
+            0.expr()
+        }else{
+            tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead
+        };
+
+        // TODO: new formula for curie
+        #[cfg(feature = "l1_fee_curie")]
             cb.require_equal(
             "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee == tx_l1_fee * 10e9 + remainder",
-            fee_scalar * base_fee * tx_l1_gas,
+            commit_scalar * base_fee + blob_scalar * tx_signed_hash_length * l1blob_basefee,
             //   * tx_l1_gas,
             tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
         );
-        } else {
-            // before curie formula
-            cb.require_equal(
+            
+        // old formula before curie
+        #[cfg(not(feature = "l1_fee_curie"))]
+        cb.require_equal(
                 "fee_scalar * base_fee * tx_l1_gas == tx_l1_fee * 10e9 + remainder",
                 fee_scalar * base_fee * tx_l1_gas,
                 tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
-            );
-        }
+        );
 
         let base_fee_committed = cb.query_cell_phase2();
         let fee_overhead_committed = cb.query_cell_phase2();
