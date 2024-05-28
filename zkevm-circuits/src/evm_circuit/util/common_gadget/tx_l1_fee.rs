@@ -33,13 +33,13 @@ pub(crate) struct TxL1FeeGadget<F> {
     fee_scalar_word: U64Word<F>,
     #[cfg(feature = "l1_fee_curie")]
     /// Current value of L1 blob base fee
-    l1BlobBaseFee: Cell<F>,
+    l1blob_basefee_word: U64Word<F>,
     #[cfg(feature = "l1_fee_curie")]
     /// Current value of L1 scalar fee
-    commitScalar: Cell<F>,
+    commit_scalar_word: U64Word<F>,
     #[cfg(feature = "l1_fee_curie")]
     /// Current value of L1 blob scalar fee
-    blobScalar: Cell<F>,
+    blob_scalar_word: U64Word<F>,
     /// Current value of L1 base fee
     base_fee_committed: Cell<F>,
     /// Committed value of L1 fee overhead
@@ -48,13 +48,13 @@ pub(crate) struct TxL1FeeGadget<F> {
     fee_scalar_committed: Cell<F>,
     #[cfg(feature = "l1_fee_curie")]
     /// Committed value of L1 blob base fee
-    l1BlobBaseFee_committed: Cell<F>,
+    l1blob_baseFee_committed: Cell<F>,
     #[cfg(feature = "l1_fee_curie")]
     /// Committed value of L1 scalar fee
-    commitScalar_committed: Cell<F>,
+    commit_scalar_committed: Cell<F>,
     #[cfg(feature = "l1_fee_curie")]
     /// Committed value of L1 blob scalar fee
-    blobScalar_committed: Cell<F>,
+    blob_scalar_committed: Cell<F>,
 }
 
 impl<F: Field> TxL1FeeGadget<F> {
@@ -76,7 +76,15 @@ impl<F: Field> TxL1FeeGadget<F> {
             &l1_gas_price_oracle::SCALAR_SLOT,
         ]
         .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
-
+       
+        #[cfg(feature = "l1_fee_curie")]
+        let [l1blob_baseFee, commit_scalar, blob_scalar] = [
+            &l1_gas_price_oracle::l1BlobBaseFee,
+            &l1_gas_price_oracle::commitScalar,
+            &l1_gas_price_oracle::blobScalar,
+        ]
+        .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
+   
         // Read L1 base fee
         cb.account_storage_read(
             l1_fee_address.expr(),
@@ -102,6 +110,39 @@ impl<F: Field> TxL1FeeGadget<F> {
             this.fee_scalar_word.expr(),
             tx_id,
             this.fee_scalar_committed.expr(),
+        );
+
+        // TODO: check if can really reuse base_fee_slot read rw above for curie
+        // now try to skip it.
+        // for curie hard fork
+        #[cfg(feature = "l1_fee_curie")]
+        // Read l1blob_baseFee_committed
+         cb.account_storage_read(
+            l1_fee_address.expr(),
+            l1blob_baseFee,
+            this.l1blob_basefee_word.expr(),
+            tx_id.expr(),
+            this.l1blob_baseFee_committed.expr(),
+        );
+
+        #[cfg(feature = "l1_fee_curie")]
+        // Read L1 commit_scalar_committed
+        cb.account_storage_read(
+            l1_fee_address.expr(),
+            commit_scalar,
+            this.commit_scalar_word.expr(),
+            tx_id.expr(),
+            this.commit_scalar_committed.expr(),
+        );
+
+        #[cfg(feature = "l1_fee_curie")]
+        // Read L1 blob_scalar_committed scalar
+        cb.account_storage_read(
+            l1_fee_address,
+            blob_scalar,
+            this.blob_scalar_word.expr(),
+            tx_id,
+            this.blob_scalar_committed.expr(),
         );
 
         this
@@ -141,6 +182,8 @@ impl<F: Field> TxL1FeeGadget<F> {
             offset,
             region.word_rlc(l1_fee_committed.fee_scalar.into()),
         )?;
+        
+        // TODO: add curie fields assignment
 
         Ok(())
     }
