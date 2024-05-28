@@ -400,6 +400,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
                 // - to the precompile input.
                 let precompile_input_bytes_rlc =
+                    // cd_address.has_length is not zero means call_data_length > 0
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(

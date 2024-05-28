@@ -40,6 +40,7 @@ pub struct BlockInfo {
     pub block_type: BlockType,
     pub block_len: usize,
     pub is_last_block: bool,
+    pub regen_size: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy)]

@@ -322,8 +322,6 @@ impl<F: Field> SeqInstTable<F> {
             cb.gate(meta.query_fixed(q_enabled, Rotation::next()))
         });
 
-        debug_assert!(meta.degree() <= 9);
-
         // block index must be increment at seq border, so section for each
         // block index can occur once
         // and the lookup from seq_table enforce valid block / seq / s_beginning
@@ -562,6 +560,9 @@ impl<F: Field> SeqInstTable<F> {
         meta.enable_equality(rep_offset_1);
         meta.enable_equality(rep_offset_2);
         meta.enable_equality(rep_offset_3);
+
+        debug_assert!(meta.degree() <= 9);
+        debug_assert!(meta.clone().chunk_lookups().degree() <= 9);
 
         Self {
             q_enabled,
