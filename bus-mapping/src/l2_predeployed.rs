@@ -34,15 +34,13 @@ pub mod l1_gas_price_oracle {
     pub static OVERHEAD_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(2));
     /// L1 scalar slot in L1GasPriceOracle
     pub static SCALAR_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(3));
-    
+
     /// THe following 3 slots plus `BASE_FEE_SLOT` will be used for l1 fee after curie fork
     /// L1 BlobBaseFee slot in L1GasPriceOracle after Curie fork
-    #[cfg(feature = "l1_fee_curie")]
     pub static L1_BLOB_BASEFEE_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(5));
-    #[cfg(feature = "l1_fee_curie")]
     /// L1 commitScalar slot in L1GasPriceOracle after Curie fork
     pub static COMMIT_SCALAR_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(6));
-    #[cfg(feature = "l1_fee_curie")]
+    /// L1 commitScalar slot in L1GasPriceOracle after Curie forks
     pub static BLOB_SCALAR_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(7));
     pub static IS_CURIE_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(8));
     pub static INITIAL_COMMIT_SCALAR: LazyLock<U256> =

@@ -117,8 +117,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let sender_nonce = cb.query_cell();
 
-        let [tx_type, tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, 
-            tx_data_gas_cost, tx_signed_hash_length] =
+        let [tx_type, tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost, tx_signed_hash_length] =
             [
                 TxContextFieldTag::TxType,
                 TxContextFieldTag::Nonce,
@@ -143,7 +142,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_nonce.expr(),
                 sender_nonce.expr(),
             );
-            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr(),tx_signed_hash_length.expr())
+            TxL1FeeGadget::construct(
+                cb,
+                tx_id.expr(),
+                tx_data_gas_cost.expr(),
+                tx_signed_hash_length.expr(),
+            )
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());

@@ -478,10 +478,10 @@ pub struct TxL1Fee {
     /// L1 fee scalar
     pub fee_scalar: u64,
     #[cfg(feature = "l1_fee_curie")]
-    /// L1 blob fee 
-    pub l1blob_basefee: u64, 
+    /// L1 blob fee
+    pub l1_blob_basefee: u64,
     #[cfg(feature = "l1_fee_curie")]
-    /// L1 commit scalar 
+    /// L1 commit scalar
     pub commit_scalar: u64,
     #[cfg(feature = "l1_fee_curie")]
     /// l1 blob scalar
@@ -513,10 +513,10 @@ impl TxL1Fee {
                 .as_u64()
         });
         #[cfg(feature = "l1_fee_curie")]
-        let [l1blob_basefee, commit_scalar, blob_scalar] = [
-            &l1_gas_price_oracle::BLOB_BASEFEE,
-            &l1_gas_price_oracle::COMMIT_SCALAR,
-            &l1_gas_price_oracle::BLOB_SCALAR,
+        let [l1_blob_basefee, commit_scalar, blob_scalar] = [
+            &l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
+            &l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+            &l1_gas_price_oracle::BLOB_SCALAR_SLOT,
         ]
         .map(|slot| {
             sdb.get_storage(&l1_gas_price_oracle::ADDRESS, slot)
@@ -529,7 +529,7 @@ impl TxL1Fee {
             fee_overhead,
             fee_scalar,
             #[cfg(feature = "l1_fee_curie")]
-            l1blob_basefee,
+            l1_blob_basefee,
             #[cfg(feature = "l1_fee_curie")]
             commit_scalar,
             #[cfg(feature = "l1_fee_curie")]
@@ -550,10 +550,10 @@ impl TxL1Fee {
         });
 
         #[cfg(feature = "l1_fee_curie")]
-        let [l1blob_basefee, commit_scalar, blob_scalar] = [
-            &l1_gas_price_oracle::BLOB_BASEFEE,
-            &l1_gas_price_oracle::COMMIT_SCALAR,
-            &l1_gas_price_oracle::BLOB_SCALAR,
+        let [l1_blob_basefee, commit_scalar, blob_scalar] = [
+            &l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
+            &l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+            &l1_gas_price_oracle::BLOB_SCALAR_SLOT,
         ]
         .map(|slot| {
             sdb.get_committed_storage(&l1_gas_price_oracle::ADDRESS, slot)
@@ -566,7 +566,7 @@ impl TxL1Fee {
             fee_overhead,
             fee_scalar,
             #[cfg(feature = "l1_fee_curie")]
-            l1blob_basefee,
+            l1_blob_basefee,
             #[cfg(feature = "l1_fee_curie")]
             commit_scalar,
             #[cfg(feature = "l1_fee_curie")]
