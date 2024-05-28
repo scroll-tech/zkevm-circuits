@@ -31,11 +31,11 @@ pub mod l1_gas_price_oracle {
     pub static SCALAR_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(3));
     /// L1 BlobBaseFee slot in L1GasPriceOracle after Curie fork
     #[cfg(feature = "l1_fee_curie")]
-    pub static l1BlobBaseFee: LazyLock<U256> = LazyLock::new(|| U256::from(5));
+    pub static BlOB_BASEFEE: LazyLock<U256> = LazyLock::new(|| U256::from(5));
     #[cfg(feature = "l1_fee_curie")]
     /// L1 commitScalar slot in L1GasPriceOracle after Curie fork
-    pub static commitScalar: LazyLock<U256> = LazyLock::new(|| U256::from(6));
+    pub static COMMIT_SCALAR: LazyLock<U256> = LazyLock::new(|| U256::from(6));
     #[cfg(feature = "l1_fee_curie")]
     /// L1 blobScalar slot in L1GasPriceOracle after Curie fork
-    pub static blobScalar: LazyLock<U256> = LazyLock::new(|| U256::from(7));
+    pub static BLOB_SCALAR: LazyLock<U256> = LazyLock::new(|| U256::from(7));
 }

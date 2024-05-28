@@ -80,9 +80,9 @@ impl<F: Field> TxL1FeeGadget<F> {
 
         #[cfg(feature = "l1_fee_curie")]
         let [l1blob_baseFee, commit_scalar, blob_scalar] = [
-            &l1_gas_price_oracle::l1BlobBaseFee,
-            &l1_gas_price_oracle::commitScalar,
-            &l1_gas_price_oracle::blobScalar,
+            &l1_gas_price_oracle::BlOB_BASEFEE,
+            &l1_gas_price_oracle::COMMIT_SCALAR,
+            &l1_gas_price_oracle::BLOB_SCALAR,
         ]
         .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
 

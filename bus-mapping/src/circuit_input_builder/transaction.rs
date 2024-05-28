@@ -478,10 +478,13 @@ pub struct TxL1Fee {
     /// L1 fee scalar
     pub fee_scalar: u64,
     #[cfg(feature = "l1_fee_curie")]
-    pub l1blob_baseFee: u64, 
+    /// L1 blob fee 
+    pub l1blob_basefee: u64, 
     #[cfg(feature = "l1_fee_curie")]
+    /// L1 commit scalar 
     pub commit_scalar: u64,
     #[cfg(feature = "l1_fee_curie")]
+    /// l1 blob scalar
     pub blob_scalar: u64,
 }
 
@@ -510,18 +513,16 @@ impl TxL1Fee {
                 .as_u64()
         });
         #[cfg(feature = "l1_fee_curie")]
-        {
-            let [l1blob_baseFee, commit_scalar, blob_scalar] = [
-                &l1_gas_price_oracle::l1BlobBaseFee,
-                &l1_gas_price_oracle::commitScalar,
-                &l1_gas_price_oracle::blobScalar,
-            ]
-            .map(|slot| {
-                sdb.get_storage(&l1_gas_price_oracle::ADDRESS, slot)
-                    .1
-                    .as_u64()
-            });
-        }
+        let [l1blob_basefee, commit_scalar, blob_scalar] = [
+            &l1_gas_price_oracle::BlOB_BASEFEE,
+            &l1_gas_price_oracle::COMMIT_SCALAR,
+            &l1_gas_price_oracle::BLOB_SCALAR,
+        ]
+        .map(|slot| {
+            sdb.get_storage(&l1_gas_price_oracle::ADDRESS, slot)
+                .1
+                .as_u64()
+        });
 
         Self {
             base_fee,
@@ -549,18 +550,16 @@ impl TxL1Fee {
         });
 
         #[cfg(feature = "l1_fee_curie")]
-        {
-            let [l1blob_basefee, commit_scalar, blob_scalar] = [
-                &l1_gas_price_oracle::l1BlobBaseFee,
-                &l1_gas_price_oracle::commitScalar,
-                &l1_gas_price_oracle::blobScalar,
-            ]
-            .map(|slot| {
-                sdb.get_committed_storage(&l1_gas_price_oracle::ADDRESS, slot)
-                    .1
-                    .as_u64()
-            });
-        }
+        let [l1blob_basefee, commit_scalar, blob_scalar] = [
+            &l1_gas_price_oracle::BlOB_BASEFEE,
+            &l1_gas_price_oracle::COMMIT_SCALAR,
+            &l1_gas_price_oracle::BLOB_SCALAR,
+        ]
+        .map(|slot| {
+            sdb.get_committed_storage(&l1_gas_price_oracle::ADDRESS, slot)
+                .1
+                .as_u64()
+        });
 
         Self {
             base_fee,
