@@ -1211,7 +1211,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             #[cfg(feature = "l1_fee_curie")]
             {
                 (
-                    tx.l1_fee.tx_l1_fee(0, tx.rlp_signed.len()).0.into(),
+                    tx.l1_fee
+                        .tx_l1_fee(0, tx.rlp_signed.len().try_into().unwrap())
+                        .0
+                        .into(),
                     tx.gas_price * tx.gas,
                 )
             }

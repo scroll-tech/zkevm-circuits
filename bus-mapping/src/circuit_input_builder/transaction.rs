@@ -447,7 +447,7 @@ impl Transaction {
         {
             // TODO: calculate tx rlp signed length
             let tx_signed_length = self.rlp_signed_bytes.len();
-            self.l1_fee.tx_l1_fee(0, tx_signed_length).0
+            self.l1_fee.tx_l1_fee(0, tx_signed_length as u64).0
         }
     }
 }
@@ -520,8 +520,8 @@ impl TxL1Fee {
         #[cfg(feature = "l1_fee_curie")]
         {
             // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee",
-            let tx_l1_fee = self.commit_scalar * self.l1_blob_basefee
-                + tx_rlp_signed_len * self.l1_blob_basefee;
+            let tx_l1_fee = self.commit_scalar as u128 * self.l1_blob_basefee as u128
+                + tx_rlp_signed_len as u128 * self.l1_blob_basefee as u128;
             (
                 (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
                 (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
