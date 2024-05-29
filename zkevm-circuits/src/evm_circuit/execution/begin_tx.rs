@@ -1200,10 +1200,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             log::trace!("tx is l1msg and l1 fee is 0");
             (U256::zero(), U256::zero())
         } else {
-            (
-                tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0.into(),
-                tx.gas_price * tx.gas,
-            )
+            #[cfg(not(feature = "l1_fee_curie"))]
+            {
+                (
+                    tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost, 0).0.into(),
+                    tx.gas_price * tx.gas,
+                )
+            }
+
+            #[cfg(feature = "l1_fee_curie")]
+            {
+                (
+                    tx.l1_fee.tx_l1_fee(0, tx.rlp_signed.len()).0.into(),
+                    tx.gas_price * tx.gas,
+                )
+            }
         };
         if tx_fee != tx_l2_fee + tx_l1_fee {
             log::error!(
@@ -1220,6 +1231,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.l1_fee,
             tx.l1_fee_committed,
             tx.tx_data_gas_cost,
+            tx.rlp_signed.len().try_into().unwrap(),
         )?;
 
         self.tx_access_list.assign(region, offset, tx)?;

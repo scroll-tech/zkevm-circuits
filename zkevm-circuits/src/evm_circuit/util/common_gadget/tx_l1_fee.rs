@@ -159,8 +159,14 @@ impl<F: Field> TxL1FeeGadget<F> {
         l1_fee: TxL1Fee,
         l1_fee_committed: TxL1Fee,
         tx_data_gas_cost: u64,
+        tx_signed_length: u64,
     ) -> Result<(), Error> {
-        let (tx_l1_fee, remainder) = l1_fee.tx_l1_fee(tx_data_gas_cost);
+        let (tx_l1_fee, remainder) = if cfg!(feature = "l1_fee_curie") {
+            l1_fee.tx_l1_fee(tx_data_gas_cost, 0)
+        } else {
+            l1_fee.tx_l1_fee(0, tx_signed_length)
+        };
+
         self.tx_l1_fee_word
             .assign(region, offset, Some(U256::from(tx_l1_fee).to_le_bytes()))?;
         self.remainder_word

@@ -415,7 +415,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             log::trace!("tx is l1msg and l1 fee is 0");
             0
         } else {
-            tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0
+            if cfg!(feature = "l1_fee_curie") {
+                tx.l1_fee.tx_l1_fee(0, tx.rlp_signed.len().try_into().unwrap()).0
+            }else{
+                tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost, 0).0
+            }
         };
         log::trace!(
             "tx_l1_fee: {}, coinbase_reward: {}",
