@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Fixed},
@@ -104,7 +104,7 @@ impl Circuit<Fr> for TestFseCircuit {
         config.bitwise_op_table.load(&mut layouter)?;
         config.fixed_table.load(&mut layouter)?;
 
-        let (_fse_rows, _fse_sorted_rows) =
+        let (fse_rows, _fse_sorted_rows) =
             config
                 .fse_table
                 .assign(&mut layouter, &self.data, n_enabled)?;
@@ -129,13 +129,37 @@ impl Circuit<Fr> for TestFseCircuit {
 
                 match self.case {
                     UnsoundCase::None => {}
-                    UnsoundCase::MismatchNumStates => {}
+                    UnsoundCase::MismatchNumStates => {
+                        // The last row represents the last "un-padded" row, i.e. the idx is
+                        // expected to be table_size.
+                        let idx_cell = &fse_rows.last().expect("len(fse_rows)=0").idx;
+                        increment_cell(&mut region, idx_cell)?;
+                    }
+                    UnsoundCase::IncorrectStateTransition => {
+                        // We can tweak any row here as every row is expected to obey the state
+                        // transition function, i.e. modifying any one should result in a failure.
+                        let state_cell = &fse_rows[3].state;
+                        increment_cell(&mut region, state_cell)?;
+                    }
                 }
 
                 Ok(())
             },
         )
     }
+}
+
+fn increment_cell(
+    region: &mut Region<Fr>,
+    assigned_cell: &AssignedCell<Fr, Fr>,
+) -> Result<AssignedCell<Fr, Fr>, Error> {
+    let cell = assigned_cell.cell();
+    region.assign_advice(
+        || "incrementing previously assigned cell",
+        cell.column.try_into().expect("assigned cell not advice"),
+        cell.row_offset,
+        || assigned_cell.value() + Value::known(Fr::one()),
+    )
 }
 
 enum DataInput {
@@ -151,6 +175,8 @@ enum UnsoundCase {
     None,
     /// allocate number of states different than table_size.
     MismatchNumStates,
+    /// transition state incorrectly.
+    IncorrectStateTransition,
 }
 
 impl Default for UnsoundCase {
@@ -230,7 +256,7 @@ fn test_fse_ok_2() {
 }
 
 #[test]
-fn test_fse_not_ok_1() {
+fn test_fse_not_ok_mismatch_num_states() {
     let src = vec![
         0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
     ];
@@ -238,6 +264,19 @@ fn test_fse_not_ok_1() {
         DataInput::SourceBytes(src, 0),
         false,
         UnsoundCase::MismatchNumStates
+    )
+    .is_err())
+}
+
+#[test]
+fn test_fse_not_ok_incorrect_state_transition() {
+    let src = vec![
+        0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
+    ];
+    assert!(run(
+        DataInput::SourceBytes(src, 0),
+        false,
+        UnsoundCase::IncorrectStateTransition,
     )
     .is_err())
 }
