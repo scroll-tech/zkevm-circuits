@@ -28,7 +28,8 @@ impl Prover {
             desc,
             pk.get_vk().transcript_repr()
         );
-        Ok(gen_snark_shplonk(params, pk, circuit, rng, None::<String>))
+        let snark = gen_snark_shplonk(params, pk, circuit, rng, None::<String>)?;
+        Ok(snark)
     }
 
     pub fn params(&mut self, degree: u32) -> &ParamsKZG<Bn256> {

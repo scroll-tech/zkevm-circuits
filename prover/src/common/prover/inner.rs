@@ -34,7 +34,7 @@ impl Prover {
             "gen_inner_snark vk transcript_repr {:?}",
             pk.get_vk().transcript_repr()
         );
-        let snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>);
+        let snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
 
         Ok(snark)
     }

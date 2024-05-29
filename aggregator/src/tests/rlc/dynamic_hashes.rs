@@ -218,7 +218,7 @@ fn test_dynamic_hash_circuit() {
 
     // pk verifies the original circuit
     {
-        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>).unwrap();
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
             snark,
@@ -231,7 +231,7 @@ fn test_dynamic_hash_circuit() {
         let a: Vec<u8> = (0..LEN * 3).map(|x| x as u8).collect::<Vec<u8>>();
         let circuit = DynamicHashCircuit { inputs: a };
 
-        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>).unwrap();
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
             snark,
