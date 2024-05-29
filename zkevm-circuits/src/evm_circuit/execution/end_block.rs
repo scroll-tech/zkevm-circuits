@@ -160,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 ),
             ] {
                 cb.account_storage_write(
-                l1_fee_address.expr(),
+                    l1_fee_address.expr(),
                     cb.word_rlc_constant(slot),
                     cb.word_rlc_constant(value),
                     0.expr(),
@@ -181,9 +181,6 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr())
             + 1.expr()
             + is_curie_fork_block.expr() * 7.expr();
-
-        // TODO: implement the 7 rws
-        // The values should be constants
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.

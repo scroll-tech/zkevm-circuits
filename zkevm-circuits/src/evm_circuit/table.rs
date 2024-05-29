@@ -156,10 +156,6 @@ impl FixedTableTag {
     }
 }
 
-pub(crate) enum ForkID {
-    Curie = 2,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {
     Fixed,
