@@ -5,7 +5,7 @@ use crate::{l2_predeployed::l1_gas_price_oracle, Error};
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
     geth_types,
-    geth_types::{get_rlp_unsigned, TxType},
+    geth_types::{get_rlp_signed, get_rlp_unsigned, TxType},
     state_db::{CodeDB, StateDB},
     AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
@@ -204,6 +204,8 @@ pub struct Transaction {
     pub rlp_bytes: Vec<u8>,
     /// RLP bytes for signing
     pub rlp_unsigned_bytes: Vec<u8>,
+    /// RLP bytes for signing
+    pub rlp_signed_bytes: Vec<u8>,
     /// Current values of L1 fee
     pub l1_fee: TxL1Fee,
     /// Committed values of L1 fee
@@ -233,6 +235,7 @@ impl From<&Transaction> for geth_types::Transaction {
             gas_fee_cap: Some(tx.gas_fee_cap),
             gas_tip_cap: Some(tx.gas_tip_cap),
             rlp_unsigned_bytes: tx.rlp_unsigned_bytes.clone(),
+            //rlp_signed_bytes: tx.rlp_signed_bytes.clone(),
             rlp_bytes: tx.rlp_bytes.clone(),
             tx_type: tx.tx_type,
             ..Default::default()
@@ -261,6 +264,7 @@ impl Transaction {
             },
             rlp_bytes: vec![],
             rlp_unsigned_bytes: vec![],
+            rlp_signed_bytes: vec![],
             calls: Vec::new(),
             steps: Vec::new(),
             block_num: Default::default(),
@@ -362,6 +366,7 @@ impl Transaction {
             tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
+            rlp_signed_bytes: get_rlp_signed(eth_tx),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
@@ -433,9 +438,17 @@ impl Transaction {
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
         //TODO: check if need to update for curie
-        let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
-
-        self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
+        #[cfg(not(feature = "l1_fee_curie"))]
+        {
+            let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
+            self.l1_fee.tx_l1_fee(tx_data_gas_cost, 0).0
+        }
+        #[cfg(feature = "l1_fee_curie")]
+        {
+            // TODO: calculate tx rlp signed length
+            let tx_signed_length = self.rlp_signed_bytes.len();
+            self.l1_fee.tx_l1_fee(0, tx_signed_length).0
+        }
     }
 }
 
@@ -490,15 +503,30 @@ pub struct TxL1Fee {
 
 impl TxL1Fee {
     /// Calculate L1 fee and remainder of transaction.
-    pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
+    /// for non curie upgrade case, tx_rlp_signed_len is not used,  set to zero
+    pub fn tx_l1_fee(&self, tx_data_gas_cost: u64, tx_rlp_signed_len: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
-        let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
-        // TODO: check if the calculation changes for curie upgrade
-        (
-            (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
-            (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
-        )
+        // check if the calculation changes for curie upgrade
+        #[cfg(not(feature = "l1_fee_curie"))]
+        {
+            let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
+            let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
+            (
+                (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
+                (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
+            )
+        }
+
+        #[cfg(feature = "l1_fee_curie")]
+        {
+            // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee",
+            let tx_l1_fee = self.commit_scalar * self.l1_blob_basefee
+                + tx_rlp_signed_len * self.l1_blob_basefee;
+            (
+                (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
+                (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
+            )
+        }
     }
 
     fn get_current_values_from_state_db(sdb: &StateDB) -> Self {

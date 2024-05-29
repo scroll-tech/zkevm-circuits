@@ -9,7 +9,7 @@ use crate::{
 };
 use ethers_core::types::{
     transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, Eip2930TransactionRequest,
-    NameOrAddress, TransactionRequest, H256,
+    NameOrAddress, Signature, TransactionRequest, H256,
 };
 use halo2curves::{group::ff::PrimeField, secp256k1::Fq};
 use num::Integer;
@@ -158,6 +158,48 @@ pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
     }
 }
 
+/// Get the RLP signed bytes
+/// NOTE: currently only used by curie upgrade calculating l1fee
+pub fn get_rlp_signed(tx: &crate::Transaction) -> Vec<u8> {
+    let sig_v = tx.v; // U64 type
+    let signature = Signature {
+        r: tx.r,
+        s: tx.s,
+        v: tx.v.as_u64(),
+    };
+
+    match TxType::get_tx_type(tx) {
+        TxType::Eip155 => {
+            let mut tx: TransactionRequest = tx.into();
+            tx.chain_id = Some(tx.chain_id.unwrap_or_else(|| {
+                let recv_v = TxType::Eip155.get_recovery_id(sig_v.as_u64()) as u64;
+                (sig_v - recv_v - 35) / 2
+            }));
+
+            tx.rlp_signed(&signature).to_vec()
+        }
+        TxType::PreEip155 => {
+            let tx: TransactionRequest = tx.into();
+            tx.rlp_signed(&signature).to_vec()
+        }
+        TxType::Eip1559 => {
+            let tx: Eip1559TransactionRequest = tx.into();
+            let typed_tx: TypedTransaction = tx.into();
+            typed_tx.rlp_signed(&signature).to_vec()
+        }
+        TxType::Eip2930 => {
+            let tx: Eip2930TransactionRequest = tx.into();
+            let typed_tx: TypedTransaction = tx.into();
+            //typed_tx.rlp().to_vec()
+            typed_tx.rlp_signed(&signature).to_vec()
+        }
+        TxType::L1Msg => {
+            // L1 msg does not have signature
+            vec![]
+        }
+    }
+}
+
 /// Definition of all of the data related to an account.
 #[serde_as]
 #[derive(PartialEq, Eq, Debug, Default, Clone, Serialize)]
@@ -289,7 +331,7 @@ pub struct Transaction {
     pub rlp_bytes: Vec<u8>,
     /// RLP unsigned bytes
     pub rlp_unsigned_bytes: Vec<u8>,
-
+    // TODO: add rlp_signed_bytes as well ?
     /// Transaction hash
     pub hash: H256,
 }
