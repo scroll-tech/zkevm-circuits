@@ -1154,7 +1154,7 @@ mod tests {
 
             let inst_tbl = SeqInstTable::configure(meta);
 
-            let chng_mock = MockChallenges::construct(meta);
+            let chng_mock = MockChallenges::construct_p1(meta);
             let chng = chng_mock.exprs(meta);
 
             let config = SeqExecConfig::configure(

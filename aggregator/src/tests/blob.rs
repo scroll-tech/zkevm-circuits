@@ -58,7 +58,7 @@ impl Circuit<Fr> for BlobCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let u8_table = U8Table::construct(meta);
         let range_table = RangeTable::construct(meta);
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let keccak_table = KeccakTable::construct(meta);
 
         let rlc = RlcConfig::configure(meta, &keccak_table, challenges);

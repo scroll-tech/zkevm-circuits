@@ -1,4 +1,4 @@
-use crate::blob::BatchData;
+use crate::{blob::BatchData, witgen::MultiBlockProcessResult};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -27,6 +27,7 @@ use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
 use zkevm_circuits::util::Challenges;
 
 use crate::{
+    aggregation::witgen::process,
     batch::BatchHash,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
@@ -136,7 +137,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             },
         );
 
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let config = AggregationConfig::configure(meta, &params, challenges);
         log::info!(
             "aggregation circuit configured with k = {} and {:?} advice columns",
@@ -447,22 +448,19 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
             let batch_bytes = batch_data.get_batch_data_bytes();
             let encoded_batch_bytes = batch_data.get_encoded_batch_data_bytes();
-            let (
+
+            let MultiBlockProcessResult {
                 witness_rows,
-                decoded_literals,
-                aux_data,
+                literal_bytes: decoded_literals,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
-                address_table_arr,
-                sequence_exec_result,
-            ) = crate::aggregation::decoder::witgen::process(
-                &encoded_batch_bytes,
-                challenges.keccak_input(),
-            );
+                address_table_rows: address_table_arr,
+                sequence_exec_results,
+            } = process(&encoded_batch_bytes, challenges.keccak_input());
 
             // sanity check:
-            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
                 (Vec::new(), Vec::new()),
                 |(mut out_byte, mut out_exec), res| {
                     out_byte.extend(res.recovered_bytes);
@@ -481,7 +479,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 &encoded_batch_bytes,
                 witness_rows,
                 decoded_literals,
-                aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
@@ -492,7 +489,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             )?;
 
             layouter.assign_region(
-                || "batch checks",
+                || "consistency checks",
                 |mut region| -> Result<(), Error> {
                     region.constrain_equal(
                         assigned_batch_hash.num_valid_snarks.cell(),
@@ -543,10 +540,20 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         blob_data_exports.bytes_rlc.cell(),
                         decoder_exports.encoded_rlc.cell(),
                     )?;
+                    // equate len(blob_bytes) with decoder's encoded_len
+                    region.constrain_equal(
+                        blob_data_exports.bytes_len.cell(),
+                        decoder_exports.encoded_len.cell(),
+                    )?;
                     // equate rlc (from batch data) with decoder's decoded_rlc
                     region.constrain_equal(
                         batch_data_exports.bytes_rlc.cell(),
                         decoder_exports.decoded_rlc.cell(),
+                    )?;
+                    // equate len(batch_data) with decoder's decoded_len
+                    region.constrain_equal(
+                        batch_data_exports.batch_data_len.cell(),
+                        decoder_exports.decoded_len.cell(),
                     )?;
 
                     Ok(())

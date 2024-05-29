@@ -1,6 +1,13 @@
 use eth_types::Field;
 use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
 
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
+}
+
 #[inline]
 // assert two cells have same value
 // (NOT constraining equality in circuit)
