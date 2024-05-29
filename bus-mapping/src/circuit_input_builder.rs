@@ -482,19 +482,6 @@ impl<'a> CircuitInputBuilder {
             )?;
         }
 
-        // increase the total rwc by 1
-        state.push_op(
-            &mut end_block_step,
-            RW::READ,
-            StorageOp::new(
-                *MESSAGE_QUEUE,
-                WITHDRAW_TRIE_ROOT_SLOT,
-                withdraw_root,
-                withdraw_root,
-                dummy_tx_id,
-                withdraw_root_before,
-            ),
-        )?;
         let last_block_num = state
             .block
             .headers
@@ -508,6 +495,19 @@ impl<'a> CircuitInputBuilder {
         if is_curie_fork_block {
             curie::apply_curie(&mut state, &mut end_block_step)?;
         }
+
+        state.push_op(
+            &mut end_block_step,
+            RW::READ,
+            StorageOp::new(
+                *MESSAGE_QUEUE,
+                WITHDRAW_TRIE_ROOT_SLOT,
+                withdraw_root,
+                withdraw_root,
+                dummy_tx_id,
+                withdraw_root_before,
+            ),
+        )?;
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
