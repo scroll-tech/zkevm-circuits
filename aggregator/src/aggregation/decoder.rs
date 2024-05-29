@@ -1218,6 +1218,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 
         meta.enable_equality(config.decoded_len);
         meta.enable_equality(config.encoded_rlc);
+        meta.enable_equality(config.byte_idx);
 
         macro_rules! is_tag {
             ($var:ident, $tag_variant:ident) => {
@@ -4572,7 +4573,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         _compressed_bytes: &[u8],
         witness_rows: Vec<ZstdWitnessRow<Fr>>,
         literal_datas: Vec<Vec<u64>>,
-        _aux_data: Vec<u64>,
         fse_aux_tables: Vec<FseAuxiliaryTableData>,
         block_info_arr: Vec<BlockInfo>,
         sequence_info_arr: Vec<SequenceInfo>,
@@ -5405,7 +5405,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     )?;
                 }
 
-                // dbg: decoded length from SeqExecConfig and decoder config must match.
+                // decoded length from SeqExecConfig and decoder config must match.
                 region.constrain_equal(exported_len.cell(), decoded_len_cell.unwrap().cell())?;
 
                 Ok(AssignedDecoderConfigExports {
@@ -5430,7 +5430,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        witgen::{init_zstd_encoder, process},
+        witgen::{init_zstd_encoder, process, MultiBlockProcessResult},
         DecoderConfig, DecoderConfigArgs,
     };
     use halo2_proofs::{
@@ -5461,7 +5461,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let challenges = Challenges::construct(meta);
+            let challenges = Challenges::construct_p1(meta);
             let challenges_expr = challenges.exprs(meta);
 
             let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
@@ -5499,18 +5499,17 @@ mod tests {
             let (config, u8_table, challenge) = config;
             let challenges = challenge.values(&layouter);
 
-            let (
+            let MultiBlockProcessResult {
                 witness_rows,
-                decoded_literals,
-                aux_data,
+                literal_bytes: decoded_literals,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
-                address_table_arr,
-                sequence_exec_result,
-            ) = process(&self.compressed, challenges.keccak_input());
+                address_table_rows: address_table_arr,
+                sequence_exec_results,
+            } = process(&self.compressed, challenges.keccak_input());
 
-            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
                 (Vec::new(), Vec::new()),
                 |(mut out_byte, mut out_exec), res| {
                     out_byte.extend(res.recovered_bytes);
@@ -5531,7 +5530,6 @@ mod tests {
                 &self.compressed,
                 witness_rows,
                 decoded_literals,
-                aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,

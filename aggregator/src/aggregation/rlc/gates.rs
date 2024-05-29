@@ -122,6 +122,15 @@ impl RlcConfig {
     }
 
     #[inline]
+    pub(crate) fn four_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 4,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
     pub(crate) fn fixed_up_to_max_agg_snarks_cell(
         &self,
         region_index: RegionIndex,

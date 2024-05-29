@@ -77,7 +77,7 @@ impl Circuit<Fr> for MockChunkCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         meta.set_minimum_degree(4);
 
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let keccak_table = KeccakTable::construct(meta);
         let rlc_config = RlcConfig::configure(meta, &keccak_table, challenges);
         let instance = meta.instance_column();
