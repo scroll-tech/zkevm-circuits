@@ -1524,6 +1524,24 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     );
                 });
 
+                // byte_idx increments for all the following tags.
+                cb.condition(
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_frame_content_size, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_block_header, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_literals_header, Rotation::cur()),
+                        is_zb_raw_block(meta),
+                        meta.query_advice(config.tag_config.is_sequence_header, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        cb.require_equal(
+                            "for these tags: byte_idx increments",
+                            byte_idx_delta.expr(),
+                            1.expr(),
+                        );
+                    },
+                );
+
                 // If the previous tag was done processing, verify that the is_change boolean was
                 // set.
                 let tag_idx_prev = meta.query_advice(config.tag_config.tag_idx, Rotation::prev());
@@ -2146,24 +2164,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 expected_tag_len,
             );
 
-            // The regenerated size is in fact the tag length of the ZstdBlockLiteralsRawBytes
-            // tag. But depending on how many bytes are in the literals header, we select the
-            // appropriate offset to read the tag_len from.
-            let regen_size = select::expr(
-                size_format_bit0.expr() * not::expr(size_format_bit1.expr()),
-                meta.query_advice(config.tag_config.tag_len, Rotation(2)),
-                select::expr(
-                    size_format_bit0.expr() * size_format_bit1.expr(),
-                    meta.query_advice(config.tag_config.tag_len, Rotation(3)),
-                    meta.query_advice(config.tag_config.tag_len, Rotation(1)),
-                ),
-            );
-            cb.require_equal(
-                "regen size check",
-                regen_size,
-                meta.query_advice(config.block_config.regen_size, Rotation::cur()),
-            );
-
             cb.gate(condition)
         });
 
@@ -2223,14 +2223,15 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 is_zb_raw_block(meta),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "byte_idx::cur == byte_idx::prev + 1",
-                meta.query_advice(config.byte_idx, Rotation::cur()),
-                meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
+                "block's regen size is raw literals' tag length",
+                meta.query_advice(config.tag_config.tag_len, Rotation::cur()),
+                meta.query_advice(config.block_config.regen_size, Rotation::cur()),
             );
 
             cb.gate(condition)
