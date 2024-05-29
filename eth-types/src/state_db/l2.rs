@@ -49,7 +49,7 @@ impl CodeDB {
                     !(is_call_to_precompile || is_call_to_empty || call.call_type.is_create())
                 })
                 .collect::<Vec<_>>();
-            log::trace!("call_trace: {call_trace:?}");
+            //log::trace!("call_trace: {call_trace:?}");
 
             for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
                 if step.op.is_create() {
@@ -72,7 +72,7 @@ impl CodeDB {
                         continue;
                     }
                     let call = call_trace.pop();
-                    log::trace!("call_trace pop: {call:?}, current step: {step:?}");
+                    //log::trace!("call_trace pop: {call:?}, current step: {step:?}");
                     call
                 } else {
                     None
