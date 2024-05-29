@@ -45,6 +45,8 @@ struct TestFseCircuit {
     k: u32,
     /// List of reconstructed FSE tables.
     data: Vec<FseAuxiliaryTableData>,
+    /// Variant of possible unsound case.
+    case: UnsoundCase,
 }
 
 impl Circuit<Fr> for TestFseCircuit {
@@ -102,13 +104,14 @@ impl Circuit<Fr> for TestFseCircuit {
         config.bitwise_op_table.load(&mut layouter)?;
         config.fixed_table.load(&mut layouter)?;
 
-        config
-            .fse_table
-            .assign(&mut layouter, &self.data, n_enabled)?;
+        let (_fse_rows, _fse_sorted_rows) =
+            config
+                .fse_table
+                .assign(&mut layouter, &self.data, n_enabled)?;
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         layouter.assign_region(
-            || "TestFseCircuit",
+            || "TestFseCircuit: potentially unsound assignments",
             |mut region| {
                 if first_pass {
                     first_pass = false;
@@ -124,11 +127,14 @@ impl Circuit<Fr> for TestFseCircuit {
                     )?;
                 }
 
+                match self.case {
+                    UnsoundCase::None => {}
+                    UnsoundCase::MismatchNumStates => {}
+                }
+
                 Ok(())
             },
-        )?;
-
-        layouter.assign_region(|| "TestFseCircuit: malicious assignments", |_region| Ok(()))
+        )
     }
 }
 
@@ -140,7 +146,20 @@ enum DataInput {
     SourceBytes(Vec<u8>, usize),
 }
 
-fn run(input: DataInput, is_predefined: bool) -> Result<(), Vec<VerifyFailure>> {
+enum UnsoundCase {
+    /// sound case.
+    None,
+    /// allocate number of states different than table_size.
+    MismatchNumStates,
+}
+
+impl Default for UnsoundCase {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+fn run(input: DataInput, is_predefined: bool, case: UnsoundCase) -> Result<(), Vec<VerifyFailure>> {
     let k = 18;
 
     let fse_table = match input {
@@ -180,6 +199,7 @@ fn run(input: DataInput, is_predefined: bool) -> Result<(), Vec<VerifyFailure>> 
     let test_circuit = TestFseCircuit {
         k,
         data: vec![fse_table],
+        case,
     };
 
     let prover =
@@ -188,18 +208,36 @@ fn run(input: DataInput, is_predefined: bool) -> Result<(), Vec<VerifyFailure>> 
 }
 
 #[test]
-fn test_fse_dist_ok() {
+fn test_fse_ok_1() {
     let distribution = vec![
         4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1,
         1, 1, -1, -1, -1, -1,
     ];
-    assert!(run(DataInput::Distribution(distribution, 6), true).is_ok())
+    assert!(run(
+        DataInput::Distribution(distribution, 6),
+        true,
+        UnsoundCase::None
+    )
+    .is_ok())
 }
 
 #[test]
-fn test_fse_src_ok() {
+fn test_fse_ok_2() {
     let src = vec![
         0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
     ];
-    assert!(run(DataInput::SourceBytes(src, 0), false).is_ok())
+    assert!(run(DataInput::SourceBytes(src, 0), false, UnsoundCase::None).is_ok())
+}
+
+#[test]
+fn test_fse_not_ok_1() {
+    let src = vec![
+        0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
+    ];
+    assert!(run(
+        DataInput::SourceBytes(src, 0),
+        false,
+        UnsoundCase::MismatchNumStates
+    )
+    .is_err())
 }
