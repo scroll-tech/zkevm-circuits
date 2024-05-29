@@ -117,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let sender_nonce = cb.query_cell();
 
-        let [tx_type, tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost, tx_signed_hash_length] =
+        let [tx_type, tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
             [
                 TxContextFieldTag::TxType,
                 TxContextFieldTag::Nonce,
@@ -128,10 +128,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
                 TxContextFieldTag::TxDataGasCost,
-                TxContextFieldTag::TxHashLength,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
+        #[cfg(feature = "l1_fee_curie")]
+        let tx_signed_hash_length =
+            cb.tx_context(tx_id.expr(), TxContextFieldTag::TxHashLength, None);
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
@@ -146,6 +148,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 cb,
                 tx_id.expr(),
                 tx_data_gas_cost.expr(),
+                #[cfg(feature = "l1_fee_curie")]
                 tx_signed_hash_length.expr(),
             )
         });

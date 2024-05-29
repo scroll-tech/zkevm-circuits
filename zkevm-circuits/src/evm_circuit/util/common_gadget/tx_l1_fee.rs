@@ -62,9 +62,12 @@ impl<F: Field> TxL1FeeGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         tx_id: Expression<F>,
         tx_data_gas_cost: Expression<F>,
-        tx_signed_hash_length: Expression<F>,
+        #[cfg(feature = "l1_fee_curie")] tx_signed_hash_length: Expression<F>,
     ) -> Self {
+        #[cfg(feature = "l1_fee_curie")]
         let this = Self::raw_construct(cb, tx_data_gas_cost, tx_signed_hash_length);
+        #[cfg(not(feature = "l1_fee_curie"))]
+        let this = Self::raw_construct(cb, tx_data_gas_cost);
 
         let l1_fee_address = Expression::Constant(l1_gas_price_oracle::ADDRESS.to_scalar().expect(
             "Unexpected address of l2 gasprice oracle contract -> Scalar conversion failure",
@@ -168,7 +171,7 @@ impl<F: Field> TxL1FeeGadget<F> {
             .assign(region, offset, Some(l1_fee.fee_overhead.to_le_bytes()))?;
         self.fee_scalar_word
             .assign(region, offset, Some(l1_fee.fee_scalar.to_le_bytes()))?;
-        
+
         // curie fields
         #[cfg(feature = "l1_fee_curie")]
         self.l1_blob_basefee_word.assign(
@@ -230,7 +233,11 @@ impl<F: Field> TxL1FeeGadget<F> {
         // l1 blob baseFee
         // commit scalar
         // blob scalar
-        6.expr()
+        if cfg!(feature = "l1_fee_curie") {
+            6.expr()
+        } else {
+            3.expr()
+        }
     }
 
     pub(crate) fn tx_l1_fee(&self) -> Expression<F> {
@@ -244,7 +251,7 @@ impl<F: Field> TxL1FeeGadget<F> {
     fn raw_construct(
         cb: &mut EVMConstraintBuilder<F>,
         tx_data_gas_cost: Expression<F>,
-        tx_signed_hash_length: Expression<F>,
+        #[cfg(feature = "l1_fee_curie")] tx_signed_hash_length: Expression<F>,
     ) -> Self {
         let tx_l1_fee_word = cb.query_word_rlc();
         let remainder_word = cb.query_word_rlc();
@@ -270,9 +277,12 @@ impl<F: Field> TxL1FeeGadget<F> {
         .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
         #[cfg(feature = "l1_fee_curie")]
-        let [l1_blob_basefee, commit_scalar, blob_scalar] =
-            [&l1_blob_basefee_word, &commit_scalar_word, &blob_scalar_word]
-                .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
+        let [l1_blob_basefee, commit_scalar, blob_scalar] = [
+            &l1_blob_basefee_word,
+            &commit_scalar_word,
+            &blob_scalar_word,
+        ]
+        .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
         let tx_l1_gas = if cfg!(feature = "l1_fee_curie") {
@@ -391,9 +401,9 @@ mod tests {
             let tx_data_gas_cost = cb.query_cell();
             let expected_tx_l1_fee = cb.query_cell();
 
-            // for non "l1_fee_curie" feature, tx_signed_hash_length is not used, can 
+            // for non "l1_fee_curie" feature, tx_signed_hash_length is not used, can
             // set to zero
-            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr(), 0.expr());
+            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr());
 
             cb.require_equal(
                 "tx_l1_fee must be correct",
