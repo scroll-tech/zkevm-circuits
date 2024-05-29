@@ -161,6 +161,13 @@ impl<F: Field> TxL1FeeGadget<F> {
         tx_data_gas_cost: u64,
         tx_signed_length: u64,
     ) -> Result<(), Error> {
+        #[cfg(feature = "l1_fee_curie")]
+        log::debug!(
+            "assign: tx_l1_fee {:?} l1_fee_committed {:?} tx_signed_length {}",
+            l1_fee,
+            l1_fee_committed,
+            tx_signed_length
+        );
         let (tx_l1_fee, remainder) = if cfg!(feature = "l1_fee_curie") {
             l1_fee.tx_l1_fee(tx_data_gas_cost, 0)
         } else {

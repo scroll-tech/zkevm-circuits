@@ -524,6 +524,18 @@ impl TxL1Fee {
                 + self.blob_scalar as u128
                     * tx_rlp_signed_len as u128
                     * self.l1_blob_basefee as u128;
+            log::debug!(
+                "tx_l1_fee {} commit_scalar {} base_fee {} blob_scalar {}
+            tx_rlp_signed_len {} l1_blob_basefee {}  tx_quient {},reminder {}",
+                tx_l1_fee,
+                self.commit_scalar,
+                self.base_fee,
+                self.blob_scalar,
+                tx_rlp_signed_len,
+                self.l1_blob_basefee,
+                tx_l1_fee / TX_L1_FEE_PRECISION as u128,
+                tx_l1_fee % TX_L1_FEE_PRECISION as u128
+            );
             (
                 (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
                 (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
