@@ -917,10 +917,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
 
         let rw = rws.next();
-        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
-        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
 
-        rws.offset_add(3);
+        #[cfg(not(feature = "l1_fee_curie"))]
+        {
+            debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+            debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
+            rws.offset_add(3);
+        }
+
+        #[cfg(feature = "l1_fee_curie")]
+        rws.offset_add(6);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::Account);
