@@ -13,11 +13,14 @@ use crate::{
 
 use super::{CircuitInputStateRef, ExecStep};
 
+
 /// Whether this blk is the hardfork height of curie
 pub fn is_curie_fork(chain_id: u64, blk: u64) -> bool {
-    if chain_id == 222222 && blk == 5 {
-        log::info!("enable curie fork: chain id {chain_id} block {blk}");
-        return true;
+    for (fork, fork_chain_id, fork_blk) in eth_types::forks::hardfork_heights() {
+        if fork == eth_types::forks::HardforkId::Curie && chain_id == fork_chain_id && fork_blk == 5 {
+            log::info!("enable curie fork: chain id {chain_id} block {blk}");
+            return true;
+        }
     }
     false
 }

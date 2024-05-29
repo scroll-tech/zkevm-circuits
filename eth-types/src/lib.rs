@@ -30,6 +30,7 @@ pub mod l2_types;
 pub mod sign_types;
 pub mod state_db;
 pub mod utils;
+pub mod forks;
 
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
