@@ -744,7 +744,7 @@ impl FseAuxiliaryTableData {
     }
 
     #[allow(non_snake_case)]
-    fn transform_normalised_probs(
+    pub fn transform_normalised_probs(
         normalised_probs: &BTreeMap<u64, i32>,
         accuracy_log: u8,
     ) -> (

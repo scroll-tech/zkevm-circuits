@@ -131,6 +131,58 @@ pub struct FseTable<const L: usize, const R: usize> {
     enable_lookup: BooleanAdvice,
 }
 
+#[cfg(feature = "soundness-tests")]
+use halo2_proofs::circuit::AssignedCell;
+
+#[cfg(feature = "soundness-tests")]
+#[derive(Debug)]
+pub struct AssignedFseTableRow {
+    pub is_prob_less_than1: AssignedCell<Fr, Fr>,
+    pub is_padding: AssignedCell<Fr, Fr>,
+    pub table_size_rs_1: AssignedCell<Fr, Fr>,
+    pub table_size_rs_3: AssignedCell<Fr, Fr>,
+    pub idx: AssignedCell<Fr, Fr>,
+    pub symbol: AssignedCell<Fr, Fr>,
+    pub is_new_symbol: AssignedCell<Fr, Fr>,
+    pub symbol_count: AssignedCell<Fr, Fr>,
+    pub symbol_count_acc: AssignedCell<Fr, Fr>,
+    pub state: AssignedCell<Fr, Fr>,
+    pub is_skipped_state: AssignedCell<Fr, Fr>,
+    pub baseline: AssignedCell<Fr, Fr>,
+    pub nb: AssignedCell<Fr, Fr>,
+}
+
+#[cfg(feature = "soundness-tests")]
+#[derive(Debug)]
+pub struct AssignedFseSortedTableRow {
+    pub block_idx: AssignedCell<Fr, Fr>,
+    pub table_kind: AssignedCell<Fr, Fr>,
+    pub table_size: AssignedCell<Fr, Fr>,
+    pub is_predefined: AssignedCell<Fr, Fr>,
+    pub symbol: AssignedCell<Fr, Fr>,
+    pub is_new_symbol: AssignedCell<Fr, Fr>,
+    pub symbol_count: AssignedCell<Fr, Fr>,
+    pub symbol_count_acc: AssignedCell<Fr, Fr>,
+    pub state: AssignedCell<Fr, Fr>,
+    pub nb: AssignedCell<Fr, Fr>,
+    pub baseline: AssignedCell<Fr, Fr>,
+    pub last_baseline: AssignedCell<Fr, Fr>,
+    pub baseline_mark: AssignedCell<Fr, Fr>,
+    pub spot: AssignedCell<Fr, Fr>,
+    pub smallest_spot: AssignedCell<Fr, Fr>,
+    pub spot_acc: AssignedCell<Fr, Fr>,
+}
+
+#[cfg(feature = "soundness-tests")]
+pub(crate) type AssignedFseTableRows = Vec<AssignedFseTableRow>;
+#[cfg(feature = "soundness-tests")]
+pub(crate) type AssignedFseSortedTableRows = Vec<AssignedFseSortedTableRow>;
+
+#[cfg(feature = "soundness-tests")]
+pub(crate) type AssignedFse = (AssignedFseTableRows, AssignedFseSortedTableRows);
+#[cfg(not(feature = "soundness-tests"))]
+pub(crate) type AssignedFse = ();
+
 impl<const L: usize, const R: usize> FseTable<L, R> {
     /// Configure the FSE table.
     #[allow(clippy::too_many_arguments)]
@@ -766,9 +818,9 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
     pub fn assign(
         &self,
         layouter: &mut impl Layouter<Fr>,
-        data: Vec<FseAuxiliaryTableData>,
+        data: &[FseAuxiliaryTableData],
         n_enabled: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<AssignedFse, Error> {
         layouter.assign_region(
             || "FseTable",
             |mut region| {
@@ -782,6 +834,11 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                 // Both tables should skip the first row
                 let mut fse_offset: usize = 1;
                 let mut sorted_offset: usize = 1;
+
+                #[cfg(feature = "soundness-tests")]
+                let mut assigned_fse_table_rows = Vec::with_capacity(n_enabled);
+                #[cfg(feature = "soundness-tests")]
+                let mut assigned_fse_sorted_table_rows = Vec::with_capacity(n_enabled);
 
                 for i in (1..n_enabled).step_by(N_ROWS_PER_FSE) {
                     region.assign_fixed(
@@ -812,19 +869,19 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                             .rev()
                         {
                             state_idx += 1;
-                            region.assign_advice(
+                            let _state = region.assign_advice(
                                 || "state",
                                 self.state,
                                 fse_offset,
                                 || Value::known(Fr::from(state)),
                             )?;
-                            region.assign_advice(
+                            let _idx = region.assign_advice(
                                 || "idx",
                                 self.idx,
                                 fse_offset,
                                 || Value::known(Fr::from(state_idx as u64)),
                             )?;
-                            region.assign_advice(
+                            let _symbol = region.assign_advice(
                                 || "symbol",
                                 self.symbol,
                                 fse_offset,
@@ -834,7 +891,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                     ))
                                 },
                             )?;
-                            region.assign_advice(
+                            let _baseline = region.assign_advice(
                                 || "baseline",
                                 self.baseline,
                                 fse_offset,
@@ -844,7 +901,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                     ))
                                 },
                             )?;
-                            region.assign_advice(
+                            let _nb = region.assign_advice(
                                 || "nb",
                                 self.nb,
                                 fse_offset,
@@ -854,47 +911,53 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                     ))
                                 },
                             )?;
-                            region.assign_advice(
+                            let _is_new_symbol = region.assign_advice(
                                 || "is_new_symbol",
                                 self.is_new_symbol.column,
                                 fse_offset,
                                 || Value::known(Fr::one()),
                             )?;
-                            region.assign_advice(
+                            let _is_prob_less_than1 = region.assign_advice(
                                 || "is_prob_less_than1",
                                 self.is_prob_less_than1.column,
                                 fse_offset,
                                 || Value::known(Fr::one()),
                             )?;
-                            region.assign_advice(
+                            let _is_skipped_state = region.assign_advice(
                                 || "is_skipped_state",
                                 self.is_skipped_state.column,
                                 fse_offset,
                                 || Value::known(Fr::zero()),
                             )?;
-                            region.assign_advice(
+                            let _symbol_count = region.assign_advice(
                                 || "symbol_count",
                                 self.symbol_count,
                                 fse_offset,
                                 || Value::known(Fr::one()),
                             )?;
-                            region.assign_advice(
+                            let _symbol_count_acc = region.assign_advice(
                                 || "symbol_count_acc",
                                 self.symbol_count_acc,
                                 fse_offset,
                                 || Value::known(Fr::one()),
                             )?;
-                            region.assign_advice(
+                            let _table_size_rs_1 = region.assign_advice(
                                 || "table_size_rs_1",
                                 self.table_size_rs_1,
                                 fse_offset,
                                 || Value::known(Fr::from(table.table_size >> 1)),
                             )?;
-                            region.assign_advice(
+                            let _table_size_rs_3 = region.assign_advice(
                                 || "table_size_rs_3",
                                 self.table_size_rs_3,
                                 fse_offset,
                                 || Value::known(Fr::from(table.table_size >> 3)),
+                            )?;
+                            let _is_padding = region.assign_advice(
+                                || "is_padding",
+                                self.is_padding.column,
+                                fse_offset,
+                                || Value::known(Fr::zero()),
                             )?;
                             region.assign_advice(
                                 || "enable_lookup",
@@ -902,6 +965,23 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                 fse_offset,
                                 || Value::known(Fr::zero()),
                             )?;
+
+                            #[cfg(feature = "soundness-tests")]
+                            assigned_fse_table_rows.push(AssignedFseTableRow {
+                                is_prob_less_than1: _is_prob_less_than1,
+                                is_padding: _is_padding,
+                                table_size_rs_1: _table_size_rs_1,
+                                table_size_rs_3: _table_size_rs_3,
+                                idx: _idx,
+                                symbol: _symbol,
+                                is_new_symbol: _is_new_symbol,
+                                symbol_count: _symbol_count,
+                                symbol_count_acc: _symbol_count_acc,
+                                state: _state,
+                                is_skipped_state: _is_skipped_state,
+                                baseline: _baseline,
+                                nb: _nb,
+                            });
 
                             fse_offset += 1;
                         }
@@ -924,77 +1004,83 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                 state_idx += 1;
                                 sym_acc += 1;
                             }
-                            region.assign_advice(
+                            let _state = region.assign_advice(
                                 || "state",
                                 self.state,
                                 fse_offset,
                                 || Value::known(Fr::from(fse_row.state)),
                             )?;
-                            region.assign_advice(
+                            let _idx = region.assign_advice(
                                 || "idx",
                                 self.idx,
                                 fse_offset,
                                 || Value::known(Fr::from(state_idx as u64)),
                             )?;
-                            region.assign_advice(
+                            let _symbol = region.assign_advice(
                                 || "symbol",
                                 self.symbol,
                                 fse_offset,
                                 || Value::known(Fr::from(fse_row.symbol)),
                             )?;
-                            region.assign_advice(
+                            let _baseline = region.assign_advice(
                                 || "baseline",
                                 self.baseline,
                                 fse_offset,
                                 || Value::known(Fr::from(fse_row.baseline)),
                             )?;
-                            region.assign_advice(
+                            let _nb = region.assign_advice(
                                 || "nb",
                                 self.nb,
                                 fse_offset,
                                 || Value::known(Fr::from(fse_row.num_bits)),
                             )?;
-                            region.assign_advice(
+                            let _is_new_symbol = region.assign_advice(
                                 || "is_new_symbol",
                                 self.is_new_symbol.column,
                                 fse_offset,
                                 || Value::known(Fr::from((j == 0) as u64)),
                             )?;
-                            region.assign_advice(
+                            let _is_prob_less_than1 = region.assign_advice(
                                 || "is_prob_less_than1",
                                 self.is_prob_less_than1.column,
                                 fse_offset,
                                 || Value::known(Fr::zero()),
                             )?;
-                            region.assign_advice(
+                            let _is_skipped_state = region.assign_advice(
                                 || "is_skipped_state",
                                 self.is_skipped_state.column,
                                 fse_offset,
                                 || Value::known(Fr::from(fse_row.is_state_skipped as u64)),
                             )?;
-                            region.assign_advice(
+                            let _symbol_count = region.assign_advice(
                                 || "symbol_count",
                                 self.symbol_count,
                                 fse_offset,
                                 || Value::known(Fr::from(sym_count as u64)),
                             )?;
-                            region.assign_advice(
+                            let _symbol_count_acc = region.assign_advice(
                                 || "symbol_count_acc",
                                 self.symbol_count_acc,
                                 fse_offset,
                                 || Value::known(Fr::from(sym_acc as u64)),
                             )?;
-                            region.assign_advice(
+                            let _table_size_rs_1 = region.assign_advice(
                                 || "table_size_rs_1",
                                 self.table_size_rs_1,
                                 fse_offset,
                                 || Value::known(Fr::from(table.table_size >> 1)),
                             )?;
-                            region.assign_advice(
+                            let _table_size_rs_3 = region.assign_advice(
                                 || "table_size_rs_3",
                                 self.table_size_rs_3,
                                 fse_offset,
                                 || Value::known(Fr::from(table.table_size >> 3)),
+                            )?;
+                            let _is_padding = region.assign_advice(
+                                || "is_padding",
+                                self.is_padding.column,
+                                fse_offset,
+                                || Value::known(Fr::zero()),
                             )?;
                             let is_start = (fse_offset - 1) % N_ROWS_PER_FSE == 0;
                             region.assign_advice(
@@ -1009,6 +1095,23 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                     })
                                 },
                             )?;
+
+                            #[cfg(feature = "soundness-tests")]
+                            assigned_fse_table_rows.push(AssignedFseTableRow {
+                                is_prob_less_than1: _is_prob_less_than1,
+                                is_padding: _is_padding,
+                                table_size_rs_1: _table_size_rs_1,
+                                table_size_rs_3: _table_size_rs_3,
+                                idx: _idx,
+                                symbol: _symbol,
+                                is_new_symbol: _is_new_symbol,
+                                symbol_count: _symbol_count,
+                                symbol_count_acc: _symbol_count_acc,
+                                state: _state,
+                                is_skipped_state: _is_skipped_state,
+                                baseline: _baseline,
+                                nb: _nb,
+                            });
 
                             first_regular_prob = false;
                             fse_offset += 1;
@@ -1046,67 +1149,61 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                 "sorted state rows cannot be skipped states"
                             );
                             if !fse_row.is_state_skipped {
-                                region.assign_advice(
+                                let _block_idx = region.assign_advice(
                                     || "sorted_table.block_idx",
                                     self.sorted_table.block_idx,
                                     sorted_offset,
                                     || Value::known(Fr::from(table.block_idx)),
                                 )?;
-                                region.assign_advice(
+                                let _table_kind = region.assign_advice(
                                     || "sorted_table.table_kind",
                                     self.sorted_table.table_kind,
                                     sorted_offset,
                                     || Value::known(Fr::from(table.table_kind as u64)),
                                 )?;
-                                region.assign_advice(
+                                let _table_size = region.assign_advice(
                                     || "sorted_table.table_size",
                                     self.sorted_table.table_size,
                                     sorted_offset,
                                     || Value::known(Fr::from(table.table_size)),
                                 )?;
-                                region.assign_advice(
+                                let _is_predefined = region.assign_advice(
                                     || "sorted_table.is_predefined",
                                     self.sorted_table.is_predefined.column,
                                     sorted_offset,
                                     || Value::known(Fr::from(table.is_predefined as u64)),
                                 )?;
-                                region.assign_advice(
-                                    || "sorted_table.table_size",
-                                    self.sorted_table.table_size,
-                                    sorted_offset,
-                                    || Value::known(Fr::from(table.table_size)),
-                                )?;
-                                region.assign_advice(
+                                let _symbol = region.assign_advice(
                                     || "sorted_table.symbol",
                                     self.sorted_table.symbol,
                                     sorted_offset,
                                     || Value::known(Fr::from(fse_row.symbol)),
                                 )?;
-                                region.assign_advice(
+                                let _is_new_symbol = region.assign_advice(
                                     || "sorted_table.is_new_symbol",
                                     self.sorted_table.is_new_symbol.column,
                                     sorted_offset,
                                     || Value::known(Fr::from((sym_acc == 1) as u64)),
                                 )?;
-                                region.assign_advice(
+                                let _symbol_count = region.assign_advice(
                                     || "sorted_table.symbol_count",
                                     self.sorted_table.symbol_count,
                                     sorted_offset,
                                     || Value::known(Fr::from(sym_count as u64)),
                                 )?;
-                                region.assign_advice(
+                                let _symbol_count_acc = region.assign_advice(
                                     || "sorted_table.symbol_count_acc",
                                     self.sorted_table.symbol_count_acc,
                                     sorted_offset,
                                     || Value::known(Fr::from(sym_acc as u64)),
                                 )?;
-                                region.assign_advice(
+                                let _state = region.assign_advice(
                                     || "sorted_table.state",
                                     self.sorted_table.state,
                                     sorted_offset,
                                     || Value::known(Fr::from(fse_row.state)),
                                 )?;
-                                region.assign_advice(
+                                let _nb = region.assign_advice(
                                     || "sorted_table.nb",
                                     self.sorted_table.nb,
                                     sorted_offset,
@@ -1117,32 +1214,32 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                 if curr_baseline == 0 {
                                     baseline_mark = true;
                                 }
-                                region.assign_advice(
+                                let _baseline = region.assign_advice(
                                     || "sorted_table.baseline",
                                     self.sorted_table.baseline,
                                     sorted_offset,
                                     || Value::known(Fr::from(curr_baseline)),
                                 )?;
-                                region.assign_advice(
+                                let _last_baseline = region.assign_advice(
                                     || "sorted_table.last_baseline",
                                     self.sorted_table.last_baseline,
                                     sorted_offset,
                                     || Value::known(Fr::from(last_baseline)),
                                 )?;
-                                region.assign_advice(
+                                let _baseline_mark = region.assign_advice(
                                     || "sorted_table.baseline_mark",
                                     self.sorted_table.baseline_mark.column,
                                     sorted_offset,
                                     || Value::known(Fr::from(baseline_mark as u64)),
                                 )?;
 
-                                region.assign_advice(
+                                let _spot = region.assign_advice(
                                     || "sorted_table.spot",
                                     self.sorted_table.spot,
                                     sorted_offset,
                                     || Value::known(Fr::from(1 << fse_row.num_bits)),
                                 )?;
-                                region.assign_advice(
+                                let _smallest_spot = region.assign_advice(
                                     || "sorted_table.smallest_spot",
                                     self.sorted_table.smallest_spot,
                                     sorted_offset,
@@ -1150,7 +1247,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                 )?;
 
                                 spot_acc += 1 << fse_row.num_bits;
-                                region.assign_advice(
+                                let _spot_acc = region.assign_advice(
                                     || "sorted_table.spot_acc",
                                     self.sorted_table.spot_acc,
                                     sorted_offset,
@@ -1165,6 +1262,26 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                                     Value::known(Fr::from(curr_baseline)),
                                     Value::known(Fr::zero()),
                                 )?;
+
+                                #[cfg(feature = "soundness-tests")]
+                                assigned_fse_sorted_table_rows.push(AssignedFseSortedTableRow {
+                                    block_idx: _block_idx,
+                                    table_kind: _table_kind,
+                                    table_size: _table_size,
+                                    is_predefined: _is_predefined,
+                                    symbol: _symbol,
+                                    is_new_symbol: _is_new_symbol,
+                                    symbol_count: _symbol_count,
+                                    symbol_count_acc: _symbol_count_acc,
+                                    state: _state,
+                                    nb: _nb,
+                                    baseline: _baseline,
+                                    last_baseline: _last_baseline,
+                                    baseline_mark: _baseline_mark,
+                                    spot: _spot,
+                                    smallest_spot: _smallest_spot,
+                                    spot_acc: _spot_acc,
+                                });
 
                                 sorted_offset += 1;
                                 sym_acc += 1;
@@ -1264,7 +1381,11 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
                     )?;
                 }
 
-                Ok(())
+                #[cfg(feature = "soundness-tests")]
+                return Ok((assigned_fse_table_rows, assigned_fse_sorted_table_rows));
+
+                #[cfg(not(feature = "soundness-tests"))]
+                return Ok(());
             },
         )
     }
