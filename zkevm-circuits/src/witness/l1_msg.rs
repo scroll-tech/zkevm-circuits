@@ -93,7 +93,7 @@ mod tests {
         for (tx, (rlp_expected, l1fee_expected)) in txs.into_iter().zip(expected) {
             let rlp = tx.rlp().to_vec();
             assert_eq!(rlp.len(), rlp_expected);
-            assert_eq!(l1fee.tx_l1_fee(tx_data_gas_cost(&rlp)).0, l1fee_expected)
+            assert_eq!(l1fee.tx_l1_fee(tx_data_gas_cost(&rlp), 0).0, l1fee_expected)
         }
     }
 }

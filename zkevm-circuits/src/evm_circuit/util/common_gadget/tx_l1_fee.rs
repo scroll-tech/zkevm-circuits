@@ -442,6 +442,7 @@ mod tests {
                 l1_fee,
                 TxL1Fee::default(),
                 tx_data_gas_cost.as_u64(),
+                0, // TODO: check if need update here
             )?;
             self.tx_data_gas_cost.assign(
                 region,

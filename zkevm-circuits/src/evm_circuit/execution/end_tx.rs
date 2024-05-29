@@ -416,8 +416,10 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             0
         } else {
             if cfg!(feature = "l1_fee_curie") {
-                tx.l1_fee.tx_l1_fee(0, tx.rlp_signed.len().try_into().unwrap()).0
-            }else{
+                tx.l1_fee
+                    .tx_l1_fee(0, tx.rlp_signed.len().try_into().unwrap())
+                    .0
+            } else {
                 tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost, 0).0
             }
         };
