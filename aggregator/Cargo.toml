@@ -11,6 +11,7 @@ gadgets = { path = "../gadgets" }
 zkevm-circuits = { path = "../zkevm-circuits" }
 
 ark-std.workspace = true
+ctor.workspace = true
 env_logger.workspace = true
 ethers-core.workspace = true
 hex.workspace = true

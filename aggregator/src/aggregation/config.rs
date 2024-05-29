@@ -190,3 +190,31 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
         EccChip::construct(self.base_field_config.clone())
     }
 }
+
+#[test]
+fn aggregation_circuit_degree() {
+    use halo2_ecc::fields::fp::FpStrategy;
+    let mut cs = ConstraintSystem::<Fr>::default();
+    let param = ConfigParams {
+        strategy: FpStrategy::Simple,
+        degree: 20,
+        num_advice: vec![59],
+        num_lookup_advice: vec![7],
+        num_fixed: 2,
+        lookup_bits: 18,
+        limb_bits: 88,
+        num_limbs: 3,
+    };
+    let challenges = Challenges::construct_p1(&mut cs);
+    AggregationConfig::<{ crate::constants::MAX_AGG_SNARKS }>::configure(
+        &mut cs, &param, challenges,
+    );
+    cs = cs.chunk_lookups();
+    let stats = zkevm_circuits::util::circuit_stats(&cs);
+    let degree = cs.degree();
+    let phases = cs.max_phase();
+    assert!(degree <= 9);
+    assert!(phases <= 1);
+    log::info!("stats {stats:#?}");
+    log::info!("agg circuit degree: {}", degree);
+}

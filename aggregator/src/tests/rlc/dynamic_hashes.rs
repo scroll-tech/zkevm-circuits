@@ -40,7 +40,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
 
         // hash config
         // hash configuration for aggregation circuit
