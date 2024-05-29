@@ -846,7 +846,7 @@ impl<F: Field> TransferToGadget<F> {
         println!("l1_fee_curie enabled");
         #[cfg(not(feature = "l1_fee_curie"))]
         println!("l1_fee_curie not enabled");
-        
+
         debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
         self.receiver.assign(
             region,

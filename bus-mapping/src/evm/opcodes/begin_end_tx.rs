@@ -95,7 +95,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             }
         }
     } else {
-        // else, add 3 RW read operations for transaction L1 fee.
+        // else, add 3 ( or 6 after curie) RW read operations for transaction L1 fee.
         gen_tx_l1_fee_ops(state, &mut exec_step)?;
     }
 
@@ -729,7 +729,7 @@ fn write_tx_receipt(
     Ok(())
 }
 
-// Add 3 RW read operations for transaction L1 fee.
+// Add 3(or 6 after curie) RW read operations for transaction L1 fee.
 fn gen_tx_l1_fee_ops(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
@@ -739,10 +739,23 @@ fn gen_tx_l1_fee_ops(
     let base_fee = Word::from(state.tx.l1_fee.base_fee);
     let fee_overhead = Word::from(state.tx.l1_fee.fee_overhead);
     let fee_scalar = Word::from(state.tx.l1_fee.fee_scalar);
+    #[cfg(feature = "l1_fee_curie")]
+    let l1_blob_basefee = Word::from(state.tx.l1_fee.l1_blob_basefee);
+    #[cfg(feature = "l1_fee_curie")]
+    let commit_scalar = Word::from(state.tx.l1_fee.commit_scalar);
+    #[cfg(feature = "l1_fee_curie")]
+    let blob_scalar = Word::from(state.tx.l1_fee.blob_scalar);
 
     let base_fee_committed = Word::from(state.tx.l1_fee_committed.base_fee);
     let fee_overhead_committed = Word::from(state.tx.l1_fee_committed.fee_overhead);
     let fee_scalar_committed = Word::from(state.tx.l1_fee_committed.fee_scalar);
+    
+    #[cfg(feature = "l1_fee_curie")]
+    let l1_blob_basefee_committed = Word::from(state.tx.l1_fee_committed.l1_blob_basefee);
+    #[cfg(feature = "l1_fee_curie")]
+    let commit_scalar_committed = Word::from(state.tx.l1_fee_committed.commit_scalar);
+    #[cfg(feature = "l1_fee_curie")]
+    let blob_scalar_committed = Word::from(state.tx.l1_fee_committed.blob_scalar);
 
     state.push_op(
         exec_step,
@@ -780,6 +793,48 @@ fn gen_tx_l1_fee_ops(
             fee_scalar_committed,
         ),
     )?;
+
+    // curie operations
+    #[cfg(feature = "l1_fee_curie")]
+    {
+        state.push_op(
+            exec_step,
+            RW::READ,
+            StorageOp::new(
+                *l1_gas_price_oracle::ADDRESS,
+                *l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
+                l1_blob_basefee,
+                l1_blob_basefee,
+                tx_id,
+                l1_blob_basefee_committed,
+            ),
+        )?;
+        state.push_op(
+            exec_step,
+            RW::READ,
+            StorageOp::new(
+                *l1_gas_price_oracle::ADDRESS,
+                *l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+                commit_scalar,
+                commit_scalar,
+                tx_id,
+                commit_scalar_committed,
+            ),
+        )?;
+        state.push_op(
+            exec_step,
+            RW::READ,
+            StorageOp::new(
+                *l1_gas_price_oracle::ADDRESS,
+                *l1_gas_price_oracle::BLOB_SCALAR_SLOT,
+                blob_scalar,
+                blob_scalar,
+                tx_id,
+                blob_scalar_committed,
+            ),
+        )?;
+    }
+
     Ok(())
 }
 
