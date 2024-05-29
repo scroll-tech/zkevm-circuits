@@ -923,17 +923,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 },
             );
 
-            // AccessListAddressLen != 0 must force AccessListRLC != 0
-            cb.condition(
-                and::expr([
-                    is_access_list_addresses_len(meta),
-                    not::expr(meta.query_advice(is_none, Rotation::cur())),
-                ]),
-                |cb| {
-                    cb.require_zero("AccessListRLC != 0", value_is_zero.expr(Rotation(2))(meta));
-                },
-            );
-
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
