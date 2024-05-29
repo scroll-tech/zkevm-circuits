@@ -516,11 +516,11 @@ impl TxL1Fee {
                 (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
             )
         }
-
+        
         #[cfg(feature = "l1_fee_curie")]
         {
             // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee",
-            let tx_l1_fee = self.commit_scalar as u128 * self.l1_blob_basefee as u128
+            let tx_l1_fee = self.commit_scalar as u128 * self.base_fee as u128
                 + self.blob_scalar as u128 * tx_rlp_signed_len as u128 * self.l1_blob_basefee as u128;
             (
                 (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
