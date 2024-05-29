@@ -210,19 +210,19 @@ impl<F: Field> TxL1FeeGadget<F> {
 
         // curie fields
         #[cfg(feature = "l1_fee_curie")]
-        self.l1_blob_basefee_word.assign(
+        self.l1_blob_basefee_committed.assign(
             region,
             offset,
             Some(l1_fee_committed.l1_blob_basefee.to_le_bytes()),
         )?;
         #[cfg(feature = "l1_fee_curie")]
-        self.commit_scalar_word.assign(
+        self.commit_scalar_committed.assign(
             region,
             offset,
             Some(l1_fee_committed.commit_scalar.to_le_bytes()),
         )?;
         #[cfg(feature = "l1_fee_curie")]
-        self.blob_scalar_word.assign(
+        self.blob_scalar_committed.assign(
             region,
             offset,
             Some(l1_fee_committed.blob_scalar.to_le_bytes()),
