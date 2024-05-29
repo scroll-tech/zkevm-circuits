@@ -82,7 +82,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
 
         #[cfg(feature = "l1_fee_curie")]
-        let [l1_blob_baseFee, commit_scalar, blob_scalar] = [
+        let [l1_blob_basefee, commit_scalar, blob_scalar] = [
             &l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
             &l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
             &l1_gas_price_oracle::BLOB_SCALAR_SLOT,
@@ -123,7 +123,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         // Read l1blob_baseFee_committed
         cb.account_storage_read(
             l1_fee_address.expr(),
-            l1_blob_baseFee,
+            l1_blob_basefee,
             this.l1_blob_basefee_word.expr(),
             tx_id.clone(),
             this.l1_blob_basefee_committed.expr(),
