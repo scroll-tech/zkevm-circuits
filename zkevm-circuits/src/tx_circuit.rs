@@ -4323,7 +4323,7 @@ impl<F: Field> TxCircuit<F> {
                         .txs
                         .iter()
                         .skip(i + 1)
-                        .find(|tx| !tx.call_data.is_empty());
+                        .find(|tx| !tx.call_data.is_empty() || (tx.access_list.as_ref().map_or(false, |al| !al.0.is_empty())));
                     config.assign_calldata_rows(
                         &mut region,
                         &mut offset,
