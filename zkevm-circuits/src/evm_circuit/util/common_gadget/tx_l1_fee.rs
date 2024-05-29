@@ -169,9 +169,9 @@ impl<F: Field> TxL1FeeGadget<F> {
             tx_signed_length
         );
         let (tx_l1_fee, remainder) = if cfg!(feature = "l1_fee_curie") {
-            l1_fee.tx_l1_fee(tx_data_gas_cost, 0)
-        } else {
             l1_fee.tx_l1_fee(0, tx_signed_length)
+        } else {
+            l1_fee.tx_l1_fee(tx_data_gas_cost, 0)
         };
 
         self.tx_l1_fee_word
