@@ -13,8 +13,6 @@ use crate::{
 
 #[test]
 fn test_max_agg_snarks_aggregation_circuit() {
-    env_logger::init();
-
     let k = 20;
 
     // This set up requires one round of keccak for chunk's data hash
@@ -47,7 +45,7 @@ fn test_14_snark_aggregation_circuit() {
 #[ignore = "it takes too much time"]
 #[test]
 fn test_aggregation_circuit_all_possible_num_snarks() {
-    env_logger::init();
+    //env_logger::init();
 
     let k = 20;
 
@@ -66,7 +64,7 @@ fn test_aggregation_circuit_all_possible_num_snarks() {
 #[ignore = "it takes too much time"]
 #[test]
 fn test_aggregation_circuit_full() {
-    env_logger::init();
+    //env_logger::init();
     let process_id = process::id();
     let k = 25;
 
