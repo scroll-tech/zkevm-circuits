@@ -749,7 +749,7 @@ fn gen_tx_l1_fee_ops(
     let base_fee_committed = Word::from(state.tx.l1_fee_committed.base_fee);
     let fee_overhead_committed = Word::from(state.tx.l1_fee_committed.fee_overhead);
     let fee_scalar_committed = Word::from(state.tx.l1_fee_committed.fee_scalar);
-    
+
     #[cfg(feature = "l1_fee_curie")]
     let l1_blob_basefee_committed = Word::from(state.tx.l1_fee_committed.l1_blob_basefee);
     #[cfg(feature = "l1_fee_curie")]
