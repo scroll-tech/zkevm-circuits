@@ -4,6 +4,7 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
+        table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
@@ -13,13 +14,17 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, TxContextFieldTag},
+    table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{Expr, Field},
 };
 use bus_mapping::l2_predeployed::message_queue::{
     ADDRESS as MESSAGE_QUEUE, WITHDRAW_TRIE_ROOT_SLOT,
 };
-use eth_types::ToScalar;
+use eth_types::{
+    forks::HardforkId,
+    utils::{hash_code, hash_code_keccak},
+    ToScalar,
+};
 use halo2_proofs::{
     circuit::{Cell as AssignedCell, Value},
     plonk::{Error, Expression},
@@ -27,6 +32,7 @@ use halo2_proofs::{
 
 #[derive(Debug)]
 pub(crate) struct EndBlockGadget<F> {
+    chain_id: Cell<F>,
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
     is_empty_block: IsZeroGadget<F>,
@@ -44,6 +50,7 @@ impl<F: Clone> Clone for EndBlockGadget<F> {
             *self.withdraw_root_assigned.lock().unwrap();
         Self {
             withdraw_root_assigned: Mutex::new(withdraw_root_assigned),
+            chain_id: self.chain_id.clone(),
             total_txs: self.total_txs.clone(),
             total_txs_is_max_txs: self.total_txs_is_max_txs.clone(),
             is_empty_block: self.is_empty_block.clone(),
@@ -55,8 +62,6 @@ impl<F: Clone> Clone for EndBlockGadget<F> {
         }
     }
 }
-
-const EMPTY_BLOCK_N_RWS: u64 = 0;
 
 /*
 The goal of EndBlockGadget is to:
@@ -77,6 +82,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndBlock;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let chain_id = cb.query_cell();
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
@@ -84,8 +90,86 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let phase2_withdraw_root = cb.query_copy_cell_phase2();
         let phase2_withdraw_root_prev = cb.query_cell_phase2();
 
-        // TODO: add constraints for this
+        // Lookup block table with chain_id
+        cb.block_lookup(
+            BlockContextFieldTag::ChainId.expr(),
+            cb.curr.state.block_number.expr(),
+            chain_id.expr(),
+        );
+
         let is_curie_fork_block = cb.query_cell();
+        // Sequencer is allowed to do a predefined state transition at the hardfork block.
+        cb.condition(is_curie_fork_block.expr(), |cb| {
+            cb.add_lookup(
+                "Hardfork lookup",
+                Lookup::Fixed {
+                    tag: FixedTableTag::ChainFork.expr(),
+                    values: [
+                        (HardforkId::Curie as u64).expr(),
+                        chain_id.expr(),
+                        cb.curr.state.block_number.expr(),
+                    ],
+                },
+            );
+            // Ref: bus-mapping/src/circuit_input_builder/curie.rs
+            // Bytecode changes
+            use bus_mapping::l2_predeployed::l1_gas_price_oracle;
+            let v1_codesize = l1_gas_price_oracle::V1_BYTECODE.len();
+            let v1_codehash = hash_code(&l1_gas_price_oracle::V1_BYTECODE);
+            let v1_keccak_codehash = hash_code_keccak(&l1_gas_price_oracle::V1_BYTECODE);
+            log::debug!("l1_oracle poseidon codehash {:?}", v1_codehash);
+            log::debug!("l1_oracle keccak codehash {:?}", v1_keccak_codehash);
+            let v2_codesize = l1_gas_price_oracle::V2_BYTECODE.len();
+            let v2_codehash = hash_code(&l1_gas_price_oracle::V2_BYTECODE);
+            let v2_keccak_codehash = hash_code_keccak(&l1_gas_price_oracle::V2_BYTECODE);
+            let l1_fee_address = Expression::Constant(l1_gas_price_oracle::ADDRESS.to_scalar().expect(
+                "Unexpected address of l2 gasprice oracle contract -> Scalar conversion failure",
+            ));
+            cb.account_write(
+                l1_fee_address.expr(),
+                AccountFieldTag::CodeHash,
+                cb.code_hash(v2_codehash),
+                cb.code_hash(v1_codehash),
+                None,
+            );
+            cb.account_write(
+                l1_fee_address.expr(),
+                AccountFieldTag::KeccakCodeHash,
+                cb.keccak_code_hash(v2_keccak_codehash),
+                cb.keccak_code_hash(v1_keccak_codehash),
+                None,
+            );
+            cb.account_write(
+                l1_fee_address.expr(),
+                AccountFieldTag::CodeSize,
+                Expression::Constant(F::from(v2_codesize as u64)),
+                Expression::Constant(F::from(v1_codesize as u64)),
+                None,
+            );
+            // State changes
+            for (slot, value) in [
+                (*l1_gas_price_oracle::IS_CURIE_SLOT, eth_types::Word::from(1u64)),
+                (*l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT, eth_types::Word::from(1u64)),
+                (
+                    *l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+                    *l1_gas_price_oracle::INITIAL_COMMIT_SCALAR,
+                ),
+                (
+                    *l1_gas_price_oracle::BLOB_SCALAR_SLOT,
+                    *l1_gas_price_oracle::INITIAL_BLOB_SCALAR,
+                ),
+            ] {
+                cb.account_storage_write(
+                l1_fee_address.expr(),
+                    cb.word_rlc_constant(slot),
+                    cb.word_rlc_constant(value),
+                    0.expr(),
+                    0.expr(),
+                    0.expr(),
+                    None,
+                );
+            }
+        });
 
         // Note that rw_counter starts at 1
         let is_empty_block =
@@ -167,6 +251,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         });
 
         Self {
+            chain_id,
             max_txs,
             max_rws,
             phase2_withdraw_root,
@@ -188,6 +273,8 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        self.chain_id
+            .assign(region, offset, Value::known(F::from(block.chain_id)))?;
         self.is_empty_block
             .assign(region, offset, F::from(step.rw_counter as u64 - 1))?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);

@@ -7,7 +7,6 @@ pub enum HardforkId {
     Curie = 3,
 }
 
-
 /// Get hardforks of Scroll networks.
 /// Returns a list of triplets of (hardfork id, chain id, block number)
 pub fn hardfork_heights() -> Vec<(HardforkId, u64, u64)> {

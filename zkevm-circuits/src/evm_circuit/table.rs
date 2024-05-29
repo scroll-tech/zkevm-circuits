@@ -142,15 +142,16 @@ impl FixedTableTag {
                     F::from(precompile.base_gas_cost().0),
                 ]
             })),
-            Self::ChainFork => Box::new(
-                eth_types::forks::hardfork_heights().into_iter().map(move |(fork, chain_id, height)| {
-                [
-                    tag,
-                    F::from(fork as u64),
-                    F::from(chain_id),
-                    F::from(height),
-                ]
-            }))
+            Self::ChainFork => Box::new(eth_types::forks::hardfork_heights().into_iter().map(
+                move |(fork, chain_id, height)| {
+                    [
+                        tag,
+                        F::from(fork as u64),
+                        F::from(chain_id),
+                        F::from(height),
+                    ]
+                },
+            )),
         }
     }
 }

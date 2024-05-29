@@ -23,10 +23,9 @@ use crate::{
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    state_db::CodeDB,
-    ToScalar, U256,
+    utils::{hash_code, hash_code_keccak},
+    ToScalar, ToWord,
 };
-use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -413,21 +412,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
 
             // keccak hash of code.
-            let keccak_code_hash = keccak256(&deployed_bytecode);
+            let keccak_code_hash = hash_code_keccak(&deployed_bytecode);
             self.keccak_code_hash.assign(
                 region,
                 offset,
-                region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
+                region.word_rlc(keccak_code_hash.to_word()),
             )?;
 
             // poseidon hash of code.
-            let mut code_hash = CodeDB::hash(&deployed_bytecode).to_fixed_bytes();
-            code_hash.reverse();
-            self.code_hash.assign(
-                region,
-                offset,
-                region.code_hash(U256::from_little_endian(&code_hash)),
-            )?;
+            let code_hash = hash_code(&deployed_bytecode);
+            self.code_hash
+                .assign(region, offset, region.code_hash(code_hash.to_word()))?;
 
             // code size.
             self.code_size.assign(

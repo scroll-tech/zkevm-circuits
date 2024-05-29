@@ -25,12 +25,12 @@ pub mod error;
 #[macro_use]
 pub mod bytecode;
 pub mod evm_types;
+pub mod forks;
 pub mod geth_types;
 pub mod l2_types;
 pub mod sign_types;
 pub mod state_db;
 pub mod utils;
-pub mod forks;
 
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
