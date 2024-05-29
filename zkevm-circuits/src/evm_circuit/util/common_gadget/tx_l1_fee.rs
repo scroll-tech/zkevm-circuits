@@ -62,10 +62,10 @@ impl<F: Field> TxL1FeeGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         tx_id: Expression<F>,
         tx_data_gas_cost: Expression<F>,
-        #[cfg(feature = "l1_fee_curie")] tx_signed_hash_length: Expression<F>,
+        #[cfg(feature = "l1_fee_curie")] tx_signed_length: Expression<F>,
     ) -> Self {
         #[cfg(feature = "l1_fee_curie")]
-        let this = Self::raw_construct(cb, tx_data_gas_cost, tx_signed_hash_length);
+        let this = Self::raw_construct(cb, tx_data_gas_cost, tx_signed_length);
         #[cfg(not(feature = "l1_fee_curie"))]
         let this = Self::raw_construct(cb, tx_data_gas_cost);
 
@@ -257,7 +257,7 @@ impl<F: Field> TxL1FeeGadget<F> {
     fn raw_construct(
         cb: &mut EVMConstraintBuilder<F>,
         tx_data_gas_cost: Expression<F>,
-        #[cfg(feature = "l1_fee_curie")] tx_signed_hash_length: Expression<F>,
+        #[cfg(feature = "l1_fee_curie")] tx_signed_length: Expression<F>,
     ) -> Self {
         let tx_l1_fee_word = cb.query_word_rlc();
         let remainder_word = cb.query_word_rlc();
@@ -301,7 +301,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         #[cfg(feature = "l1_fee_curie")]
             cb.require_equal(
             "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee == tx_l1_fee * 10e9 + remainder",
-            commit_scalar * base_fee + blob_scalar * tx_signed_hash_length * l1_blob_basefee,
+            commit_scalar * base_fee + blob_scalar * tx_signed_length * l1_blob_basefee,
             //   * tx_l1_gas,
             tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
         );
@@ -407,7 +407,7 @@ mod tests {
             let tx_data_gas_cost = cb.query_cell();
             let expected_tx_l1_fee = cb.query_cell();
 
-            // for non "l1_fee_curie" feature, tx_signed_hash_length is not used, can
+            // for non "l1_fee_curie" feature, tx_signed_length is not used, can
             // set to zero
             let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr());
 

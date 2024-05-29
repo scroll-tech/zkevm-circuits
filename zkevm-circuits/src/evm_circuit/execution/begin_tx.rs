@@ -61,6 +61,9 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
+    #[cfg(feature = "l1_fee_curie")]
+    // rlp signed tx bytes' length
+    tx_signed_length: Cell<F>,
     reversion_info: ReversionInfo<F>,
     intrinsic_gas_cost: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
@@ -132,8 +135,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
         #[cfg(feature = "l1_fee_curie")]
-        let tx_signed_hash_length =
-            cb.tx_context(tx_id.expr(), TxContextFieldTag::TxHashLength, None);
+        let tx_signed_length = cb.tx_context(tx_id.expr(), TxContextFieldTag::TxHashLength, None);
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
@@ -149,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_id.expr(),
                 tx_data_gas_cost.expr(),
                 #[cfg(feature = "l1_fee_curie")]
-                tx_signed_hash_length.expr(),
+                tx_signed_length.expr(),
             )
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
@@ -810,6 +812,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_call_data_empty,
             tx_call_data_word_length,
             tx_call_data_gas_cost,
+            #[cfg(feature = "l1_fee_curie")]
+            tx_signed_length,
             tx_data_gas_cost,
             reversion_info,
             intrinsic_gas_cost,
@@ -1092,6 +1096,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_data_gas_cost
             .assign(region, offset, Value::known(F::from(tx.tx_data_gas_cost)))?;
+        #[cfg(feature = "l1_fee_curie")]
+        self.tx_signed_length.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.rlp_signed.len() as u64)),
+        )?;
+
         self.reversion_info.assign(
             region,
             offset,
