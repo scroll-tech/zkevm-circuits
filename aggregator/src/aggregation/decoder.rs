@@ -1,5 +1,5 @@
 mod seq_exec;
-mod tables;
+pub(crate) mod tables;
 pub mod witgen;
 
 use gadgets::{
@@ -4600,7 +4600,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         /////////////////////////////////////////////////////////
         //////// Assign FSE and Bitstream Accumulation  /////////
         /////////////////////////////////////////////////////////
-        self.fse_table.assign(layouter, fse_aux_tables, n_enabled)?;
+        self.fse_table
+            .assign(layouter, &fse_aux_tables, n_enabled)?;
         self.bitstring_table_1
             .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
         self.bitstring_table_2

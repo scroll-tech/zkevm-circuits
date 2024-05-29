@@ -1,6 +1,7 @@
 mod aggregation;
 mod blob;
 mod compression;
+mod fse;
 mod mock_chunk;
 mod rlc;
 

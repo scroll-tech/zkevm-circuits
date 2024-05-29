@@ -766,7 +766,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
     pub fn assign(
         &self,
         layouter: &mut impl Layouter<Fr>,
-        data: Vec<FseAuxiliaryTableData>,
+        data: &[FseAuxiliaryTableData],
         n_enabled: usize,
     ) -> Result<(), Error> {
         layouter.assign_region(

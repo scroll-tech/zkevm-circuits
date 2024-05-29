@@ -9,7 +9,7 @@ mod circuit;
 /// Config for aggregation circuit
 mod config;
 /// Config for decoding zstd-encoded data.
-mod decoder;
+pub(crate) mod decoder;
 /// config for RLC circuit
 mod rlc;
 /// Utility module
