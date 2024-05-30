@@ -1009,10 +1009,7 @@ mod tests {
     }
 
     impl MockDecoderTable {
-        fn configure(
-            meta: &mut ConstraintSystem<Fr>,
-            inst_table: &SeqInstTable<Fr>,
-        ) -> Self {
+        fn configure(meta: &mut ConstraintSystem<Fr>, inst_table: &SeqInstTable<Fr>) -> Self {
             let q_enabled = meta.fixed_column();
             let block_idx = meta.advice_column();
             let sequence_idx = meta.advice_column();
@@ -1020,34 +1017,31 @@ mod tests {
             let match_offset_value = meta.advice_column();
             let match_length_value = meta.advice_column();
 
-            meta.lookup_any(
-                "Mock DecoderConfig's tag ZstdBlockSequenceData",
-                |meta| {
-                    let enabled = meta.query_fixed(q_enabled, Rotation::cur());
-                    let (block_idx, sequence_idx) = (
-                        meta.query_advice(block_idx, Rotation::cur()),
-                        meta.query_advice(sequence_idx, Rotation::cur()),
-                    );
-                    let (literal_length_value, match_offset_value, match_length_value) = (
-                        meta.query_advice(literal_length_value, Rotation::cur()),
-                        meta.query_advice(match_offset_value, Rotation::cur()),
-                        meta.query_advice(match_length_value, Rotation::cur()),
-                    );                    
-                    [
-                        1.expr(), // q_enabled
-                        block_idx,
-                        0.expr(), // s_beginning
-                        sequence_idx,
-                        literal_length_value,
-                        match_offset_value,
-                        match_length_value,
-                    ]
-                    .into_iter()
-                    .zip_eq(inst_table.seq_values_exprs(meta))
-                    .map(|(arg, table)| (enabled.expr() * arg, table))
-                    .collect()
-                }
-            );
+            meta.lookup_any("Mock DecoderConfig's tag ZstdBlockSequenceData", |meta| {
+                let enabled = meta.query_fixed(q_enabled, Rotation::cur());
+                let (block_idx, sequence_idx) = (
+                    meta.query_advice(block_idx, Rotation::cur()),
+                    meta.query_advice(sequence_idx, Rotation::cur()),
+                );
+                let (literal_length_value, match_offset_value, match_length_value) = (
+                    meta.query_advice(literal_length_value, Rotation::cur()),
+                    meta.query_advice(match_offset_value, Rotation::cur()),
+                    meta.query_advice(match_length_value, Rotation::cur()),
+                );
+                [
+                    1.expr(), // q_enabled
+                    block_idx,
+                    0.expr(), // s_beginning
+                    sequence_idx,
+                    literal_length_value,
+                    match_offset_value,
+                    match_length_value,
+                ]
+                .into_iter()
+                .zip_eq(inst_table.seq_values_exprs(meta))
+                .map(|(arg, table)| (enabled.expr() * arg, table))
+                .collect()
+            });
 
             Self {
                 q_enabled,
@@ -1066,32 +1060,43 @@ mod tests {
             rows: &[AddressTableRow],
         ) -> Result<(), Error> {
             layouter.assign_region(
-                ||format!("mock decoder config blk {}", blk_id),
-                |mut region|{
-
+                || format!("mock decoder config blk {}", blk_id),
+                |mut region| {
                     for (i, row) in rows.iter().enumerate() {
                         for (col, val) in [
                             (self.block_idx, Fr::from(blk_id as u64)),
-                            (self.sequence_idx, Fr::from(row.instruction_idx)),
+                            (self.sequence_idx, Fr::from(row.instruction_idx + 1)),
                             (self.literal_length_value, Fr::from(row.literal_length)),
                             (self.match_offset_value, Fr::from(row.cooked_match_offset)),
                             (self.match_length_value, Fr::from(row.match_length)),
-                        ]{
-                            region.assign_advice(||"assign mock", col, i, ||Value::known(val))?;
+                        ] {
+                            region.assign_advice(|| "assign mock", col, i, || Value::known(val))?;
                         }
+                        region.assign_fixed(
+                            || "enable mock row",
+                            self.q_enabled,
+                            i,
+                            || Value::known(Fr::one()),
+                        )?;
                     }
 
                     Ok(())
-                }
+                },
             )
         }
     }
 
     #[derive(Clone, Debug)]
-    struct SeqTable(Vec<AddressTableRow>);
+    struct MockSeqTableConfig {
+        config: SeqInstTable<Fr>,
+        mock_decoder: MockDecoderTable,
+    }
+
+    #[derive(Clone, Debug)]
+    struct SeqTable(Vec<Vec<AddressTableRow>>);
 
     impl Circuit<Fr> for SeqTable {
-        type Config = SeqInstTable<Fr>;
+        type Config = MockSeqTableConfig;
         type FloorPlanner = SimpleFloorPlanner;
         fn without_witnesses(&self) -> Self {
             unimplemented!()
@@ -1101,7 +1106,13 @@ mod tests {
             let const_col = meta.fixed_column();
             meta.enable_constant(const_col);
 
-            Self::Config::configure(meta)
+            let config = SeqInstTable::configure(meta);
+            let mock_decoder = MockDecoderTable::configure(meta, &config);
+
+            Self::Config {
+                config,
+                mock_decoder,
+            }
         }
 
         fn synthesize(
@@ -1109,7 +1120,17 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            config.mock_assign(&mut layouter, &self.0, 15)?;
+            let total_rows: usize = self.0.iter().map(|rows| rows.len()).sum();
+            for (i, blk_rows) in self.0.iter().enumerate() {
+                config
+                    .mock_decoder
+                    .assign_blk(&mut layouter, i + 1, &blk_rows)?;
+            }
+            config.config.assign(
+                &mut layouter,
+                self.0.iter().map(|rows| rows.iter()),
+                total_rows + 5,
+            )?;
 
             Ok(())
         }
@@ -1118,7 +1139,7 @@ mod tests {
     #[test]
     fn seqinst_table_gates() {
         // example comes from zstd's spec
-        let circuit = SeqTable(AddressTableRow::mock_samples(&[
+        let circuit = SeqTable(vec![AddressTableRow::mock_samples(&[
             [1114, 11, 1111, 1, 4],
             [1, 22, 1111, 1, 4],
             [2225, 22, 2222, 1111, 1],
@@ -1128,7 +1149,7 @@ mod tests {
             [3, 33, 2222, 1111, 3333],
             [3, 0, 2221, 2222, 1111],
             [1, 0, 2222, 2221, 1111],
-        ]));
+        ])]);
 
         let k = 12;
         let mock_prover =
