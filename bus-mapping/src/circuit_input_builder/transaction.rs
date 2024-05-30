@@ -204,7 +204,7 @@ pub struct Transaction {
     pub rlp_bytes: Vec<u8>,
     /// RLP bytes for signing
     pub rlp_unsigned_bytes: Vec<u8>,
-    /// RLP bytes for signing
+    /// RLP bytes for signed tx
     pub rlp_signed_bytes: Vec<u8>,
     /// Current values of L1 fee
     pub l1_fee: TxL1Fee,
@@ -366,7 +366,8 @@ impl Transaction {
             tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
-            rlp_signed_bytes: get_rlp_signed(eth_tx),
+            //rlp_signed_bytes: get_rlp_signed(eth_tx),
+            rlp_signed_bytes: eth_tx.rlp().to_vec(),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
