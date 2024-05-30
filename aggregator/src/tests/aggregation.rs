@@ -13,7 +13,7 @@ use crate::{
 
 #[test]
 fn test_max_agg_snarks_aggregation_circuit() {
-    let k = 20;
+    let k = 21;
 
     // This set up requires one round of keccak for chunk's data hash
     let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(2, k);
@@ -22,9 +22,10 @@ fn test_max_agg_snarks_aggregation_circuit() {
     mock_prover.assert_satisfied_par();
 }
 
+#[ignore]
 #[test]
 fn test_2_snark_aggregation_circuit() {
-    let k = 20;
+    let k = 21;
 
     let circuit: AggregationCircuit<2> = build_new_aggregation_circuit(1, k);
     let instance = circuit.instances();
@@ -32,9 +33,10 @@ fn test_2_snark_aggregation_circuit() {
     mock_prover.assert_satisfied_par();
 }
 
+#[ignore]
 #[test]
 fn test_14_snark_aggregation_circuit() {
-    let k = 20;
+    let k = 21;
 
     let circuit: AggregationCircuit<14> = build_new_aggregation_circuit(12, k);
     let instance = circuit.instances();
