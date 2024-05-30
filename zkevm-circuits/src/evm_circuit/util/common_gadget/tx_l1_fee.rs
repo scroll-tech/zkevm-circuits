@@ -291,7 +291,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         let blob_scalar_word = cb.query_word_rlc();
 
         let tx_l1_fee = from_bytes::expr(&tx_l1_fee_word.cells[..N_BYTES_U64]);
-        let [remainder, base_fee, fee_overhead, fee_scalar] = [
+        let [remainder, base_fee, fee_overhead, _fee_scalar] = [
             &remainder_word,
             &base_fee_word,
             &fee_overhead_word,
@@ -315,7 +315,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = if cfg!(feature = "l1_fee_curie") {
+        let _tx_l1_gas = if cfg!(feature = "l1_fee_curie") {
             0.expr()
         } else {
             tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead
@@ -334,7 +334,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         #[cfg(not(feature = "l1_fee_curie"))]
         cb.require_equal(
             "fee_scalar * base_fee * tx_l1_gas == tx_l1_fee * 10e9 + remainder",
-            fee_scalar * base_fee * tx_l1_gas,
+            _fee_scalar * base_fee * _tx_l1_gas,
             tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
         );
 
@@ -434,6 +434,9 @@ mod tests {
 
             // for non "l1_fee_curie" feature, tx_signed_length is not used, can
             // set to zero
+            #[cfg(feature = "l1_fee_curie")]
+            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr(), 0.expr());
+            #[cfg(not(feature = "l1_fee_curie"))]
             let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr());
 
             cb.require_equal(
@@ -455,10 +458,17 @@ mod tests {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let [base_fee, fee_overhead, fee_scalar] = [0, 1, 2].map(|i| witnesses[i].as_u64());
+
             let l1_fee = TxL1Fee {
                 base_fee,
                 fee_overhead,
                 fee_scalar,
+                #[cfg(feature = "l1_fee_curie")]
+                l1_blob_basefee: 1,
+                #[cfg(feature = "l1_fee_curie")]
+                commit_scalar: 0,
+                #[cfg(feature = "l1_fee_curie")]
+                blob_scalar: 0,
             };
             let tx_data_gas_cost = witnesses[3];
             self.gadget.assign(

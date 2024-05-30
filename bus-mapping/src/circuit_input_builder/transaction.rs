@@ -2,8 +2,10 @@
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 use crate::{l2_predeployed::l1_gas_price_oracle, Error};
+#[cfg(not(feature = "l1_fee_curie"))]
+use eth_types::evm_types::gas_utils::tx_data_gas_cost;
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
+    evm_types::OpcodeId,
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
     state_db::{CodeDB, StateDB},
@@ -438,7 +440,6 @@ impl Transaction {
 
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
-        //TODO: check if need to update for curie
         #[cfg(not(feature = "l1_fee_curie"))]
         {
             let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
@@ -505,11 +506,11 @@ pub struct TxL1Fee {
 impl TxL1Fee {
     /// Calculate L1 fee and remainder of transaction.
     /// for non curie upgrade case, tx_rlp_signed_len is not used,  set to zero
-    pub fn tx_l1_fee(&self, tx_data_gas_cost: u64, tx_rlp_signed_len: u64) -> (u64, u64) {
+    pub fn tx_l1_fee(&self, _tx_data_gas_cost: u64, tx_rlp_signed_len: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
         #[cfg(not(feature = "l1_fee_curie"))]
         {
-            let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
+            let tx_l1_gas = _tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
             let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
             (
                 (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,

@@ -86,6 +86,12 @@ mod tests {
             base_fee: 0x64,
             fee_overhead: 0x17d4,
             fee_scalar: 0x4a42fc80,
+            #[cfg(feature = "l1_fee_curie")]
+            l1_blob_basefee: 1,
+            #[cfg(feature = "l1_fee_curie")]
+            commit_scalar: 0,
+            #[cfg(feature = "l1_fee_curie")]
+            blob_scalar: 0,
         };
 
         let expected = [(173usize, 0xfffe8u64), (140, 0xf3f2f)];

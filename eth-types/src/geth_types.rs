@@ -9,7 +9,7 @@ use crate::{
 };
 use ethers_core::types::{
     transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, Eip2930TransactionRequest,
-    NameOrAddress, Signature, TransactionRequest, H256,
+    NameOrAddress, TransactionRequest, H256,
 };
 use halo2curves::{group::ff::PrimeField, secp256k1::Fq};
 use num::Integer;
