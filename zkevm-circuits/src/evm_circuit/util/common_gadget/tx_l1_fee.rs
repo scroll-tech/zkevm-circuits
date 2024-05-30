@@ -4,8 +4,9 @@ use crate::{
         param::N_BYTES_U64,
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes, U64Word, Word,
+            from_bytes,
             math_gadget::LtGadget,
+            U64Word, Word,
         },
     },
     util::{Expr, Field},
@@ -187,9 +188,13 @@ impl<F: Field> TxL1FeeGadget<F> {
             .assign(region, offset, Some(l1_fee.fee_overhead.to_le_bytes()))?;
         self.fee_scalar_word
             .assign(region, offset, Some(l1_fee.fee_scalar.to_le_bytes()))?;
-        self.remainder_range
-            .assign(region, offset, F::from(remainder), F::from(TX_L1_FEE_PRECISION))?;
-        
+        self.remainder_range.assign(
+            region,
+            offset,
+            F::from(remainder),
+            F::from(TX_L1_FEE_PRECISION),
+        )?;
+
         // curie fields
         #[cfg(feature = "l1_fee_curie")]
         self.l1_blob_basefee_word.assign(
@@ -294,13 +299,10 @@ impl<F: Field> TxL1FeeGadget<F> {
         ]
         .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
-        let remainder_range = LtGadget::construct(
-            cb, 
-            remainder.expr(),
-            TX_L1_FEE_PRECISION.expr(), 
-        );
-        cb.require_equal("remainder must less than l1 fee precision", 
-            1.expr(), 
+        let remainder_range = LtGadget::construct(cb, remainder.expr(), TX_L1_FEE_PRECISION.expr());
+        cb.require_equal(
+            "remainder must less than l1 fee precision",
+            1.expr(),
             remainder_range.expr(),
         );
 
