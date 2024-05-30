@@ -289,7 +289,7 @@ pub struct Transaction {
     pub rlp_bytes: Vec<u8>,
     /// RLP unsigned bytes
     pub rlp_unsigned_bytes: Vec<u8>,
-
+    // TODO: add rlp_signed_bytes as well ?
     /// Transaction hash
     pub hash: H256,
 }

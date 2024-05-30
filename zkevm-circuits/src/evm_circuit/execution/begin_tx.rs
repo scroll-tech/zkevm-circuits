@@ -61,6 +61,9 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
+    #[cfg(feature = "l1_fee_curie")]
+    // rlp signed tx bytes' length
+    tx_signed_length: Cell<F>,
     reversion_info: ReversionInfo<F>,
     intrinsic_gas_cost: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
@@ -131,6 +134,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
+        #[cfg(feature = "l1_fee_curie")]
+        let tx_signed_length = cb.tx_context(tx_id.expr(), TxContextFieldTag::TxHashLength, None);
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
@@ -141,7 +146,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_nonce.expr(),
                 sender_nonce.expr(),
             );
-            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
+            TxL1FeeGadget::construct(
+                cb,
+                tx_id.expr(),
+                tx_data_gas_cost.expr(),
+                #[cfg(feature = "l1_fee_curie")]
+                tx_signed_length.expr(),
+            )
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
@@ -802,6 +813,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_call_data_word_length,
             tx_call_data_gas_cost,
             tx_data_gas_cost,
+            #[cfg(feature = "l1_fee_curie")]
+            tx_signed_length,
             reversion_info,
             intrinsic_gas_cost,
             sufficient_gas_left,
@@ -907,11 +920,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Add access-list RW offset.
         rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
 
-        let rw = rws.next();
-        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
-        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
+        let _rw = rws.next();
 
-        rws.offset_add(3);
+        #[cfg(not(feature = "l1_fee_curie"))]
+        {
+            debug_assert_eq!(_rw.tag(), RwTableTag::CallContext);
+            debug_assert_eq!(_rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
+            rws.offset_add(3);
+        }
+
+        #[cfg(feature = "l1_fee_curie")]
+        rws.offset_add(6);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::Account);
@@ -1077,6 +1096,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_data_gas_cost
             .assign(region, offset, Value::known(F::from(tx.tx_data_gas_cost)))?;
+        #[cfg(feature = "l1_fee_curie")]
+        self.tx_signed_length.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.rlp_signed.len() as u64)),
+        )?;
+
         self.reversion_info.assign(
             region,
             offset,
@@ -1191,10 +1217,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             log::trace!("tx is l1msg and l1 fee is 0");
             (U256::zero(), U256::zero())
         } else {
-            (
-                tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0.into(),
-                tx.gas_price * tx.gas,
-            )
+            #[cfg(not(feature = "l1_fee_curie"))]
+            {
+                (
+                    tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost, 0).0.into(),
+                    tx.gas_price * tx.gas,
+                )
+            }
+
+            #[cfg(feature = "l1_fee_curie")]
+            {
+                (
+                    tx.l1_fee
+                        .tx_l1_fee(0, tx.rlp_signed.len().try_into().unwrap())
+                        .0
+                        .into(),
+                    tx.gas_price * tx.gas,
+                )
+            }
         };
         if tx_fee != tx_l2_fee + tx_l1_fee {
             log::error!(
@@ -1211,6 +1251,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.l1_fee,
             tx.l1_fee_committed,
             tx.tx_data_gas_cost,
+            tx.rlp_signed.len().try_into().unwrap(),
         )?;
 
         self.tx_access_list.assign(region, offset, tx)?;
