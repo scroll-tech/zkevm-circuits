@@ -924,8 +924,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         #[cfg(not(feature = "l1_fee_curie"))]
         {
-            debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
-            debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
+            debug_assert_eq!(_rw.tag(), RwTableTag::CallContext);
+            debug_assert_eq!(_rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
             rws.offset_add(3);
         }
 
