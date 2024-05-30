@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-
+use rand;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     dev::{MockProver, VerifyFailure},
@@ -112,28 +112,24 @@ impl Circuit<Fr> for TestBitstringCircuit {
                     )?;
                 }
 
+                let mut rng = rand::thread_rng();
+
                 match self.case {
                     UnsoundCase::None => {},
                     IncorrectBitDecomposition => {
-                        // UnsoundCase::MismatchNumStates => {
-                        //     // The last row represents the last "un-padded" row, i.e. the idx is
-                        //     // expected to be table_size.
-                        //     let idx_cell = &fse_rows.last().expect("len(fse_rows)=0").idx;
-                        //     increment_cell(&mut region, idx_cell)?;
-                        // }
+                        let row_idx: usize = rng.gen_range(0..assigned_bitstring_table_1_rows.len());
+                        let bit_cell = assigned_bitstring_table_1_rows[row_idx].bit.cell();
 
-                        // fn increment_cell(
-                        //     region: &mut Region<Fr>,
-                        //     assigned_cell: &AssignedCell<Fr, Fr>,
-                        // ) -> Result<AssignedCell<Fr, Fr>, Error> {
-                        //     let cell = assigned_cell.cell();
-                        //     region.assign_advice(
-                        //         || "incrementing previously assigned cell",
-                        //         cell.column.try_into().expect("assigned cell not advice"),
-                        //         cell.row_offset,
-                        //         || assigned_cell.value() + Value::known(Fr::one()),
-                        //     )
-                        // }
+                        region.assign_advice(
+                            || "corrupt bit decomposition at a random location in the assigned witness",
+                            cell.column.try_into().expect("assigned cell not advice"),
+                            cell.row_offset,
+                            || if bit_cell.value() > 0 {
+                                Value::known(Fr::one()) 
+                            } else { 
+                                Value::known(Fr::zero()) 
+                            },
+                        )
                     },
                     IncorrectBitDecompositionEndianness => {
 
