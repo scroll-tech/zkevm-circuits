@@ -112,21 +112,28 @@ impl Circuit<Fr> for TestBitstringCircuit {
                     )?;
                 }
 
-                // let (fse_rows, _fse_sorted_rows) =
-                //     config
-                //         .fse_table
-                //         .assign(&mut layouter, &self.data, n_enabled)?;
-
                 match self.case {
-                    UnsoundCase::None => {}
-                    // UnsoundCase::MismatchNumStates => {
-                    //     // The last row represents the last "un-padded" row, i.e. the idx is
-                    //     // expected to be table_size.
-                    //     let idx_cell = &fse_rows.last().expect("len(fse_rows)=0").idx;
-                    //     increment_cell(&mut region, idx_cell)?;
-                    // }
+                    UnsoundCase::None => {},
                     IncorrectBitDecomposition => {
+                        // UnsoundCase::MismatchNumStates => {
+                        //     // The last row represents the last "un-padded" row, i.e. the idx is
+                        //     // expected to be table_size.
+                        //     let idx_cell = &fse_rows.last().expect("len(fse_rows)=0").idx;
+                        //     increment_cell(&mut region, idx_cell)?;
+                        // }
 
+                        // fn increment_cell(
+                        //     region: &mut Region<Fr>,
+                        //     assigned_cell: &AssignedCell<Fr, Fr>,
+                        // ) -> Result<AssignedCell<Fr, Fr>, Error> {
+                        //     let cell = assigned_cell.cell();
+                        //     region.assign_advice(
+                        //         || "incrementing previously assigned cell",
+                        //         cell.column.try_into().expect("assigned cell not advice"),
+                        //         cell.row_offset,
+                        //         || assigned_cell.value() + Value::known(Fr::one()),
+                        //     )
+                        // }
                     },
                     IncorrectBitDecompositionEndianness => {
 
@@ -189,90 +196,83 @@ impl Default for UnsoundCase {
     }
 }
 
-// fn increment_cell(
-//     region: &mut Region<Fr>,
-//     assigned_cell: &AssignedCell<Fr, Fr>,
-// ) -> Result<AssignedCell<Fr, Fr>, Error> {
-//     let cell = assigned_cell.cell();
-//     region.assign_advice(
-//         || "incrementing previously assigned cell",
-//         cell.column.try_into().expect("assigned cell not advice"),
-//         cell.row_offset,
-//         || assigned_cell.value() + Value::known(Fr::one()),
-//     )
-// }
+fn run(case: UnsoundCase) -> Result<(), Vec<VerifyFailure>> {
+    let k = 18;
 
-// fn run(input: DataInput, is_predefined: bool, case: UnsoundCase) -> Result<(), Vec<VerifyFailure>> {
-//     let k = 18;
+    // Batch 127
+    let raw = hex::decode("00000073f8718302d9848422551000827b0c94f565295eddcc0682bb16376c742e9bc9dbb32512880429d069189e01fd8083104ec3a02b10f9f3bbaa927b805b9b225f04d90a9994da49f309fb1e029312c661ffb68ea065de06a6d34dadf1af4f80d9133a67cf7753c925f5bfd785f56c20c11280ede0000000aef8ac10841c9c38008305d0a594ec53c830f4444a8a56455c6836b5d2aa794289aa80b844f2b9fdb8000000000000000000000000b6966083c7b68175b4bf77511608aee9a80d2ca4000000000000000000000000000000000000000000000000003d83508c36cdb583104ec4a0203dff6f72962bb8aa5a9bc365c705818ad2ae51485a8c831e453668d4b75d1fa03de15a7b705a8ad59f8437b4ca717f1e8094c77c5459ee57b0cae8b6c4ebdf5e000002d7f902d402841c9c38008302c4589480e38291e06339d10aab483c65695d004dbd5c69870334ae29914c90b902642cc4081e000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000001e9dd10000000000000000000000000000000000000000000000000000000065b3f7550000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000334ae29914c9000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000814a23b053fd0f102aeeda0459215c2444799c700000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000530000000000000000000000000000000000000400000000000000000000000097af7be0b94399f9dd54a984e8498ce38356f0380000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000083104ec3a039a8970ba5ef7fb1cfe8d5db8e293b9837e298fd55faab853f56b66322c8ef80a0523ceb389a544389f6775b8ff982feac3f05b092869e35fed509e828d5e5759900000170f9016d03841c9c38008302a98f9418b71386418a9fca5ae7165e31c385a5130011b680b9010418cbafe5000000000000000000000000000000000000000000000000000000000091855b000000000000000000000000000000000000000000000000000e9f352b7fc38100000000000000000000000000000000000000000000000000000000000000a00000000000000000000000006fd71e5088bdaaed42efd384fede02a76dca87f00000000000000000000000000000000000000000000000000000000065b3cd55000000000000000000000000000000000000000000000000000000000000000200000000000000000000000006efdbff2a14a7c8e15944d1f4a48f9f95f663a4000000000000000000000000530000000000000000000000000000000000000483104ec4a097411c6aad88135b8918b29d318898808fc04e933379c6d5da9f267315af2300a0265e6b38e475244e2639ea6eb42ae0d7f4f227a9dd9dd5328744bcd9f5f25bd2000000aff8ad82077a841c9c3800826716940a88bc5c32b684d467b43c06d9e0899efeaf59df86d12f0c4c832ab83e646174613a2c7b2270223a226c61796572322d3230222c226f70223a22636c61696d222c227469636b223a22244c32222c22616d74223a2231303030227d83104ec3a0bef600f17b5037519044f2296d1181abf140b986a7d43b7472e93b6be8378848a03c951790ad335a2d1947b3913e2280e506b17463c5f3b61849595a94b37439b3").expect("Decoding hex data should not fail");
 
-//     let fse_table = match input {
-//         DataInput::Distribution(distribution, accuracy_log) => {
-//             let normalised_probs = {
-//                 let mut normalised_probs = BTreeMap::new();
-//                 for (i, &prob) in distribution.iter().enumerate() {
-//                     normalised_probs.insert(i as u64, prob);
-//                 }
-//                 normalised_probs
-//             };
-//             let (state_map, sorted_state_map) =
-//                 FseAuxiliaryTableData::transform_normalised_probs(&normalised_probs, accuracy_log);
-//             FseAuxiliaryTableData {
-//                 block_idx: 1,
-//                 table_kind: FseTableKind::LLT,
-//                 table_size: 1 << accuracy_log,
-//                 is_predefined: true,
-//                 normalised_probs,
-//                 sym_to_states: state_map,
-//                 sym_to_sorted_states: sorted_state_map,
-//             }
-//         }
-//         DataInput::SourceBytes(src, byte_offset) => {
-//             let (_, _, fse_table) = FseAuxiliaryTableData::reconstruct(
-//                 &src,
-//                 1,
-//                 FseTableKind::LLT,
-//                 byte_offset,
-//                 is_predefined,
-//             )
-//             .expect("unexpected failure: FseTable::reconstruct");
-//             fse_table
-//         }
-//     };
+    let compressed = {
+        // compression level = 0 defaults to using level=3, which is zstd's default.
+        let mut encoder = init_zstd_encoder(None);
 
-//     let test_circuit = TestFseCircuit {
-//         k,
-//         data: vec![fse_table],
-//         case,
-//     };
+        // set source length, which will be reflected in the frame header.
+        encoder
+            .set_pledged_src_size(Some(raw.len() as u64))
+            .expect("Encoder src_size: raw.len()");
+        // include the content size to know at decode time the expected size of decoded data.
 
-//     let prover =
-//         MockProver::run(k, &test_circuit, vec![]).expect("unexpected failure: MockProver::run");
-//     prover.verify_par()
-// }
+        encoder.write_all(&raw).expect("Encoder wirte_all");
+        encoder.finish().expect("Encoder success")
+    };
 
-// #[test]
-// fn test_fse_ok_1() {
-//     let distribution = vec![
-//         4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1,
-//         1, 1, -1, -1, -1, -1,
-//     ];
-//     assert!(run(
-//         DataInput::Distribution(distribution, 6),
-//         true,
-//         UnsoundCase::None
-//     )
-//     .is_ok())
-// }
+    let test_circuit = TestBitstringCircuit {
+        k,
+        compressed,
+        case,
+    };
 
-// #[test]
-// fn test_fse_not_ok_mismatch_num_states() {
-//     let src = vec![
-//         0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81, 0x8c, 0x94, 0xb4, 0x50, 0x1e,
-//     ];
-//     assert!(run(
-//         DataInput::SourceBytes(src, 0),
-//         false,
-//         UnsoundCase::MismatchNumStates
-//     )
-//     .is_err())
-// }
+    let prover =
+        MockProver::run(k, &test_circuit, vec![]).expect("unexpected failure: MockProver::run");
+    prover.verify_par()
+}
+
+#[test]
+fn test_bitstring_ok() {
+    assert!(run(UnsoundCase::None).is_ok())
+}
+
+#[test]
+fn test_incorrect_bit_decomposition() {
+    assert!(run(UnsoundCase::IncorrectBitDecomposition).is_err())
+}
+
+#[test]
+fn test_incorrect_bit_decomposition_endianness() {
+    assert!(run(UnsoundCase::IncorrectBitDecompositionEndianness).is_err())
+}
+
+#[test]
+fn test_irregular_transition_byte_idx() {
+    assert!(run(UnsoundCase::IrregularTransitionByteIdx).is_err())
+}
+
+#[test]
+fn test_irregular_value_from_start() {
+    assert!(run(UnsoundCase::IrregularValueFromStart).is_err())
+}
+
+#[test]
+fn test_irregular_value_until_end() {
+    assert!(run(UnsoundCase::IrregularValueUntilEnd).is_err())
+}
+
+#[test]
+fn test_irregular_transition_from_start() {
+    assert!(run(UnsoundCase::IrregularTransitionFromStart).is_err())
+}
+
+#[test]
+fn test_irregular_transition_until_end() {
+    assert!(run(UnsoundCase::IrregularTransitionUntilEnd).is_err())
+}
+
+#[test]
+fn test_inconsistent_bitstring_value() {
+    assert!(run(UnsoundCase::InconsistentBitstringValue).is_err())
+}
+
+#[test]
+fn test_inconsistent_end_bitstring_acc_value() {
+    assert!(run(UnsoundCase::InconsistentEndBitstringAccValue).is_err())
+}
