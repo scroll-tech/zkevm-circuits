@@ -996,6 +996,96 @@ mod tests {
     use halo2_proofs::{
         circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
     };
+    use itertools::Itertools;
+
+    #[derive(Clone, Debug)]
+    struct MockDecoderTable {
+        q_enabled: Column<Fixed>,
+        block_idx: Column<Advice>,
+        sequence_idx: Column<Advice>,
+        literal_length_value: Column<Advice>,
+        match_offset_value: Column<Advice>,
+        match_length_value: Column<Advice>,
+    }
+
+    impl MockDecoderTable {
+        fn configure(
+            meta: &mut ConstraintSystem<Fr>,
+            inst_table: &SeqInstTable<Fr>,
+        ) -> Self {
+            let q_enabled = meta.fixed_column();
+            let block_idx = meta.advice_column();
+            let sequence_idx = meta.advice_column();
+            let literal_length_value = meta.advice_column();
+            let match_offset_value = meta.advice_column();
+            let match_length_value = meta.advice_column();
+
+            meta.lookup_any(
+                "Mock DecoderConfig's tag ZstdBlockSequenceData",
+                |meta| {
+                    let enabled = meta.query_fixed(q_enabled, Rotation::cur());
+                    let (block_idx, sequence_idx) = (
+                        meta.query_advice(block_idx, Rotation::cur()),
+                        meta.query_advice(sequence_idx, Rotation::cur()),
+                    );
+                    let (literal_length_value, match_offset_value, match_length_value) = (
+                        meta.query_advice(literal_length_value, Rotation::cur()),
+                        meta.query_advice(match_offset_value, Rotation::cur()),
+                        meta.query_advice(match_length_value, Rotation::cur()),
+                    );                    
+                    [
+                        1.expr(), // q_enabled
+                        block_idx,
+                        0.expr(), // s_beginning
+                        sequence_idx,
+                        literal_length_value,
+                        match_offset_value,
+                        match_length_value,
+                    ]
+                    .into_iter()
+                    .zip_eq(inst_table.seq_values_exprs(meta))
+                    .map(|(arg, table)| (enabled.expr() * arg, table))
+                    .collect()
+                }
+            );
+
+            Self {
+                q_enabled,
+                block_idx,
+                sequence_idx,
+                literal_length_value,
+                match_offset_value,
+                match_length_value,
+            }
+        }
+
+        fn assign_blk(
+            &self,
+            layouter: &mut impl Layouter<Fr>,
+            blk_id: usize,
+            rows: &[AddressTableRow],
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                ||format!("mock decoder config blk {}", blk_id),
+                |mut region|{
+
+                    for (i, row) in rows.iter().enumerate() {
+                        for (col, val) in [
+                            (self.block_idx, Fr::from(blk_id as u64)),
+                            (self.sequence_idx, Fr::from(row.instruction_idx)),
+                            (self.literal_length_value, Fr::from(row.literal_length)),
+                            (self.match_offset_value, Fr::from(row.cooked_match_offset)),
+                            (self.match_length_value, Fr::from(row.match_length)),
+                        ]{
+                            region.assign_advice(||"assign mock", col, i, ||Value::known(val))?;
+                        }
+                    }
+
+                    Ok(())
+                }
+            )
+        }
+    }
 
     #[derive(Clone, Debug)]
     struct SeqTable(Vec<AddressTableRow>);
