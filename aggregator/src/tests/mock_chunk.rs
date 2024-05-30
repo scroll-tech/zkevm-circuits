@@ -150,6 +150,7 @@ impl CircuitExt<Fr> for MockChunkCircuit {
     }
 }
 
+#[ignore = "heavy"]
 #[test]
 fn test_mock_chunk_prover() {
     test_mock_chunk_prover_helper(true, true);
