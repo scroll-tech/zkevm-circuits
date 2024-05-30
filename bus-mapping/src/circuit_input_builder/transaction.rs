@@ -506,7 +506,6 @@ impl TxL1Fee {
     /// for non curie upgrade case, tx_rlp_signed_len is not used,  set to zero
     pub fn tx_l1_fee(&self, tx_data_gas_cost: u64, tx_rlp_signed_len: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        // check if the calculation changes for curie upgrade
         #[cfg(not(feature = "l1_fee_curie"))]
         {
             let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
@@ -519,6 +518,8 @@ impl TxL1Fee {
 
         #[cfg(feature = "l1_fee_curie")]
         {
+            // for curie upgrade:
+            // new formula: https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee.go#L165
             // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee",
             let tx_l1_fee = self.commit_scalar as u128 * self.base_fee as u128
                 + self.blob_scalar as u128
