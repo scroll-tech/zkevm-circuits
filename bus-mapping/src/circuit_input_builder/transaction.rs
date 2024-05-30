@@ -5,7 +5,7 @@ use crate::{l2_predeployed::l1_gas_price_oracle, Error};
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
     geth_types,
-    geth_types::{get_rlp_signed, get_rlp_unsigned, TxType},
+    geth_types::{get_rlp_unsigned, TxType},
     state_db::{CodeDB, StateDB},
     AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
@@ -204,7 +204,7 @@ pub struct Transaction {
     pub rlp_bytes: Vec<u8>,
     /// RLP bytes for signing
     pub rlp_unsigned_bytes: Vec<u8>,
-    /// RLP bytes for signing
+    /// RLP bytes for signed tx
     pub rlp_signed_bytes: Vec<u8>,
     /// Current values of L1 fee
     pub l1_fee: TxL1Fee,
@@ -366,7 +366,8 @@ impl Transaction {
             tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
-            rlp_signed_bytes: get_rlp_signed(eth_tx),
+            //rlp_signed_bytes: get_rlp_signed(eth_tx),
+            rlp_signed_bytes: eth_tx.rlp().to_vec(),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
@@ -506,7 +507,6 @@ impl TxL1Fee {
     /// for non curie upgrade case, tx_rlp_signed_len is not used,  set to zero
     pub fn tx_l1_fee(&self, tx_data_gas_cost: u64, tx_rlp_signed_len: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        // check if the calculation changes for curie upgrade
         #[cfg(not(feature = "l1_fee_curie"))]
         {
             let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
@@ -519,6 +519,8 @@ impl TxL1Fee {
 
         #[cfg(feature = "l1_fee_curie")]
         {
+            // for curie upgrade:
+            // new formula: https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee.go#L165
             // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee",
             let tx_l1_fee = self.commit_scalar as u128 * self.base_fee as u128
                 + self.blob_scalar as u128
