@@ -4,7 +4,9 @@ use crate::{
         param::N_BYTES_U64,
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes, U64Word, Word,
+            from_bytes,
+            math_gadget::LtGadget,
+            U64Word, Word,
         },
     },
     util::{Expr, Field},
@@ -25,6 +27,8 @@ pub(crate) struct TxL1FeeGadget<F> {
     tx_l1_fee_word: Word<F>,
     /// Remainder when calculating L1 fee
     remainder_word: U64Word<F>,
+    /// Remainder must in [0, TX_L1_FEE_PRECISION)
+    remainder_range: LtGadget<F, 8>,
     /// Current value of L1 base fee
     base_fee_word: U64Word<F>,
     /// Current value of L1 fee overhead
@@ -184,6 +188,12 @@ impl<F: Field> TxL1FeeGadget<F> {
             .assign(region, offset, Some(l1_fee.fee_overhead.to_le_bytes()))?;
         self.fee_scalar_word
             .assign(region, offset, Some(l1_fee.fee_scalar.to_le_bytes()))?;
+        self.remainder_range.assign(
+            region,
+            offset,
+            F::from(remainder),
+            F::from(TX_L1_FEE_PRECISION),
+        )?;
 
         // curie fields
         #[cfg(feature = "l1_fee_curie")]
@@ -289,6 +299,13 @@ impl<F: Field> TxL1FeeGadget<F> {
         ]
         .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
+        let remainder_range = LtGadget::construct(cb, remainder.expr(), TX_L1_FEE_PRECISION.expr());
+        cb.require_equal(
+            "remainder must less than l1 fee precision",
+            1.expr(),
+            remainder_range.expr(),
+        );
+
         #[cfg(feature = "l1_fee_curie")]
         let [l1_blob_basefee, commit_scalar, blob_scalar] = [
             &l1_blob_basefee_word,
@@ -335,6 +352,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         Self {
             tx_l1_fee_word,
             remainder_word,
+            remainder_range,
             base_fee_word,
             fee_overhead_word,
             fee_scalar_word,
