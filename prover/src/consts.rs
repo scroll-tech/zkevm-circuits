@@ -1,7 +1,8 @@
 use crate::utils::read_env_var;
 use std::sync::LazyLock;
 
-pub static AGG_KECCAK_ROW: LazyLock<usize> = LazyLock::new(|| read_env_var("AGG_KECCAK_ROW", 50));
+// For our k=21 agg circuit, 12 means it can include 2**21 / (12 * 25) * 136.0 = 0.95M bytes
+pub static AGG_KECCAK_ROW: LazyLock<usize> = LazyLock::new(|| read_env_var("AGG_KECCAK_ROW", 12));
 pub static AGG_VK_FILENAME: LazyLock<String> =
     LazyLock::new(|| read_env_var("AGG_VK_FILENAME", "agg_vk.vkey".to_string()));
 pub static CHUNK_PROTOCOL_FILENAME: LazyLock<String> =

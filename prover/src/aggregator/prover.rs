@@ -21,7 +21,8 @@ pub struct Prover {
 
 impl Prover {
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        env::set_var("KECCAK_ROW", AGG_KECCAK_ROW.to_string());
+        log::debug!("set env KECCAK_ROWS={}", AGG_KECCAK_ROW.to_string());
+        env::set_var("KECCAK_ROWS", AGG_KECCAK_ROW.to_string());
 
         let inner = common::Prover::from_params_dir(params_dir, &AGG_DEGREES);
         let chunk_protocol = force_to_read(assets_dir, &CHUNK_PROTOCOL_FILENAME);
