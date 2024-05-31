@@ -1,5 +1,5 @@
 use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
-use crate::types::base64;
+use crate::{types::base64, zkevm::SubCircuitRowUsage};
 use aggregator::ChunkHash;
 use anyhow::Result;
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
@@ -15,6 +15,7 @@ pub struct ChunkProof {
     pub proof: Proof,
     #[serde(rename = "chunk_info")]
     pub chunk_hash: Option<ChunkHash>,
+    pub row_usages: Vec<SubCircuitRowUsage>,
 }
 
 impl ChunkProof {
@@ -22,6 +23,7 @@ impl ChunkProof {
         snark: Snark,
         pk: Option<&ProvingKey<G1Affine>>,
         chunk_hash: Option<ChunkHash>,
+        row_usages: Vec<SubCircuitRowUsage>,
     ) -> Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
         let proof = Proof::new(snark.proof, &snark.instances, pk);
@@ -30,6 +32,7 @@ impl ChunkProof {
             protocol,
             proof,
             chunk_hash,
+            row_usages,
         })
     }
 

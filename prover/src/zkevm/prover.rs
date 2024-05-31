@@ -5,6 +5,7 @@ use crate::{
     io::try_to_read,
     types::ChunkProvingTask,
     utils::chunk_trace_to_witness_block,
+    zkevm::circuit::calculate_row_usage_of_witness_block,
     ChunkProof,
 };
 use aggregator::ChunkHash;
@@ -64,6 +65,7 @@ impl Prover {
             Some(proof) => Ok(proof),
             None => {
                 let witness_block = chunk_trace_to_witness_block(chunk.block_traces)?;
+                let row_usage = calculate_row_usage_of_witness_block(&witness_block)?;
                 log::info!("Got witness block");
 
                 let snark = self.prover_impl.load_or_gen_final_chunk_snark(
@@ -81,6 +83,7 @@ impl Prover {
                     snark,
                     self.prover_impl.pk(LayerId::Layer2.id()),
                     Some(chunk_hash),
+                    row_usage,
                 );
 
                 if let (Some(output_dir), Ok(proof)) = (output_dir, &result) {

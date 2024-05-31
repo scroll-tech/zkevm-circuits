@@ -1,3 +1,4 @@
+use crate::zkevm::SubCircuitRowUsage;
 use anyhow::Result;
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use eth_types::l2_types::BlockTrace;
@@ -9,7 +10,7 @@ pub fn validite_block_traces(_block_traces: &[BlockTrace]) -> Result<()> {
 
 pub fn calculate_row_usage_of_witness_block(
     _witness_block: &Block,
-) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
+) -> Result<Vec<SubCircuitRowUsage>> {
     unimplemented!("Must build with feature scroll")
 }
 

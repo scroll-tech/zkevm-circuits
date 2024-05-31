@@ -1,5 +1,5 @@
 use super::TargetCircuit;
-use crate::utils::read_env_var;
+use crate::{utils::read_env_var, zkevm::SubCircuitRowUsage};
 use anyhow::{bail, Result};
 use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
 use eth_types::{
@@ -7,11 +7,12 @@ use eth_types::{
     state_db::{CodeDB, StateDB},
     ToWord, H256,
 };
+use itertools::Itertools;
 use mpt_zktrie::state::{ZkTrieHash, ZktrieState};
 use std::{sync::LazyLock, time::Instant};
 use zkevm_circuits::{
     evm_circuit::witness::Block,
-    super_circuit::params::{get_super_circuit_params, MAX_TXS},
+    super_circuit::params::{get_super_circuit_params, ScrollSuperCircuit, MAX_TXS},
     util::SubCircuit,
     witness::block_convert,
 };
@@ -20,10 +21,8 @@ static CHAIN_ID: LazyLock<u64> = LazyLock::new(|| read_env_var("CHAIN_ID", 53077
 
 pub fn calculate_row_usage_of_witness_block(
     witness_block: &Block,
-) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
-    let mut rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block_subcircuits(
-        witness_block,
-    );
+) -> Result<Vec<SubCircuitRowUsage>> {
+    let mut rows = ScrollSuperCircuit::min_num_rows_block_subcircuits(witness_block);
     // Check whether we need to "estimate" poseidon sub circuit row usage
     if witness_block.mpt_updates.smt_traces.is_empty() {
         assert_eq!(rows[11].name, "poseidon");
@@ -46,16 +45,9 @@ pub fn calculate_row_usage_of_witness_block(
     } else {
         log::debug!("calculate_row_usage_of_witness_block normal mode, skip adding poseidon rows");
     }
-    let first_block_num = witness_block
-        .context
-        .ctxs
-        .first_key_value()
-        .map_or(0.into(), |(_, ctx)| ctx.number);
-    let last_block_num = witness_block
-        .context
-        .ctxs
-        .last_key_value()
-        .map_or(0.into(), |(_, ctx)| ctx.number);
+    let first_block_num = witness_block.first_block_number();
+    let last_block_num = witness_block.last_block_number();
+
     log::debug!(
         "row usage of block range {:?}, tx num {:?}, tx calldata len sum {}, rows needed {:?}",
         (first_block_num, last_block_num),
@@ -67,7 +59,14 @@ pub fn calculate_row_usage_of_witness_block(
             .sum::<usize>(),
         rows,
     );
-    Ok(rows)
+    let row_usage_details: Vec<SubCircuitRowUsage> = rows
+        .into_iter()
+        .map(|x| SubCircuitRowUsage {
+            name: x.name,
+            row_number: x.row_num_real,
+        })
+        .collect_vec();
+    Ok(row_usage_details)
 }
 
 pub fn print_chunk_stats(block_traces: &[BlockTrace]) {

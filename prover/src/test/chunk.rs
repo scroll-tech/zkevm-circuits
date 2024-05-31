@@ -2,6 +2,7 @@ use crate::{
     common::{Prover, Verifier},
     config::{LayerId, ZKEVM_DEGREES},
     utils::read_env_var,
+    zkevm::circuit::calculate_row_usage_of_witness_block,
     ChunkHash, ChunkProof, CompressionCircuit, WitnessBlock,
 };
 use std::{
@@ -37,6 +38,8 @@ static CHUNK_VERIFIER: LazyLock<Mutex<Verifier<CompressionCircuit>>> = LazyLock:
 pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
     log::info!("{test}: chunk-prove BEGIN");
 
+    let row_usage = calculate_row_usage_of_witness_block(witness_block).expect("row usage");
+
     let mut prover = CHUNK_PROVER.lock().expect("poisoned chunk-prover");
     let inner_id = read_env_var("INNER_LAYER_ID", LayerId::Inner.id().to_string());
     let inner_id_changed = prover.pk(&inner_id).is_none();
@@ -71,6 +74,7 @@ pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
         snark,
         prover.pk(LayerId::Layer2.id()),
         Some(ChunkHash::from_witness_block(witness_block, false)),
+        row_usage,
     )
     .unwrap_or_else(|err| panic!("{test}: failed to crate chunk proof: {err}"))
 }
