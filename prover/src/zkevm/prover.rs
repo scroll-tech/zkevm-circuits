@@ -3,6 +3,7 @@ use crate::{
     config::{LayerId, ZKEVM_DEGREES},
     consts::CHUNK_VK_FILENAME,
     io::try_to_read,
+    proof::compare_chunk_info,
     types::ChunkProvingTask,
     utils::chunk_trace_to_witness_block,
     zkevm::circuit::calculate_row_usage_of_witness_block,
@@ -68,6 +69,12 @@ impl Prover {
                 let row_usage = calculate_row_usage_of_witness_block(&witness_block)?;
                 log::info!("Got witness block");
 
+                let chunk_hash = ChunkHash::from_witness_block(&witness_block, false);
+                compare_chunk_info(
+                    &format!("gen_chunk_proof {name:?}"),
+                    &chunk_hash,
+                    &chunk.chunk_info,
+                )?;
                 let snark = self.prover_impl.load_or_gen_final_chunk_snark(
                     &chunk_identifier,
                     &witness_block,
@@ -77,12 +84,10 @@ impl Prover {
 
                 self.check_vk();
 
-                let chunk_hash = ChunkHash::from_witness_block(&witness_block, false);
-
                 let result = ChunkProof::new(
                     snark,
                     self.prover_impl.pk(LayerId::Layer2.id()),
-                    Some(chunk_hash),
+                    chunk_hash,
                     row_usage,
                 );
 

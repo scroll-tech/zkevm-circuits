@@ -24,7 +24,7 @@ mod chunk;
 mod evm;
 
 pub use batch::BatchProof;
-pub use chunk::ChunkProof;
+pub use chunk::{compare_chunk_info, ChunkProof};
 pub use evm::EvmProof;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

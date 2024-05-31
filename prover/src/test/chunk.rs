@@ -73,7 +73,7 @@ pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
     ChunkProof::new(
         snark,
         prover.pk(LayerId::Layer2.id()),
-        Some(ChunkHash::from_witness_block(witness_block, false)),
+        ChunkHash::from_witness_block(witness_block, false),
         row_usage,
     )
     .unwrap_or_else(|err| panic!("{test}: failed to crate chunk proof: {err}"))

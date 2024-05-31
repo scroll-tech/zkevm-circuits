@@ -4,7 +4,7 @@ use crate::{
     consts::DEPLOYMENT_CODE_FILENAME,
     io::force_to_read,
     utils::read_env_var,
-    ChunkHash, ChunkProof,
+    BatchProvingTask,
 };
 use std::sync::{LazyLock, Mutex};
 
@@ -38,13 +38,13 @@ static BATCH_VERIFIER: LazyLock<Mutex<Verifier>> = LazyLock::new(|| {
     Mutex::new(verifier)
 });
 
-pub fn batch_prove(test: &str, chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)>) {
+pub fn batch_prove(test: &str, batch: BatchProvingTask) {
     log::info!("{test}: batch-prove BEGIN");
 
     let proof = BATCH_PROVER
         .lock()
         .expect("poisoned batch-prover")
-        .gen_agg_evm_proof(chunk_hashes_proofs, None, None)
+        .gen_agg_evm_proof(batch, None, None)
         .unwrap_or_else(|err| panic!("{test}: failed to generate batch proof: {err}"));
     log::info!("{test}: generated batch proof");
 
