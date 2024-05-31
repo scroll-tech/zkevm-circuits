@@ -430,12 +430,15 @@ mod tests {
     impl<F: Field> MathGadgetContainer<F> for TxL1FeeGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let tx_data_gas_cost = cb.query_cell();
+            #[cfg(feature = "l1_fee_curie")]
+            let tx_signed_length = cb.query_cell();
+
             let expected_tx_l1_fee = cb.query_cell();
 
             // for non "l1_fee_curie" feature, tx_signed_length is not used, can
             // set to zero
             #[cfg(feature = "l1_fee_curie")]
-            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr(), 0.expr());
+            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr(), tx_signed_length.expr());
             #[cfg(not(feature = "l1_fee_curie"))]
             let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr());
 
@@ -458,6 +461,9 @@ mod tests {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let [base_fee, fee_overhead, fee_scalar] = [0, 1, 2].map(|i| witnesses[i].as_u64());
+            
+            #[cfg(feature = "l1_fee_curie")]
+            let [l1_blob_basefee, commit_scalar, blob_scalar, tx_signed_length] = [3, 4, 5, 6].map(|i| witnesses[i].as_u64());
 
             let l1_fee = TxL1Fee {
                 base_fee,
@@ -471,6 +477,7 @@ mod tests {
                 blob_scalar: 0,
             };
             let tx_data_gas_cost = witnesses[3];
+            // TODO: config not Curie feature
             self.gadget.assign(
                 region,
                 0,
@@ -478,6 +485,15 @@ mod tests {
                 TxL1Fee::default(),
                 tx_data_gas_cost.as_u64(),
                 0, // TODO: check if need update here
+            )?;
+            #[cfg(feature = "l1_fee_curie")]
+            self.gadget.assign(
+                region,
+                0,
+                l1_fee,
+                TxL1Fee::default(),
+                0,
+                tx_signed_length,
             )?;
             self.tx_data_gas_cost.assign(
                 region,
