@@ -132,10 +132,34 @@ impl Circuit<Fr> for TestBitstringCircuit {
                         )
                     },
                     IncorrectBitDecompositionEndianness => {
-
+                        let read_idx: usize = rng.gen_range(0..assigned_bitstring_table_1_rows.len()/8);
+                        let is_reverse = assigned_bitstring_table_1_rows[row_idx].is_reverse.cell().value();
+                        let column = assigned_bitstring_table_1_rows[row_idx].is_reverse.column.try_into().expect("assigned cell not advice");
+                        for bit_idx in 0..8 {
+                            region.assign_advice(
+                                || "inject incorrect is_reverse to a read operation",
+                                column,
+                                read_idx + bit_idx,
+                                || if is_reverse {
+                                    Value::known(Fr::zero())
+                                } else {
+                                    Value::known(Fr::one())
+                                },
+                            )
+                        }
                     },
                     IrregularTransitionByteIdx => {
+                        let row_idx: usize = rng.gen_range(0..assigned_bitstring_table_1_rows.len());
+                        let byte_idx_1_cell = assigned_bitstring_table_1_rows[row_idx].byte_idx_1.cell();
+                        let byte_idx_2_cell = assigned_bitstring_table_1_rows[row_idx].byte_idx_2.cell();
+                        let _byte_idx_3_cell = assigned_bitstring_table_1_rows[row_idx].byte_idx_3.cell();
 
+                        region.assign_advice(
+                            || "corrupt byte_idx at a random location in the assigned witness",
+                            byte_idx_1_cell.column.try_into().expect("assigned cell not advice"),
+                            byte_idx_1_cell.row_offset,
+                            || byte_idx_1_cell.value() + Value::known(Fr::one()),
+                        )
                     },
                     IrregularValueFromStart => {
 
