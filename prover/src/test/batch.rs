@@ -22,10 +22,10 @@ static BATCH_VERIFIER: LazyLock<Mutex<Verifier>> = LazyLock::new(|| {
     let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
 
     let mut prover = BATCH_PROVER.lock().expect("poisoned batch-prover");
-    let params = prover.inner.params(LayerId::Layer4.degree()).clone();
+    let params = prover.prover_impl.params(LayerId::Layer4.degree()).clone();
 
     let pk = prover
-        .inner
+        .prover_impl
         .pk(LayerId::Layer4.id())
         .expect("Failed to get batch-prove PK");
     let vk = pk.get_vk().clone();

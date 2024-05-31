@@ -14,7 +14,7 @@ use std::{env, iter::repeat};
 #[derive(Debug)]
 pub struct Prover {
     // Make it public for testing with inner functions (unnecessary for FFI).
-    pub inner: common::Prover,
+    pub prover_impl: common::Prover,
     pub chunk_protocol: Vec<u8>,
     raw_vk: Option<Vec<u8>>,
 }
@@ -24,7 +24,7 @@ impl Prover {
         log::debug!("set env KECCAK_ROWS={}", AGG_KECCAK_ROW.to_string());
         env::set_var("KECCAK_ROWS", AGG_KECCAK_ROW.to_string());
 
-        let inner = common::Prover::from_params_dir(params_dir, &AGG_DEGREES);
+        let prover_impl = common::Prover::from_params_dir(params_dir, &AGG_DEGREES);
         let chunk_protocol = force_to_read(assets_dir, &CHUNK_PROTOCOL_FILENAME);
 
         let raw_vk = try_to_read(assets_dir, &AGG_VK_FILENAME);
@@ -37,7 +37,7 @@ impl Prover {
         }
 
         Self {
-            inner,
+            prover_impl,
             chunk_protocol,
             raw_vk,
         }
@@ -61,7 +61,7 @@ impl Prover {
     }
 
     pub fn get_vk(&self) -> Option<Vec<u8>> {
-        self.inner
+        self.prover_impl
             .raw_vk(LayerId::Layer4.id())
             .or_else(|| self.raw_vk.clone())
     }
@@ -90,7 +90,7 @@ impl Prover {
             self.load_or_gen_last_agg_snark(&name, chunk_hashes_proofs, output_dir)?;
 
         // Load or generate final compression thin EVM proof (layer-4).
-        let evm_proof = self.inner.load_or_gen_comp_evm_proof(
+        let evm_proof = self.prover_impl.load_or_gen_comp_evm_proof(
             &name,
             LayerId::Layer4.id(),
             true,
@@ -142,7 +142,7 @@ impl Prover {
         }
 
         // Load or generate aggregation snark (layer-3).
-        let layer3_snark = self.inner.load_or_gen_agg_snark(
+        let layer3_snark = self.prover_impl.load_or_gen_agg_snark(
             name,
             LayerId::Layer3.id(),
             LayerId::Layer3.degree(),
@@ -159,7 +159,10 @@ impl Prover {
     fn check_vk(&self) {
         if self.raw_vk.is_some() {
             // Check VK is same with the init one, and take (clear) init VK.
-            let gen_vk = self.inner.raw_vk(LayerId::Layer4.id()).unwrap_or_default();
+            let gen_vk = self
+                .prover_impl
+                .raw_vk(LayerId::Layer4.id())
+                .unwrap_or_default();
             let init_vk = self.raw_vk.clone().unwrap_or_default();
 
             if gen_vk != init_vk {

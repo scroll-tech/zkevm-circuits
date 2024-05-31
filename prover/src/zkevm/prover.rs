@@ -3,24 +3,24 @@ use crate::{
     config::{LayerId, ZKEVM_DEGREES},
     consts::CHUNK_VK_FILENAME,
     io::try_to_read,
+    types::ChunkProvingTask,
     utils::chunk_trace_to_witness_block,
     ChunkProof,
 };
 use aggregator::ChunkHash;
 use anyhow::Result;
-use eth_types::l2_types::BlockTrace;
 
 #[derive(Debug)]
 pub struct Prover {
     // Make it public for testing with inner functions (unnecessary for FFI).
-    pub inner: common::Prover,
+    pub prover_impl: common::Prover,
     verifier: Option<super::verifier::Verifier>,
     raw_vk: Option<Vec<u8>>,
 }
 
 impl Prover {
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        let inner = common::Prover::from_params_dir(params_dir, &ZKEVM_DEGREES);
+        let prover_impl = common::Prover::from_params_dir(params_dir, &ZKEVM_DEGREES);
 
         let raw_vk = try_to_read(assets_dir, &CHUNK_VK_FILENAME);
         let verifier = if raw_vk.is_none() {
@@ -35,49 +35,38 @@ impl Prover {
         };
 
         Self {
-            inner,
+            prover_impl,
             raw_vk,
             verifier,
         }
     }
 
     pub fn get_vk(&self) -> Option<Vec<u8>> {
-        self.inner
+        self.prover_impl
             .raw_vk(LayerId::Layer2.id())
             .or_else(|| self.raw_vk.clone())
     }
 
     pub fn gen_chunk_proof(
         &mut self,
-        chunk_trace: Vec<BlockTrace>,
+        chunk: ChunkProvingTask,
         name: Option<&str>,
         inner_id: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<ChunkProof> {
-        assert!(!chunk_trace.is_empty());
+        assert!(!chunk.is_empty());
 
-        let chunk_identifier = name.map_or_else(
-            || {
-                chunk_trace
-                    .iter()
-                    .next()
-                    .map_or(0, |trace: &BlockTrace| {
-                        trace.header.number.expect("block num").low_u64()
-                    })
-                    .to_string()
-            },
-            |name| name.to_string(),
-        );
+        let chunk_identifier = name.map_or_else(|| chunk.identifier(), |name| name.to_string());
 
         let chunk_proof = match output_dir
             .and_then(|output_dir| ChunkProof::from_json_file(output_dir, &chunk_identifier).ok())
         {
             Some(proof) => Ok(proof),
             None => {
-                let witness_block = chunk_trace_to_witness_block(chunk_trace)?;
+                let witness_block = chunk_trace_to_witness_block(chunk.block_traces)?;
                 log::info!("Got witness block");
 
-                let snark = self.inner.load_or_gen_final_chunk_snark(
+                let snark = self.prover_impl.load_or_gen_final_chunk_snark(
                     &chunk_identifier,
                     &witness_block,
                     inner_id,
@@ -88,8 +77,11 @@ impl Prover {
 
                 let chunk_hash = ChunkHash::from_witness_block(&witness_block, false);
 
-                let result =
-                    ChunkProof::new(snark, self.inner.pk(LayerId::Layer2.id()), Some(chunk_hash));
+                let result = ChunkProof::new(
+                    snark,
+                    self.prover_impl.pk(LayerId::Layer2.id()),
+                    Some(chunk_hash),
+                );
 
                 if let (Some(output_dir), Ok(proof)) = (output_dir, &result) {
                     proof.dump(output_dir, &chunk_identifier)?;
@@ -112,7 +104,10 @@ impl Prover {
     fn check_vk(&self) {
         if self.raw_vk.is_some() {
             // Check VK is same with the init one, and take (clear) init VK.
-            let gen_vk = self.inner.raw_vk(LayerId::Layer2.id()).unwrap_or_default();
+            let gen_vk = self
+                .prover_impl
+                .raw_vk(LayerId::Layer2.id())
+                .unwrap_or_default();
             if gen_vk.is_empty() {
                 log::warn!("no gen_vk found, skip check_vk");
                 return;
