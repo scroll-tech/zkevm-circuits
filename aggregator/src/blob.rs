@@ -48,8 +48,8 @@ pub const N_BATCH_BYTES: usize = N_BLOB_BYTES * 5;
 pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
     Arc::new(
         c_kzg::KzgSettings::load_trusted_setup(
-            &revm_primitives::kzg::G1_POINTS.0,
-            &revm_primitives::kzg::G2_POINTS.0,
+            &c_kzg::G1_POINTS.0,
+            &c_kzg::G2_POINTS.0,
         )
         .expect("failed to load trusted setup"),
     )
