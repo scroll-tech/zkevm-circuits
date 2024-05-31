@@ -44,7 +44,7 @@ zstd-encoder = { package = "encoder", git = "https://github.com/scroll-tech/da-c
 csv = "1.1"
 
 [features]
-default = []
+default = ["revm-precompile/c-kzg"]
 print-trace = ["ark-std/print-trace"]
 # This feature is useful for unit tests where we check the SAT of pi aggregation circuit
 disable_proof_aggregation = []

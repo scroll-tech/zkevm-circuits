@@ -353,6 +353,7 @@ mod tests {
         blob::{BatchData, KZG_TRUSTED_SETUP},
         MAX_AGG_SNARKS,
     };
+    use c_kzg::{Blob as RethBlob, KzgProof};
     use std::collections::BTreeSet;
 
     #[test]
@@ -406,7 +407,7 @@ mod tests {
 
     fn reth_point_evaluation(z: Scalar, coefficients: &[Scalar]) -> Scalar {
         assert_eq!(coefficients.len(), BLOB_WIDTH);
-        let blob = c_kzg::Blob::from_bytes(
+        let blob = RethBlob::from_bytes(
             &coefficients
                 .iter()
                 .cloned()
@@ -415,8 +416,7 @@ mod tests {
         )
         .unwrap();
         let (_proof, y) =
-            c_kzg::KzgProof::compute_kzg_proof(&blob, &to_be_bytes(z).into(), &KZG_TRUSTED_SETUP)
-                .unwrap();
+            KzgProof::compute_kzg_proof(&blob, &to_be_bytes(z).into(), &KZG_TRUSTED_SETUP).unwrap();
         from_canonical_be_bytes(*y)
     }
 
