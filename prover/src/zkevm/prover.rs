@@ -56,43 +56,43 @@ impl Prover {
     ) -> Result<ChunkProof> {
         assert!(!chunk_trace.is_empty());
 
-        let witness_block = chunk_trace_to_witness_block(chunk_trace)?;
-        log::info!("Got witness block");
-
-        let name = name.map_or_else(
+        let chunk_identifier = name.map_or_else(
             || {
-                witness_block
-                    .context
-                    .ctxs
-                    .first_key_value()
-                    .map_or(0.into(), |(_, ctx)| ctx.number)
-                    .low_u64()
+                chunk_trace
+                    .iter()
+                    .next()
+                    .map_or(0, |trace: &BlockTrace| {
+                        trace.header.number.expect("block num").low_u64()
+                    })
                     .to_string()
             },
             |name| name.to_string(),
         );
 
-        let snark = self.inner.load_or_gen_final_chunk_snark(
-            &name,
-            &witness_block,
-            inner_id,
-            output_dir,
-        )?;
-
-        self.check_and_clear_raw_vk();
-
         let chunk_proof = match output_dir
-            .and_then(|output_dir| ChunkProof::from_json_file(output_dir, &name).ok())
+            .and_then(|output_dir| ChunkProof::from_json_file(output_dir, &chunk_identifier).ok())
         {
             Some(proof) => Ok(proof),
             None => {
+                let witness_block = chunk_trace_to_witness_block(chunk_trace)?;
+                log::info!("Got witness block");
+
+                let snark = self.inner.load_or_gen_final_chunk_snark(
+                    &chunk_identifier,
+                    &witness_block,
+                    inner_id,
+                    output_dir,
+                )?;
+
+                self.check_vk();
+
                 let chunk_hash = ChunkHash::from_witness_block(&witness_block, false);
 
                 let result =
                     ChunkProof::new(snark, self.inner.pk(LayerId::Layer2.id()), Some(chunk_hash));
 
                 if let (Some(output_dir), Ok(proof)) = (output_dir, &result) {
-                    proof.dump(output_dir, &name)?;
+                    proof.dump(output_dir, &chunk_identifier)?;
                 }
 
                 result
@@ -108,11 +108,16 @@ impl Prover {
         Ok(chunk_proof)
     }
 
-    fn check_and_clear_raw_vk(&mut self) {
+    /// Check vk generated is same with vk loaded from assets
+    fn check_vk(&self) {
         if self.raw_vk.is_some() {
             // Check VK is same with the init one, and take (clear) init VK.
             let gen_vk = self.inner.raw_vk(LayerId::Layer2.id()).unwrap_or_default();
-            let init_vk = self.raw_vk.take().unwrap_or_default();
+            if gen_vk.is_empty() {
+                log::warn!("no gen_vk found, skip check_vk");
+                return;
+            }
+            let init_vk = self.raw_vk.clone().unwrap_or_default();
 
             if gen_vk != init_vk {
                 log::error!(

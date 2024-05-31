@@ -100,7 +100,7 @@ impl Prover {
         )?;
         log::info!("Got final compression thin EVM proof (layer-4): {name}");
 
-        self.check_and_clear_raw_vk();
+        self.check_vk();
 
         let batch_proof = BatchProof::from(evm_proof.proof);
         if let Some(output_dir) = output_dir {
@@ -155,11 +155,12 @@ impl Prover {
         Ok(layer3_snark)
     }
 
-    fn check_and_clear_raw_vk(&mut self) {
+    /// Check vk generated is same with vk loaded from assets
+    fn check_vk(&self) {
         if self.raw_vk.is_some() {
             // Check VK is same with the init one, and take (clear) init VK.
             let gen_vk = self.inner.raw_vk(LayerId::Layer4.id()).unwrap_or_default();
-            let init_vk = self.raw_vk.take().unwrap_or_default();
+            let init_vk = self.raw_vk.clone().unwrap_or_default();
 
             if gen_vk != init_vk {
                 log::error!(
