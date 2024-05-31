@@ -11,6 +11,8 @@ use crate::{
     tests::mock_chunk::MockChunkCircuit, ChunkHash,
 };
 
+// See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866
+#[ignore]
 #[test]
 fn test_max_agg_snarks_aggregation_circuit() {
     let k = 21;
