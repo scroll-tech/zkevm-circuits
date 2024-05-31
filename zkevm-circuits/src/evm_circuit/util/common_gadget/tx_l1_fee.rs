@@ -391,12 +391,16 @@ mod tests {
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
     const TEST_TX_L1_FEE: u128 = 30;
+    // refer to test in https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L22
     #[cfg(feature = "l1_fee_curie")]
-    const L1_BLOB_BASEFEE: u64 = 1;
+    const L1_BLOB_BASEFEE: u64 = 15_000_000;
     #[cfg(feature = "l1_fee_curie")]
-    const COMMIT_SCALAR: u64 = 100;
+    const COMMIT_SCALAR: u64 = 10;
     #[cfg(feature = "l1_fee_curie")]
-    const BLOB_SCALAR: u64 = 30;
+    const BLOB_SCALAR: u64 = 10;
+    #[cfg(feature = "l1_fee_curie")]
+    const TEST_TX_L1_FEE_CURIE: u128 = 21;
+
 
     #[test]
     fn test_tx_l1_fee_with_right_values() {
@@ -406,6 +410,14 @@ mod tests {
             TEST_FEE_SCALAR.into(),
             TEST_TX_DATA_GAS_COST.into(),
             TEST_TX_L1_FEE,
+            #[cfg(feature = "l1_fee_curie")]
+            L1_BLOB_BASEFEE.into(),
+            #[cfg(feature = "l1_fee_curie")]
+            BLOB_SCALAR.into(),
+            #[cfg(feature = "l1_fee_curie")]
+            TEST_FEE_SCALAR.into(),
+            #[cfg(feature = "l1_fee_curie")]
+            TEST_TX_L1_FEE_CURIE
 
         ]
         .map(U256::from);
@@ -426,23 +438,6 @@ mod tests {
 
         try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, false);
     }
-
-    #[test]
-    fn test_tx_l1_fee_with_right_values_after_cruie() {
-        let witnesses = [
-            TEST_BASE_FEE.into(),
-            TEST_FEE_OVERHEAD.into(),
-            TEST_FEE_SCALAR.into(),
-            TEST_TX_DATA_GAS_COST.into(),
-            // Curie fields
-           
-            TEST_TX_L1_FEE,
-        ]
-        .map(U256::from);
-
-        try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, true);
-    }
-
 
     #[derive(Clone)]
     struct TxL1FeeGadgetTestContainer<F> {
