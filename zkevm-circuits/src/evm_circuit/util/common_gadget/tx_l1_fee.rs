@@ -391,6 +391,12 @@ mod tests {
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
     const TEST_TX_L1_FEE: u128 = 30;
+    #[cfg(feature = "l1_fee_curie")]
+    const L1_BLOB_BASEFEE: u64 = 1;
+    #[cfg(feature = "l1_fee_curie")]
+    const COMMIT_SCALAR: u64 = 100;
+    #[cfg(feature = "l1_fee_curie")]
+    const BLOB_SCALAR: u64 = 30;
 
     #[test]
     fn test_tx_l1_fee_with_right_values() {
@@ -400,6 +406,7 @@ mod tests {
             TEST_FEE_SCALAR.into(),
             TEST_TX_DATA_GAS_COST.into(),
             TEST_TX_L1_FEE,
+
         ]
         .map(U256::from);
 
@@ -419,6 +426,23 @@ mod tests {
 
         try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, false);
     }
+
+    #[test]
+    fn test_tx_l1_fee_with_right_values_after_cruie() {
+        let witnesses = [
+            TEST_BASE_FEE.into(),
+            TEST_FEE_OVERHEAD.into(),
+            TEST_FEE_SCALAR.into(),
+            TEST_TX_DATA_GAS_COST.into(),
+            // Curie fields
+           
+            TEST_TX_L1_FEE,
+        ]
+        .map(U256::from);
+
+        try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, true);
+    }
+
 
     #[derive(Clone)]
     struct TxL1FeeGadgetTestContainer<F> {
@@ -477,7 +501,7 @@ mod tests {
                 blob_scalar: 0,
             };
             let tx_data_gas_cost = witnesses[3];
-            // TODO: config not Curie feature
+            #[cfg(not(feature = "l1_fee_curie"))]
             self.gadget.assign(
                 region,
                 0,
