@@ -24,8 +24,8 @@ rand.workspace = true
 halo2-base.workspace = true
 halo2-ecc.workspace = true
 halo2_proofs.workspace = true
-snark-verifier.workspace = true
-snark-verifier-sdk.workspace = true
+aggregator-snark-verifier.workspace = true
+aggregator-snark-verifier-sdk.workspace = true
 strum.workspace = true
 strum_macros.workspace = true
 

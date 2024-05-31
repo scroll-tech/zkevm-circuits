@@ -1,3 +1,5 @@
+use aggregator_snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
+use aggregator_snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use ark_std::test_rng;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
@@ -5,8 +7,6 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
-use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use zkevm_circuits::{
     keccak_circuit::{
         keccak_packed_multi::{self, multi_keccak},

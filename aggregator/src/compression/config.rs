@@ -1,14 +1,14 @@
-use halo2_proofs::{
-    halo2curves::bn256::{Fq, Fr, G1Affine},
-    plonk::{Column, ConstraintSystem, Instance},
-};
-use snark_verifier::loader::halo2::halo2_ecc::{
+use aggregator_snark_verifier::loader::halo2::halo2_ecc::{
     ecc::{BaseFieldEccChip, EccChip},
     fields::fp::FpConfig,
     halo2_base::{
         gates::{flex_gate::FlexGateConfig, range::RangeConfig},
         utils::modulus,
     },
+};
+use halo2_proofs::{
+    halo2curves::bn256::{Fq, Fr, G1Affine},
+    plonk::{Column, ConstraintSystem, Instance},
 };
 
 use crate::{

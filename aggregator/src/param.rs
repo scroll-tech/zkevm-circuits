@@ -1,4 +1,4 @@
-use snark_verifier::loader::halo2::halo2_ecc::fields::fp::FpStrategy;
+use aggregator_snark_verifier::loader::halo2::halo2_ecc::fields::fp::FpStrategy;
 
 use crate::{BITS, LIMBS};
 

@@ -1,5 +1,7 @@
 use std::iter;
 
+use aggregator_snark_verifier::loader::halo2::halo2_ecc::halo2_base::SKIP_FIRST_PASS;
+use aggregator_snark_verifier_sdk::CircuitExt;
 use ark_std::test_rng;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
@@ -7,8 +9,6 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 };
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base::SKIP_FIRST_PASS;
-use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::{table::KeccakTable, util::Challenges};
 
 use crate::{

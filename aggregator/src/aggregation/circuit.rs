@@ -14,16 +14,16 @@ use std::rc::Rc;
 use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
-use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
+use aggregator_snark_verifier::loader::halo2::halo2_ecc::halo2_base;
+use aggregator_snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::{
+use aggregator_snark_verifier::{
     loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader},
     pcs::kzg::{Bdfg21, Kzg},
 };
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier_sdk::{aggregate, flatten_accumulator};
-use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
+use aggregator_snark_verifier_sdk::{aggregate, flatten_accumulator};
+use aggregator_snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
 use zkevm_circuits::util::Challenges;
 
 use crate::{
@@ -61,7 +61,7 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
         batch_hash: BatchHash<N_SNARKS>,
-    ) -> Result<Self, snark_verifier::Error> {
+    ) -> Result<Self, aggregator_snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
         // sanity check: snarks's public input matches chunk_hashes

@@ -2,14 +2,7 @@
 
 use std::fs::File;
 
-use ark_std::{end_timer, start_timer};
-use halo2_proofs::{
-    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::G1Affine,
-    plonk::{Circuit, ConstraintSystem, Error},
-};
-use rand::Rng;
-use snark_verifier::{
+use aggregator_snark_verifier::{
     loader::halo2::{
         halo2_ecc::{
             halo2_base,
@@ -25,7 +18,16 @@ use snark_verifier::{
     },
     pcs::kzg::{Bdfg21, Kzg, KzgSuccinctVerifyingKey},
 };
-use snark_verifier_sdk::{aggregate, flatten_accumulator, types::Svk, Snark, SnarkWitness};
+use aggregator_snark_verifier_sdk::{
+    aggregate, flatten_accumulator, types::Svk, Snark, SnarkWitness,
+};
+use ark_std::{end_timer, start_timer};
+use halo2_proofs::{
+    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
+    halo2curves::bn256::G1Affine,
+    plonk::{Circuit, ConstraintSystem, Error},
+};
+use rand::Rng;
 
 use crate::{core::extract_proof_and_instances_with_pairing_check, param::ConfigParams, ACC_LEN};
 
@@ -170,7 +172,7 @@ impl CompressionCircuit {
         snark: Snark,
         has_accumulator: bool,
         rng: impl Rng + Send,
-    ) -> Result<Self, snark_verifier::Error> {
+    ) -> Result<Self, aggregator_snark_verifier::Error> {
         let svk = params.get_g()[0].into();
 
         // for the proof compression, only ONE snark is under accumulation

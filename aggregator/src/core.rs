@@ -1,5 +1,19 @@
 use std::iter::repeat;
 
+use aggregator_snark_verifier::{
+    loader::native::NativeLoader,
+    pcs::{
+        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
+        AccumulationSchemeProver,
+    },
+    util::arithmetic::fe_to_limbs,
+    verifier::PlonkVerifier,
+    Error,
+};
+use aggregator_snark_verifier_sdk::{
+    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
+    Snark,
+};
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{
@@ -12,20 +26,6 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
-use snark_verifier::{
-    loader::native::NativeLoader,
-    pcs::{
-        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
-        AccumulationSchemeProver,
-    },
-    util::arithmetic::fe_to_limbs,
-    verifier::PlonkVerifier,
-    Error,
-};
-use snark_verifier_sdk::{
-    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
-    Snark,
-};
 use zkevm_circuits::{
     keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
     util::Challenges,
@@ -78,7 +78,7 @@ pub(crate) fn extract_accumulators_and_proof(
             log::trace!("acc extraction {}-th acc check: left {:?}", i, left);
             log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
             if left != right {
-                return Err(snark_verifier::Error::AssertionFailure(format!(
+                return Err(Error::AssertionFailure(format!(
                     "accumulator check failed {left:?} {right:?}, index {i}",
                 )));
             }
@@ -110,7 +110,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
     params: &ParamsKZG<Bn256>,
     snarks: &[Snark],
     rng: impl Rng + Send,
-) -> Result<(Vec<u8>, Vec<Fr>), snark_verifier::Error> {
+) -> Result<(Vec<u8>, Vec<Fr>), Error> {
     // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
     let (accumulator, as_proof) =
         extract_accumulators_and_proof(params, snarks, rng, &params.g2(), &params.s_g2())?;
@@ -131,7 +131,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
         log::trace!("circuit acc check: right {:?}", right);
 
         if left != right {
-            return Err(snark_verifier::Error::AssertionFailure(format!(
+            return Err(Error::AssertionFailure(format!(
                 "accumulator check failed {left:?} {right:?}",
             )));
         }
