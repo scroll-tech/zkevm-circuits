@@ -61,7 +61,7 @@ impl Prover {
     ///     used to distinguish different chunk files located in output_dir.
     ///     If it is not set, default vallue(first block number of this chuk) will be used.
     ///   id:
-    ///     TODO(zzhang). clean this. I think it can only be None or Some(0)... 
+    ///     TODO(zzhang). clean this. I think it can only be None or Some(0)...
     pub fn gen_chunk_proof(
         &mut self,
         chunk: ChunkProvingTask,
@@ -71,7 +71,8 @@ impl Prover {
     ) -> Result<ChunkProof> {
         assert!(!chunk.is_empty());
 
-        let chunk_identifier = chunk_identifier.map_or_else(|| chunk.identifier(), |name| name.to_string());
+        let chunk_identifier =
+            chunk_identifier.map_or_else(|| chunk.identifier(), |name| name.to_string());
 
         let chunk_proof = match output_dir
             .and_then(|output_dir| ChunkProof::from_json_file(output_dir, &chunk_identifier).ok())
