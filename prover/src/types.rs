@@ -21,6 +21,12 @@ pub struct ChunkProvingTask {
 }
 
 impl ChunkProvingTask {
+    pub fn from(block_traces: Vec<BlockTrace>) -> Self {
+        Self {
+            block_traces,
+            chunk_info: None,
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.block_traces.is_empty()
     }
