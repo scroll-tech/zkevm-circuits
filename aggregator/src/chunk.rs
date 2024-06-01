@@ -8,14 +8,15 @@ use zkevm_circuits::witness::Block;
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 /// A chunk is a set of continuous blocks.
-/// A ChunkHash consists of 5 hashes, representing the changes incurred by this chunk of blocks:
+/// ChunkInfo is metadata of chunk, with following fields:
 /// - state root before this chunk
 /// - state root after this chunk
 /// - the withdraw root after this chunk
 /// - the data hash of this chunk
 /// - the tx data hash of this chunk
+/// - flattened L2 tx bytes
 /// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
-pub struct ChunkHash {
+pub struct ChunkInfo {
     /// Chain identifier
     pub chain_id: u64,
     /// state root before this chunk
@@ -33,7 +34,7 @@ pub struct ChunkHash {
     pub is_padding: bool,
 }
 
-impl ChunkHash {
+impl ChunkInfo {
     /// Construct by a witness block.
     pub fn from_witness_block(block: &Block, is_padding: bool) -> Self {
         // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>

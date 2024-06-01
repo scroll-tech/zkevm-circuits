@@ -9,7 +9,7 @@ use crate::{
     zkevm::circuit::calculate_row_usage_of_witness_block,
     ChunkProof,
 };
-use aggregator::ChunkHash;
+use aggregator::ChunkInfo;
 use anyhow::Result;
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl Prover {
                 let row_usage = calculate_row_usage_of_witness_block(&witness_block)?;
                 log::info!("Got witness block");
 
-                let chunk_hash = ChunkHash::from_witness_block(&witness_block, false);
+                let chunk_hash = ChunkInfo::from_witness_block(&witness_block, false);
                 compare_chunk_info(
                     &format!("gen_chunk_proof {name:?}"),
                     &chunk_hash,

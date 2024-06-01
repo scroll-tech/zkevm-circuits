@@ -6,7 +6,7 @@ use ethers_core::utils::keccak256;
 
 use crate::{
     blob::{BatchData, PointEvaluationAssignments},
-    chunk::ChunkHash,
+    chunk::ChunkInfo,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -23,7 +23,7 @@ pub struct BatchHash<const N_SNARKS: usize> {
     /// chunks with padding.
     /// - the first [0..number_of_valid_chunks) are real ones
     /// - the last [number_of_valid_chunks, N_SNARKS) are padding
-    pub(crate) chunks_with_padding: Vec<ChunkHash>,
+    pub(crate) chunks_with_padding: Vec<ChunkInfo>,
     /// The batch data hash:
     /// - keccak256([chunk.hash for chunk in batch])
     pub(crate) data_hash: H256,
@@ -41,7 +41,7 @@ pub struct BatchHash<const N_SNARKS: usize> {
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
-    pub fn construct(chunks_with_padding: &[ChunkHash]) -> Self {
+    pub fn construct(chunks_with_padding: &[ChunkInfo]) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
             N_SNARKS,

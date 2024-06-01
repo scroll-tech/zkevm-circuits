@@ -8,7 +8,7 @@ use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, Circui
 
 use crate::{
     aggregation::AggregationCircuit, batch::BatchHash, constants::MAX_AGG_SNARKS, layer_0,
-    tests::mock_chunk::MockChunkCircuit, ChunkHash,
+    tests::mock_chunk::MockChunkCircuit, ChunkInfo,
 };
 
 // See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866
@@ -141,13 +141,13 @@ fn build_new_aggregation_circuit<const N_SNARKS: usize>(
     let params = gen_srs(k0);
 
     let mut chunks_without_padding = (0..num_real_chunks)
-        .map(|_| ChunkHash::mock_random_chunk_hash_for_testing(&mut rng))
+        .map(|_| ChunkInfo::mock_random_chunk_hash_for_testing(&mut rng))
         .collect_vec();
     for i in 0..num_real_chunks - 1 {
         chunks_without_padding[i + 1].prev_state_root = chunks_without_padding[i].post_state_root;
     }
     let padded_chunk =
-        ChunkHash::mock_padded_chunk_hash_for_testing(&chunks_without_padding[num_real_chunks - 1]);
+        ChunkInfo::mock_padded_chunk_hash_for_testing(&chunks_without_padding[num_real_chunks - 1]);
     let chunks_with_padding = [
         chunks_without_padding,
         vec![padded_chunk; N_SNARKS - num_real_chunks],

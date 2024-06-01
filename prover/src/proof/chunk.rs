@@ -1,6 +1,6 @@
 use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
 use crate::{types::base64, zkevm::SubCircuitRowUsage};
-use aggregator::ChunkHash;
+use aggregator::ChunkInfo;
 use anyhow::{bail, Result};
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
@@ -13,8 +13,7 @@ pub struct ChunkProof {
     pub protocol: Vec<u8>,
     #[serde(flatten)]
     pub proof: Proof,
-    #[serde(rename = "chunk_info")]
-    pub chunk_hash: ChunkHash,
+    pub chunk_info: ChunkInfo,
     pub row_usages: Vec<SubCircuitRowUsage>,
 }
 
@@ -33,7 +32,7 @@ macro_rules! compare_field {
 }
 
 /// Check chunk info is consistent with chunk info embedded inside proof
-pub fn compare_chunk_info(name: &str, lhs: &ChunkHash, rhs: &ChunkHash) -> Result<()> {
+pub fn compare_chunk_info(name: &str, lhs: &ChunkInfo, rhs: &ChunkInfo) -> Result<()> {
     compare_field!(name, chain_id, lhs, rhs);
     compare_field!(name, prev_state_root, lhs, rhs);
     compare_field!(name, post_state_root, lhs, rhs);
@@ -55,7 +54,7 @@ impl ChunkProof {
     pub fn new(
         snark: Snark,
         pk: Option<&ProvingKey<G1Affine>>,
-        chunk_hash: ChunkHash,
+        chunk_hash: ChunkInfo,
         row_usages: Vec<SubCircuitRowUsage>,
     ) -> Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
@@ -64,7 +63,7 @@ impl ChunkProof {
         Ok(Self {
             protocol,
             proof,
-            chunk_hash,
+            chunk_info: chunk_hash,
             row_usages,
         })
     }

@@ -1,4 +1,4 @@
-use aggregator::ChunkHash;
+use aggregator::ChunkInfo;
 use eth_types::l2_types::BlockTrace;
 use serde::{Deserialize, Serialize};
 use zkevm_circuits::evm_circuit::witness::Block;
@@ -16,7 +16,7 @@ use crate::ChunkProof;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ChunkProvingTask {
     /// Prover needs to check `chunk_info` is consistent with block traces
-    pub chunk_info: ChunkHash,
+    pub chunk_info: ChunkInfo,
     pub block_traces: Vec<BlockTrace>,
 }
 
@@ -46,7 +46,7 @@ impl BatchProvingTask {
         self.chunk_proofs
             .last()
             .unwrap()
-            .chunk_hash
+            .chunk_info
             .public_input_hash()
             .to_low_u64_le()
             .to_string()

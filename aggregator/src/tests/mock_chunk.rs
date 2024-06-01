@@ -13,7 +13,7 @@ use zkevm_circuits::{table::KeccakTable, util::Challenges};
 
 use crate::{
     constants::{ACC_LEN, DIGEST_LEN},
-    ChunkHash, RlcConfig, LOG_DEGREE,
+    ChunkInfo, RlcConfig, LOG_DEGREE,
 };
 
 /// This config is used to compute RLCs for bytes.
@@ -36,11 +36,11 @@ pub struct MockConfig {
 pub(crate) struct MockChunkCircuit {
     // This circuit has an accumulator if it has already gone through compression
     pub(crate) has_accumulator: bool,
-    pub(crate) chunk: ChunkHash,
+    pub(crate) chunk: ChunkInfo,
 }
 
 impl MockChunkCircuit {
-    pub(crate) fn new(has_accumulator: bool, chunk: ChunkHash) -> Self {
+    pub(crate) fn new(has_accumulator: bool, chunk: ChunkInfo) -> Self {
         MockChunkCircuit {
             has_accumulator,
             chunk,
@@ -54,11 +54,11 @@ impl MockChunkCircuit {
         has_accumulator: bool,
         is_padding: bool,
     ) -> Self {
-        let chunk = ChunkHash::mock_random_chunk_hash_for_testing(r);
+        let chunk = ChunkInfo::mock_random_chunk_hash_for_testing(r);
         Self {
             has_accumulator,
             chunk: if is_padding {
-                ChunkHash::mock_padded_chunk_hash_for_testing(&chunk)
+                ChunkInfo::mock_padded_chunk_hash_for_testing(&chunk)
             } else {
                 chunk
             },

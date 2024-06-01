@@ -5,7 +5,7 @@ use crate::{
     io::{force_to_read, try_to_read},
     BatchProof, BatchProvingTask, ChunkProof,
 };
-use aggregator::{ChunkHash, MAX_AGG_SNARKS};
+use aggregator::{ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{bail, Result};
 use sha2::{Digest, Sha256};
 use snark_verifier_sdk::Snark;
@@ -115,7 +115,7 @@ impl Prover {
         let mut chunk_hashes: Vec<_> = batch
             .chunk_proofs
             .iter()
-            .map(|p| p.chunk_hash.clone())
+            .map(|p| p.chunk_info.clone())
             .collect();
         let mut layer2_snarks: Vec<_> = batch
             .chunk_proofs
@@ -170,10 +170,10 @@ impl Prover {
 
 pub fn check_chunk_hashes(
     name: &str,
-    chunk_hashes_proofs: &[(ChunkHash, ChunkProof)],
+    chunk_hashes_proofs: &[(ChunkInfo, ChunkProof)],
 ) -> Result<()> {
     for (idx, (in_arg, chunk_proof)) in chunk_hashes_proofs.iter().enumerate() {
-        let in_proof = &chunk_proof.chunk_hash;
+        let in_proof = &chunk_proof.chunk_info;
         crate::proof::compare_chunk_info(&format!("{name} chunk num {idx}"), in_arg, in_proof)?;
     }
     Ok(())
@@ -187,16 +187,16 @@ mod tests {
     #[test]
     fn test_check_chunk_hashes() {
         let chunk_hashes_proofs = vec![
-            (ChunkHash::default(), ChunkProof::default()),
+            (ChunkInfo::default(), ChunkProof::default()),
             (
-                ChunkHash {
+                ChunkInfo {
                     chain_id: 1,
                     prev_state_root: H256::zero(),
                     data_hash: [100; 32].into(),
                     ..Default::default()
                 },
                 ChunkProof {
-                    chunk_hash: ChunkHash {
+                    chunk_info: ChunkInfo {
                         chain_id: 1,
                         prev_state_root: [0; 32].into(),
                         data_hash: [100; 32].into(),
@@ -206,12 +206,12 @@ mod tests {
                 },
             ),
             (
-                ChunkHash {
+                ChunkInfo {
                     post_state_root: H256::zero(),
                     ..Default::default()
                 },
                 ChunkProof {
-                    chunk_hash: ChunkHash {
+                    chunk_info: ChunkInfo {
                         post_state_root: [1; 32].into(),
                         ..Default::default()
                     },
