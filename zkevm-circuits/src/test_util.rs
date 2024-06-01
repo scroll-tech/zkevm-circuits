@@ -2,7 +2,10 @@
 
 use crate::{
     copy_circuit::CopyCircuit,
+    ecc_circuit::EccCircuit,
     evm_circuit::EvmCircuit,
+    modexp_circuit::ModExpCircuit,
+    sig_circuit::SigCircuit,
     state_circuit::StateCircuit,
     util::{log2_ceil, SubCircuit},
     witness::{Block, Rw},
@@ -300,6 +303,46 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let rows = (0..active_rows).collect();
 
             copy_checks(prover, &rows, &rows);
+        }
+
+        // Run precompile circuits test
+        // TODO1: for verticle circuits, do this more efficiently
+        //        by select circuit adv num dynamically
+        //        https://github.com/scroll-tech/zkevm-circuits/issues/884
+        // TODO2: refactor code like the above evm/state/copy_checks
+        if true {
+            let precompile_events = &block.precompile_events;
+            if false && !precompile_events.get_ec_add_events().is_empty()
+                || !precompile_events.get_ec_mul_events().is_empty()
+                || !precompile_events.get_ec_pairing_events().is_empty()
+            {
+                // test ecc circuit
+                let ecc_circuit = EccCircuit::<Fr, 9>::new_from_block(&block);
+                let instance = ecc_circuit.instance();
+                // TODO: more flexiable k?
+                let prover = MockProver::<Fr>::run(20, &ecc_circuit, instance).unwrap();
+                assert_eq!(prover.verify_par(), Ok(()));
+                log::debug!("ecc circuit test done");
+            }
+            if !precompile_events.get_modexp_events().is_empty() {
+                // test mod exp circuit
+                let (_, max_rows) = ModExpCircuit::<Fr>::min_num_rows_block(&block);
+                let k = log2_ceil(max_rows + NUM_BLINDING_ROWS);
+                let modexp_circuit = ModExpCircuit::<Fr>::new_from_block(&block);
+                let instance = modexp_circuit.instance();
+                let prover = MockProver::<Fr>::run(k, &modexp_circuit, instance).unwrap();
+                assert_eq!(prover.verify_par(), Ok(()));
+                log::debug!("modexp circuit test done");
+            }
+            if !precompile_events.get_ecrecover_events().is_empty() {
+                // test sig circuit
+                let sig_circuit = SigCircuit::<Fr>::new_from_block(&block);
+                let instance = sig_circuit.instance();
+                // TODO: more flexiable k?
+                let prover = MockProver::<Fr>::run(20, &sig_circuit, instance).unwrap();
+                assert_eq!(prover.verify_par(), Ok(()));
+                log::debug!("sig circuit test done");
+            }
         }
     }
 }
