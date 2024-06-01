@@ -84,11 +84,13 @@ impl Prover {
                 log::info!("Got witness block");
 
                 let chunk_info = ChunkInfo::from_witness_block(&witness_block, false);
-                compare_chunk_info(
-                    &format!("gen_chunk_proof {chunk_identifier:?}"),
-                    &chunk_info,
-                    &chunk.chunk_info,
-                )?;
+                if let Some(chunk_info_input) = chunk.chunk_info.as_ref() {
+                    compare_chunk_info(
+                        &format!("gen_chunk_proof {chunk_identifier:?}"),
+                        &chunk_info,
+                        chunk_info_input,
+                    )?;
+                }
                 let snark = self.prover_impl.load_or_gen_final_chunk_snark(
                     &chunk_identifier,
                     &witness_block,

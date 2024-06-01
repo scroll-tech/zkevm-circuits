@@ -15,8 +15,8 @@ use crate::ChunkProof;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ChunkProvingTask {
-    /// Prover needs to check `chunk_info` is consistent with block traces
-    pub chunk_info: ChunkInfo,
+    /// Prover can check `chunk_info` is consistent with block traces
+    pub chunk_info: Option<ChunkInfo>,
     pub block_traces: Vec<BlockTrace>,
 }
 

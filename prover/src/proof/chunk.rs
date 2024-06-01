@@ -54,7 +54,7 @@ impl ChunkProof {
     pub fn new(
         snark: Snark,
         pk: Option<&ProvingKey<G1Affine>>,
-        chunk_hash: ChunkInfo,
+        chunk_info: ChunkInfo,
         row_usages: Vec<SubCircuitRowUsage>,
     ) -> Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
@@ -63,7 +63,7 @@ impl ChunkProof {
         Ok(Self {
             protocol,
             proof,
-            chunk_info: chunk_hash,
+            chunk_info,
             row_usages,
         })
     }
