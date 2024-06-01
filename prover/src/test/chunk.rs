@@ -3,7 +3,7 @@ use crate::{
     config::{LayerId, ZKEVM_DEGREES},
     utils::read_env_var,
     zkevm::circuit::calculate_row_usage_of_witness_block,
-    ChunkHash, ChunkProof, CompressionCircuit, WitnessBlock,
+    ChunkInfo, ChunkProof, CompressionCircuit, WitnessBlock,
 };
 use std::{
     env,
@@ -73,7 +73,7 @@ pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
     ChunkProof::new(
         snark,
         prover.pk(LayerId::Layer2.id()),
-        ChunkHash::from_witness_block(witness_block, false),
+        ChunkInfo::from_witness_block(witness_block, false),
         row_usage,
     )
     .unwrap_or_else(|err| panic!("{test}: failed to crate chunk proof: {err}"))
