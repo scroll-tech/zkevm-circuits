@@ -13,7 +13,7 @@ pub use eth_types::base64;
 
 use crate::ChunkProof;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChunkProvingTask {
     /// Prover can check `chunk_info` is consistent with block traces
     pub chunk_info: Option<ChunkInfo>,
@@ -41,7 +41,7 @@ impl ChunkProvingTask {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BatchProvingTask {
     pub chunk_proofs: Vec<ChunkProof>,
 }

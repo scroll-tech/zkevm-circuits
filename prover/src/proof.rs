@@ -9,13 +9,6 @@ use halo2_proofs::{
     plonk::{Circuit, ProvingKey, VerifyingKey},
 };
 use serde_derive::{Deserialize, Serialize};
-use snark_verifier::{
-    util::{
-        arithmetic::Domain,
-        protocol::{Expression, QuotientPolynomial},
-    },
-    Protocol,
-};
 use snark_verifier_sdk::{verify_evm_proof, Snark};
 use std::{fs::File, path::PathBuf};
 
@@ -97,16 +90,6 @@ impl Proof {
         &self.vk
     }
 
-    pub fn to_snark(self) -> Snark {
-        let instances = self.instances();
-
-        Snark {
-            protocol: dummy_protocol(),
-            proof: self.proof,
-            instances,
-        }
-    }
-
     pub fn vk<C: Circuit<Fr>>(&self) -> VerifyingKey<G1Affine> {
         deserialize_vk::<C>(&self.vk)
     }
@@ -137,40 +120,13 @@ fn dump_proof_path(dir: &str, filename: &str) -> String {
     format!("{dir}/full_proof_{filename}.json")
 }
 
-fn dummy_protocol() -> Protocol<G1Affine> {
-    Protocol {
-        domain: Domain {
-            k: 0,
-            n: 0,
-            n_inv: Fr::zero(),
-            gen: Fr::zero(),
-            gen_inv: Fr::zero(),
-        },
-        preprocessed: vec![],
-        num_instance: vec![],
-        num_witness: vec![],
-        num_challenge: vec![],
-        evaluations: vec![],
-        queries: vec![],
-        quotient: QuotientPolynomial {
-            num_chunk: 0,
-            chunk_degree: 0,
-            numerator: Expression::Challenge(1),
-        },
-        transcript_initial_state: None,
-        instance_committing_key: None,
-        linearization: None,
-        accumulator_indices: Default::default(),
-    }
-}
-
+/// Encode instances as concatenated U256
 fn serialize_instance(instance: &[Fr]) -> Vec<u8> {
     let bytes: Vec<_> = instance
         .iter()
         .flat_map(|value| serialize_fr(value).into_iter().rev())
         .collect();
     assert_eq!(bytes.len() % 32, 0);
-
     bytes
 }
 
