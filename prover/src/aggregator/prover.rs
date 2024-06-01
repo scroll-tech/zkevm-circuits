@@ -223,7 +223,7 @@ mod tests {
         let result = check_chunk_hashes("test-batch", &chunk_hashes_proofs);
         assert_eq!(
             result.unwrap_err().downcast_ref::<String>().unwrap(),
-            "test-batch chunk-no-2, different post_state_root: 0x0000…0000 != 0x0101…0101"
+            "test-batch chunk num 2 chunk different post_state_root: 0x0000…0000 != 0x0101…0101"
         );
     }
 }
