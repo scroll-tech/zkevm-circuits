@@ -37,7 +37,7 @@ impl BlockData {
     /// Generate a new CircuitInputBuilder initialized with the context of the
     /// BlockData.
     pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder {
-        let mut block = Block::from_headers(
+        let mut block = Block::from_header(
             &[
                 BlockHead::new(self.chain_id, self.history_hashes.clone(), &self.eth_block)
                     .unwrap(),
@@ -45,8 +45,8 @@ impl BlockData {
             Default::default(),
         );
         // FIXME: better fetch a real state root instead of a mock one
-        block.prev_state_root = MOCK_OLD_STATE_ROOT.into();
-        block.circuits_params = self.circuits_params;
+        block.prev_state_root = Word::from(MOCK_OLD_STATE_ROOT);
+        block.circuits_params = self.circuits_params.clone();
         block.chain_id = self.chain_id;
         CircuitInputBuilder::new(self.sdb.clone(), self.code_db.clone(), &block)
     }
@@ -66,7 +66,7 @@ impl BlockData {
 
         for account in geth_data.accounts {
             let keccak_code_hash = H256(keccak256(&account.code));
-            log::trace!(
+            log::trace(
                 "trace code {:?} {:?}",
                 keccak_code_hash,
                 hex::encode(&account.code)
