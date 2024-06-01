@@ -141,13 +141,13 @@ fn build_new_aggregation_circuit<const N_SNARKS: usize>(
     let params = gen_srs(k0);
 
     let mut chunks_without_padding = (0..num_real_chunks)
-        .map(|_| ChunkInfo::mock_random_chunk_hash_for_testing(&mut rng))
+        .map(|_| ChunkInfo::mock_random_chunk_info_for_testing(&mut rng))
         .collect_vec();
     for i in 0..num_real_chunks - 1 {
         chunks_without_padding[i + 1].prev_state_root = chunks_without_padding[i].post_state_root;
     }
     let padded_chunk =
-        ChunkInfo::mock_padded_chunk_hash_for_testing(&chunks_without_padding[num_real_chunks - 1]);
+        ChunkInfo::mock_padded_chunk_info_for_testing(&chunks_without_padding[num_real_chunks - 1]);
     let chunks_with_padding = [
         chunks_without_padding,
         vec![padded_chunk; N_SNARKS - num_real_chunks],

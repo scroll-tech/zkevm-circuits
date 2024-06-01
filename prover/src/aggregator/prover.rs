@@ -44,7 +44,7 @@ impl Prover {
     }
 
     // Return true if chunk proofs are valid (same protocol), false otherwise.
-    pub fn check_chunk_proofs(&self, chunk_proofs: &[ChunkProof]) -> bool {
+    pub fn check_protocol_of_chunks(&self, chunk_proofs: &[ChunkProof]) -> bool {
         chunk_proofs.iter().enumerate().all(|(i, proof)| {
             let result = proof.protocol == self.chunk_protocol;
             if !result {
@@ -98,8 +98,8 @@ impl Prover {
         Ok(batch_proof)
     }
 
-    // Generate previous snark before the final one.
-    // Then it could be used to generate a normal or EVM proof for verification.
+    // Generate layer3 snark.
+    // Then it could be used to generate a layer4 proof.
     pub fn load_or_gen_last_agg_snark(
         &mut self,
         name: &str,
@@ -109,7 +109,7 @@ impl Prover {
         let real_chunk_count = batch.chunk_proofs.len();
         assert!((1..=MAX_AGG_SNARKS).contains(&real_chunk_count));
 
-        if !self.check_chunk_proofs(&batch.chunk_proofs) {
+        if !self.check_protocol_of_chunks(&batch.chunk_proofs) {
             bail!("non-match-chunk-protocol: {name}");
         }
         let mut chunk_hashes: Vec<_> = batch
@@ -150,13 +150,15 @@ impl Prover {
     /// Check vk generated is same with vk loaded from assets
     fn check_vk(&self) {
         if self.raw_vk.is_some() {
-            // Check VK is same with the init one, and take (clear) init VK.
             let gen_vk = self
                 .prover_impl
                 .raw_vk(LayerId::Layer4.id())
                 .unwrap_or_default();
+            if gen_vk.is_empty() {
+                log::warn!("no gen_vk found, skip check_vk");
+                return;
+            }
             let init_vk = self.raw_vk.clone().unwrap_or_default();
-
             if gen_vk != init_vk {
                 log::error!(
                     "agg-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",

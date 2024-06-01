@@ -54,11 +54,11 @@ impl MockChunkCircuit {
         has_accumulator: bool,
         is_padding: bool,
     ) -> Self {
-        let chunk = ChunkInfo::mock_random_chunk_hash_for_testing(r);
+        let chunk = ChunkInfo::mock_random_chunk_info_for_testing(r);
         Self {
             has_accumulator,
             chunk: if is_padding {
-                ChunkInfo::mock_padded_chunk_hash_for_testing(&chunk)
+                ChunkInfo::mock_padded_chunk_info_for_testing(&chunk)
             } else {
                 chunk
             },

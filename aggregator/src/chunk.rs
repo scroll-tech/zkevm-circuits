@@ -122,9 +122,9 @@ impl ChunkInfo {
         H256(keccak256(&self.tx_bytes))
     }
 
-    /// Sample a chunk hash from random (for testing)
+    /// Sample a chunk info from random (for testing)
     #[cfg(test)]
-    pub(crate) fn mock_random_chunk_hash_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
+    pub(crate) fn mock_random_chunk_info_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
         use eth_types::Address;
         use ethers_core::types::TransactionRequest;
         use rand::{
@@ -195,7 +195,7 @@ impl ChunkInfo {
 
     /// Build a padded chunk from previous one
     #[cfg(test)]
-    pub(crate) fn mock_padded_chunk_hash_for_testing(previous_chunk: &Self) -> Self {
+    pub(crate) fn mock_padded_chunk_info_for_testing(previous_chunk: &Self) -> Self {
         assert!(
             !previous_chunk.is_padding,
             "previous chunk is padded already"

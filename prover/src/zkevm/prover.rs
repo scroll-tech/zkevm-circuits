@@ -49,16 +49,29 @@ impl Prover {
             .or_else(|| self.raw_vk.clone())
     }
 
+    /// Generate proof for a chunk. This method usually takes ~10minutes.
+    /// Meaning of each parameter:
+    ///   output_dir:
+    ///     If `output_dir` is not none, the dir will be used to save/load proof or intermediate results.
+    ///     If proof or intermediate results can be loaded from `output_dir`,
+    ///     then they will not be computed again.
+    ///     If `output_dir` is not none, computed intermediate results and proof will be written
+    ///     into this dir.
+    ///   chunk_identifier:
+    ///     used to distinguish different chunk files located in output_dir.
+    ///     If it is not set, default vallue(first block number of this chuk) will be used.
+    ///   id:
+    ///     TODO(zzhang). clean this. I think it can only be None or Some(0)... 
     pub fn gen_chunk_proof(
         &mut self,
         chunk: ChunkProvingTask,
-        name: Option<&str>,
+        chunk_identifier: Option<&str>,
         inner_id: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<ChunkProof> {
         assert!(!chunk.is_empty());
 
-        let chunk_identifier = name.map_or_else(|| chunk.identifier(), |name| name.to_string());
+        let chunk_identifier = chunk_identifier.map_or_else(|| chunk.identifier(), |name| name.to_string());
 
         let chunk_proof = match output_dir
             .and_then(|output_dir| ChunkProof::from_json_file(output_dir, &chunk_identifier).ok())
@@ -69,10 +82,10 @@ impl Prover {
                 let row_usage = calculate_row_usage_of_witness_block(&witness_block)?;
                 log::info!("Got witness block");
 
-                let chunk_hash = ChunkInfo::from_witness_block(&witness_block, false);
+                let chunk_info = ChunkInfo::from_witness_block(&witness_block, false);
                 compare_chunk_info(
-                    &format!("gen_chunk_proof {name:?}"),
-                    &chunk_hash,
+                    &format!("gen_chunk_proof {chunk_identifier:?}"),
+                    &chunk_info,
                     &chunk.chunk_info,
                 )?;
                 let snark = self.prover_impl.load_or_gen_final_chunk_snark(
@@ -87,7 +100,7 @@ impl Prover {
                 let result = ChunkProof::new(
                     snark,
                     self.prover_impl.pk(LayerId::Layer2.id()),
-                    chunk_hash,
+                    chunk_info,
                     row_usage,
                 );
 
@@ -111,7 +124,6 @@ impl Prover {
     /// Check vk generated is same with vk loaded from assets
     fn check_vk(&self) {
         if self.raw_vk.is_some() {
-            // Check VK is same with the init one, and take (clear) init VK.
             let gen_vk = self
                 .prover_impl
                 .raw_vk(LayerId::Layer2.id())
@@ -121,7 +133,6 @@ impl Prover {
                 return;
             }
             let init_vk = self.raw_vk.clone().unwrap_or_default();
-
             if gen_vk != init_vk {
                 log::error!(
                     "zkevm-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",

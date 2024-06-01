@@ -111,7 +111,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         let preimage = chunks_with_padding
             .iter()
             .take(number_of_valid_chunks)
-            .flat_map(|chunk_hash| chunk_hash.data_hash.0.iter())
+            .flat_map(|chunk_info| chunk_info.data_hash.0.iter())
             .cloned()
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
