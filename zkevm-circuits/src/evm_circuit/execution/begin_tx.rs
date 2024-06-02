@@ -1017,6 +1017,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             )?;
         }
 
+        self.chain_id
+            .assign(region, offset, Value::known(F::from(block.chain_id)))?;
+        let curie_fork_block_num =
+            bus_mapping::circuit_input_builder::curie::get_curie_fork_block(block.chain_id);
+        self.curie_fork_block_num.assign(
+            region,
+            offset,
+            Value::known(F::from(curie_fork_block_num)),
+        )?;
+        self.is_before_curie.assign(
+            region,
+            offset,
+            F::from(tx.block_number),
+            F::from(curie_fork_block_num),
+        )?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_type

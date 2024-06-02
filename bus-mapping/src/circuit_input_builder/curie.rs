@@ -13,10 +13,11 @@ use crate::{
 
 use super::{CircuitInputStateRef, ExecStep};
 
-fn get_curie_fork_block(chain_id: u64) -> u64 {
+/// Get curie fork block height
+pub fn get_curie_fork_block(chain_id: u64) -> u64 {
     for (fork, fork_chain_id, fork_blk) in eth_types::forks::hardfork_heights() {
         if fork == eth_types::forks::HardforkId::Curie && chain_id == fork_chain_id {
-            log::info!("curie fork: chain id {chain_id} block {fork_blk}");
+            log::debug!("curie fork: chain id {chain_id} block {fork_blk}");
             return fork_blk;
         }
     }
