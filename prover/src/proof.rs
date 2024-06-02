@@ -3,7 +3,7 @@ use crate::{
     types::base64,
     utils::short_git_version,
 };
-use anyhow::{bail, Result};
+use anyhow::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, ProvingKey, VerifyingKey},
@@ -17,10 +17,7 @@ use snark_verifier::{
     Protocol,
 };
 use snark_verifier_sdk::{verify_evm_proof, Snark};
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
+use std::{fs::File, path::PathBuf};
 
 mod batch;
 mod chunk;
@@ -133,16 +130,7 @@ pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {
     let file_path = dump_proof_path(dir, filename);
-    if !Path::new(&file_path).exists() {
-        bail!("File {file_path} doesn't exist");
-    }
-
-    let fd = File::open(file_path)?;
-    let mut deserializer = serde_json::Deserializer::from_reader(fd);
-    deserializer.disable_recursion_limit();
-    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
-
-    Ok(serde::Deserialize::deserialize(deserializer)?)
+    crate::io::from_json_file(&file_path)
 }
 
 fn dump_proof_path(dir: &str, filename: &str) -> String {
