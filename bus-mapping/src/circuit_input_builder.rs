@@ -491,7 +491,7 @@ impl<'a> CircuitInputBuilder {
 
         // Curie sys contract upgrade
         let is_curie_fork_block =
-            curie::is_curie_fork(state.block.chain_id, last_block_num.as_u64());
+            curie::is_curie_fork_block(state.block.chain_id, last_block_num.as_u64());
         if is_curie_fork_block {
             curie::apply_curie(&mut state, &mut end_block_step)?;
         }

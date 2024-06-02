@@ -41,7 +41,9 @@ pub fn rom_table_rows() -> Vec<RomTableRow> {
 #[cfg(test)]
 mod tests {
     use bus_mapping::circuit_input_builder::TxL1Fee;
-    use eth_types::{evm_types::gas_utils::tx_data_gas_cost, Transaction};
+    use eth_types::{
+        evm_types::gas_utils::tx_data_gas_cost, forks::SCROLL_MAINNET_CHAIN_ID, Transaction,
+    };
 
     #[test]
     fn test_l1fee_calc_pre_eip155() {
@@ -83,14 +85,13 @@ mod tests {
         ).unwrap();
 
         let l1fee = TxL1Fee {
+            chain_id: SCROLL_MAINNET_CHAIN_ID,
+            block_number: 1,
             base_fee: 0x64,
             fee_overhead: 0x17d4,
             fee_scalar: 0x4a42fc80,
-            #[cfg(feature = "l1_fee_curie")]
             l1_blob_basefee: 1,
-            #[cfg(feature = "l1_fee_curie")]
             commit_scalar: 0,
-            #[cfg(feature = "l1_fee_curie")]
             blob_scalar: 0,
         };
 

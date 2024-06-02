@@ -3,6 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
+        table::{FixedTableTag, Lookup},
         util::{
             and,
             common_gadget::{
@@ -31,7 +32,9 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
-use eth_types::{utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    forks::HardforkId, utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256,
+};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -61,7 +64,6 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
-    #[cfg(feature = "l1_fee_curie")]
     // rlp signed tx bytes' length
     tx_signed_length: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -99,6 +101,9 @@ pub(crate) struct BeginTxGadget<F> {
     tx_l1_msg: TxL1MsgGadget<F>,
     tx_access_list: TxAccessListGadget<F>,
     tx_eip1559: TxEip1559Gadget<F>,
+    is_before_curie: LtGadget<F, 8>, // block num is u64
+    chain_id: Cell<F>,
+    curie_fork_block_num: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -134,11 +139,34 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        #[cfg(feature = "l1_fee_curie")]
         let tx_signed_length = cb.tx_context(tx_id.expr(), TxContextFieldTag::TxHashLength, None);
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
+        let chain_id = cb.query_cell();
+        let curie_fork_block_num = cb.query_cell();
+        // Lookup block table with chain_id
+        cb.block_lookup(
+            BlockContextFieldTag::ChainId.expr(),
+            cb.curr.state.block_number.expr(),
+            chain_id.expr(),
+        );
+        cb.add_lookup(
+            "Hardfork lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::ChainFork.expr(),
+                values: [
+                    (HardforkId::Curie as u64).expr(),
+                    chain_id.expr(),
+                    curie_fork_block_num.expr(),
+                ],
+            },
+        );
+        let is_before_curie = LtGadget::construct(
+            cb,
+            cb.curr.state.block_number.expr(),
+            curie_fork_block_num.expr(),
+        );
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
             cb.require_equal(
@@ -148,9 +176,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
             TxL1FeeGadget::construct(
                 cb,
+                not::expr(is_before_curie.expr()),
                 tx_id.expr(),
                 tx_data_gas_cost.expr(),
-                #[cfg(feature = "l1_fee_curie")]
                 tx_signed_length.expr(),
             )
         });
@@ -167,7 +195,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let l1_rw_delta = select::expr(
             tx_l1_msg.is_l1_msg(),
             tx_l1_msg.rw_delta(),
-            tx_l1_fee.rw_delta(),
+            tx_l1_fee.rw_delta(not::expr(is_before_curie.expr())),
         ) + 1.expr();
 
         // the cost caused by l1
@@ -813,7 +841,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_call_data_word_length,
             tx_call_data_gas_cost,
             tx_data_gas_cost,
-            #[cfg(feature = "l1_fee_curie")]
             tx_signed_length,
             reversion_info,
             intrinsic_gas_cost,
@@ -844,6 +871,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_msg,
             tx_access_list,
             tx_eip1559,
+            is_before_curie,
+            chain_id,
+            curie_fork_block_num,
         }
     }
 
@@ -856,11 +886,25 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        /*
-        for (i, idx) in step.rw_indices.iter().copied().enumerate() {
-            log::trace!("begin_tx assign rw: #{i} {:?}", block.rws[idx]);
-        }
-        */
+        ////////////// RWS ////////////////
+        // TxID
+        // gen_tx_access_list_ops
+        // if L1:
+        //      CodeHash
+        //      if empty:
+        //          CodeHash
+        //          if scroll:
+        //              KeccakCodeHash
+        // else:
+        //      3 l1 fee rw
+        // RwCounterEndOfReversion
+        // IsPersistent
+        // IsSuccess
+        // Nonce
+        // Precompiles
+        // caller addr
+        // callee addr
+        // coinbase
 
         let mut rws = StepRws::new(block, step);
         let rw = rws.next();
@@ -881,23 +925,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_l1_msg
             .assign(region, offset, tx_type, caller_code_hash)?;
 
-        ////////////// RWS ////////////////
-        // if L1:
-        //      CodeHash
-        //      if empty:
-        //          CodeHash
-        //          if scroll:
-        //              KeccakCodeHash
-        // else:
-        //      3 l1 fee rw
-        // RwCounterEndOfReversion
-        // IsPersistent
-        // IsSuccess
-        // Nonce
-        // Precompiles
-        // caller addr
-        // callee addr
-        // coinbase
+        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_fork_block(
+            block.chain_id,
+            tx.block_number,
+        );
+        // Add access-list RW offset.
+        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+
         rws.offset_add(if tx_type.is_l1_msg() {
             if caller_code_hash.is_zero() {
                 assert_eq!(
@@ -914,23 +948,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 0
             }
         } else {
-            3
+            if is_curie {
+                6
+            } else {
+                3
+            }
         });
 
-        // Add access-list RW offset.
-        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
 
-        let _rw = rws.next();
-
-        #[cfg(not(feature = "l1_fee_curie"))]
-        {
-            debug_assert_eq!(_rw.tag(), RwTableTag::CallContext);
-            debug_assert_eq!(_rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
-            rws.offset_add(3);
-        }
-
-        #[cfg(feature = "l1_fee_curie")]
-        rws.offset_add(6);
+        // reversion
+        rws.offset_add(3);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::Account);
@@ -1096,7 +1126,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_data_gas_cost
             .assign(region, offset, Value::known(F::from(tx.tx_data_gas_cost)))?;
-        #[cfg(feature = "l1_fee_curie")]
         self.tx_signed_length.assign(
             region,
             offset,
@@ -1217,24 +1246,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             log::trace!("tx is l1msg and l1 fee is 0");
             (U256::zero(), U256::zero())
         } else {
-            #[cfg(not(feature = "l1_fee_curie"))]
-            {
-                (
-                    tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost, 0).0.into(),
-                    tx.gas_price * tx.gas,
-                )
-            }
-
-            #[cfg(feature = "l1_fee_curie")]
-            {
-                (
-                    tx.l1_fee
-                        .tx_l1_fee(0, tx.rlp_signed.len().try_into().unwrap())
-                        .0
-                        .into(),
-                    tx.gas_price * tx.gas,
-                )
-            }
+            (
+                tx.l1_fee
+                    .tx_l1_fee(tx.tx_data_gas_cost, tx.rlp_signed.len() as u64)
+                    .0
+                    .into(),
+                tx.gas_price * tx.gas,
+            )
         };
         if tx_fee != tx_l2_fee + tx_l1_fee {
             log::error!(

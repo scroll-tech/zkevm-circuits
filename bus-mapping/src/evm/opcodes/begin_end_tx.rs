@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     circuit_input_builder::{
-        Call, CircuitInputStateRef, CopyAccessList, CopyBytes, CopyDataType, CopyEvent, ExecStep,
-        NumberOrHash,
+        curie::is_curie_enabled, Call, CircuitInputStateRef, CopyAccessList, CopyBytes,
+        CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     l2_predeployed::l1_gas_price_oracle,
     operation::{
@@ -108,7 +108,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     )?;
 
     // the rw delta before is:
-    // + for non-l1 msg tx: 3 (rw for fee oracle contrace)
+    // + for non-l1 msg tx: 3 or 6 (rw for fee oracle contrace)
     // + for scroll l1-msg tx:
     //   * caller existed: 1 (read codehash)
     //   * caller not existed: 3 (read codehash and create account)
@@ -739,22 +739,16 @@ fn gen_tx_l1_fee_ops(
     let base_fee = Word::from(state.tx.l1_fee.base_fee);
     let fee_overhead = Word::from(state.tx.l1_fee.fee_overhead);
     let fee_scalar = Word::from(state.tx.l1_fee.fee_scalar);
-    #[cfg(feature = "l1_fee_curie")]
     let l1_blob_basefee = Word::from(state.tx.l1_fee.l1_blob_basefee);
-    #[cfg(feature = "l1_fee_curie")]
     let commit_scalar = Word::from(state.tx.l1_fee.commit_scalar);
-    #[cfg(feature = "l1_fee_curie")]
     let blob_scalar = Word::from(state.tx.l1_fee.blob_scalar);
 
     let base_fee_committed = Word::from(state.tx.l1_fee_committed.base_fee);
     let fee_overhead_committed = Word::from(state.tx.l1_fee_committed.fee_overhead);
     let fee_scalar_committed = Word::from(state.tx.l1_fee_committed.fee_scalar);
 
-    #[cfg(feature = "l1_fee_curie")]
     let l1_blob_basefee_committed = Word::from(state.tx.l1_fee_committed.l1_blob_basefee);
-    #[cfg(feature = "l1_fee_curie")]
     let commit_scalar_committed = Word::from(state.tx.l1_fee_committed.commit_scalar);
-    #[cfg(feature = "l1_fee_curie")]
     let blob_scalar_committed = Word::from(state.tx.l1_fee_committed.blob_scalar);
 
     state.push_op(
@@ -795,8 +789,9 @@ fn gen_tx_l1_fee_ops(
     )?;
 
     // curie operations
-    #[cfg(feature = "l1_fee_curie")]
-    {
+    let chain_id = state.block.chain_id;
+    let block_number = state.tx.block_num;
+    if is_curie_enabled(chain_id, block_number) {
         state.push_op(
             exec_step,
             RW::READ,

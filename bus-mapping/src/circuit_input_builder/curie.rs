@@ -13,18 +13,24 @@ use crate::{
 
 use super::{CircuitInputStateRef, ExecStep};
 
-/// Whether this blk is the hardfork height of curie
-pub fn is_curie_fork(chain_id: u64, blk: u64) -> bool {
+fn get_curie_fork_block(chain_id: u64) -> u64 {
     for (fork, fork_chain_id, fork_blk) in eth_types::forks::hardfork_heights() {
-        if fork == eth_types::forks::HardforkId::Curie
-            && chain_id == fork_chain_id
-            && fork_blk == blk
-        {
-            log::info!("enable curie fork: chain id {chain_id} block {blk}");
-            return true;
+        if fork == eth_types::forks::HardforkId::Curie && chain_id == fork_chain_id {
+            log::info!("curie fork: chain id {chain_id} block {fork_blk}");
+            return fork_blk;
         }
     }
-    false
+    u64::MAX
+}
+
+/// Whether this blk has enabled curie fork
+pub fn is_curie_enabled(chain_id: u64, blk: u64) -> bool {
+    get_curie_fork_block(chain_id) >= blk
+}
+
+/// Whether this blk is the hardfork height of curie
+pub fn is_curie_fork_block(chain_id: u64, blk: u64) -> bool {
+    get_curie_fork_block(chain_id) == blk
 }
 
 /// Insert needed rws for the contract upgrade
