@@ -6,10 +6,14 @@
 ///   layer2: comppresion circuit of "layer1"
 ///   layer3: batch circuit. Proving many "layer2" circuits, plus blob/kzg handling.
 ///   layer4: compression circuit of "layer3". Final layer circuit currently.
+///
+// TODO: don't always use "pub mod".
+// We need to define which types and methods shoud be public carefully.
 pub mod aggregator;
 pub mod common;
 pub mod config;
 pub mod consts;
+mod evm;
 pub mod inner;
 pub mod io;
 pub mod proof;
