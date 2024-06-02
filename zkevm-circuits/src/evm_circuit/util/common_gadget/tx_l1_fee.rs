@@ -173,7 +173,9 @@ impl<F: Field> TxL1FeeGadget<F> {
             tx_signed_length
         );
         let (tx_l1_fee, remainder) = if cfg!(feature = "l1_fee_curie") {
-            l1_fee.tx_l1_fee(0, tx_signed_length)
+            let (l1_fee, remainder) = l1_fee.tx_l1_fee(0, tx_signed_length);
+            println!("l1_fee {} remainder {}", l1_fee, remainder);
+            (l1_fee, remainder)
         } else {
             l1_fee.tx_l1_fee(tx_data_gas_cost, 0)
         };
@@ -386,7 +388,11 @@ mod tests {
     use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
     //refer to test in <https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L10>
-    const TEST_BASE_FEE: u64 = 15_000_000;
+    const TEST_BASE_FEE: u64 = if  cfg!(feature = "l1_fee_curie") {
+        1_500_000_000
+    }else { 
+        15_000_000
+     };
     const TEST_FEE_OVERHEAD: u64 = 100;
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
@@ -398,7 +404,7 @@ mod tests {
 
     // refer to test in https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L22
     #[cfg(feature = "l1_fee_curie")]
-    const L1_BLOB_BASEFEE: u64 = 15_000_000;
+    const L1_BLOB_BASEFEE: u64 = 150_000_000;
     #[cfg(feature = "l1_fee_curie")]
     const COMMIT_SCALAR: u64 = 10;
     #[cfg(feature = "l1_fee_curie")]
@@ -418,9 +424,9 @@ mod tests {
             #[cfg(feature = "l1_fee_curie")]
             L1_BLOB_BASEFEE.into(),
             #[cfg(feature = "l1_fee_curie")]
-            BLOB_SCALAR.into(),
+            COMMIT_SCALAR.into(),
             #[cfg(feature = "l1_fee_curie")]
-            TEST_FEE_SCALAR.into(),
+            BLOB_SCALAR.into(),
             #[cfg(feature = "l1_fee_curie")]
             TEST_TX_RLP_SIGNED_LENGTH,
         ]
@@ -441,9 +447,9 @@ mod tests {
             #[cfg(feature = "l1_fee_curie")]
             L1_BLOB_BASEFEE.into(),
             #[cfg(feature = "l1_fee_curie")]
-            BLOB_SCALAR.into(),
+            COMMIT_SCALAR.into(),
             #[cfg(feature = "l1_fee_curie")]
-            TEST_FEE_SCALAR.into(),
+            BLOB_SCALAR.into(),
             #[cfg(feature = "l1_fee_curie")]
             TEST_TX_RLP_SIGNED_LENGTH,
         ]
@@ -456,12 +462,14 @@ mod tests {
     struct TxL1FeeGadgetTestContainer<F> {
         gadget: TxL1FeeGadget<F>,
         tx_data_gas_cost: Cell<F>,
+        #[cfg(feature = "l1_fee_curie")]
+        tx_signed_length: Cell<F>,
         expected_tx_l1_fee: Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for TxL1FeeGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let tx_data_gas_cost = cb.query_cell();
+            let tx_data_gas_cost: Cell<F> = cb.query_cell();
             #[cfg(feature = "l1_fee_curie")]
             let tx_signed_length = cb.query_cell();
 
@@ -487,6 +495,8 @@ mod tests {
             TxL1FeeGadgetTestContainer {
                 gadget,
                 tx_data_gas_cost,
+                #[cfg(feature = "l1_fee_curie")]
+                tx_signed_length,
                 expected_tx_l1_fee,
             }
         }
@@ -500,18 +510,18 @@ mod tests {
 
             #[cfg(feature = "l1_fee_curie")]
             let [l1_blob_basefee, commit_scalar, blob_scalar, tx_signed_length] =
-                [3, 4, 5, 6].map(|i| witnesses[i].as_u64());
+                [5, 6, 7, 8].map(|i| witnesses[i].as_u64());
 
             let l1_fee = TxL1Fee {
                 base_fee,
                 fee_overhead,
                 fee_scalar,
                 #[cfg(feature = "l1_fee_curie")]
-                l1_blob_basefee: 1,
+                l1_blob_basefee,
                 #[cfg(feature = "l1_fee_curie")]
-                commit_scalar: 0,
+                commit_scalar,
                 #[cfg(feature = "l1_fee_curie")]
-                blob_scalar: 0,
+                blob_scalar,
             };
             let tx_data_gas_cost = witnesses[3];
             #[cfg(not(feature = "l1_fee_curie"))]
@@ -531,12 +541,20 @@ mod tests {
                 0,
                 Value::known(tx_data_gas_cost.to_scalar().unwrap()),
             )?;
-            #[cfg(not(feature = "l1_fee_curie"))]
+
+            #[cfg(feature = "l1_fee_curie")]
+            self.tx_signed_length.assign(
+                region,
+                0,
+                Value::known(F::from(tx_signed_length)),
+            )?;
+            // for curie or not, expected_tx_l1_fee is always fourth position
             self.expected_tx_l1_fee.assign(
                 region,
                 0,
                 Value::known(witnesses[4].to_scalar().unwrap()),
             )?;
+            println!("expected_tx_l1_fee {:?}", witnesses);
 
             Ok(())
         }
