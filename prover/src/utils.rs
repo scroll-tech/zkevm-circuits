@@ -18,6 +18,7 @@ use log4rs::{
 };
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use std::fmt::Debug;
 use std::{
     fs::{self, metadata, File},
     io::{BufReader, Read},
@@ -134,10 +135,12 @@ pub fn get_block_trace_from_file<P: AsRef<Path>>(path: P) -> BlockTrace {
     trace
 }
 
-pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
-    std::env::var(var_name)
+pub fn read_env_var<T: Debug + Clone + FromStr>(var_name: &'static str, default: T) -> T {
+    let r = std::env::var(var_name)
         .map(|s| s.parse::<T>().unwrap_or_else(|_| default.clone()))
-        .unwrap_or(default)
+        .unwrap_or(default);
+    log::debug!("read env var {var_name}, result: {r:?}");
+    r
 }
 
 #[derive(Debug)]
