@@ -1193,7 +1193,7 @@ mod tests {
 
             config
                 .inst_tbl
-                .mock_assign(&mut layouter, &self.insts, 15)?;
+                .assign(&mut layouter, [self.insts.iter()], 15)?;
 
             let chng_val = config.chng_mock.values(&layouter);
 
