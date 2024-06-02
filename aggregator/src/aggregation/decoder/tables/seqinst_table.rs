@@ -1007,7 +1007,8 @@ mod tests {
 
     #[derive(Clone, Debug)]
     struct MockDecoderTable {
-        q_enabled: Column<Fixed>,
+        q_inst_data: Column<Fixed>,
+        q_inst_cnt: Column<Fixed>,
         block_idx: Column<Advice>,
         sequence_idx: Column<Advice>,
         literal_length_value: Column<Advice>,
@@ -1017,7 +1018,8 @@ mod tests {
 
     impl MockDecoderTable {
         fn configure(meta: &mut ConstraintSystem<Fr>, inst_table: &SeqInstTable<Fr>) -> Self {
-            let q_enabled = meta.fixed_column();
+            let q_inst_data = meta.fixed_column();
+            let q_inst_cnt = meta.fixed_column();
             let block_idx = meta.advice_column();
             let sequence_idx = meta.advice_column();
             let literal_length_value = meta.advice_column();
@@ -1025,7 +1027,7 @@ mod tests {
             let match_length_value = meta.advice_column();
 
             meta.lookup_any("Mock DecoderConfig's tag ZstdBlockSequenceData", |meta| {
-                let enabled = meta.query_fixed(q_enabled, Rotation::cur());
+                let enabled = meta.query_fixed(q_inst_data, Rotation::cur());
                 let (block_idx, sequence_idx) = (
                     meta.query_advice(block_idx, Rotation::cur()),
                     meta.query_advice(sequence_idx, Rotation::cur()),
@@ -1050,8 +1052,28 @@ mod tests {
                 .collect()
             });
 
+            meta.lookup_any("Mock DecoderConfig's tag ZstdBlockSequenceHeader", |meta| {
+                let enabled = meta.query_fixed(q_inst_cnt, Rotation::cur());
+                let (block_idx, sequence_idx) = (
+                    meta.query_advice(block_idx, Rotation::cur()),
+                    meta.query_advice(sequence_idx, Rotation::cur()),
+                );
+
+                [
+                    1.expr(), // q_enabled
+                    block_idx,
+                    1.expr(), // s_beginning
+                    sequence_idx,
+                ]
+                .into_iter()
+                .zip_eq(inst_table.seq_count_exprs(meta))
+                .map(|(arg, table)| (enabled.expr() * arg, table))
+                .collect()
+            });
+
             Self {
-                q_enabled,
+                q_inst_data,
+                q_inst_cnt,
                 block_idx,
                 sequence_idx,
                 literal_length_value,
@@ -1077,13 +1099,36 @@ mod tests {
                             (self.match_offset_value, Fr::from(row.cooked_match_offset)),
                             (self.match_length_value, Fr::from(row.match_length)),
                         ] {
-                            region.assign_advice(|| "assign mock", col, i, || Value::known(val))?;
+                            region.assign_advice(
+                                || "assign mock data",
+                                col,
+                                i,
+                                || Value::known(val),
+                            )?;
                         }
                         region.assign_fixed(
-                            || "enable mock row",
-                            self.q_enabled,
+                            || "enable mock data row",
+                            self.q_inst_data,
                             i,
                             || Value::known(Fr::one()),
+                        )?;
+                    }
+                    let n_seq = rows.len();
+                    region.assign_fixed(
+                        || "enable mock cnt row",
+                        self.q_inst_cnt,
+                        n_seq,
+                        || Value::known(Fr::one()),
+                    )?;
+                    for (col, val) in [
+                        (self.block_idx, Fr::from(blk_id as u64)),
+                        (self.sequence_idx, Fr::from(n_seq as u64)),
+                    ] {
+                        region.assign_advice(
+                            || "assign mock nseq",
+                            col,
+                            n_seq,
+                            || Value::known(val),
                         )?;
                     }
 
@@ -1234,5 +1279,90 @@ mod tests {
         let mock_prover =
             MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
         mock_prover.verify().unwrap();
+    }
+
+    #[test]
+    fn seqinst_table_negative_unmatch() {
+        let mut base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [3, 33, 2222, 1111, 3333],
+            [3, 0, 2221, 2222, 1111],
+            [1, 0, 2222, 2221, 1111],
+        ])];
+        let rows_for_table = Some(base_data.clone());
+        // so we build a negative sample which there is an extra row in inst table
+        base_data[0].pop();
+
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table,
+            ..Default::default()
+        };
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        assert!(ret.is_err());
+
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [3, 33, 2222, 1111, 3333],
+            [3, 0, 2221, 2222, 1111],
+            [1, 0, 2222, 2221, 1111],
+        ])];
+        let mut rows_for_table = base_data.clone();
+        // so we build a negative sample which there is less row in inst table
+        rows_for_table[0].pop();
+
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table: Some(rows_for_table),
+            ..Default::default()
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        assert!(ret.is_err());
+
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [3, 33, 2222, 1111, 3333],
+            [3, 0, 2221, 2222, 1111],
+            [1, 0, 2222, 2221, 1111],
+        ])];
+        let mut rows_for_table = base_data.clone();
+        rows_for_table[0].pop();
+        // try to use a similar row in another block
+        rows_for_table.push(AddressTableRow::mock_samples(&[[1, 0, 2222, 2221, 1111]]));
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table: Some(rows_for_table),
+            ..Default::default()
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        assert!(ret.is_err());
     }
 }
