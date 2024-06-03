@@ -77,6 +77,7 @@ github.com/golang/protobuf v1.5.2/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiu
 github.com/golang/snappy v0.0.1/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
 github.com/golang/snappy v0.0.4 h1:yAGX7huGHXlcLOEtBnF4w7FQwA26wojNCwOYAEhLjQM=
 github.com/golang/snappy v0.0.4/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
+github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
 github.com/google/go-cmp v0.3.0/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
 github.com/google/go-cmp v0.3.1/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
 github.com/google/go-cmp v0.4.0/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
@@ -172,6 +173,8 @@ github.com/scroll-tech/go-ethereum v1.10.14-0.20240524071237-9b4a779104ac h1:A7t
 github.com/scroll-tech/go-ethereum v1.10.14-0.20240524071237-9b4a779104ac/go.mod h1:GLhY3RmqBezwgPCqrPM/dTjrweDzVSAQ+Ggldk4dCTM=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20240528204611-34162effbcc1 h1:U7c23zVBjt4H01scnaglcPth0eXL9nPJCMA7RfZPXAQ=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20240528204611-34162effbcc1/go.mod h1:GLhY3RmqBezwgPCqrPM/dTjrweDzVSAQ+Ggldk4dCTM=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20240603133335-3aebf739af7d h1:cTytLfiMvZBpYAaScz08gKzV5+2808wA2L7F/WmWXA0=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20240603133335-3aebf739af7d/go.mod h1:UyUop/xDNmbxIIA38L8bjdG3nNbos2azGOqrfqTVgD4=
 github.com/scroll-tech/zktrie v0.7.1 h1:NrmZNjuBzsbrKePqdHDG+t2cXnimbtezPAFS0+L9ElE=
 github.com/scroll-tech/zktrie v0.7.1/go.mod h1:XvNo7vAk8yxNyTjBDj5WIiFzYW4bx/gJ78+NK6Zn6Uk=
 github.com/scroll-tech/zktrie v0.8.2 h1:UMuIfA+jdgWMLmTgTL64Emo+zzMOdcnH0+eYdDcshxQ=
@@ -193,6 +196,8 @@ github.com/stretchr/testify v1.8.2 h1:+h33VjcLVPDHtOdpUCuF+7gSuG3yGIftsP1YvFihtJ
 github.com/stretchr/testify v1.8.2/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/supranational/blst v0.3.11 h1:LyU6FolezeWAhvQk0k6O/d49jqgO52MSDDfYgbeoEm4=
 github.com/supranational/blst v0.3.11/go.mod h1:jZJtfjgudtNl4en1tzwPIV3KjUnQUvG3/j+w+fVonLw=
+github.com/supranational/blst v0.3.12 h1:Vfas2U2CFHhniv2QkUm2OVa1+pGTdqtpqm9NnhUUbZ8=
+github.com/supranational/blst v0.3.12/go.mod h1:jZJtfjgudtNl4en1tzwPIV3KjUnQUvG3/j+w+fVonLw=
 github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 h1:epCh84lMvA70Z7CTTCmYQn2CKbY8j86K7/FAIr141uY=
 github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7/go.mod h1:q4W45IWZaF22tdD+VEXcAWRA037jwmWEB5VWYORlTpc=
 github.com/tklauser/go-sysconf v0.3.12 h1:0QaGUFOdQaIVdPgfITYzaTegZvdCjmYO52cSFAEVmqU=
