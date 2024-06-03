@@ -4,6 +4,9 @@ mod compression;
 mod mock_chunk;
 mod rlc;
 
+#[cfg(feature = "soundness_tests")]
+mod literals_header;
+
 #[macro_export]
 macro_rules! layer_0 {
     // generate a snark for layer 0

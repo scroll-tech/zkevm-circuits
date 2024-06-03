@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
@@ -18,6 +18,26 @@ use crate::aggregation::{
     },
     util::BooleanAdvice,
 };
+
+#[cfg(feature = "soundness-tests")]
+#[derive(Default, Debug, Clone)]
+pub struct AssignedLiteralsHeaderTableRow {
+    pub block_idx: Option<AssignedCell<Fr, Fr>>,
+    pub byte0: Option<AssignedCell<Fr, Fr>>,
+    pub byte1: Option<AssignedCell<Fr, Fr>>,
+    pub byte2: Option<AssignedCell<Fr, Fr>>,
+    pub size_format_bit0: Option<AssignedCell<Fr, Fr>>,
+    pub size_format_bit1: Option<AssignedCell<Fr, Fr>>,
+    pub byte0_rs_3: Option<AssignedCell<Fr, Fr>>,
+    pub byte0_rs_4: Option<AssignedCell<Fr, Fr>>,
+    pub regen_size: Option<AssignedCell<Fr, Fr>>,
+}
+
+#[cfg(feature = "soundness-tests")]
+pub(crate) type AssignedLiteralsHeaderTableRows = (Vec<AssignedLiteralsHeaderTableRow>, Vec<AssignedCell<Fr, Fr>>);
+
+#[cfg(not(feature = "soundness-tests"))]
+pub(crate) type AssignedLiteralsHeaderTableRows = ();
 
 /// Helper table to decode the regenerated size from the Literals Header.
 #[derive(Clone, Debug)]
@@ -200,7 +220,10 @@ impl LiteralsHeaderTable {
         layouter: &mut impl Layouter<F>,
         literals_headers: Vec<(u64, u64, (u64, u64, u64))>,
         n_enabled: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<AssignedLiteralsHeaderTableRows, Error> {
+        #[cfg(feature = "soundness-tests")]
+        let mut assigned_literals_header_table_rows = Vec::with_capacity(n_enabled);
+
         layouter.assign_region(
             || "LiteralsHeaderTable",
             |mut region| {
@@ -234,6 +257,8 @@ impl LiteralsHeaderTable {
 
                     let regen_size = le_bits_to_value(&sizing_bits[0..n_bits_regen]);
 
+                    let mut block_assigned_cells: Vec<AssignedCell<F, F>> = vec![];
+
                     for (col, value, annotation) in [
                         (self.block_idx, block_idx, "block_idx"),
                         (self.byte0, byte0, "byte0"),
@@ -252,26 +277,47 @@ impl LiteralsHeaderTable {
                         ),
                         (self.byte0_rs_3, byte0 >> 3, "byte0_rs_3"),
                         (self.byte0_rs_4, byte0 >> 4, "byte0_rs_4"),
+                        (self.is_padding.column, 0, "is_padding"),
                     ] {
-                        region.assign_advice(
+                        block_assigned_cells.push(region.assign_advice(
                             || annotation,
                             col,
                             offset,
                             || Value::known(F::from(value)),
-                        )?;
+                        ).expect("failed witness assignment"));
                     }
+
+                    #[cfg(feature = "soundness-tests")]
+                    assigned_literals_header_table_rows.push(AssignedLiteralsHeaderTableRow{
+                        block_idx: block_assigned_cells[0],
+                        byte0: block_assigned_cells[1],
+                        byte1: block_assigned_cells[2],
+                        byte2: block_assigned_cells[3],
+                        regen_size: block_assigned_cells[4],
+                        size_format_bit0: block_assigned_cells[5],
+                        size_format_bit1: block_assigned_cells[6],
+                        byte0_rs_3: block_assigned_cells[7],
+                        byte0_rs_4: block_assigned_cells[8],
+                        is_padding: block_assigned_cells[9],
+                    });
                 }
 
+                let mut assigned_padding_cells: Vec<AssignedCell<F, F>> = vec![];
+
                 for offset in literals_headers.len()..n_enabled {
-                    region.assign_advice(
+                    assigned_padding_cells.push(region.assign_advice(
                         || "is_padding",
                         self.is_padding.column,
                         offset,
                         || Value::known(F::one()),
-                    )?;
+                    ).expect("failed witness assignment"));
                 }
 
-                Ok(())
+                #[cfg(feature = "soundness-tests")]
+                return Ok((assigned_literals_header_table_rows, assigned_padding_cells));
+
+                #[cfg(not(feature = "soundness-tests"))]
+                return Ok(());
             },
         )
     }
