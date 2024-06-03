@@ -74,7 +74,7 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
       - name: Run light tests # light tests are run in parallel
-        run: cargo test --verbose --release --all --exclude integration-tests --exclude circuit-benchmarks
+        run: cargo test --verbose --release --all --exclude integration-tests --exclude circuit-benchmarks -- -Zunstable-options --report-time
       - name: Run heavy tests # heavy tests are run serially to avoid OOM
         if: false
         run: cargo test --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
@@ -117,9 +117,9 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
       - name: Run light tests # light tests are run in parallel
-        run: cargo test --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
+        run: cargo test --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool -- -Zunstable-options --report-time
       - name: Run heavy tests
-        run: cargo test --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored --skip max_tx
+        run: cargo test --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored --skip max_tx -Zunstable-options --report-time
       - name: Run parallel assignment tests(bytecode)
         if: false
         run: cargo test --release --package zkevm-circuits --lib bytecode_circuit::test --features scroll,parallel_syn -- --nocapture

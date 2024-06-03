@@ -616,18 +616,20 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let coinbase_reward = if state.tx.tx_type.is_l1_msg() {
         Word::zero()
     } else {
-        effective_tip * gas_cost + state.tx_ctx.l1_fee
-    };
-    log::trace!(
-        "coinbase reward = ({} - {}) * ({} - {} - {}) = {} or 0 for l1 msg",
-        state.tx.gas_price,
-        block_info.base_fee,
-        state.tx.gas,
-        exec_step.gas_left.0,
-        effective_refund,
-        coinbase_reward
-    );
+        let coinbase_reward = effective_tip * gas_cost + state.tx_ctx.l1_fee;
+        log::trace!(
+            "coinbase reward = ({} - {}) * ({} - {} - {}) + {} = {}",
+            state.tx.gas_price,
+            block_info.base_fee,
+            state.tx.gas,
+            exec_step.gas_left.0,
+            effective_refund,
+            state.tx_ctx.l1_fee,
+            coinbase_reward
+        );
 
+        coinbase_reward
+    };
     let (found, coinbase_account) = state.sdb.get_account_mut(&block_info.coinbase);
     if !found {
         log::error!("coinbase account not found: {}", block_info.coinbase);

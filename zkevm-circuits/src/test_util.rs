@@ -215,7 +215,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             // use scroll l2 trace
-            let full_witness_block = false;
+            let full_witness_block = cfg!(feature = "scroll");
             let mut block = if full_witness_block {
                 #[cfg(feature = "scroll")]
                 {

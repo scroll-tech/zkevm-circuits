@@ -882,6 +882,26 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // callee addr
         // coinbase
 
+        ////////////// RWS ////////////////
+        // TxID
+        // gen_tx_access_list_ops
+        // if L1:
+        //      CodeHash
+        //      if empty:
+        //          CodeHash
+        //          if scroll:
+        //              KeccakCodeHash
+        // else:
+        //      3 l1 fee rw
+        // RwCounterEndOfReversion
+        // IsPersistent
+        // IsSuccess
+        // Nonce
+        // Precompiles
+        // caller addr
+        // callee addr
+        // coinbase
+
         let mut rws = StepRws::new(block, step);
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
@@ -927,6 +947,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             if is_curie {
                 6
             } else {
+           
                 3
             }
         });
@@ -934,7 +955,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
         debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
-
         // reversion
         rws.offset_add(3);
 
