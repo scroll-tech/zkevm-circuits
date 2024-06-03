@@ -100,7 +100,11 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
 }
 
 fn deployed_system_contract_for_test_env() -> Vec<Account> {
-    vec![l1_gas_price_oracle::default_contract_account()]
+    if cfg!(feature = "scroll") {
+        vec![l1_gas_price_oracle::default_contract_account()]
+    } else {
+        vec![]
+    }
 }
 
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
