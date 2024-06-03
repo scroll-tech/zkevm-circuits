@@ -83,6 +83,20 @@ pub struct BlockContexts {
 }
 
 impl Block {
+    /// First block number
+    pub fn first_block_number(&self) -> U256 {
+        self.context
+            .ctxs
+            .first_key_value()
+            .map_or(0.into(), |(_, ctx)| ctx.number)
+    }
+    /// Last block number
+    pub fn last_block_number(&self) -> U256 {
+        self.context
+            .ctxs
+            .last_key_value()
+            .map_or(0.into(), |(_, ctx)| ctx.number)
+    }
     /// The state root after this chunk
     pub fn post_state_root(&self) -> H256 {
         let post_state_root_in_trie = H256(self.mpt_updates.new_root().to_be_bytes());
