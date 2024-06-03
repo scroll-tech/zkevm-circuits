@@ -509,9 +509,9 @@ impl TxL1Fee {
     pub fn tx_l1_fee(&self, tx_data_gas_cost: u64, tx_rlp_signed_len: u64) -> (u64, u64) {
         let is_curie = is_curie_enabled(self.chain_id, self.block_number);
         if is_curie {
-            self.tx_l1_fee_before_curie(tx_data_gas_cost)
-        } else {
             self.tx_l1_fee_after_curie(tx_rlp_signed_len)
+        } else {
+            self.tx_l1_fee_before_curie(tx_data_gas_cost)
         }
     }
 

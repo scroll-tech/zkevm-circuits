@@ -7,7 +7,8 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                CurieGadget, TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget, TxL1FeeGadget, TxL1MsgGadget
+                CurieGadget, TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget,
+                TxEip1559Gadget, TxL1FeeGadget, TxL1MsgGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -32,7 +33,9 @@ use crate::{
 use array_init::array_init;
 use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
 use eth_types::{
-    forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID}, utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256,
+    forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID},
+    utils::is_precompiled,
+    Address, ToLittleEndian, ToScalar, U256,
 };
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, select, Expr};
@@ -140,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
-        let curie = CurieGadget::construct(cb, cb.curr.state.block_number);
+        let curie = CurieGadget::construct(cb, cb.curr.state.block_number.expr());
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
@@ -170,7 +173,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let l1_rw_delta = select::expr(
             tx_l1_msg.is_l1_msg(),
             tx_l1_msg.rw_delta(),
-            tx_l1_fee.rw_delta(not::expr(is_before_curie.expr())),
+            tx_l1_fee.rw_delta(not::expr(curie.is_before_curie.expr())),
         ) + 1.expr();
 
         // the cost caused by l1
@@ -846,10 +849,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_msg,
             tx_access_list,
             tx_eip1559,
-            is_before_curie,
-            chain_id,
-            curie_fork_block_num,
-            is_scoll_chain,
+            curie,
         }
     }
 
@@ -921,7 +921,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_l1_msg
             .assign(region, offset, tx_type, caller_code_hash)?;
 
-        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_fork_block(
+        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_enabled(
             block.chain_id,
             tx.block_number,
         );
@@ -947,20 +947,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             if is_curie {
                 6
             } else {
-           
                 3
             }
         });
 
+        self.curie
+            .assign(region, offset, block.chain_id, tx.block_number)?;
+
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
         debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
+
         // reversion
         rws.offset_add(3);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::Account);
         debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
+
         let nonce_rw = rw.account_nonce_pair();
 
         let are_precompile_warm: [_; PRECOMPILE_COUNT] =
