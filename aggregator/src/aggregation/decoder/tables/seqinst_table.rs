@@ -1148,7 +1148,7 @@ mod tests {
     struct SeqTable {
         base_data: Vec<Vec<AddressTableRow>>,
         rows_for_table: Option<Vec<Vec<AddressTableRow>>>,
-        mock_rows: Vec<Vec<(usize, AddressTableRow)>>,
+        mock_rows: Vec<Vec<(usize, AddressTableRow, Option<u64>)>>,
     }
 
     impl Circuit<Fr> for SeqTable {
@@ -1179,7 +1179,7 @@ mod tests {
             for (i, blk_rows) in self.base_data.iter().enumerate() {
                 config
                     .mock_decoder
-                    .assign_blk(&mut layouter, i + 1, &blk_rows)?;
+                    .assign_blk(&mut layouter, i + 1, blk_rows)?;
             }
 
             let rows_for_table = self.rows_for_table.as_ref().unwrap_or(&self.base_data);
@@ -1213,14 +1213,14 @@ mod tests {
                             &mut offset_table,
                         )?;
 
-                        for (mock_offset, mock_row) in
+                        for (mock_offset, mock_row, overwriteen_id) in
                             self.mock_rows.get(i).iter().flat_map(|data| data.iter())
                         {
                             assert!(*mock_offset <= offset);
                             config.mock_assign(
                                 &mut region,
                                 block_begin_offset + *mock_offset,
-                                blk_id,
+                                overwriteen_id.unwrap_or(blk_id),
                                 n_seqs,
                                 &chip_ctx,
                                 mock_row,
@@ -1265,8 +1265,8 @@ mod tests {
             ]),
         ];
         let mock_rows = vec![
-            vec![(7, base_data[0][6].clone())],
-            vec![(3, base_data[1][2].clone())],
+            vec![(7, base_data[0][6].clone(), None)],
+            vec![(3, base_data[1][2].clone(), None)],
         ];
 
         let circuit = SeqTable {
@@ -1282,7 +1282,7 @@ mod tests {
     }
 
     #[test]
-    fn seqinst_table_negative_unmatch() {
+    fn seqinst_table_negative_unmatch_seq() {
         let mut base_data = vec![AddressTableRow::mock_samples(&[
             [1114, 11, 1111, 1, 4],
             [1, 22, 1111, 1, 4],
@@ -1364,5 +1364,141 @@ mod tests {
         let ret = mock_prover.verify();
         println!("{:?}", ret);
         assert!(ret.is_err());
+    }
+
+    #[test]
+    fn seqinst_table_negative_unmatch_block() {
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [11, 0, 8, 1111, 3333],
+            [7, 0, 4, 8, 1111],
+            [4, 0, 1, 4, 8],
+        ])];
+        let mut rows_for_table = base_data.clone();
+        // so we build a negative sample which there is an extra row in inst table
+        rows_for_table.push(AddressTableRow::mock_samples(&[
+            [1, 5, 1, 4, 8],
+            [1, 5, 1, 4, 8],
+            [1, 5, 1, 4, 8],
+        ]));
+
+        let circuit = SeqTable {
+            base_data: base_data.clone(),
+            rows_for_table: Some(rows_for_table.clone()),
+            ..Default::default()
+        };
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        // notice more block data can be filled into seq table, but inst exec
+        // never touch them
+        assert!(ret.is_ok());
+
+        let circuit = SeqTable {
+            base_data: rows_for_table,
+            rows_for_table: Some(base_data.clone()),
+            ..Default::default()
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        // but inst table can never miss a block
+        assert!(ret.is_err());
+
+        let rows_for_table = vec![
+            AddressTableRow::mock_samples(&[
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+            ]),
+            base_data[0].clone(),
+        ];
+
+        let mock_rows = vec![
+            Vec::new(),
+            rows_for_table[1]
+                .iter()
+                .enumerate()
+                .map(|(i, row)| (i + 1, row.clone(), Some(1)))
+                .collect(),
+        ];
+
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table: Some(rows_for_table),
+            mock_rows,
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        // try to put the block with unordered index, should fail
+        assert!(ret.is_err());
+    }
+
+    #[test]
+    fn seqinst_table_negative_unmatch_data() {
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [3, 33, 2222, 1111, 3333],
+            [3, 0, 2221, 2222, 1111],
+            [1, 0, 2222, 2221, 1111],
+        ])];
+
+        let mut wrong_offset_row = base_data[0][0].clone();
+        assert_eq!(wrong_offset_row.actual_offset, 1111);
+        wrong_offset_row.actual_offset = 1110;
+        let neg_case_offset_1 = vec![vec![(1, wrong_offset_row.clone(), None)]];
+        wrong_offset_row.cooked_match_offset = 1113;
+        let neg_case_offset_2 = vec![vec![(1, wrong_offset_row, None)]];
+
+        let mut out_order_row_1 = base_data[0][0].clone();
+        let mut out_order_row_2 = base_data[0][1].clone();
+        assert_eq!(out_order_row_1.literal_length_acc, 11);
+        out_order_row_1.literal_length_acc = out_order_row_2.literal_length_acc;
+        out_order_row_2.literal_length_acc = 11;
+        let neg_case_outoforder_seq = vec![
+            vec![(2, out_order_row_1, None)],
+            vec![(1, out_order_row_2, None)],
+        ];
+
+        let k = 12;
+        for mock_rows in [
+            neg_case_offset_1,
+            neg_case_offset_2,
+            neg_case_outoforder_seq,
+        ] {
+            let circuit = SeqTable {
+                base_data: base_data.clone(),
+                mock_rows,
+                ..Default::default()
+            };
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
     }
 }
