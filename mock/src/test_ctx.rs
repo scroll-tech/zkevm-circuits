@@ -4,8 +4,7 @@ use crate::{eth, MockAccount, MockBlock, MockTransaction, MOCK_WALLETS};
 #[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
 use eth_types::{
-    geth_types::{Account, BlockConstants, GethData},
-    BigEndianHash, Block, Bytecode, Error, Transaction, Word, H256,
+    geth_types::{Account, BlockConstants, GethData}, l2_predeployed::l1_gas_price_oracle, BigEndianHash, Block, Bytecode, Error, Transaction, Word, H256
 };
 #[cfg(feature = "scroll")]
 use external_tracer::l2trace;
@@ -178,6 +177,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .iter()
             .cloned()
             .map(Account::from)
+            .chain(std::iter::once(l1_gas_price_oracle::default_contract_account()))
             .collect_vec()
             .try_into()
             .expect("Mismatched acc len");
