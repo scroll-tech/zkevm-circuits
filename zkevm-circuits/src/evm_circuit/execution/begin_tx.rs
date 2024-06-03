@@ -867,27 +867,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         //          if scroll:
         //              KeccakCodeHash
         // else:
-        //      3 l1 fee rw
-        // RwCounterEndOfReversion
-        // IsPersistent
-        // IsSuccess
-        // Nonce
-        // Precompiles
-        // caller addr
-        // callee addr
-        // coinbase
-
-        ////////////// RWS ////////////////
-        // TxID
-        // gen_tx_access_list_ops
-        // if L1:
-        //      CodeHash
-        //      if empty:
-        //          CodeHash
-        //          if scroll:
-        //              KeccakCodeHash
-        // else:
-        //      3 l1 fee rw
+        //      3 or 6 l1 fee rw
         // RwCounterEndOfReversion
         // IsPersistent
         // IsSuccess
