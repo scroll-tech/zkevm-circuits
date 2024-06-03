@@ -99,6 +99,10 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     block_trace: BlockTrace,
 }
 
+fn deployed_system_contract_for_test_env() -> Vec<Account> {
+    vec![l1_gas_price_oracle::default_contract_account()]
+}
+
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
     fn from(ctx: TestContext<NACC, NTX>) -> GethData {
         GethData {
@@ -106,7 +110,14 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             history_hashes: ctx.history_hashes,
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
-            accounts: ctx.accounts.into(),
+            // TODO: any better method?
+            // always inject system contract
+            accounts: ctx
+                .accounts
+                .iter()
+                .cloned()
+                .chain(deployed_system_contract_for_test_env())
+                .collect_vec(),
             #[cfg(feature = "scroll")]
             block_trace: ctx.block_trace,
         }
@@ -189,9 +200,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             accounts
                 .iter()
                 .cloned()
-                .chain(std::iter::once(
-                    l1_gas_price_oracle::default_contract_account(),
-                ))
+                .chain(deployed_system_contract_for_test_env())
                 .collect_vec(),
             history_hashes.clone(),
             logger_config,

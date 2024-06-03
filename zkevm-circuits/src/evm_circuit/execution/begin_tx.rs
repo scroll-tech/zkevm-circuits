@@ -862,6 +862,26 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         }
         */
 
+        ////////////// RWS ////////////////
+        // TxID
+        // gen_tx_access_list_ops
+        // if L1:
+        //      CodeHash
+        //      if empty:
+        //          CodeHash
+        //          if scroll:
+        //              KeccakCodeHash
+        // else:
+        //      3 l1 fee rw
+        // RwCounterEndOfReversion
+        // IsPersistent
+        // IsSuccess
+        // Nonce
+        // Precompiles
+        // caller addr
+        // callee addr
+        // coinbase
+
         let mut rws = StepRws::new(block, step);
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
@@ -881,23 +901,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_l1_msg
             .assign(region, offset, tx_type, caller_code_hash)?;
 
-        ////////////// RWS ////////////////
-        // if L1:
-        //      CodeHash
-        //      if empty:
-        //          CodeHash
-        //          if scroll:
-        //              KeccakCodeHash
-        // else:
-        //      3 l1 fee rw
-        // RwCounterEndOfReversion
-        // IsPersistent
-        // IsSuccess
-        // Nonce
-        // Precompiles
-        // caller addr
-        // callee addr
-        // coinbase
+        // Add access-list RW offset.
+        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+
         rws.offset_add(if tx_type.is_l1_msg() {
             if caller_code_hash.is_zero() {
                 assert_eq!(
@@ -914,23 +920,22 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 0
             }
         } else {
-            3
+            #[cfg(feature = "l1_fee_curie")]
+            {
+                6
+            }
+            #[cfg(not(feature = "l1_fee_curie"))]
+            {
+                3
+            }
         });
 
-        // Add access-list RW offset.
-        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
-
         let _rw = rws.next();
+        debug_assert_eq!(_rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(_rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
 
-        #[cfg(not(feature = "l1_fee_curie"))]
-        {
-            debug_assert_eq!(_rw.tag(), RwTableTag::CallContext);
-            debug_assert_eq!(_rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
-            rws.offset_add(3);
-        }
-
-        #[cfg(feature = "l1_fee_curie")]
-        rws.offset_add(6);
+        // reversion
+        rws.offset_add(3);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::Account);

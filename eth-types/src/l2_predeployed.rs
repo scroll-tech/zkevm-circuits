@@ -75,7 +75,7 @@ pub mod l1_gas_price_oracle {
             nonce: U256::zero(),
             balance: U256::from(1u64),
             code: Vec::new().into(),
-            storage: HashMap::from_iter(storages.into_iter()),
+            storage: HashMap::from_iter(storages),
         }
     }
 }
