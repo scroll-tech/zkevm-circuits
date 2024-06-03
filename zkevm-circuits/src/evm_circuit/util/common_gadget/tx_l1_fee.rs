@@ -388,11 +388,11 @@ mod tests {
     use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
     //refer to test in <https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L10>
-    const TEST_BASE_FEE: u64 = if  cfg!(feature = "l1_fee_curie") {
+    const TEST_BASE_FEE: u64 = if cfg!(feature = "l1_fee_curie") {
         1_500_000_000
-    }else { 
+    } else {
         15_000_000
-     };
+    };
     const TEST_FEE_OVERHEAD: u64 = 100;
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
@@ -543,11 +543,8 @@ mod tests {
             )?;
 
             #[cfg(feature = "l1_fee_curie")]
-            self.tx_signed_length.assign(
-                region,
-                0,
-                Value::known(F::from(tx_signed_length)),
-            )?;
+            self.tx_signed_length
+                .assign(region, 0, Value::known(F::from(tx_signed_length)))?;
             // for curie or not, expected_tx_l1_fee is always fourth position
             self.expected_tx_l1_fee.assign(
                 region,
