@@ -7,8 +7,8 @@ use crate::{
     BatchDataConfig, MAX_AGG_SNARKS,
 };
 use aggregator_snark_verifier::halo2_base::{
-    gates::range::{RangeConfig},
-    gates::flex_gate::{FlexGateConfigParams, threads::MultiPhaseCoreManager},
+    gates::flex_gate::{threads::MultiPhaseCoreManager, FlexGateConfigParams},
+    gates::range::RangeConfig,
     halo2_proofs::{
         circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},

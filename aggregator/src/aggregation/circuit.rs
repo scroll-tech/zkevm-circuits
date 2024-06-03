@@ -1,5 +1,6 @@
 use crate::{blob::BatchData, witgen::MultiBlockProcessResult};
 use aggregator_snark_verifier::halo2_base::{
+    gates::flex_gate::threads::MultiPhaseCoreManager,
     halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -183,14 +184,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         return Ok(AssignedBarycentricEvaluationConfig::default());
                     }
 
-                    let mut ctx = Context::new(
-                        region,
-                        ContextParams {
-                            max_rows: config.flex_gate().max_rows,
-                            num_context_ids: 1,
-                            fixed_columns: config.flex_gate().constants.clone(),
-                        },
-                    );
+                    // TODO: check correctness of this!
+                    let mut ctx = MultiPhaseCoreManager::new(false).main(0);
 
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
@@ -229,14 +224,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
                     // stores public inputs for all snarks, including the padded ones
                     let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
-                    let ctx = Context::new(
-                        region,
-                        ContextParams {
-                            max_rows: config.flex_gate().max_rows,
-                            num_context_ids: 1,
-                            fixed_columns: config.flex_gate().constants.clone(),
-                        },
-                    );
+                    // TODO: check correctness of this!
+                    let mut ctx = MultiPhaseCoreManager::new(false).main(0);
 
                     let ecc_chip = config.ecc_chip();
                     let loader = Halo2Loader::new(ecc_chip, ctx);

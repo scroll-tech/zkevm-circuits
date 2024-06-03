@@ -3,10 +3,13 @@
 use std::fs::File;
 
 use aggregator_snark_verifier::{
-    halo2_base::halo2_proofs::{
-        circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
-        halo2curves::bn256::G1Affine,
-        plonk::{Circuit, ConstraintSystem, Error},
+    halo2_base::{
+        gates::flex_gate::threads::MultiPhaseCoreManager,
+        halo2_proofs::{
+            circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
+            halo2curves::bn256::G1Affine,
+            plonk::{Circuit, ConstraintSystem, Error},
+        },
     },
     loader::halo2::{
         halo2_ecc::{
@@ -16,7 +19,7 @@ use aggregator_snark_verifier::{
                     halo2curves::bn256::{Bn256, Fr},
                     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
                 },
-                Context, ContextParams,
+                Context,
             },
         },
         Halo2Loader,
@@ -120,14 +123,8 @@ impl Circuit<Fr> for CompressionCircuit {
                     return Ok(vec![]);
                 }
                 let mut instances = vec![];
-                let ctx = Context::new(
-                    region,
-                    ContextParams {
-                        max_rows: config.gate().max_rows,
-                        num_context_ids: 1,
-                        fixed_columns: config.gate().constants.clone(),
-                    },
-                );
+                // TODO: check correctness of this!
+                let mut ctx = MultiPhaseCoreManager::new(false).main(0);
 
                 let ecc_chip = config.ecc_chip();
                 let loader = Halo2Loader::new(ecc_chip, ctx);
