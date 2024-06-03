@@ -26,12 +26,12 @@ pub fn get_curie_fork_block(chain_id: u64) -> u64 {
 
 /// Whether this blk has enabled curie fork
 pub fn is_curie_enabled(chain_id: u64, blk: u64) -> bool {
-    get_curie_fork_block(chain_id) >= blk
+    blk >= get_curie_fork_block(chain_id)
 }
 
 /// Whether this blk is the hardfork height of curie
 pub fn is_curie_fork_block(chain_id: u64, blk: u64) -> bool {
-    get_curie_fork_block(chain_id) == blk
+    blk == get_curie_fork_block(chain_id)
 }
 
 /// Insert needed rws for the contract upgrade
