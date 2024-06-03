@@ -21,7 +21,7 @@ pub fn get_curie_fork_block(chain_id: u64) -> u64 {
             return fork_blk;
         }
     }
-    u64::MAX
+    0
 }
 
 /// Whether this blk has enabled curie fork

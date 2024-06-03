@@ -1,7 +1,6 @@
 use super::{CachedRegion, Cell};
 use crate::{
     evm_circuit::{
-        util::{Expr},
         param::N_BYTES_U64, table::{FixedTableTag, Lookup}, util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
