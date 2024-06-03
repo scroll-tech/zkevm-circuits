@@ -115,69 +115,202 @@ impl Circuit<Fr> for TestBitstringCircuit {
                 let mut rng = rand::thread_rng();
 
                 match self.case {
+                    // sound case
                     UnsoundCase::None => {},
-                    IncorrectBitDecomposition => {
-                        let row_idx: usize = rng.gen_range(0..assigned_bitstring_table_1_rows.len());
-                        let bit_cell = assigned_bitstring_table_1_rows[row_idx].bit.cell();
 
-                        region.assign_advice(
-                            || "corrupt bit decomposition at a random location in the assigned witness",
-                            cell.column.try_into().expect("assigned cell not advice"),
-                            cell.row_offset,
-                            || if bit_cell.value() > 0 {
-                                Value::known(Fr::one()) 
-                            } else { 
-                                Value::known(Fr::zero()) 
-                            },
-                        )
-                    },
-                    IncorrectBitDecompositionEndianness => {
-                        let read_idx: usize = rng.gen_range(0..assigned_bitstring_table_1_rows.len()/8);
-                        let is_reverse = assigned_bitstring_table_1_rows[row_idx].is_reverse.cell().value();
-                        let column = assigned_bitstring_table_1_rows[row_idx].is_reverse.column.try_into().expect("assigned cell not advice");
-                        for bit_idx in 0..8 {
+                    // bits are not the correct representation of byte_1/byte_2/byte_3
+                    IncorrectBitDecomposition => {
+                        for assigned_rows in [
+                            assigned_bitstring_table_1_rows,
+                            assigned_bitstring_table_2_rows,
+                            assigned_bitstring_table_3_rows,
+                        ] {
+                            let row_idx: usize = rng.gen_range(0..assigned_rows.len());
+                            let bit_cell = assigned_rows[row_idx].bit.cell();
+
                             region.assign_advice(
-                                || "inject incorrect is_reverse to a read operation",
-                                column,
-                                read_idx + bit_idx,
-                                || if is_reverse {
-                                    Value::known(Fr::zero())
-                                } else {
-                                    Value::known(Fr::one())
+                                || "corrupt bit decomposition at a random location in the assigned witness",
+                                cell.column.try_into().expect("assigned cell col is valid"),
+                                cell.row_offset,
+                                || if bit_cell.value() > 0 {
+                                    Value::known(Fr::one()) 
+                                } else { 
+                                    Value::known(Fr::zero()) 
                                 },
                             )
                         }
                     },
+
+                    // bits are not the correct representation of byte_1/byte_2/byte_3 due to incorrect endianness (wrong is_reverse)
+                    IncorrectBitDecompositionEndianness => {
+                        for (assigned_rows, end_idx) in [
+                            (assigned_bitstring_table_1_rows, 7),
+                            (assigned_bitstring_table_2_rows, 15),
+                            (assigned_bitstring_table_3_rows, 23),
+                        ] {
+                            // Sample the first index of a multi-byte operation
+                            let row_idx = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
+                            let is_reverse = assigned_rows[row_idx].is_reverse;
+
+                            for bit_idx in 0..end_idx {
+                                region.assign_advice(
+                                    || "inject incorrect is_reverse to a read operation",
+                                    is_reverse.try_into().expect("assigned cell col is valid"),
+                                    row_idx + bit_idx,
+                                    || if is_reverse {
+                                        Value::known(Fr::zero())
+                                    } else {
+                                        Value::known(Fr::one())
+                                    },
+                                )
+                            }
+                        }
+                    },
+
+                    // byte_idx_1/2/3 delta value is not boolean
                     IrregularTransitionByteIdx => {
-                        let row_idx: usize = rng.gen_range(0..assigned_bitstring_table_1_rows.len());
-                        let byte_idx_1_cell = assigned_bitstring_table_1_rows[row_idx].byte_idx_1.cell();
-                        let byte_idx_2_cell = assigned_bitstring_table_1_rows[row_idx].byte_idx_2.cell();
-                        let _byte_idx_3_cell = assigned_bitstring_table_1_rows[row_idx].byte_idx_3.cell();
-
-                        region.assign_advice(
-                            || "corrupt byte_idx at a random location in the assigned witness",
-                            byte_idx_1_cell.column.try_into().expect("assigned cell not advice"),
-                            byte_idx_1_cell.row_offset,
-                            || byte_idx_1_cell.value() + Value::known(Fr::one()),
-                        )
+                        for assigned_rows in [
+                            assigned_bitstring_table_1_rows,
+                            assigned_bitstring_table_2_rows,
+                            assigned_bitstring_table_3_rows,
+                        ] {
+                            let row_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
+                            let byte_idx_1_cell = assigned_rows[row_idx].byte_idx_1.cell();
+                            let byte_idx_2_cell = assigned_rows[row_idx].byte_idx_2.cell();
+                            let byte_idx_3_cell = assigned_rows[row_idx].byte_idx_3.cell();
+    
+                            region.assign_advice(
+                                || "corrupt byte_idx at a random location in the assigned witness (+1 for byte_idx_1)",
+                                byte_idx_1_cell.column.try_into().expect("assigned cell col is valid"),
+                                byte_idx_1_cell.row_offset,
+                                || byte_idx_1_cell.value() + Value::known(Fr::one()),
+                            );
+                            region.assign_advice(
+                                || "corrupt byte_idx at a random location in the assigned witness",
+                                byte_idx_3_cell.column.try_into().expect("assigned cell col is valid (+1 for byte_idx_3)"),
+                                byte_idx_3_cell.row_offset,
+                                || byte_idx_3_cell.value() + Value::known(Fr::one()),
+                            );
+                        }
                     },
+
+                    // The boolean from_start does not start at bit_idx = 0
                     IrregularValueFromStart => {
+                        for assigned_rows in [
+                            assigned_bitstring_table_1_rows,
+                            assigned_bitstring_table_2_rows,
+                            assigned_bitstring_table_3_rows,
+                        ] {
+                            // Sample the first index of a multi-byte operation
+                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
+                            let from_start = assigned_rows[read_idx].from_start;
 
+                            region.assign_advice(
+                                || "Make from_start at bit_index=0 zero",
+                                from_start.try_into().expect("assigned cell col is valid"),
+                                read_idx,
+                                || Value::known(Fr::zero()),
+                            )
+                        }
                     },
+
+                    // The boolean until_end does not end at bit_idx = 7/15/23
                     IrregularValueUntilEnd => {
+                        for (assigned_rows, end_idx) in [
+                            (assigned_bitstring_table_1_rows, 7),
+                            (assigned_bitstring_table_2_rows, 15),
+                            (assigned_bitstring_table_3_rows, 23),
+                        ] {
+                            // Sample the first index of a multi-byte operation
+                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
+                            let until_end = assigned_rows[read_idx + end_idx].until_end;
 
+                            region.assign_advice(
+                                || "Make until_end at bit_index=end_index zero",
+                                until_end.try_into().expect("assigned cell col is valid"),
+                                read_idx + end_idx,
+                                || Value::known(Fr::zero()),
+                            )
+                        }
                     },
+
+                    // The boolean from_start flips from 0 -> 1
                     IrregularTransitionFromStart => {
+                        for (assigned_rows, end_idx) in [
+                            (assigned_bitstring_table_1_rows, 7),
+                            (assigned_bitstring_table_2_rows, 15),
+                            (assigned_bitstring_table_3_rows, 23),
+                        ] {
+                            // Sample the first index of a multi-byte operation
+                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
+                            let from_start = assigned_rows[read_idx + end_idx].from_start;
 
+                            region.assign_advice(
+                                || "Make from_start at bit_index=end_index one",
+                                from_start.try_into().expect("assigned cell col is valid"),
+                                read_idx + end_idx,
+                                || Value::known(Fr::one()),
+                            )
+                        }
                     },
+
+                    // The boolean until_end flips from 1 -> 0
                     IrregularTransitionUntilEnd => {
+                        for (assigned_rows, end_idx) in [
+                            (assigned_bitstring_table_1_rows, 7),
+                            (assigned_bitstring_table_2_rows, 15),
+                            (assigned_bitstring_table_3_rows, 23),
+                        ] {
+                            // Sample the first index of a multi-byte operation
+                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
+                            let until_end = assigned_rows[read_idx + end_idx].until_end;
 
+                            region.assign_advice(
+                                || "Make until_end at bit_index=end_index zero",
+                                until_end.try_into().expect("assigned cell col is valid"),
+                                read_idx + end_idx,
+                                || Value::known(Fr::zero()),
+                            )
+                        }
                     },
+
+                    // The bitstring_value is not constant for a bitstring
                     InconsistentBitstringValue => {
+                        for assigned_rows in [
+                            assigned_bitstring_table_1_rows,
+                            assigned_bitstring_table_2_rows,
+                            assigned_bitstring_table_3_rows,
+                        ] {
+                            let row_idx: usize = rng.gen_range(0..assigned_rows.len());
+                            let bitstring_value_cell = assigned_rows[row_idx].bitstring_value.cell();
 
+                            region.assign_advice(
+                                || "corrupt bitstring_value at a random location in the assigned witness",
+                                bitstring_value_cell.column.try_into().expect("assigned cell col is valid"),
+                                bitstring_value_cell.row_offset,
+                                || bitstring_value_cell.value() + Value::known(Fr::one()),
+                            )
+                        }
                     },
-                    InconsistentEndBitstringAccValue => {
 
+                    // The bitstring_value and bitstring_value_acc do not agree at the last set bit
+                    InconsistentEndBitstringAccValue => {
+                        for (assigned_rows, end_idx) in [
+                            (assigned_bitstring_table_1_rows, 7),
+                            (assigned_bitstring_table_2_rows, 15),
+                            (assigned_bitstring_table_3_rows, 23),
+                        ] {
+                            // Sample the first index of a multi-byte operation
+                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
+                            let bitstring_value_acc = assigned_rows[read_idx + end_idx].bitstring_value_acc;
+
+                            region.assign_advice(
+                                || "Make end bitstring_value_acc value different at bit_index=end_index",
+                                bitstring_value_acc.try_into().expect("assigned cell col is valid"),
+                                read_idx + end_idx,
+                                || bitstring_value_acc.cell().value() + Value::known(Fr::one()),
+                            )
+                        }
                     },
                 }
 
