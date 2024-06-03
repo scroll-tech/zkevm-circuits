@@ -35,11 +35,13 @@ mod tx_access_list;
 mod tx_eip1559;
 mod tx_l1_fee;
 mod tx_l1_msg;
+mod curie;
 
 pub(crate) use tx_access_list::TxAccessListGadget;
 pub(crate) use tx_eip1559::TxEip1559Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
+pub(crate) use curie::CurieGadget;
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,

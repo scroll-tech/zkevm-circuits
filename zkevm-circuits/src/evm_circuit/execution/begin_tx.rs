@@ -7,8 +7,7 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget,
-                TxL1FeeGadget, TxL1MsgGadget,
+                CurieGadget, TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget, TxL1FeeGadget, TxL1MsgGadget
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -33,7 +32,7 @@ use crate::{
 use array_init::array_init;
 use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
 use eth_types::{
-    forks::HardforkId, utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256,
+    forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID}, utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256,
 };
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, select, Expr};
@@ -101,9 +100,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_l1_msg: TxL1MsgGadget<F>,
     tx_access_list: TxAccessListGadget<F>,
     tx_eip1559: TxEip1559Gadget<F>,
-    is_before_curie: LtGadget<F, 8>, // block num is u64
-    chain_id: Cell<F>,
-    curie_fork_block_num: Cell<F>,
+    curie: CurieGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -143,30 +140,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
-        let chain_id = cb.query_cell();
-        let curie_fork_block_num = cb.query_cell();
-        // Lookup block table with chain_id
-        cb.block_lookup(
-            BlockContextFieldTag::ChainId.expr(),
-            cb.curr.state.block_number.expr(),
-            chain_id.expr(),
-        );
-        cb.add_lookup(
-            "Hardfork lookup",
-            Lookup::Fixed {
-                tag: FixedTableTag::ChainFork.expr(),
-                values: [
-                    (HardforkId::Curie as u64).expr(),
-                    chain_id.expr(),
-                    curie_fork_block_num.expr(),
-                ],
-            },
-        );
-        let is_before_curie = LtGadget::construct(
-            cb,
-            cb.curr.state.block_number.expr(),
-            curie_fork_block_num.expr(),
-        );
+        let curie = CurieGadget::construct(cb, cb.curr.state.block_number);
+
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
             cb.require_equal(
@@ -176,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
             TxL1FeeGadget::construct(
                 cb,
-                not::expr(is_before_curie.expr()),
+                not::expr(curie.is_before_curie.expr()),
                 tx_id.expr(),
                 tx_data_gas_cost.expr(),
                 tx_signed_length.expr(),
@@ -874,6 +849,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_before_curie,
             chain_id,
             curie_fork_block_num,
+            is_scoll_chain,
         }
     }
 
@@ -1017,21 +993,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             )?;
         }
 
-        self.chain_id
-            .assign(region, offset, Value::known(F::from(block.chain_id)))?;
-        let curie_fork_block_num =
-            bus_mapping::circuit_input_builder::curie::get_curie_fork_block(block.chain_id);
-        self.curie_fork_block_num.assign(
-            region,
-            offset,
-            Value::known(F::from(curie_fork_block_num)),
-        )?;
-        self.is_before_curie.assign(
-            region,
-            offset,
-            F::from(tx.block_number),
-            F::from(curie_fork_block_num),
-        )?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_type
