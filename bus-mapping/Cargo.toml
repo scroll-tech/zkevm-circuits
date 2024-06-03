@@ -55,3 +55,4 @@ rpc-legacy-tracer = []
 # and must be rebuild
 fix-refund = ["rpc-legacy-tracer"]
 retrace-tx = []
+l1_fee_curie = []

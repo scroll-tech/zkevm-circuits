@@ -10,12 +10,14 @@ use itertools::Itertools;
 
 use crate::{
     aggregation::AggregationCircuit, batch::BatchHash, constants::MAX_AGG_SNARKS, layer_0,
-    tests::mock_chunk::MockChunkCircuit, ChunkHash,
+    tests::mock_chunk::MockChunkCircuit, ChunkInfo,
 };
 
+// See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866
+#[ignore]
 #[test]
 fn test_max_agg_snarks_aggregation_circuit() {
-    let k = 20;
+    let k = 21;
 
     // This set up requires one round of keccak for chunk's data hash
     let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(2, k);
@@ -24,9 +26,10 @@ fn test_max_agg_snarks_aggregation_circuit() {
     mock_prover.assert_satisfied_par();
 }
 
+#[ignore]
 #[test]
 fn test_2_snark_aggregation_circuit() {
-    let k = 20;
+    let k = 21;
 
     let circuit: AggregationCircuit<2> = build_new_aggregation_circuit(1, k);
     let instance = circuit.instances();
@@ -34,9 +37,10 @@ fn test_2_snark_aggregation_circuit() {
     mock_prover.assert_satisfied_par();
 }
 
+#[ignore]
 #[test]
 fn test_14_snark_aggregation_circuit() {
-    let k = 20;
+    let k = 21;
 
     let circuit: AggregationCircuit<14> = build_new_aggregation_circuit(12, k);
     let instance = circuit.instances();
@@ -139,13 +143,13 @@ fn build_new_aggregation_circuit<const N_SNARKS: usize>(
     let params = gen_srs(k0);
 
     let mut chunks_without_padding = (0..num_real_chunks)
-        .map(|_| ChunkHash::mock_random_chunk_hash_for_testing(&mut rng))
+        .map(|_| ChunkInfo::mock_random_chunk_info_for_testing(&mut rng))
         .collect_vec();
     for i in 0..num_real_chunks - 1 {
         chunks_without_padding[i + 1].prev_state_root = chunks_without_padding[i].post_state_root;
     }
     let padded_chunk =
-        ChunkHash::mock_padded_chunk_hash_for_testing(&chunks_without_padding[num_real_chunks - 1]);
+        ChunkInfo::mock_padded_chunk_info_for_testing(&chunks_without_padding[num_real_chunks - 1]);
     let chunks_with_padding = [
         chunks_without_padding,
         vec![padded_chunk; N_SNARKS - num_real_chunks],

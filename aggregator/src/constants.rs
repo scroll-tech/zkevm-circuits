@@ -8,8 +8,8 @@ pub(crate) const CHAIN_ID_LEN: usize = 8;
 /// Digest length
 pub(crate) const DIGEST_LEN: usize = 32;
 
-// TODO(ZZ): update to the right degree
-pub(crate) const LOG_DEGREE: u32 = 19;
+// TODO: make this dynamic
+pub(crate) const LOG_DEGREE: u32 = 21;
 
 // ================================
 // indices for chunk pi hash table
@@ -62,4 +62,4 @@ pub(crate) const BITS: usize = 88;
 /// Max number of snarks to be aggregated in a chunk.
 /// If the input size is less than this, dummy snarks
 /// will be padded.
-pub const MAX_AGG_SNARKS: usize = 15;
+pub const MAX_AGG_SNARKS: usize = 45;

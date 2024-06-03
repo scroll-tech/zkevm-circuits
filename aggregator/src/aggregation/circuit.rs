@@ -247,13 +247,13 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     //   instances from previous accumulators)
                     // - new accumulator to be verified on chain
                     //
+                    log::debug!("aggregation: assigning aggregation");
                     let (assigned_aggregation_instances, acc) = aggregate::<KzgAs<Bn256, Bdfg21>>(
                         &self.svk,
                         &loader,
                         &self.snarks_with_padding,
                         self.as_proof(),
                     );
-                    log::trace!("aggregation circuit during assigning");
                     for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
                         log::trace!("{}-th instance: {:?}", i, e.value)
                     }
@@ -274,6 +274,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     loader.ctx_mut().print_stats(&["snark aggregation"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
+                    log::debug!("aggregation: assigning barycentric");
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
                         &self.batch_hash.point_evaluation_assignments.coefficients,
@@ -341,7 +342,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 self.batch_hash.number_of_valid_chunks,
                 &preimages,
             )
-            .map_err(|_e| Error::ConstraintSystemFailure)?;
+            .map_err(|e| {
+                log::error!("assign_batch_hashes err {:#?}", e);
+                Error::ConstraintSystemFailure
+            })?;
 
             end_timer!(timer);
 

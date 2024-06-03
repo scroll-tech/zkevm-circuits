@@ -1818,7 +1818,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "al_idx starts with 1",
-                meta.query_advice(al_idx, Rotation::next()),
+                meta.query_advice(al_idx, Rotation::cur()),
                 1.expr(),
             );
             cb.require_zero(

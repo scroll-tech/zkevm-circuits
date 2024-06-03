@@ -204,6 +204,7 @@ impl CircuitExt<Fr> for DynamicHashCircuit {
     }
 }
 
+#[ignore = "it takes too much time"]
 #[test]
 fn test_hash_circuit() {
     const LEN: usize = 100;

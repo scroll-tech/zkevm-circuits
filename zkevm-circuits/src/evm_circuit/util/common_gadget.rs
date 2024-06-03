@@ -841,6 +841,7 @@ impl<F: Field> TransferToGadget<F> {
         } else {
             (0.into(), 0.into())
         };
+
         debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
         self.receiver.assign(
             region,

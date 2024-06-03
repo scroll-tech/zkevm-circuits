@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "aggregator"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "ark-std 0.3.0",
  "bitstream-io",
@@ -645,7 +645,7 @@ checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
 
 [[package]]
 name = "bus-mapping"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "ctor",
  "env_logger",
@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "circuit-benchmarks"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "ark-std 0.3.0",
  "bus-mapping",
@@ -1533,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "eth-types"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "base64 0.13.1",
  "ethers-core",
@@ -1844,7 +1844,7 @@ dependencies = [
 
 [[package]]
 name = "external-tracer"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "eth-types",
  "geth-utils",
@@ -2071,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "gadgets"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "eth-types",
  "halo2_proofs 1.1.0",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "geth-utils"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "env_logger",
  "gobuild",
@@ -2725,7 +2725,7 @@ dependencies = [
 
 [[package]]
 name = "integration-tests"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "bus-mapping",
  "env_logger",
@@ -3061,7 +3061,7 @@ dependencies = [
 
 [[package]]
 name = "mock"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "eth-types",
  "ethers-core",
@@ -3075,7 +3075,7 @@ dependencies = [
 
 [[package]]
 name = "mpt-zktrie"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "env_logger",
  "eth-types",
@@ -3779,7 +3779,7 @@ dependencies = [
 
 [[package]]
 name = "prover"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "aggregator",
  "anyhow",
@@ -5109,7 +5109,7 @@ dependencies = [
 
 [[package]]
 name = "testool"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "bus-mapping",
@@ -6009,7 +6009,7 @@ dependencies = [
 
 [[package]]
 name = "zkevm-circuits"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "array-init",
  "bus-mapping",
