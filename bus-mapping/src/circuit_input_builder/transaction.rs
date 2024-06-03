@@ -13,7 +13,7 @@ use eth_types::{
     state_db::{CodeDB, StateDB},
     AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
-use ethers_core::utils::{get_contract_address, keccak256};
+use ethers_core::utils::get_contract_address;
 
 /// Precision of transaction L1 fee
 pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
@@ -365,6 +365,8 @@ impl Transaction {
             l1_fee,
             l1_fee_committed
         );
+        let rlp_signed_bytes = eth_tx.rlp().to_vec();
+        //debug_assert_eq!(H256(ethers_core::utils::keccak256(&bytes)), eth_tx.hash);
 
         Ok(Self {
             block_num,
@@ -373,12 +375,7 @@ impl Transaction {
             tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
-            //rlp_signed_bytes: get_rlp_signed(eth_tx),
-            rlp_signed_bytes: {
-                let bytes = eth_tx.rlp().to_vec();
-                debug_assert_eq!(H256(keccak256(&bytes)), eth_tx.hash);
-                bytes
-            },
+            rlp_signed_bytes,
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
