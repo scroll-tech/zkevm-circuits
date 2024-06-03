@@ -18,7 +18,7 @@ use aggregator_snark_verifier::{
     Error,
 };
 use aggregator_snark_verifier_sdk::{
-    halo2::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
+    halo2::{PoseidonTranscript, POSEIDON_SPEC},
     PlonkVerifier, Snark,
 };
 use ark_std::{end_timer, start_timer};
@@ -57,7 +57,7 @@ pub(crate) fn extract_accumulators_and_proof(
         .iter()
         .flat_map(|snark| {
             transcript_read.new_stream(snark.proof.as_slice());
-            let proof = Shplonk::read_proof(
+            let proof = KzgAs::read_proof(
                 &svk,
                 &snark.protocol,
                 &snark.instances,
@@ -65,7 +65,7 @@ pub(crate) fn extract_accumulators_and_proof(
             );
             // each accumulator has (lhs, rhs) based on Shplonk
             // lhs and rhs are EC points
-            Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
+            KzgAs::verify(&svk, &snark.protocol, &snark.instances, &proof)
         })
         .collect::<Vec<_>>();
     // sanity check on the accumulator
