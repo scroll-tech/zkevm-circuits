@@ -25,13 +25,13 @@ impl From<Proof> for BatchProof {
         let vk = proof.vk;
         let git_version = proof.git_version;
 
-        // raw_proof = acc + proof
+        // "onchain proof" = accumulator + proof
         let proof = serialize_instance(&instances[0][..ACC_LEN])
             .into_iter()
             .chain(proof.proof)
             .collect();
 
-        // raw_instances = pi_data
+        // "onchain instances" = pi_data
         let instances = serialize_instance(&instances[0][ACC_LEN..]);
 
         Self {
@@ -50,6 +50,8 @@ impl BatchProof {
         from_json_file(dir, &dump_filename(name))
     }
 
+    /// Returns the calldata given to YUL verifier.
+    /// Format: Accumulator(12x32bytes) || PIHASH(32x32bytes) || Proof
     pub fn calldata(self) -> Vec<u8> {
         let proof = self.proof_to_verify();
 
@@ -71,8 +73,12 @@ impl BatchProof {
         dump_as_json(dir, &filename, &self)
     }
 
+    // Recover a `Proof` which follows halo2 sematic of "proof" and "instance",
+    // where "accumulators" are instance instead of proof, not like "onchain proof".
     pub fn proof_to_verify(self) -> Proof {
+        // raw.proof is accumulator + proof
         assert!(self.raw.proof.len() > ACC_BYTES);
+        // raw.instances is PI
         assert_eq!(self.raw.instances.len(), PI_BYTES);
 
         // instances = raw_proof[..12] (acc) + raw_instances (pi_data)
@@ -96,6 +102,7 @@ impl BatchProof {
         let real_calldata = self.clone().calldata();
 
         let proof = self.proof_to_verify();
+        // encode_calldata output: instances || proof
         let expected_calldata = encode_calldata(&proof.instances(), &proof.proof);
 
         assert_eq!(real_calldata, expected_calldata);

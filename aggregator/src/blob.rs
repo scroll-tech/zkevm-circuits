@@ -1,6 +1,6 @@
 use crate::{
     aggregation::{interpolate, witgen::init_zstd_encoder, BLS_MODULUS},
-    BatchHash, ChunkHash,
+    BatchHash, ChunkInfo,
 };
 
 use eth_types::{ToBigEndian, H256, U256};
@@ -173,7 +173,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         N_BATCH_BYTES + Self::n_rows_digest()
     }
 
-    pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkHash]) -> Self {
+    pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkInfo]) -> Self {
         assert!(num_valid_chunks > 0);
         assert!(num_valid_chunks <= N_SNARKS);
 

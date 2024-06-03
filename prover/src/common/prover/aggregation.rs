@@ -4,7 +4,7 @@ use crate::{
     io::{load_snark, write_snark},
     utils::gen_rng,
 };
-use aggregator::{AggregationCircuit, BatchHash, ChunkHash, MAX_AGG_SNARKS};
+use aggregator::{AggregationCircuit, BatchHash, ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{anyhow, Result};
 use rand::Rng;
 use snark_verifier_sdk::Snark;
@@ -16,7 +16,7 @@ impl Prover {
         id: &str,
         degree: u32,
         mut rng: impl Rng + Send,
-        chunk_hashes: &[ChunkHash],
+        chunk_hashes: &[ChunkInfo],
         previous_snarks: &[Snark],
     ) -> Result<Snark> {
         env::set_var("AGGREGATION_CONFIG", layer_config_path(id));
@@ -35,7 +35,7 @@ impl Prover {
         name: &str,
         id: &str,
         degree: u32,
-        chunk_hashes: &[ChunkHash],
+        chunk_hashes: &[ChunkInfo],
         previous_snarks: &[Snark],
         output_dir: Option<&str>,
     ) -> Result<Snark> {

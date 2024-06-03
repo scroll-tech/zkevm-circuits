@@ -8,14 +8,15 @@ use zkevm_circuits::witness::Block;
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 /// A chunk is a set of continuous blocks.
-/// A ChunkHash consists of 5 hashes, representing the changes incurred by this chunk of blocks:
+/// ChunkInfo is metadata of chunk, with following fields:
 /// - state root before this chunk
 /// - state root after this chunk
 /// - the withdraw root after this chunk
 /// - the data hash of this chunk
 /// - the tx data hash of this chunk
+/// - flattened L2 tx bytes
 /// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
-pub struct ChunkHash {
+pub struct ChunkInfo {
     /// Chain identifier
     pub chain_id: u64,
     /// state root before this chunk
@@ -33,7 +34,7 @@ pub struct ChunkHash {
     pub is_padding: bool,
 }
 
-impl ChunkHash {
+impl ChunkInfo {
     /// Construct by a witness block.
     pub fn from_witness_block(block: &Block, is_padding: bool) -> Self {
         // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>
@@ -121,9 +122,9 @@ impl ChunkHash {
         H256(keccak256(&self.tx_bytes))
     }
 
-    /// Sample a chunk hash from random (for testing)
+    /// Sample a chunk info from random (for testing)
     #[cfg(test)]
-    pub(crate) fn mock_random_chunk_hash_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
+    pub(crate) fn mock_random_chunk_info_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
         use eth_types::Address;
         use ethers_core::types::TransactionRequest;
         use rand::{
@@ -194,7 +195,7 @@ impl ChunkHash {
 
     /// Build a padded chunk from previous one
     #[cfg(test)]
-    pub(crate) fn mock_padded_chunk_hash_for_testing(previous_chunk: &Self) -> Self {
+    pub(crate) fn mock_padded_chunk_info_for_testing(previous_chunk: &Self) -> Self {
         assert!(
             !previous_chunk.is_padding,
             "previous chunk is padded already"

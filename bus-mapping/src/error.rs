@@ -180,8 +180,11 @@ pub enum ExecError {
 }
 
 // TODO: Move to impl block.
-pub(crate) fn get_step_reported_error(op: &OpcodeId, error: GethExecError) -> ExecError {
-    match error {
+pub(crate) fn get_step_reported_error(
+    op: &OpcodeId,
+    error: GethExecError,
+) -> Result<ExecError, Error> {
+    Ok(match error {
         GethExecError::OutOfGas | GethExecError::GasUintOverflow => {
             // NOTE: We report a GasUintOverflow error as an OutOfGas error
             let oog_err = match op {
@@ -218,6 +221,12 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: GethExecError) -> Ex
         GethExecError::StackOverflow { .. } => ExecError::StackOverflow,
         GethExecError::StackUnderflow { .. } => ExecError::StackUnderflow,
         GethExecError::WriteProtection => ExecError::WriteProtection,
-        _ => panic!("Unknown GethExecStep.error: {error}"),
-    }
+        _ => {
+            log::error!("Unknown GethExecStep.error: {error}");
+            let err_msg = format!("Unknown GethExecStep.error: {op:?} {error}");
+            return Err(Error::InvalidGethExecTrace(Box::leak(
+                err_msg.into_boxed_str(),
+            )));
+        }
+    })
 }

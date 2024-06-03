@@ -14,11 +14,7 @@ use zkevm_circuits::super_circuit::params::{
     get_sub_circuit_limit_and_confidence, get_super_circuit_params,
 };
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SubCircuitRowUsage {
-    pub name: String,
-    pub row_number: usize,
-}
+pub use super::SubCircuitRowUsage;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RowUsage {
@@ -200,20 +196,12 @@ impl CircuitCapacityChecker {
             // code for current run has been evaluated in previous
             if code_db.0.insert(hash, bytes).is_some() {
                 assert_eq!(rows[2].name, "bytecode");
-                rows[2].row_num_real -= bytes_len + 1;
+                rows[2].row_number -= bytes_len + 1;
                 assert_eq!(rows[11].name, "poseidon");
-                rows[11].row_num_real -= bytes_len / (31 * 2) * 9;
+                rows[11].row_number -= bytes_len / (31 * 2) * 9;
             }
         }
-
-        let row_usage_details: Vec<SubCircuitRowUsage> = rows
-            .into_iter()
-            .map(|x| SubCircuitRowUsage {
-                name: x.name,
-                row_number: x.row_num_real,
-            })
-            .collect_vec();
-        let tx_row_usage = RowUsage::from_row_usage_details(row_usage_details);
+        let tx_row_usage = RowUsage::from_row_usage_details(rows);
         self.row_usages.push(tx_row_usage.clone());
         self.acc_row_usage.add(&tx_row_usage);
 

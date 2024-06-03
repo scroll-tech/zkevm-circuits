@@ -1654,7 +1654,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         if let Some(error) = step.error {
-            return Ok(Some(get_step_reported_error(&step.op, error)));
+            return Ok(Some(get_step_reported_error(&step.op, error)?));
         }
 
         let call = self.call()?;
