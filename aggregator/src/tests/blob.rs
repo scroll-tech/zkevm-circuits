@@ -8,7 +8,7 @@ use crate::{
 };
 use aggregator_snark_verifier::halo2_base::{
     gates::range::{RangeConfig},
-    gates::flex_gate::FlexGateConfigParams,
+    gates::flex_gate::{FlexGateConfigParams, threads::MultiPhaseCoreManager},
     halo2_proofs::{
         circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
@@ -123,21 +123,9 @@ impl Circuit<Fr> for BlobCircuit {
 
                 let gate = &config.barycentric.scalar.range.gate;
 
+                // TODO: check correctness of this!
                 let core_manager = MultiPhaseCoreManager::new(false);
-                let mut ctx = core_manager.
-                let mut ctx = Context::new(
-                    false, // witness_gen_only: bool,
-                    1, // phase: usize,
-                    "asdfasdfasdf", // type_id: &'static str,
-                    1, // context_id: usize,
-                    // copy_manager: SharedCopyConstraintManager<F>,
-                    region,
-                    ContextParams {
-                        max_rows: gate.max_rows,
-                        num_context_ids: 1,
-                        fixed_columns: gate.constants.clone(),
-                    },
-                );
+                let mut ctx = core_manager.main(0);
 
                 let point_eval = PointEvaluationAssignments::from(&self.data);
                 Ok(config.barycentric.assign(
