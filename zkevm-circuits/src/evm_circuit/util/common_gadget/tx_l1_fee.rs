@@ -173,9 +173,7 @@ impl<F: Field> TxL1FeeGadget<F> {
             tx_signed_length
         );
         let (tx_l1_fee, remainder) = if cfg!(feature = "l1_fee_curie") {
-            let (l1_fee, remainder) = l1_fee.tx_l1_fee(0, tx_signed_length);
-            println!("l1_fee {} remainder {}", l1_fee, remainder);
-            (l1_fee, remainder)
+            l1_fee.tx_l1_fee(0, tx_signed_length)
         } else {
             l1_fee.tx_l1_fee(tx_data_gas_cost, 0)
         };
@@ -551,7 +549,6 @@ mod tests {
                 0,
                 Value::known(witnesses[4].to_scalar().unwrap()),
             )?;
-            println!("expected_tx_l1_fee {:?}", witnesses);
 
             Ok(())
         }
