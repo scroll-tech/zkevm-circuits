@@ -1,27 +1,17 @@
 use super::{CachedRegion, Cell};
 use crate::{
     evm_circuit::{
-        param::N_BYTES_U64,
         table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
             math_gadget::{IsZeroGadget, LtGadget},
-            U64Word, Word,
         },
     },
     table::BlockContextFieldTag,
     util::{Expr, Field},
 };
-use bus_mapping::{
-    circuit_input_builder::{TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION},
-    l2_predeployed::l1_gas_price_oracle,
-};
-use eth_types::{
-    forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID},
-    utils::is_precompiled,
-    Address, ToLittleEndian, ToScalar, U256,
-};
+
+use eth_types::forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID};
 //use eth_types::{ToLittleEndian, ToScalar, U256};
 use gadgets::util::not;
 use halo2_proofs::{
@@ -103,9 +93,9 @@ impl<F: Field> CurieGadget<F> {
         self.is_scroll_chain.assign(
             region,
             offset,
-            (F::from(chain_id)
+            F::from(chain_id)
                 - F::from(SCROLL_MAINNET_CHAIN_ID)
-                    * (F::from(chain_id) - F::from(SCROLL_DEVNET_CHAIN_ID))),
+                    * (F::from(chain_id) - F::from(SCROLL_DEVNET_CHAIN_ID)),
         )?;
         let curie_fork_block_num =
             bus_mapping::circuit_input_builder::curie::get_curie_fork_block(chain_id);

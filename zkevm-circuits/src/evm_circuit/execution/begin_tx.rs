@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
-        table::{FixedTableTag, Lookup},
         util::{
             and,
             common_gadget::{
@@ -32,11 +31,7 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
-use eth_types::{
-    forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID},
-    utils::is_precompiled,
-    Address, ToLittleEndian, ToScalar, U256,
-};
+use eth_types::{utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
