@@ -1,14 +1,14 @@
 use aggregator_snark_verifier::{
+    halo2_base::halo2_proofs::{
+        halo2curves::bn256::{Fq, Fr, G1Affine},
+        plonk::{Column, ConstraintSystem, Instance},
+    },
     loader::halo2::halo2_ecc::{
         ecc::{BaseFieldEccChip, EccChip},
         fields::fp::FpConfig,
         halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig},
     },
     util::arithmetic::modulus,
-};
-use halo2_proofs::{
-    halo2curves::bn256::{Fq, Fr, G1Affine},
-    plonk::{Column, ConstraintSystem, Instance},
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
@@ -29,7 +29,7 @@ use crate::{
 /// This config is hard coded for BN256 curve.
 pub struct AggregationConfig<const N_SNARKS: usize> {
     /// Non-native field chip configurations
-    pub base_field_config: FpConfig<Fr, Fq>,
+    pub base_field_config: FpConfig<Fr>,
     /// Keccak circuit configurations
     pub keccak_circuit_config: KeccakCircuitConfig<Fr>,    
     /// RLC config
@@ -193,7 +193,7 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
 
 #[test]
 fn aggregation_circuit_degree() {
-    use halo2_ecc::fields::fp::FpStrategy;
+    use aggregator_snark_verifier::loader::halo2::halo2_ecc::fields::FpStrategy;
     let mut cs = ConstraintSystem::<Fr>::default();
     let param = ConfigParams {
         strategy: FpStrategy::Simple,

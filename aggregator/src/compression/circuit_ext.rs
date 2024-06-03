@@ -1,7 +1,9 @@
 //! CircuitExt implementation for compression circuit.
 
+use aggregator_snark_verifier::halo2_base::halo2_proofs::{
+    halo2curves::bn256::Fr, plonk::Selector,
+};
 use aggregator_snark_verifier_sdk::CircuitExt;
-use halo2_proofs::{halo2curves::bn256::Fr, plonk::Selector};
 
 use crate::ACC_LEN;
 

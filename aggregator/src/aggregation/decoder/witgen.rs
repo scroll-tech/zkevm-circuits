@@ -1,5 +1,5 @@
+use aggregator_snark_verifier::halo2_base::halo2_proofs::circuit::Value;
 use eth_types::Field;
-use halo2_proofs::circuit::Value;
 use revm_precompile::HashMap;
 
 mod params;
@@ -1860,7 +1860,7 @@ mod tests {
     #[test]
     fn test_zstd_witness_processing_batch_data() -> Result<(), std::io::Error> {
         use super::*;
-        use halo2_proofs::halo2curves::bn256::Fr;
+        use aggregator_snark_verifier::halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 
         let mut batch_files = fs::read_dir("./data/test_batches")?
             .map(|entry| entry.map(|e| e.path()))

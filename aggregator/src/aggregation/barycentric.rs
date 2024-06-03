@@ -1,18 +1,18 @@
+use aggregator_snark_verifier::{
+    halo2_base::{
+        gates::{range::RangeConfig, GateInstructions},
+        halo2_proofs::circuit::Value,
+        utils::{fe_to_biguint, modulus},
+        AssignedValue, QuantumCell,
+    },
+    halo2_ecc::{
+        bigint::{CRTInteger, OverflowInteger},
+        fields::{fp::FpConfig, FieldChip},
+        halo2_base::{utils::decompose_bigint_option, Context},
+    },
+};
 use eth_types::{ToLittleEndian, U256};
-use halo2_base::{
-    gates::{range::RangeConfig, GateInstructions},
-    utils::{fe_to_biguint, modulus},
-    AssignedValue, QuantumCell,
-};
-use halo2_ecc::{
-    bigint::{CRTInteger, OverflowInteger},
-    fields::{fp::FpConfig, FieldChip},
-    halo2_base::{utils::decompose_bigint_option, Context},
-};
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField},
-};
+use halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField};
 use itertools::Itertools;
 use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
@@ -50,7 +50,7 @@ pub static ROOTS_OF_UNITY: LazyLock<Vec<Scalar>> = LazyLock::new(|| {
 
 #[derive(Clone, Debug)]
 pub struct BarycentricEvaluationConfig {
-    pub scalar: FpConfig<Fr, Scalar>,
+    pub scalar: FpConfig<Fr>,
 }
 
 #[derive(Default)]

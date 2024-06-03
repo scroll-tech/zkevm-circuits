@@ -1,5 +1,13 @@
+use aggregator_snark_verifier::{
+    halo2_base::{
+        halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error},
+        AssignedValue,
+    },
+    loader::native::NativeLoader,
+    pcs::kzg::KzgAccumulator,
+};
 use eth_types::Field;
-use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
+use halo2curves::bn256::G1Affine;
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -100,4 +108,22 @@ pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
     }
 
     acc
+}
+
+// TODO: does this already exist in snark-verifier?
+pub fn flatten_accumulator<'a>(
+    accumulator: KzgAccumulator<G1Affine, NativeLoader>,
+) -> Vec<AssignedValue<Fr>> {
+    let KzgAccumulator { lhs, rhs } = accumulator;
+    let lhs = lhs.into_assigned();
+    let rhs = rhs.into_assigned();
+
+    lhs.x
+        .truncation
+        .limbs
+        .into_iter()
+        .chain(lhs.y.truncation.limbs.into_iter())
+        .chain(rhs.x.truncation.limbs.into_iter())
+        .chain(rhs.y.truncation.limbs.into_iter())
+        .collect()
 }

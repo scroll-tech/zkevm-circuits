@@ -1,11 +1,11 @@
-use halo2_proofs::{
+use aggregator_snark_verifier::halo2_base::halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Advice, Column, ConstraintSystem, Fixed, SecondPhase, Selector},
     poly::Rotation,
 };
 
 #[cfg(test)]
-use halo2_proofs::plonk::FirstPhase;
+use aggregator_snark_verifier::halo2_base::halo2_proofs::plonk::FirstPhase;
 use itertools::Itertools;
 use zkevm_circuits::{
     table::{KeccakTable, LookupTable},

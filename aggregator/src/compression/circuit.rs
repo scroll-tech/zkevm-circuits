@@ -3,6 +3,11 @@
 use std::fs::File;
 
 use aggregator_snark_verifier::{
+    halo2_base::halo2_proofs::{
+        circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
+        halo2curves::bn256::G1Affine,
+        plonk::{Circuit, ConstraintSystem, Error},
+    },
     loader::halo2::{
         halo2_ecc::{
             halo2_base,
@@ -16,20 +21,19 @@ use aggregator_snark_verifier::{
         },
         Halo2Loader,
     },
-    pcs::kzg::{Bdfg21, Kzg, KzgSuccinctVerifyingKey},
+    pcs::kzg::{Bdfg21, KzgAs, KzgSuccinctVerifyingKey},
 };
 use aggregator_snark_verifier_sdk::{
-    aggregate, flatten_accumulator, types::Svk, Snark, SnarkWitness,
+    halo2::aggregation::{aggregate, Svk},
+    Snark, SnarkWitness,
 };
 use ark_std::{end_timer, start_timer};
-use halo2_proofs::{
-    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::G1Affine,
-    plonk::{Circuit, ConstraintSystem, Error},
-};
 use rand::Rng;
 
-use crate::{core::extract_proof_and_instances_with_pairing_check, param::ConfigParams, ACC_LEN};
+use crate::{
+    core::extract_proof_and_instances_with_pairing_check, param::ConfigParams,
+    util::flatten_accumulator, ACC_LEN,
+};
 
 use super::config::CompressionConfig;
 
@@ -53,6 +57,7 @@ pub struct CompressionCircuit {
 }
 
 impl Circuit<Fr> for CompressionCircuit {
+    type Params = ();
     type Config = CompressionConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -126,7 +131,7 @@ impl Circuit<Fr> for CompressionCircuit {
 
                 let ecc_chip = config.ecc_chip();
                 let loader = Halo2Loader::new(ecc_chip, ctx);
-                let (assigned_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
+                let (assigned_instances, acc) = aggregate::<KzgAs<Bn256, Bdfg21>>(
                     &self.svk,
                     &loader,
                     &[self.snark.clone()],

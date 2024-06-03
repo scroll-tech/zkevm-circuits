@@ -1,11 +1,11 @@
-use gadgets::util::{and, not, select, Expr};
-use halo2_proofs::{
+use aggregator_snark_verifier::halo2_base::halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{
         Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
+use gadgets::util::{and, not, select, Expr};
 use itertools::Itertools;
 use tables::SeqInstTable;
 use witgen::{SequenceExec, SequenceExecInfo, SequenceInfo, ZstdTag};
@@ -1042,9 +1042,10 @@ impl<F: Field> SeqExecConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{
-        circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
+    use aggregator_snark_verifier::halo2_base::halo2_proofs::{
+        circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit,
     };
+    use halo2curves::bn256::Fr;
     use witgen::AddressTableRow;
     use zkevm_circuits::util::MockChallenges;
 
@@ -1125,6 +1126,7 @@ mod tests {
     }
 
     impl Circuit<Fr> for SeqExecMock {
+        type Params = ();
         type Config = SeqExecMockConfig;
         type FloorPlanner = SimpleFloorPlanner;
         fn without_witnesses(&self) -> Self {

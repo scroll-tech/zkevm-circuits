@@ -1,4 +1,5 @@
-use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
+use aggregator_snark_verifier::halo2_base::halo2_proofs::circuit::Value;
+use halo2curves::bn256::Fr;
 
 use crate::aggregation::decoder::witgen::util::bit_length;
 

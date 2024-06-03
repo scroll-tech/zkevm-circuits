@@ -2,6 +2,14 @@ mod seq_exec;
 mod tables;
 pub mod witgen;
 
+use aggregator_snark_verifier::halo2_base::halo2_proofs::{
+    arithmetic::Field,
+    circuit::{AssignedCell, Layouter, Value},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
+    },
+    poly::Rotation,
+};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -9,15 +17,7 @@ use gadgets::{
     less_than::{LtChip, LtConfig, LtInstruction},
     util::{and, not, select, sum, Expr},
 };
-use halo2_proofs::{
-    arithmetic::Field,
-    circuit::{AssignedCell, Layouter, Value},
-    halo2curves::bn256::Fr,
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
-    },
-    poly::Rotation,
-};
+use halo2curves::bn256::Fr;
 use itertools::Itertools;
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
@@ -5434,7 +5434,7 @@ mod tests {
         witgen::{init_zstd_encoder, process, MultiBlockProcessResult},
         DecoderConfig, DecoderConfigArgs,
     };
-    use halo2_proofs::{
+    use aggregator_snark_verifier::halo2_base::halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr,
@@ -5454,6 +5454,7 @@ mod tests {
     }
 
     impl<const L: usize, const R: usize> Circuit<Fr> for DecoderConfigTester<L, R> {
+        type Params = ();
         type Config = (DecoderConfig<L, R>, U8Table, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
 

@@ -6,15 +6,16 @@ use crate::{
     param::ConfigParams,
     BatchDataConfig, MAX_AGG_SNARKS,
 };
-use halo2_base::{
-    gates::range::{RangeConfig, RangeStrategy},
-    Context, ContextParams,
-};
-use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    dev::{MockProver, VerifyFailure},
-    halo2curves::bn256::Fr,
-    plonk::{Circuit, ConstraintSystem, Error},
+use aggregator_snark_verifier::halo2_base::{
+    gates::range::{RangeConfig},
+    gates::flex_gate::FlexGateConfigParams,
+    halo2_proofs::{
+        circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+        dev::{MockProver, VerifyFailure},
+        halo2curves::bn256::Fr,
+        plonk::{Circuit, ConstraintSystem, Error},
+    },
+    Context, SKIP_FIRST_PASS,
 };
 use zkevm_circuits::{
     table::{KeccakTable, RangeTable, U8Table},
@@ -49,6 +50,7 @@ struct BlobConfig {
 }
 
 impl Circuit<Fr> for BlobCircuit {
+    type Params = ();
     type Config = BlobConfig;
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
@@ -66,14 +68,15 @@ impl Circuit<Fr> for BlobCircuit {
         let parameters = ConfigParams::aggregation_param();
         let range = RangeConfig::<Fr>::configure(
             meta,
-            RangeStrategy::Vertical,
-            &parameters.num_advice,
+            FlexGateConfigParams {
+                k: 21,
+                num_advice_per_phase: parameters.num_advice.clone(),
+                num_fixed: parameters.num_fixed,
+            },
             &parameters.num_lookup_advice,
-            parameters.num_fixed,
             parameters.lookup_bits,
-            0,
-            parameters.degree.try_into().unwrap(),
         );
+
         let barycentric = BarycentricEvaluationConfig::construct(range);
 
         let challenge_expressions = challenges.exprs(meta);
@@ -109,7 +112,7 @@ impl Circuit<Fr> for BlobCircuit {
             .keccak_table
             .dev_load(&mut layouter, &self.data.preimages(), &challenge_values)?;
 
-        let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+        let mut first_pass = SKIP_FIRST_PASS;
         let barycentric_assignments = layouter.assign_region(
             || "barycentric config",
             |region| -> Result<AssignedBarycentricEvaluationConfig, Error> {
@@ -119,7 +122,15 @@ impl Circuit<Fr> for BlobCircuit {
                 }
 
                 let gate = &config.barycentric.scalar.range.gate;
+
+                let core_manager = MultiPhaseCoreManager::new(false);
+                let mut ctx = core_manager.
                 let mut ctx = Context::new(
+                    false, // witness_gen_only: bool,
+                    1, // phase: usize,
+                    "asdfasdfasdf", // type_id: &'static str,
+                    1, // context_id: usize,
+                    // copy_manager: SharedCopyConstraintManager<F>,
                     region,
                     ContextParams {
                         max_rows: gate.max_rows,

@@ -1,14 +1,16 @@
 use std::iter;
 
-use aggregator_snark_verifier::loader::halo2::halo2_ecc::halo2_base::SKIP_FIRST_PASS;
+use aggregator_snark_verifier::{
+    halo2_base::halo2_proofs::{
+        circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        halo2curves::bn256::Fr,
+        plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
+    },
+    loader::halo2::halo2_ecc::halo2_base::SKIP_FIRST_PASS,
+};
 use aggregator_snark_verifier_sdk::CircuitExt;
 use ark_std::test_rng;
-use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
-    dev::MockProver,
-    halo2curves::bn256::Fr,
-    plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
-};
 use zkevm_circuits::{table::KeccakTable, util::Challenges};
 
 use crate::{
@@ -67,6 +69,7 @@ impl MockChunkCircuit {
 }
 
 impl Circuit<Fr> for MockChunkCircuit {
+    type Params = ();
     type Config = MockConfig;
     type FloorPlanner = SimpleFloorPlanner;
 

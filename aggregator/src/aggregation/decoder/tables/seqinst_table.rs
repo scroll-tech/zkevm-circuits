@@ -1,12 +1,12 @@
+use aggregator_snark_verifier::halo2_base::halo2_proofs::{
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    poly::Rotation,
+};
 use gadgets::{
     is_equal::*,
     is_zero::*,
     util::{and, not, select, Expr},
-};
-use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
-    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
-    poly::Rotation,
 };
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
@@ -126,33 +126,33 @@ pub struct SeqInstTable<F: Field> {
     ref_offset_1_is_zero: IsZeroConfig<F>,
 }
 
-impl<F: Field> LookupTable<F> for SeqInstTable<F> {
-    fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.q_enabled.into(),
-            self.block_index.into(),
-            self.n_seq.into(),
-            self.s_beginning.column.into(),
-            self.seq_index.into(),
-            self.literal_len.into(),
-            self.match_offset.into(),
-            self.match_len.into(),
-        ]
-    }
+// impl<F: Field> LookupTable<F> for SeqInstTable<F> {
+//     fn columns(&self) -> Vec<Column<Any>> {
+//         vec![
+//             self.q_enabled.into(),
+//             self.block_index.into(),
+//             self.n_seq.into(),
+//             self.s_beginning.column.into(),
+//             self.seq_index.into(),
+//             self.literal_len.into(),
+//             self.match_offset.into(),
+//             self.match_len.into(),
+//         ]
+//     }
 
-    fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("q_enabled"),
-            String::from("n_seq"),
-            String::from("block_index"),
-            String::from("s_beginning"),
-            String::from("seq_index"),
-            String::from("literal_len"),
-            String::from("match_offset"),
-            String::from("match_len"),
-        ]
-    }
-}
+//     fn annotations(&self) -> Vec<String> {
+//         vec![
+//             String::from("q_enabled"),
+//             String::from("n_seq"),
+//             String::from("block_index"),
+//             String::from("s_beginning"),
+//             String::from("seq_index"),
+//             String::from("literal_len"),
+//             String::from("match_offset"),
+//             String::from("match_len"),
+//         ]
+//     }
+// }
 
 #[derive(Clone, Debug)]
 struct ChipContext<F: Field> {
@@ -993,14 +993,16 @@ impl<F: Field> SeqInstTable<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{
-        circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
+    use aggregator_snark_verifier::halo2_base::halo2_proofs::{
+        circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit,
     };
+    use halo2curves::bn256::Fr;
 
     #[derive(Clone, Debug)]
     struct SeqTable(Vec<AddressTableRow>);
 
     impl Circuit<Fr> for SeqTable {
+        type Params = ();
         type Config = SeqInstTable<Fr>;
         type FloorPlanner = SimpleFloorPlanner;
         fn without_witnesses(&self) -> Self {
