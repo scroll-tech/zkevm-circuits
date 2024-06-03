@@ -22,7 +22,7 @@ pub mod message_queue {
 pub mod l1_gas_price_oracle {
     use revm_primitives::HashMap;
 
-    use crate::{Address, U256, geth_types::Account};
+    use crate::{geth_types::Account, Address, U256};
     use std::{str::FromStr, sync::LazyLock};
 
     /// L1GasPriceOracle predeployed address
