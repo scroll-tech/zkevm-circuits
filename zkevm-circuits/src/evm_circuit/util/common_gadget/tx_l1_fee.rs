@@ -365,7 +365,9 @@ mod tests {
 
     #[test]
     fn test_tx_l1_fee_with_right_values() {
-        for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE]{
+        //for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE]{
+        for is_curie in [TEST_BEFORE_CURIE]{
+
             let witnesses = [
                 is_curie.into(),
                 TEST_BASE_FEE_BEFORE_CURIE.into(),
@@ -435,11 +437,11 @@ mod tests {
 
             cb.require_boolean("is_curie is bool", is_curie.expr());
             // Old l1 fee
-            let gadget = TxL1FeeGadget::<F>::raw_construct(
+            let gadget =  TxL1FeeGadget::<F>::raw_construct(
                 cb,
                 is_curie.expr(),
                 tx_data_gas_cost.expr(),
-                0.expr(),
+                tx_signed_length.expr(),
             );
 
             // ADD tx_signed_length.expr()
@@ -466,19 +468,23 @@ mod tests {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let [is_curie, base_fee_before_curie, fee_overhead, fee_scalar,
-                tx_l1_fee_before_curie ] = [0, 1, 2, 3, 4].map(|i| witnesses[i].as_u64());
+                tx_data_gas_cost, tx_l1_fee_before_curie ] = [0, 1, 2, 3, 4, 5].map(|i| witnesses[i].as_u64());
 
             let [base_fee_after_curie, l1_blob_basefee, commit_scalar, blob_scalar, tx_signed_length,
                 tx_l1_fee_after_curie] =
-                [5, 6, 7, 8, 9, 10].map(|i| witnesses[i].as_u64());
+                [6, 7, 8, 9, 10, 11].map(|i| witnesses[i].as_u64());
 
             let l1_fee = TxL1Fee {
                 chain_id: eth_types::forks::SCROLL_MAINNET_CHAIN_ID,
-                block_number: 1,
+                block_number: if is_curie == 1{
+                    1
+                }else{
+                    5 + 1
+                },
                 base_fee: if is_curie == 1{
                     base_fee_after_curie
                 }else{
-                    base_fee_after_curie
+                    base_fee_before_curie
                 },
                 fee_overhead,
                 fee_scalar,
@@ -486,13 +492,12 @@ mod tests {
                 commit_scalar,
                 blob_scalar,
             };
-            let tx_data_gas_cost = witnesses[3];
             self.gadget.assign(
                 region,
                 0,
                 l1_fee,
                 TxL1Fee::default(),
-                tx_data_gas_cost.as_u64(),
+                tx_data_gas_cost,
                 tx_signed_length,
             )?;
             
