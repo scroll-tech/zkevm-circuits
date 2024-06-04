@@ -1,7 +1,7 @@
 //! Helper functions for super circuit tests of EIP-1559
 
 use super::CircuitsParams;
-use eth_types::{address, l2_types::BlockTrace, AccessList, AccessListItem, H256};
+use eth_types::{address, l2_types::BlockTrace, AccessList, AccessListItem, Word, H256};
 use ethers_signers::{LocalWallet, Signer};
 use mock::{eth, gwei, TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
