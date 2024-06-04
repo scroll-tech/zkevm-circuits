@@ -560,7 +560,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_access_list = meta.advice_column();
         let is_access_list_address = meta.advice_column();
         let is_access_list_storage_key = meta.advice_column();
-        let field_rlc = meta.advice_column();
+        let field_rlc = meta.advice_column_in(SecondPhase);
 
         // Chunk bytes accumulator
         let is_chunk_bytes = meta.advice_column();
