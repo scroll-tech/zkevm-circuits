@@ -2,7 +2,7 @@
 
 use crate::{
     copy_circuit::CopyCircuit,
-    evm_circuit::EvmCircuit,
+    evm_circuit::{cached::EvmCircuitCached, EvmCircuit},
     state_circuit::StateCircuit,
     util::{log2_ceil, SubCircuit},
     witness::{Block, Rw},
@@ -215,7 +215,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             // use scroll l2 trace
-            let full_witness_block = false;
+            let full_witness_block = cfg!(feature = "scroll");
             let mut block = if full_witness_block {
                 #[cfg(feature = "scroll")]
                 {
@@ -263,7 +263,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             assert!(k <= 20);
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = EvmCircuit::get_test_cicuit_from_block(block.clone());
+            let circuit = EvmCircuitCached::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             evm_checks(prover, &active_gate_rows, &active_lookup_rows)

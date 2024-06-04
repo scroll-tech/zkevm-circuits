@@ -1,5 +1,9 @@
 use super::Prover;
-use crate::{config::layer_config_path, utils::gen_rng, EvmProof};
+use crate::{
+    config::layer_config_path,
+    utils::{gen_rng, read_env_var},
+    EvmProof,
+};
 use aggregator::CompressionCircuit;
 use anyhow::{anyhow, Result};
 use halo2_proofs::halo2curves::bn256::Fr;
@@ -63,7 +67,9 @@ impl Prover {
         let proof = gen_evm_proof_shplonk(params, pk, circuit, instances.clone(), rng);
         let evm_proof = EvmProof::new(proof, &instances, num_instance, Some(pk))?;
 
-        crate::evm::gen_evm_verifier::<C>(params, pk.get_vk(), &evm_proof, output_dir);
+        if read_env_var("SCROLL_PROVER_DUMP_YUL", false) {
+            crate::evm::gen_evm_verifier::<C>(params, pk.get_vk(), &evm_proof, output_dir);
+        }
 
         Ok(evm_proof)
     }

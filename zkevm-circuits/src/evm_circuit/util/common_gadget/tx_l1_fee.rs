@@ -16,6 +16,7 @@ use bus_mapping::{
     l2_predeployed::l1_gas_price_oracle,
 };
 use eth_types::{ToLittleEndian, ToScalar, U256};
+use gadgets::util::not;
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Transaction L1 fee gadget for L1GasPriceOracle contract
@@ -35,13 +36,10 @@ pub(crate) struct TxL1FeeGadget<F> {
     fee_overhead_word: U64Word<F>,
     /// Current value of L1 fee scalar
     fee_scalar_word: U64Word<F>,
-    #[cfg(feature = "l1_fee_curie")]
     /// Current value of L1 blob base fee
     l1_blob_basefee_word: U64Word<F>,
-    #[cfg(feature = "l1_fee_curie")]
     /// Current value of L1 scalar fee
     commit_scalar_word: U64Word<F>,
-    #[cfg(feature = "l1_fee_curie")]
     /// Current value of L1 blob scalar fee
     blob_scalar_word: U64Word<F>,
     /// Current value of L1 base fee
@@ -50,13 +48,10 @@ pub(crate) struct TxL1FeeGadget<F> {
     fee_overhead_committed: Cell<F>,
     /// Committed value of L1 fee scalar
     fee_scalar_committed: Cell<F>,
-    #[cfg(feature = "l1_fee_curie")]
     /// Committed value of L1 blob base fee
     l1_blob_basefee_committed: Cell<F>,
-    #[cfg(feature = "l1_fee_curie")]
     /// Committed value of L1 scalar fee
     commit_scalar_committed: Cell<F>,
-    #[cfg(feature = "l1_fee_curie")]
     /// Committed value of L1 blob scalar fee
     blob_scalar_committed: Cell<F>,
 }
@@ -64,20 +59,17 @@ pub(crate) struct TxL1FeeGadget<F> {
 impl<F: Field> TxL1FeeGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
+        is_curie: Expression<F>,
         tx_id: Expression<F>,
         tx_data_gas_cost: Expression<F>,
-        #[cfg(feature = "l1_fee_curie")] tx_signed_length: Expression<F>,
+        tx_signed_length: Expression<F>,
     ) -> Self {
-        #[cfg(feature = "l1_fee_curie")]
-        let this = Self::raw_construct(cb, tx_data_gas_cost, tx_signed_length);
-        #[cfg(not(feature = "l1_fee_curie"))]
-        let this = Self::raw_construct(cb, tx_data_gas_cost);
+        let this = Self::raw_construct(cb, is_curie.expr(), tx_data_gas_cost, tx_signed_length);
 
         let l1_fee_address = Expression::Constant(l1_gas_price_oracle::ADDRESS.to_scalar().expect(
             "Unexpected address of l2 gasprice oracle contract -> Scalar conversion failure",
         ));
 
-        //TODO: add curie fork fields
         let [base_fee_slot, overhead_slot, scalar_slot] = [
             &l1_gas_price_oracle::BASE_FEE_SLOT,
             &l1_gas_price_oracle::OVERHEAD_SLOT,
@@ -85,7 +77,6 @@ impl<F: Field> TxL1FeeGadget<F> {
         ]
         .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
 
-        #[cfg(feature = "l1_fee_curie")]
         let [l1_blob_basefee, commit_scalar, blob_scalar] = [
             &l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
             &l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
@@ -120,39 +111,34 @@ impl<F: Field> TxL1FeeGadget<F> {
             this.fee_scalar_committed.expr(),
         );
 
-        // TODO: check if can really reuse base_fee_slot read rw above for curie
-        // now try to skip it.
-        // for curie hard fork
-        #[cfg(feature = "l1_fee_curie")]
-        // Read l1blob_baseFee_committed
-        cb.account_storage_read(
-            l1_fee_address.expr(),
-            l1_blob_basefee,
-            this.l1_blob_basefee_word.expr(),
-            tx_id.clone(),
-            this.l1_blob_basefee_committed.expr(),
-        );
+        cb.condition(is_curie.expr(), |cb| {
+            // Read l1blob_basefee_committed
+            cb.account_storage_read(
+                l1_fee_address.expr(),
+                l1_blob_basefee,
+                this.l1_blob_basefee_word.expr(),
+                tx_id.clone(),
+                this.l1_blob_basefee_committed.expr(),
+            );
 
-        #[cfg(feature = "l1_fee_curie")]
-        // Read L1 commit_scalar_committed
-        cb.account_storage_read(
-            l1_fee_address.expr(),
-            commit_scalar,
-            this.commit_scalar_word.expr(),
-            tx_id.expr(),
-            this.commit_scalar_committed.expr(),
-        );
+            // Read L1 commit_scalar_committed
+            cb.account_storage_read(
+                l1_fee_address.expr(),
+                commit_scalar,
+                this.commit_scalar_word.expr(),
+                tx_id.expr(),
+                this.commit_scalar_committed.expr(),
+            );
 
-        #[cfg(feature = "l1_fee_curie")]
-        // Read L1 blob_scalar_committed scalar
-        cb.account_storage_read(
-            l1_fee_address,
-            blob_scalar,
-            this.blob_scalar_word.expr(),
-            tx_id,
-            this.blob_scalar_committed.expr(),
-        );
-
+            // Read L1 blob_scalar_committed scalar
+            cb.account_storage_read(
+                l1_fee_address,
+                blob_scalar,
+                this.blob_scalar_word.expr(),
+                tx_id,
+                this.blob_scalar_committed.expr(),
+            );
+        });
         this
     }
 
@@ -165,18 +151,13 @@ impl<F: Field> TxL1FeeGadget<F> {
         tx_data_gas_cost: u64,
         tx_signed_length: u64,
     ) -> Result<(), Error> {
-        #[cfg(feature = "l1_fee_curie")]
         log::debug!(
             "assign: tx_l1_fee {:?} l1_fee_committed {:?} tx_signed_length {}",
             l1_fee,
             l1_fee_committed,
             tx_signed_length
         );
-        let (tx_l1_fee, remainder) = if cfg!(feature = "l1_fee_curie") {
-            l1_fee.tx_l1_fee(0, tx_signed_length)
-        } else {
-            l1_fee.tx_l1_fee(tx_data_gas_cost, 0)
-        };
+        let (tx_l1_fee, remainder) = l1_fee.tx_l1_fee(tx_data_gas_cost, tx_signed_length);
 
         self.tx_l1_fee_word
             .assign(region, offset, Some(U256::from(tx_l1_fee).to_le_bytes()))?;
@@ -196,16 +177,13 @@ impl<F: Field> TxL1FeeGadget<F> {
         )?;
 
         // curie fields
-        #[cfg(feature = "l1_fee_curie")]
         self.l1_blob_basefee_word.assign(
             region,
             offset,
             Some(l1_fee.l1_blob_basefee.to_le_bytes()),
         )?;
-        #[cfg(feature = "l1_fee_curie")]
         self.commit_scalar_word
             .assign(region, offset, Some(l1_fee.commit_scalar.to_le_bytes()))?;
-        #[cfg(feature = "l1_fee_curie")]
         self.blob_scalar_word
             .assign(region, offset, Some(l1_fee.blob_scalar.to_le_bytes()))?;
 
@@ -226,19 +204,16 @@ impl<F: Field> TxL1FeeGadget<F> {
         )?;
 
         // curie fields
-        #[cfg(feature = "l1_fee_curie")]
         self.l1_blob_basefee_committed.assign(
             region,
             offset,
             region.word_rlc(l1_fee_committed.l1_blob_basefee.into()),
         )?;
-        #[cfg(feature = "l1_fee_curie")]
         self.commit_scalar_committed.assign(
             region,
             offset,
             region.word_rlc(l1_fee_committed.commit_scalar.into()),
         )?;
-        #[cfg(feature = "l1_fee_curie")]
         self.blob_scalar_committed.assign(
             region,
             offset,
@@ -248,7 +223,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         Ok(())
     }
 
-    pub(crate) fn rw_delta(&self) -> Expression<F> {
+    pub(crate) fn rw_delta(&self, is_curie: Expression<F>) -> Expression<F> {
         // L1 base fee Read
         // L1 fee overhead Read
         // L1 fee scalar Read
@@ -256,11 +231,8 @@ impl<F: Field> TxL1FeeGadget<F> {
         // l1 blob baseFee
         // commit scalar
         // blob scalar
-        if cfg!(feature = "l1_fee_curie") {
-            6.expr()
-        } else {
-            3.expr()
-        }
+        // TODO: we could optimze the "overhead" and "scalar" for curie
+        3.expr() + is_curie.expr() * 3.expr()
     }
 
     pub(crate) fn tx_l1_fee(&self) -> Expression<F> {
@@ -273,8 +245,9 @@ impl<F: Field> TxL1FeeGadget<F> {
 
     fn raw_construct(
         cb: &mut EVMConstraintBuilder<F>,
+        is_curie: Expression<F>,
         tx_data_gas_cost: Expression<F>,
-        #[cfg(feature = "l1_fee_curie")] tx_signed_length: Expression<F>,
+        tx_signed_length: Expression<F>,
     ) -> Self {
         let tx_l1_fee_word = cb.query_word_rlc();
         let remainder_word = cb.query_word_rlc();
@@ -283,15 +256,12 @@ impl<F: Field> TxL1FeeGadget<F> {
         let fee_overhead_word = cb.query_word_rlc();
         let fee_scalar_word = cb.query_word_rlc();
         // curie fields
-        #[cfg(feature = "l1_fee_curie")]
         let l1_blob_basefee_word = cb.query_word_rlc();
-        #[cfg(feature = "l1_fee_curie")]
         let commit_scalar_word = cb.query_word_rlc();
-        #[cfg(feature = "l1_fee_curie")]
         let blob_scalar_word = cb.query_word_rlc();
 
         let tx_l1_fee = from_bytes::expr(&tx_l1_fee_word.cells[..N_BYTES_U64]);
-        let [remainder, base_fee, fee_overhead, _fee_scalar] = [
+        let [remainder, base_fee, fee_overhead, fee_scalar] = [
             &remainder_word,
             &base_fee_word,
             &fee_overhead_word,
@@ -306,7 +276,6 @@ impl<F: Field> TxL1FeeGadget<F> {
             remainder_range.expr(),
         );
 
-        #[cfg(feature = "l1_fee_curie")]
         let [l1_blob_basefee, commit_scalar, blob_scalar] = [
             &l1_blob_basefee_word,
             &commit_scalar_word,
@@ -314,39 +283,31 @@ impl<F: Field> TxL1FeeGadget<F> {
         ]
         .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
-        // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let _tx_l1_gas = if cfg!(feature = "l1_fee_curie") {
-            0.expr()
-        } else {
-            tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead
-        };
-
-        // TODO: new formula for curie
-        #[cfg(feature = "l1_fee_curie")]
+        // For curie and non-curie, see l2geth side implementation:
+        // <https://github.com/scroll-tech/go-ethereum/blob/36d7325ea1cb6749f353f84df7e9903f93aa903b/rollup/fees/rollup_fee.go#L76>
+        cb.condition(is_curie.expr(), |cb| {
             cb.require_equal(
-            "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee == tx_l1_fee * 10e9 + remainder",
-            commit_scalar * base_fee + blob_scalar * tx_signed_length * l1_blob_basefee,
-            //   * tx_l1_gas,
-            tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
-        );
+                "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee == tx_l1_fee * 10e9 + remainder",
+                commit_scalar * base_fee.clone() + blob_scalar * tx_signed_length * l1_blob_basefee,
+                tx_l1_fee.clone() * TX_L1_FEE_PRECISION.expr() + remainder.clone(),
+            );
+        });
 
-        // old formula before curie
-        #[cfg(not(feature = "l1_fee_curie"))]
-        cb.require_equal(
-            "fee_scalar * base_fee * tx_l1_gas == tx_l1_fee * 10e9 + remainder",
-            _fee_scalar * base_fee * _tx_l1_gas,
-            tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
-        );
+        cb.condition(not::expr(is_curie.expr()), |cb| {
+            let tx_l1_gas = tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead;
+            cb.require_equal(
+                "fee_scalar * base_fee * tx_l1_gas == tx_l1_fee * 10e9 + remainder",
+                fee_scalar * base_fee * tx_l1_gas,
+                tx_l1_fee * TX_L1_FEE_PRECISION.expr() + remainder,
+            );
+        });
 
         let base_fee_committed = cb.query_cell_phase2();
         let fee_overhead_committed = cb.query_cell_phase2();
         let fee_scalar_committed = cb.query_cell_phase2();
         // curie fields
-        #[cfg(feature = "l1_fee_curie")]
         let l1_blob_basefee_committed = cb.query_cell_phase2();
-        #[cfg(feature = "l1_fee_curie")]
         let commit_scalar_committed = cb.query_cell_phase2();
-        #[cfg(feature = "l1_fee_curie")]
         let blob_scalar_committed = cb.query_cell_phase2();
 
         Self {
@@ -356,20 +317,14 @@ impl<F: Field> TxL1FeeGadget<F> {
             base_fee_word,
             fee_overhead_word,
             fee_scalar_word,
-            #[cfg(feature = "l1_fee_curie")]
             l1_blob_basefee_word,
-            #[cfg(feature = "l1_fee_curie")]
             commit_scalar_word,
-            #[cfg(feature = "l1_fee_curie")]
             blob_scalar_word,
             base_fee_committed,
             fee_overhead_committed,
             fee_scalar_committed,
-            #[cfg(feature = "l1_fee_curie")]
             l1_blob_basefee_committed,
-            #[cfg(feature = "l1_fee_curie")]
             commit_scalar_committed,
-            #[cfg(feature = "l1_fee_curie")]
             blob_scalar_committed,
         }
     }
@@ -458,6 +413,7 @@ mod tests {
 
     #[derive(Clone)]
     struct TxL1FeeGadgetTestContainer<F> {
+        is_curie: Cell<F>,
         gadget: TxL1FeeGadget<F>,
         tx_data_gas_cost: Cell<F>,
         #[cfg(feature = "l1_fee_curie")]
@@ -472,17 +428,17 @@ mod tests {
             let tx_signed_length = cb.query_cell();
 
             let expected_tx_l1_fee = cb.query_cell();
+            let is_curie = cb.query_cell();
 
-            #[cfg(feature = "l1_fee_curie")]
+            // Old l1 fee
             let gadget = TxL1FeeGadget::<F>::raw_construct(
                 cb,
+                is_curie.expr(),
                 tx_data_gas_cost.expr(),
-                tx_signed_length.expr(),
+                0.expr(),
             );
-            #[cfg(not(feature = "l1_fee_curie"))]
-            // for non "l1_fee_curie" feature, tx_signed_length is not used, can
-            // set to zero
-            let gadget = TxL1FeeGadget::<F>::raw_construct(cb, tx_data_gas_cost.expr());
+
+            // ADD tx_signed_length.expr()
 
             cb.require_equal(
                 "tx_l1_fee must be correct",
@@ -491,10 +447,11 @@ mod tests {
             );
 
             TxL1FeeGadgetTestContainer {
+                is_curie,
                 gadget,
                 tx_data_gas_cost,
-                #[cfg(feature = "l1_fee_curie")]
-                tx_signed_length,
+                // #[cfg(feature = "l1_fee_curie")]
+                // tx_signed_length,
                 expected_tx_l1_fee,
             }
         }
@@ -511,14 +468,13 @@ mod tests {
                 [5, 6, 7, 8].map(|i| witnesses[i].as_u64());
 
             let l1_fee = TxL1Fee {
+                chain_id: eth_types::forks::SCROLL_MAINNET_CHAIN_ID,
+                block_number: 1,
                 base_fee,
                 fee_overhead,
                 fee_scalar,
-                #[cfg(feature = "l1_fee_curie")]
                 l1_blob_basefee,
-                #[cfg(feature = "l1_fee_curie")]
                 commit_scalar,
-                #[cfg(feature = "l1_fee_curie")]
                 blob_scalar,
             };
             let tx_data_gas_cost = witnesses[3];

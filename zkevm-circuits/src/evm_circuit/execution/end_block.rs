@@ -291,7 +291,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             .last_key_value()
             .map(|(_, b)| b.number)
             .unwrap_or_default();
-        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_fork(
+        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_fork_block(
             block.chain_id,
             last_block_number.as_u64(),
         );

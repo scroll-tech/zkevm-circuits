@@ -6,8 +6,8 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget,
-                TxL1FeeGadget, TxL1MsgGadget,
+                CurieGadget, TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget,
+                TxEip1559Gadget, TxL1FeeGadget, TxL1MsgGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -61,7 +61,6 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
-    #[cfg(feature = "l1_fee_curie")]
     // rlp signed tx bytes' length
     tx_signed_length: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -99,6 +98,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_l1_msg: TxL1MsgGadget<F>,
     tx_access_list: TxAccessListGadget<F>,
     tx_eip1559: TxEip1559Gadget<F>,
+    curie: CurieGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -134,10 +134,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        #[cfg(feature = "l1_fee_curie")]
         let tx_signed_length = cb.tx_context(tx_id.expr(), TxContextFieldTag::TxHashLength, None);
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
+
+        let curie = CurieGadget::construct(cb, cb.curr.state.block_number.expr());
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
@@ -148,9 +149,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
             TxL1FeeGadget::construct(
                 cb,
+                not::expr(curie.is_before_curie.expr()),
                 tx_id.expr(),
                 tx_data_gas_cost.expr(),
-                #[cfg(feature = "l1_fee_curie")]
                 tx_signed_length.expr(),
             )
         });
@@ -167,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let l1_rw_delta = select::expr(
             tx_l1_msg.is_l1_msg(),
             tx_l1_msg.rw_delta(),
-            tx_l1_fee.rw_delta(),
+            tx_l1_fee.rw_delta(not::expr(curie.is_before_curie.expr())),
         ) + 1.expr();
 
         // the cost caused by l1
@@ -813,7 +814,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_call_data_word_length,
             tx_call_data_gas_cost,
             tx_data_gas_cost,
-            #[cfg(feature = "l1_fee_curie")]
             tx_signed_length,
             reversion_info,
             intrinsic_gas_cost,
@@ -844,6 +844,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_msg,
             tx_access_list,
             tx_eip1559,
+            curie,
         }
     }
 
@@ -856,11 +857,25 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        /*
-        for (i, idx) in step.rw_indices.iter().copied().enumerate() {
-            log::trace!("begin_tx assign rw: #{i} {:?}", block.rws[idx]);
-        }
-        */
+        ////////////// RWS ////////////////
+        // TxID
+        // gen_tx_access_list_ops
+        // if L1:
+        //      CodeHash
+        //      if empty:
+        //          CodeHash
+        //          if scroll:
+        //              KeccakCodeHash
+        // else:
+        //      3 or 6 l1 fee rw
+        // RwCounterEndOfReversion
+        // IsPersistent
+        // IsSuccess
+        // Nonce
+        // Precompiles
+        // caller addr
+        // callee addr
+        // coinbase
 
         let mut rws = StepRws::new(block, step);
         let rw = rws.next();
@@ -881,23 +896,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_l1_msg
             .assign(region, offset, tx_type, caller_code_hash)?;
 
-        ////////////// RWS ////////////////
-        // if L1:
-        //      CodeHash
-        //      if empty:
-        //          CodeHash
-        //          if scroll:
-        //              KeccakCodeHash
-        // else:
-        //      3 l1 fee rw
-        // RwCounterEndOfReversion
-        // IsPersistent
-        // IsSuccess
-        // Nonce
-        // Precompiles
-        // caller addr
-        // callee addr
-        // coinbase
+        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_enabled(
+            block.chain_id,
+            tx.block_number,
+        );
+        // Add access-list RW offset.
+        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+
         rws.offset_add(if tx_type.is_l1_msg() {
             if caller_code_hash.is_zero() {
                 assert_eq!(
@@ -914,27 +919,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 0
             }
         } else {
-            3
+            if is_curie {
+                6
+            } else {
+                3
+            }
         });
 
-        // Add access-list RW offset.
-        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+        self.curie
+            .assign(region, offset, block.chain_id, tx.block_number)?;
 
-        let _rw = rws.next();
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
 
-        #[cfg(not(feature = "l1_fee_curie"))]
-        {
-            debug_assert_eq!(_rw.tag(), RwTableTag::CallContext);
-            debug_assert_eq!(_rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
-            rws.offset_add(3);
-        }
-
-        #[cfg(feature = "l1_fee_curie")]
-        rws.offset_add(6);
+        // reversion
+        rws.offset_add(3);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::Account);
         debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
+
         let nonce_rw = rw.account_nonce_pair();
 
         let are_precompile_warm: [_; PRECOMPILE_COUNT] =
@@ -1096,7 +1101,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_data_gas_cost
             .assign(region, offset, Value::known(F::from(tx.tx_data_gas_cost)))?;
-        #[cfg(feature = "l1_fee_curie")]
         self.tx_signed_length.assign(
             region,
             offset,
@@ -1217,24 +1221,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             log::trace!("tx is l1msg and l1 fee is 0");
             (U256::zero(), U256::zero())
         } else {
-            #[cfg(not(feature = "l1_fee_curie"))]
-            {
-                (
-                    tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost, 0).0.into(),
-                    tx.gas_price * tx.gas,
-                )
-            }
-
-            #[cfg(feature = "l1_fee_curie")]
-            {
-                (
-                    tx.l1_fee
-                        .tx_l1_fee(0, tx.rlp_signed.len().try_into().unwrap())
-                        .0
-                        .into(),
-                    tx.gas_price * tx.gas,
-                )
-            }
+            (
+                tx.l1_fee
+                    .tx_l1_fee(tx.tx_data_gas_cost, tx.rlp_signed.len() as u64)
+                    .0
+                    .into(),
+                tx.gas_price * tx.gas,
+            )
         };
         if tx_fee != tx_l2_fee + tx_l1_fee {
             log::error!(
