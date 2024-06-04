@@ -44,6 +44,7 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     is_extcodecopy: IsZeroGadget<F>,
+    is_mcopy: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -72,7 +73,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let is_extcodecopy =
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::EXTCODECOPY.expr());
-
+        let is_mcopy =
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::MCOPY.expr());
+            
         cb.condition(is_extcodecopy.expr(), |cb| {
             cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, tx_id.expr());
 
@@ -94,6 +97,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         cb.stack_pop(dst_memory_addr.offset_rlc());
         cb.stack_pop(src_memory_addr.offset_rlc());
         cb.stack_pop(dst_memory_addr.length_rlc());
+
+        cb.condition(is_mcopy.expr(), |cb| {
+            cb.require_equal("mcopy src_address length == dst_address length", src_memory_addr.length_rlc(),
+            dst_memory_addr.length_rlc());
+        });
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
@@ -151,6 +159,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             memory_copier_gas,
             insufficient_gas,
             is_extcodecopy,
+            is_mcopy,
             common_error_gadget,
         }
     }
