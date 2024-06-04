@@ -34,7 +34,10 @@ pub struct AssignedLiteralsHeaderTableRow {
 }
 
 #[cfg(feature = "soundness-tests")]
-pub(crate) type AssignedLiteralsHeaderTableRows = (Vec<AssignedLiteralsHeaderTableRow>, Vec<AssignedCell<Fr, Fr>>);
+pub(crate) type AssignedLiteralsHeaderTableRows = (
+    Vec<AssignedLiteralsHeaderTableRow>,
+    Vec<AssignedCell<Fr, Fr>>,
+);
 
 #[cfg(not(feature = "soundness-tests"))]
 pub(crate) type AssignedLiteralsHeaderTableRows = ();
@@ -279,16 +282,20 @@ impl LiteralsHeaderTable {
                         (self.byte0_rs_4, byte0 >> 4, "byte0_rs_4"),
                         (self.is_padding.column, 0, "is_padding"),
                     ] {
-                        block_assigned_cells.push(region.assign_advice(
-                            || annotation,
-                            col,
-                            offset,
-                            || Value::known(F::from(value)),
-                        ).expect("failed witness assignment"));
+                        block_assigned_cells.push(
+                            region
+                                .assign_advice(
+                                    || annotation,
+                                    col,
+                                    offset,
+                                    || Value::known(F::from(value)),
+                                )
+                                .expect("failed witness assignment"),
+                        );
                     }
 
                     #[cfg(feature = "soundness-tests")]
-                    assigned_literals_header_table_rows.push(AssignedLiteralsHeaderTableRow{
+                    assigned_literals_header_table_rows.push(AssignedLiteralsHeaderTableRow {
                         block_idx: block_assigned_cells[0],
                         byte0: block_assigned_cells[1],
                         byte1: block_assigned_cells[2],
@@ -305,12 +312,16 @@ impl LiteralsHeaderTable {
                 let mut assigned_padding_cells: Vec<AssignedCell<F, F>> = vec![];
 
                 for offset in literals_headers.len()..n_enabled {
-                    assigned_padding_cells.push(region.assign_advice(
-                        || "is_padding",
-                        self.is_padding.column,
-                        offset,
-                        || Value::known(F::one()),
-                    ).expect("failed witness assignment"));
+                    assigned_padding_cells.push(
+                        region
+                            .assign_advice(
+                                || "is_padding",
+                                self.is_padding.column,
+                                offset,
+                                || Value::known(F::one()),
+                            )
+                            .expect("failed witness assignment"),
+                    );
                 }
 
                 #[cfg(feature = "soundness-tests")]

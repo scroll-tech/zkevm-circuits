@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
-use rand;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Fixed},
 };
+use rand;
+use std::collections::BTreeMap;
 use zkevm_circuits::table::{BitwiseOpTable, Pow2Table, RangeTable, U8Table};
 
 use crate::{
@@ -131,7 +131,8 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
             ));
         }
 
-        (assigned_literals_header_table_rows, assigned_padding_cells) = self.literals_header_table
+        (assigned_literals_header_table_rows, assigned_padding_cells) = self
+            .literals_header_table
             .assign(layouter, literal_headers, n_enabled)?;
 
         // Modify assigned witness values
@@ -157,30 +158,37 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
 
                 match self.case {
                     // sound case
-                    UnsoundCase::None => {},
+                    UnsoundCase::None => {}
 
                     // First block index is not 1
                     IncorrectInitialBlockIdx => {
-                        let block_idx_cell = assigned_literals_header_table_rows[0].block_idx.cell();
+                        let block_idx_cell =
+                            assigned_literals_header_table_rows[0].block_idx.cell();
                         region.assign_advice(
                             || "Change the first block index value",
                             cell.column.try_into().expect("assigned cell col is valid"),
                             cell.row_offset,
                             || Value::known(Fr::from(2)),
                         )
-                    },
+                    }
 
                     // Block index should increment by 1 with each valid row
                     IncorrectBlockIdxTransition => {
-                        let row_idx: usize = rng.gen_range(0..assigned_literals_header_table_rows.len());
-                        let block_idx_cell = assigned_literals_header_table_rows[row_idx].block_idx.cell();
+                        let row_idx: usize =
+                            rng.gen_range(0..assigned_literals_header_table_rows.len());
+                        let block_idx_cell = assigned_literals_header_table_rows[row_idx]
+                            .block_idx
+                            .cell();
                         region.assign_advice(
                             || "Corrupt the block index value at a random location",
-                            block_idx_cell.column.try_into().expect("assigned cell col is valid"),
+                            block_idx_cell
+                                .column
+                                .try_into()
+                                .expect("assigned cell col is valid"),
                             block_idx_cell.row_offset,
                             || block_idx_cell.value() + Value::known(Fr::one()),
                         )
-                    },
+                    }
 
                     // Padding indicator transitions from 1 -> 0
                     IrregularPaddingTransition => {
@@ -189,24 +197,33 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
 
                         region.assign_advice(
                             || "Flip is_padding value in the padding section",
-                            is_padding_cell.column.try_into().expect("assigned cell col is valid"),
+                            is_padding_cell
+                                .column
+                                .try_into()
+                                .expect("assigned cell col is valid"),
                             is_padding_cell.row_offset,
                             || Value::known(Fr::zero()),
                         )
-                    },
+                    }
 
                     // Regen size is not calculated correctly
                     IncorrectRegenSize => {
-                        let row_idx: usize = rng.gen_range(0..assigned_literals_header_table_rows.len());
-                        let regen_size_cell = assigned_literals_header_table_rows[row_idx].regen_size.cell();
+                        let row_idx: usize =
+                            rng.gen_range(0..assigned_literals_header_table_rows.len());
+                        let regen_size_cell = assigned_literals_header_table_rows[row_idx]
+                            .regen_size
+                            .cell();
 
                         region.assign_advice(
                             || "Invalidate the regen_size value at a random location",
-                            regen_size_cell.column.try_into().expect("assigned cell col is valid"),
+                            regen_size_cell
+                                .column
+                                .try_into()
+                                .expect("assigned cell col is valid"),
                             regen_size_cell.row_offset,
                             || regen_size_cell.value() + Value::known(Fr::one()),
                         )
-                    },
+                    }
                 }
 
                 Ok(())
