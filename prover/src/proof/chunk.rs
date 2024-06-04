@@ -14,6 +14,7 @@ pub struct ChunkProof {
     #[serde(flatten)]
     pub proof: Proof,
     pub chunk_info: ChunkInfo,
+    #[serde(default)]
     pub row_usages: Vec<SubCircuitRowUsage>,
 }
 
