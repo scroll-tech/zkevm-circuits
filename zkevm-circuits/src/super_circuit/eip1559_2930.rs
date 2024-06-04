@@ -14,11 +14,14 @@ pub(crate) fn test_block_1559_trace() -> BlockTrace {
     let addr_a = wallet_a.address();
     let addr_b = address!("0x0000000000000000000000000000000000001559");
 
+    // 279 is l1 fee
+    let balance = gwei(80_000) + Word::from(279u64);
+
     TestContext::<2, 1>::new(
         None,
         |accs| {
             accs[0].address(addr_b).balance(eth(1));
-            accs[1].address(addr_a).balance(gwei(80_000));
+            accs[1].address(addr_a).balance(balance);
         },
         |mut txs, _accs| {
             txs[0]
