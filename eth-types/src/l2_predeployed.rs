@@ -57,7 +57,7 @@ pub mod l1_gas_price_oracle {
         hex::decode(include_str!("./data/v1_l1_oracle_bytecode.txt")).expect("decode v1 bytecode")
     });
     /// Bytecode after curie hardfork
-    /// https://github.com/scroll-tech/go-ethereum/blob/8dc419a70b94f5ca185dcf818a48a3bd2eefc392/rollup/rcfg/config.go#L42
+    /// https://github.com/scroll-tech/go-ethereum/blob/9ec83a509ac7f6dd2d0beb054eb14c19f3e67a72/rollup/rcfg/config.go#L50
     pub static V2_BYTECODE: LazyLock<Vec<u8>> = LazyLock::new(|| {
         hex::decode(include_str!("./data/v2_l1_oracle_bytecode.txt")).expect("decode v2 bytecode")
     });
