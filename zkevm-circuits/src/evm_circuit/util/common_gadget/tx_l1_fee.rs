@@ -346,7 +346,6 @@ mod tests {
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
     const TEST_TX_L1_FEE_BEFORE_CURIE: u128 = 30;
-    const TEST_TX_L1_FEE_AFTER_CURIE: u128 = 21;
 
     const TEST_AFTER_CURIE:u64 = 1;
     const TEST_BEFORE_CURIE:u64 = 0;
@@ -362,12 +361,11 @@ mod tests {
     const BLOB_SCALAR: u64 = 10;
     //#[cfg(feature = "l1_fee_curie")]
     const TEST_TX_RLP_SIGNED_LENGTH: u128 = 4;
+    const TEST_TX_L1_FEE_AFTER_CURIE: u128 = 21;
 
     #[test]
     fn test_tx_l1_fee_with_right_values() {
-        //for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE]{
-        for is_curie in [TEST_BEFORE_CURIE]{
-
+        for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE]{
             let witnesses = [
                 is_curie.into(),
                 TEST_BASE_FEE_BEFORE_CURIE.into(),
@@ -397,25 +395,31 @@ mod tests {
 
     #[test]
     fn test_tx_l1_fee_with_wrong_values() {
-        let witnesses = [
-            TEST_BASE_FEE_BEFORE_CURIE.into(),
-            TEST_FEE_OVERHEAD.into(),
-            TEST_FEE_SCALAR.into(),
-            TEST_TX_DATA_GAS_COST.into(),
-            TEST_TX_L1_FEE_BEFORE_CURIE + 1,
-            // Curie fields
-            #[cfg(feature = "l1_fee_curie")]
-            L1_BLOB_BASEFEE.into(),
-            #[cfg(feature = "l1_fee_curie")]
-            COMMIT_SCALAR.into(),
-            #[cfg(feature = "l1_fee_curie")]
-            BLOB_SCALAR.into(),
-            #[cfg(feature = "l1_fee_curie")]
-            TEST_TX_RLP_SIGNED_LENGTH,
-        ]
-        .map(U256::from);
+        for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE]{
+            let witnesses = [
+                is_curie.into(),
+                TEST_BASE_FEE_BEFORE_CURIE.into(),
+                TEST_FEE_OVERHEAD.into(),
+                TEST_FEE_SCALAR.into(),
+                TEST_TX_DATA_GAS_COST.into(),
+                TEST_TX_L1_FEE_BEFORE_CURIE + 1,
+                // Curie fields
+                TEST_BASE_FEE_AFTER_CURIE.into(),
+                L1_BLOB_BASEFEE.into(),
+                //#[cfg(feature = "l1_fee_curie")]
+                COMMIT_SCALAR.into(),
+                //#[cfg(feature = "l1_fee_curie")]
+                BLOB_SCALAR.into(),
+                //#[cfg(feature = "l1_fee_curie")]
+                TEST_TX_RLP_SIGNED_LENGTH,
+                TEST_TX_L1_FEE_AFTER_CURIE + 1
+    
+            ]
+            .map(U256::from);
 
-        try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, false);
+           try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, false);   
+        }
+    
     }
 
     #[derive(Clone)]
@@ -475,11 +479,11 @@ mod tests {
                 [6, 7, 8, 9, 10, 11].map(|i| witnesses[i].as_u64());
 
             let l1_fee = TxL1Fee {
-                chain_id: eth_types::forks::SCROLL_MAINNET_CHAIN_ID,
+                chain_id: eth_types::forks::SCROLL_DEVNET_CHAIN_ID,
                 block_number: if is_curie == 1{
-                    1
-                }else{
                     5 + 1
+                }else{
+                    1
                 },
                 base_fee: if is_curie == 1{
                     base_fee_after_curie
