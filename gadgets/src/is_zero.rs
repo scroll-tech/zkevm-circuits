@@ -1,7 +1,7 @@
 //! IsZero gadget works as follows:
 //!
 //! Given a `value` to be checked if it is zero:
-//!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
+//!  - witnesses: `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
 //!  `1/x` otherwise
 
 use eth_types::Field;
