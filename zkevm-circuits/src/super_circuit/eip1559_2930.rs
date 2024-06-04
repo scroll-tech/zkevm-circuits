@@ -50,7 +50,7 @@ pub(crate) fn test_circuits_params(max_txs: usize, max_calldata: usize) -> Circu
         max_exp_steps: 256,
         max_bytecode: 512,
         max_mpt_rows: 2049,
-        max_poseidon_rows: 512,
+        max_poseidon_rows: 1024,
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: 1,
