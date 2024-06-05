@@ -287,7 +287,10 @@ impl LiteralsHeaderTable {
                         (self.byte0_rs_3, byte0 >> 3, "byte0_rs_3"),
                         (self.byte0_rs_4, byte0 >> 4, "byte0_rs_4"),
                         (self.is_padding.column, 0, "is_padding"),
-                    ].into_iter().enumerate() {
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
                         let _assigned_cell = region
                             .assign_advice(
                                 || annotation,
@@ -300,17 +303,17 @@ impl LiteralsHeaderTable {
                         // soundness_debug
                         // #[cfg(feature = "soundness-tests")]
                         match idx {
-                            0 => { assigned_table_row.block_idx = Some(_assigned_cell) },
-                            1 => { assigned_table_row.byte0 = Some(_assigned_cell) },
-                            2 => { assigned_table_row.byte1 = Some(_assigned_cell) },
-                            3 => { assigned_table_row.byte2 = Some(_assigned_cell) },
-                            4 => { assigned_table_row.regen_size = Some(_assigned_cell) },
-                            5 => { assigned_table_row.size_format_bit0 = Some(_assigned_cell) },
-                            6 => { assigned_table_row.size_format_bit1 = Some(_assigned_cell) },
-                            7 => { assigned_table_row.byte0_rs_3 = Some(_assigned_cell) },
-                            8 => { assigned_table_row.byte0_rs_4 = Some(_assigned_cell) },
-                            9 => { assigned_table_row.is_padding = Some(_assigned_cell) },
-                            _ => {},
+                            0 => assigned_table_row.block_idx = Some(_assigned_cell),
+                            1 => assigned_table_row.byte0 = Some(_assigned_cell),
+                            2 => assigned_table_row.byte1 = Some(_assigned_cell),
+                            3 => assigned_table_row.byte2 = Some(_assigned_cell),
+                            4 => assigned_table_row.regen_size = Some(_assigned_cell),
+                            5 => assigned_table_row.size_format_bit0 = Some(_assigned_cell),
+                            6 => assigned_table_row.size_format_bit1 = Some(_assigned_cell),
+                            7 => assigned_table_row.byte0_rs_3 = Some(_assigned_cell),
+                            8 => assigned_table_row.byte0_rs_4 = Some(_assigned_cell),
+                            9 => assigned_table_row.is_padding = Some(_assigned_cell),
+                            _ => {}
                         }
                     }
 

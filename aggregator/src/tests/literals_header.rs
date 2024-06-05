@@ -1,15 +1,16 @@
+use crate::aggregation::{
+    decoder::tables::LiteralsHeaderTable,
+    witgen::{init_zstd_encoder, process, MultiBlockProcessResult, ZstdTag, ZstdWitnessRow},
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Fixed},
 };
-use rand;
-use rand::Rng;
+use rand::{self, Rng};
 use std::io::Write;
 use zkevm_circuits::table::RangeTable;
-use crate::aggregation::decoder::tables::LiteralsHeaderTable;
-use crate::aggregation::witgen::{MultiBlockProcessResult, process, init_zstd_encoder, ZstdTag, ZstdWitnessRow};
 
 #[derive(Clone)]
 struct TestLiteralsHeaderConfig {
@@ -159,19 +160,25 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
 
                 match self.case {
                     // sound case
-                    UnsoundCase::None => {},
+                    UnsoundCase::None => {}
 
                     // First block index is not 1
                     UnsoundCase::IncorrectInitialBlockIdx => {
-                        let block_idx_cell =
-                            assigned_literals_header_table_rows[0].clone().block_idx.expect("cell is assigned").cell();
+                        let block_idx_cell = assigned_literals_header_table_rows[0]
+                            .clone()
+                            .block_idx
+                            .expect("cell is assigned")
+                            .cell();
                         let _modified_cell = region.assign_advice(
                             || "Change the first block index value",
-                            block_idx_cell.column.try_into().expect("assigned cell col is valid"),
+                            block_idx_cell
+                                .column
+                                .try_into()
+                                .expect("assigned cell col is valid"),
                             block_idx_cell.row_offset,
                             || Value::known(Fr::from(2)),
                         )?;
-                    },
+                    }
 
                     // Block index should increment by 1 with each valid row
                     UnsoundCase::IncorrectBlockIdxTransition => {
@@ -191,7 +198,7 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             block_idx_cell.cell().row_offset,
                             || block_idx_cell.value() + Value::known(Fr::one()),
                         )?;
-                    },
+                    }
 
                     // Padding indicator transitions from 1 -> 0
                     UnsoundCase::IrregularPaddingTransition => {
@@ -208,7 +215,7 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             is_padding_cell.cell().row_offset,
                             || Value::known(Fr::zero()),
                         )?;
-                    },
+                    }
 
                     // Regen size is not calculated correctly
                     UnsoundCase::IncorrectRegenSize => {
@@ -229,7 +236,7 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             regen_size_cell.cell().row_offset,
                             || regen_size_cell.value() + Value::known(Fr::one()),
                         )?;
-                    },
+                    }
                 }
 
                 Ok(())
