@@ -1,16 +1,16 @@
-use std::collections::BTreeMap;
-use rand;
-use rand::Rng;
-use std::io::Write;
+use crate::{
+    aggregation::decoder::tables::BitstringTable,
+    witgen::{init_zstd_encoder, process, MultiBlockProcessResult, N_BLOCK_SIZE_TARGET},
+};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Fixed},
 };
+use rand::Rng;
+use std::io::Write;
 use zkevm_circuits::table::RangeTable;
-use crate::witgen::{MultiBlockProcessResult, process, init_zstd_encoder, N_BLOCK_SIZE_TARGET};
-use crate::aggregation::decoder::tables::BitstringTable;
 
 #[derive(Clone)]
 struct TestBitstringConfig {
@@ -56,7 +56,7 @@ impl Circuit<Fr> for TestBitstringCircuit {
         let bitstring_table_1 = BitstringTable::configure(meta, q_enable, range_block_len);
         let bitstring_table_2 = BitstringTable::configure(meta, q_enable, range_block_len);
         let bitstring_table_3 = BitstringTable::configure(meta, q_enable, range_block_len);
-        
+
         Self::Config {
             q_enable,
             range_block_len,
@@ -75,22 +75,34 @@ impl Circuit<Fr> for TestBitstringCircuit {
 
         let MultiBlockProcessResult {
             witness_rows,
-            literal_bytes: decoded_literals,
-            fse_aux_tables,
+            literal_bytes: _l,
+            fse_aux_tables: _f,
             block_info_arr,
-            sequence_info_arr,
-            address_table_rows: address_table_arr,
-            sequence_exec_results,
+            sequence_info_arr: _s,
+            address_table_rows: _a,
+            sequence_exec_results: _seq,
         } = process(&self.compressed, Value::known(Fr::from(12345)));
 
         config.range_block_len.load(&mut layouter)?;
 
-        let assigned_bitstring_table_1_rows = config.bitstring_table_1
-            .assign(&mut layouter, &block_info_arr, &witness_rows, n_enabled)?;
-        let assigned_bitstring_table_2_rows = config.bitstring_table_2
-            .assign(&mut layouter, &block_info_arr, &witness_rows, n_enabled)?;
-        let assigned_bitstring_table_3_rows = config.bitstring_table_3
-            .assign(&mut layouter, &block_info_arr, &witness_rows, n_enabled)?;
+        let assigned_bitstring_table_1_rows = config.bitstring_table_1.assign(
+            &mut layouter,
+            &block_info_arr,
+            &witness_rows,
+            n_enabled,
+        )?;
+        let assigned_bitstring_table_2_rows = config.bitstring_table_2.assign(
+            &mut layouter,
+            &block_info_arr,
+            &witness_rows,
+            n_enabled,
+        )?;
+        let assigned_bitstring_table_3_rows = config.bitstring_table_3.assign(
+            &mut layouter,
+            &block_info_arr,
+            &witness_rows,
+            n_enabled,
+        )?;
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         layouter.assign_region(
@@ -132,9 +144,9 @@ impl Circuit<Fr> for TestBitstringCircuit {
                                 bit_cell.cell().column.try_into().expect("assigned cell col is valid"),
                                 bit_cell.cell().row_offset,
                                 || if bit_value > Fr::zero() {
-                                    Value::known(Fr::zero()) 
-                                } else { 
-                                    Value::known(Fr::one()) 
+                                    Value::known(Fr::zero())
+                                } else {
+                                    Value::known(Fr::one())
                                 },
                             )?;
                         }
@@ -176,9 +188,9 @@ impl Circuit<Fr> for TestBitstringCircuit {
                         ] {
                             let row_idx: usize = rng.gen_range(0..assigned_rows.len());
                             let byte_idx_1_cell = assigned_rows[row_idx].byte_idx_1.clone().expect("cell is assigned");
-                            let byte_idx_2_cell = assigned_rows[row_idx].byte_idx_2.clone().expect("cell is assigned");
+                            let _byte_idx_2_cell = assigned_rows[row_idx].byte_idx_2.clone().expect("cell is assigned");
                             let byte_idx_3_cell = assigned_rows[row_idx].byte_idx_3.clone().expect("cell is assigned");
-    
+
                             region.assign_advice(
                                 || "corrupt byte_idx at a random location in the assigned witness (+1 for byte_idx_1)",
                                 byte_idx_1_cell.cell().column.try_into().expect("assigned cell col is valid"),
@@ -325,7 +337,8 @@ enum UnsoundCase {
     None,
     /// bits are not the correct representation of byte_1/byte_2/byte_3
     IncorrectBitDecomposition,
-    /// bits are not the correct representation of byte_1/byte_2/byte_3 due to incorrect endianness (wrong is_reverse)
+    /// bits are not the correct representation of byte_1/byte_2/byte_3 due to incorrect endianness
+    /// (wrong is_reverse)
     IncorrectBitDecompositionEndianness,
     /// byte_idx_1/2/3 delta value is not boolean
     IrregularTransitionByteIdx,

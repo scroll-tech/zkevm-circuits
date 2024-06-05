@@ -469,7 +469,8 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
         witness_rows: &[ZstdWitnessRow<Fr>],
         n_enabled: usize,
     ) -> Result<AssignedBitstringTableRows, Error> {
-        let mut assigned_bitstring_table_rows: Vec<AssignedBitstringTableRow> = Vec::with_capacity(n_enabled);
+        let mut assigned_bitstring_table_rows: Vec<AssignedBitstringTableRow> =
+            Vec::with_capacity(n_enabled);
 
         layouter.assign_region(
             || "Bitstring Table",
@@ -719,53 +720,71 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
 
                         #[cfg(feature = "soundness-tests")]
                         {
-                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_1 = Some(_assigned_byte_idx_1);
-                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_2 = Some(_assigned_byte_idx_2);
-                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_3 = Some(_assigned_byte_idx_3);
-                            assigned_bitstring_table_rows[offset + bit_idx].byte_1 = Some(_assigned_byte_1);
-                            assigned_bitstring_table_rows[offset + bit_idx].byte_2 = Some(_assigned_byte_2);
-                            assigned_bitstring_table_rows[offset + bit_idx].byte_3 = Some(_assigned_byte_3);
-                            assigned_bitstring_table_rows[offset + bit_idx].bit_f = Some(_assigned_bit_f);
-                            assigned_bitstring_table_rows[offset + bit_idx].bit = Some(_assigned_bit);
-                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_value = Some(_assigned_bitstring_value);
-                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_value_acc = Some(_assigned_bitstring_value_acc);
-                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_len = Some(_assigned_bitstring_len);
-                            assigned_bitstring_table_rows[offset + bit_idx].from_start = Some(_assigned_from_start);
-                            assigned_bitstring_table_rows[offset + bit_idx].until_end = Some(_assigned_until_end);
-                            assigned_bitstring_table_rows[offset + bit_idx].is_reverse = Some(_assigned_is_reverse);
-                            assigned_bitstring_table_rows[offset + bit_idx].is_reverse_f = Some(_assigned_is_reverse_f);
-
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_1 =
+                                Some(_assigned_byte_idx_1);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_2 =
+                                Some(_assigned_byte_idx_2);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_3 =
+                                Some(_assigned_byte_idx_3);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_1 =
+                                Some(_assigned_byte_1);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_2 =
+                                Some(_assigned_byte_2);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_3 =
+                                Some(_assigned_byte_3);
+                            assigned_bitstring_table_rows[offset + bit_idx].bit_f =
+                                Some(_assigned_bit_f);
+                            assigned_bitstring_table_rows[offset + bit_idx].bit =
+                                Some(_assigned_bit);
+                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_value =
+                                Some(_assigned_bitstring_value);
+                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_value_acc =
+                                Some(_assigned_bitstring_value_acc);
+                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_len =
+                                Some(_assigned_bitstring_len);
+                            assigned_bitstring_table_rows[offset + bit_idx].from_start =
+                                Some(_assigned_from_start);
+                            assigned_bitstring_table_rows[offset + bit_idx].until_end =
+                                Some(_assigned_until_end);
+                            assigned_bitstring_table_rows[offset + bit_idx].is_reverse =
+                                Some(_assigned_is_reverse);
+                            assigned_bitstring_table_rows[offset + bit_idx].is_reverse_f =
+                                Some(_assigned_is_reverse_f);
                         }
                     }
 
                     offset += N_BYTES * N_BITS_PER_BYTE;
                 }
 
-                for idx in 0..offset {
-                    let _assigned_is_padding = region.assign_advice(
+                for (idx, row) in assigned_bitstring_table_rows
+                    .iter_mut()
+                    .enumerate()
+                    .take(offset)
+                {
+                    let assigned_is_padding = region.assign_advice(
                         || "is_padding",
                         self.is_padding.column,
                         idx,
                         || Value::known(Fr::zero()),
                     )?;
 
-                    #[cfg(feature = "soundness-tests")]
-                    {
-                        assigned_bitstring_table_rows[idx].is_padding = Some(_assigned_is_padding);
-                    }
+                    row.is_padding = Some(assigned_is_padding);
                 }
-                for idx in offset..n_enabled {
-                    let _assigned_is_padding = region.assign_advice(
+
+                for (idx, row) in assigned_bitstring_table_rows
+                    .iter_mut()
+                    .enumerate()
+                    .take(n_enabled)
+                    .skip(offset)
+                {
+                    let assigned_is_padding = region.assign_advice(
                         || "is_padding",
                         self.is_padding.column,
                         idx,
                         || Value::known(Fr::one()),
                     )?;
 
-                    #[cfg(feature = "soundness-tests")]
-                    {
-                        assigned_bitstring_table_rows[idx].is_padding = Some(_assigned_is_padding);
-                    }
+                    row.is_padding = Some(assigned_is_padding);
                 }
 
                 Ok(())
