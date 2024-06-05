@@ -351,15 +351,12 @@ mod tests {
     const TEST_BEFORE_CURIE: u64 = 0;
 
     // refer to test in https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L22
-    //#[cfg(feature = "l1_fee_curie")]
     const TEST_BASE_FEE_AFTER_CURIE: u64 = 1_500_000_000;
 
     const L1_BLOB_BASEFEE: u64 = 150_000_000;
-    //#[cfg(feature = "l1_fee_curie")]
     const COMMIT_SCALAR: u64 = 10;
-    //#[cfg(feature = "l1_fee_curie")]
     const BLOB_SCALAR: u64 = 10;
-    //#[cfg(feature = "l1_fee_curie")]
+
     const TEST_TX_RLP_SIGNED_LENGTH: u128 = 4;
     const TEST_TX_L1_FEE_AFTER_CURIE: u128 = 21;
 
@@ -376,11 +373,8 @@ mod tests {
                 // Curie fields
                 TEST_BASE_FEE_AFTER_CURIE.into(),
                 L1_BLOB_BASEFEE.into(),
-                //#[cfg(feature = "l1_fee_curie")]
                 COMMIT_SCALAR.into(),
-                //#[cfg(feature = "l1_fee_curie")]
                 BLOB_SCALAR.into(),
-                //#[cfg(feature = "l1_fee_curie")]
                 TEST_TX_RLP_SIGNED_LENGTH,
                 TEST_TX_L1_FEE_AFTER_CURIE,
             ]
@@ -403,11 +397,8 @@ mod tests {
                 // Curie fields
                 TEST_BASE_FEE_AFTER_CURIE.into(),
                 L1_BLOB_BASEFEE.into(),
-                //#[cfg(feature = "l1_fee_curie")]
                 COMMIT_SCALAR.into(),
-                //#[cfg(feature = "l1_fee_curie")]
                 BLOB_SCALAR.into(),
-                //#[cfg(feature = "l1_fee_curie")]
                 TEST_TX_RLP_SIGNED_LENGTH,
                 TEST_TX_L1_FEE_AFTER_CURIE + 1,
             ]
@@ -435,7 +426,7 @@ mod tests {
             let is_curie = cb.query_cell();
 
             cb.require_boolean("is_curie is bool", is_curie.expr());
-            // Old l1 fee
+            // l1 fee for both before and after Curie upgrade
             let gadget = TxL1FeeGadget::<F>::raw_construct(
                 cb,
                 is_curie.expr(),
@@ -474,6 +465,7 @@ mod tests {
 
             let l1_fee = TxL1Fee {
                 chain_id: eth_types::forks::SCROLL_DEVNET_CHAIN_ID,
+                // block_number 5 is starting number for curie in test devnet.
                 block_number: if is_curie == 1 { 5 + 1 } else { 1 },
                 base_fee: if is_curie == 1 {
                     base_fee_after_curie
