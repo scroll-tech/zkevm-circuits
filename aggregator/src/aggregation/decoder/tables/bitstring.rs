@@ -1,6 +1,6 @@
 use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
@@ -21,8 +21,7 @@ use crate::{
     witgen::{N_BITS_PER_BYTE, N_BLOCK_SIZE_TARGET},
 };
 
-#[cfg(feature = "soundness-tests")]
-#[derive(Default, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct AssignedBitstringTableRow {
     pub q_start: Option<AssignedCell<Fr, Fr>>,
     pub bit_index: Option<AssignedCell<Fr, Fr>>,
@@ -33,20 +32,18 @@ pub struct AssignedBitstringTableRow {
     pub byte_2: Option<AssignedCell<Fr, Fr>>,
     pub byte_3: Option<AssignedCell<Fr, Fr>>,
     pub bit: Option<AssignedCell<Fr, Fr>>,
+    pub bit_f: Option<Fr>,
     pub bitstring_value: Option<AssignedCell<Fr, Fr>>,
     pub bitstring_value_acc: Option<AssignedCell<Fr, Fr>>,
     pub bitstring_len: Option<AssignedCell<Fr, Fr>>,
     pub from_start: Option<AssignedCell<Fr, Fr>>,
     pub until_end: Option<AssignedCell<Fr, Fr>>,
     pub is_reverse: Option<AssignedCell<Fr, Fr>>,
+    pub is_reverse_f: Option<Fr>,
     pub is_padding: Option<AssignedCell<Fr, Fr>>,
 }
 
-#[cfg(feature = "soundness-tests")]
 pub(crate) type AssignedBitstringTableRows = Vec<AssignedBitstringTableRow>;
-
-#[cfg(not(feature = "soundness-tests"))]
-pub(crate) type AssignedBitstringTableRows = ();
 
 /// In the process of decoding zstd encoded data, there are several scenarios in which we process
 /// bits instead of bytes, for instance:
@@ -472,7 +469,8 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
         witness_rows: &[ZstdWitnessRow<Fr>],
         n_enabled: usize,
     ) -> Result<AssignedBitstringTableRows, Error> {
-        #[cfg(feature = "soundness-tests")]
+        // soundness_debug
+        // #[cfg(feature = "soundness-tests")]
         let mut assigned_bitstring_table_rows = Vec::with_capacity(n_enabled);
 
         layouter.assign_region(
@@ -506,7 +504,8 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                         || Value::known(Fr::from(bit_index as u64)),
                     )?;
 
-                    #[cfg(feature = "soundness-tests")]
+                    // soundness_debug
+                    // #[cfg(feature = "soundness-tests")]
                     assigned_bitstring_table_rows.push(AssignedBitstringTableRow {
                         q_start: Some(_assigned_q_start),
                         bit_index: Some(_assigned_bit_index),
@@ -676,6 +675,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                             acc = acc * 2 + (bit as u64);
                             bitstring_len += 1;
                         }
+                        let _assigned_bit_f = Fr::from(bit as u64);
                         let _assigned_bit = region.assign_advice(
                             || "bit",
                             self.bit.column,
@@ -712,6 +712,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                             offset + bit_idx,
                             || Value::known(Fr::from((bit_idx >= (curr_row.2 as usize)) as u64)),
                         )?;
+                        let _assigned_is_reverse_f = Fr::from(curr_row.5);
                         let _assigned_is_reverse = region.assign_advice(
                             || "is_reverse",
                             self.is_reverse.column,
@@ -727,6 +728,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                             assigned_bitstring_table_rows[offset + bit_idx].byte_1 = Some(_assigned_byte_1);
                             assigned_bitstring_table_rows[offset + bit_idx].byte_2 = Some(_assigned_byte_2);
                             assigned_bitstring_table_rows[offset + bit_idx].byte_3 = Some(_assigned_byte_3);
+                            assigned_bitstring_table_rows[offset + bit_idx].bit_f = Some(_assigned_bit_f);
                             assigned_bitstring_table_rows[offset + bit_idx].bit = Some(_assigned_bit);
                             assigned_bitstring_table_rows[offset + bit_idx].bitstring_value = Some(_assigned_bitstring_value);
                             assigned_bitstring_table_rows[offset + bit_idx].bitstring_value_acc = Some(_assigned_bitstring_value_acc);
@@ -734,6 +736,8 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                             assigned_bitstring_table_rows[offset + bit_idx].from_start = Some(_assigned_from_start);
                             assigned_bitstring_table_rows[offset + bit_idx].until_end = Some(_assigned_until_end);
                             assigned_bitstring_table_rows[offset + bit_idx].is_reverse = Some(_assigned_is_reverse);
+                            assigned_bitstring_table_rows[offset + bit_idx].is_reverse_f = Some(_assigned_is_reverse_f);
+
                         }
                     }
 
@@ -761,19 +765,22 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                         || Value::known(Fr::one()),
                     )?;
 
-                    #[cfg(feature = "soundness-tests")]
+                    // soundness_debug
+                    // #[cfg(feature = "soundness-tests")]
                     {
                         assigned_bitstring_table_rows[idx].is_padding = Some(_assigned_is_padding);
                     }
                 }
 
-                #[cfg(feature = "soundness-tests")]
-                return Ok(assigned_bitstring_table_rows);
-
-                #[cfg(not(feature = "soundness-tests"))]
-                return Ok(());
+                Ok(())
             },
-        )
+        )?;
+
+        #[cfg(feature = "soundness-tests")]
+        return Ok(assigned_bitstring_table_rows);
+
+        #[cfg(not(feature = "soundness-tests"))]
+        return Ok(vec![]);
     }
 }
 
