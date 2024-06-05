@@ -402,6 +402,8 @@ pub struct AccountProofWrapper {
     pub keccak_code_hash: Option<H256>,
     #[serde(rename = "poseidonCodeHash")]
     pub poseidon_code_hash: Option<H256>,
+    #[serde(rename = "codeSize")]
+    pub code_size: u64,
     pub storage: Option<StorageProofWrapper>,
 }
 

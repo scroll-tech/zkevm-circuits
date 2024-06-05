@@ -108,6 +108,9 @@ impl Account {
         if is_code_hash_empty {
             debug_assert_eq!(Word::zero(), self.code_size);
         }
+        if !is_code_hash_empty {
+            debug_assert_ne!(Word::zero(), self.code_size);
+        }
         self.nonce.is_zero() && self.balance.is_zero() && is_code_hash_empty
     }
 
