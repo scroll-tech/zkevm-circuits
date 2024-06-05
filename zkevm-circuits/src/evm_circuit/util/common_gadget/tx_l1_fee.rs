@@ -340,39 +340,76 @@ mod tests {
     use eth_types::{ToScalar, U256};
     use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
-    // <https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go>
-    const TEST_BASE_FEE: u64 = 15_000_000;
+    //refer to test in <https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L10>
+    const TEST_BASE_FEE_BEFORE_CURIE: u64 = 15_000_000;
     const TEST_FEE_OVERHEAD: u64 = 100;
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
-    const TEST_TX_L1_FEE: u128 = 30;
+    const TEST_TX_L1_FEE_BEFORE_CURIE: u128 = 30;
+
+    const TEST_AFTER_CURIE: u64 = 1;
+    const TEST_BEFORE_CURIE: u64 = 0;
+
+    // refer to test in https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L22
+    const TEST_BASE_FEE_AFTER_CURIE: u64 = 1_500_000_000;
+
+    const L1_BLOB_BASEFEE: u64 = 150_000_000;
+    const COMMIT_SCALAR: u64 = 10;
+    const BLOB_SCALAR: u64 = 10;
+
+    const TEST_TX_RLP_SIGNED_LENGTH: u128 = 4;
+    const TEST_TX_L1_FEE_AFTER_CURIE: u128 = 21;
 
     #[test]
     fn test_tx_l1_fee_with_right_values() {
-        let witnesses = [
-            TEST_BASE_FEE.into(),
-            TEST_FEE_OVERHEAD.into(),
-            TEST_FEE_SCALAR.into(),
-            TEST_TX_DATA_GAS_COST.into(),
-            TEST_TX_L1_FEE,
-        ]
-        .map(U256::from);
+        // test both before & after curie upgrade
+        for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE] {
+            let witnesses = [
+                is_curie.into(),
+                TEST_BASE_FEE_BEFORE_CURIE.into(),
+                TEST_FEE_OVERHEAD.into(),
+                TEST_FEE_SCALAR.into(),
+                TEST_TX_DATA_GAS_COST.into(),
+                TEST_TX_L1_FEE_BEFORE_CURIE,
+                // Curie fields
+                TEST_BASE_FEE_AFTER_CURIE.into(),
+                L1_BLOB_BASEFEE.into(),
+                COMMIT_SCALAR.into(),
+                BLOB_SCALAR.into(),
+                TEST_TX_RLP_SIGNED_LENGTH,
+                TEST_TX_L1_FEE_AFTER_CURIE,
+            ]
+            .map(U256::from);
 
-        try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, true);
+            try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, true);
+        }
     }
 
     #[test]
     fn test_tx_l1_fee_with_wrong_values() {
-        let witnesses = [
-            TEST_BASE_FEE.into(),
-            TEST_FEE_OVERHEAD.into(),
-            TEST_FEE_SCALAR.into(),
-            TEST_TX_DATA_GAS_COST.into(),
-            TEST_TX_L1_FEE + 1,
-        ]
-        .map(U256::from);
+        // test both before & after curie upgrade
+        for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE] {
+            let witnesses = [
+                is_curie.into(),
+                TEST_BASE_FEE_BEFORE_CURIE.into(),
+                TEST_FEE_OVERHEAD.into(),
+                TEST_FEE_SCALAR.into(),
+                TEST_TX_DATA_GAS_COST.into(),
+                // set wrong l1 fee
+                TEST_TX_L1_FEE_BEFORE_CURIE + 1,
+                // Curie fields
+                TEST_BASE_FEE_AFTER_CURIE.into(),
+                L1_BLOB_BASEFEE.into(),
+                COMMIT_SCALAR.into(),
+                BLOB_SCALAR.into(),
+                TEST_TX_RLP_SIGNED_LENGTH,
+                // set wrong l1 fee
+                TEST_TX_L1_FEE_AFTER_CURIE + 1,
+            ]
+            .map(U256::from);
 
-        try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, false);
+            try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, false);
+        }
     }
 
     #[derive(Clone)]
@@ -380,21 +417,25 @@ mod tests {
         is_curie: Cell<F>,
         gadget: TxL1FeeGadget<F>,
         tx_data_gas_cost: Cell<F>,
+        tx_signed_length: Cell<F>,
         expected_tx_l1_fee: Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for TxL1FeeGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let tx_data_gas_cost = cb.query_cell();
+            let tx_data_gas_cost: Cell<F> = cb.query_cell();
+            let tx_signed_length = cb.query_cell();
+
             let expected_tx_l1_fee = cb.query_cell();
             let is_curie = cb.query_cell();
 
-            // Old l1 fee
+            cb.require_boolean("is_curie is bool", is_curie.expr());
+            // l1 fee for both before and after Curie upgrade
             let gadget = TxL1FeeGadget::<F>::raw_construct(
                 cb,
                 is_curie.expr(),
                 tx_data_gas_cost.expr(),
-                0.expr(),
+                tx_signed_length.expr(),
             );
 
             cb.require_equal(
@@ -407,6 +448,7 @@ mod tests {
                 is_curie,
                 gadget,
                 tx_data_gas_cost,
+                tx_signed_length,
                 expected_tx_l1_fee,
             }
         }
@@ -416,37 +458,55 @@ mod tests {
             witnesses: &[U256],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let [base_fee, fee_overhead, fee_scalar] = [0, 1, 2].map(|i| witnesses[i].as_u64());
+            let [is_curie, base_fee_before_curie, fee_overhead, fee_scalar, tx_data_gas_cost, tx_l1_fee_before_curie] =
+                [0, 1, 2, 3, 4, 5].map(|i| witnesses[i].as_u64());
+
+            let [base_fee_after_curie, l1_blob_basefee, commit_scalar, blob_scalar, tx_signed_length, tx_l1_fee_after_curie] =
+                [6, 7, 8, 9, 10, 11].map(|i| witnesses[i].as_u64());
 
             let l1_fee = TxL1Fee {
-                chain_id: eth_types::forks::SCROLL_MAINNET_CHAIN_ID,
-                block_number: 1,
-                base_fee,
+                chain_id: eth_types::forks::SCROLL_DEVNET_CHAIN_ID,
+                // block_number 5 is starting number for curie in test devnet.
+                block_number: if is_curie == 1 { 5 + 1 } else { 1 },
+                base_fee: if is_curie == 1 {
+                    base_fee_after_curie
+                } else {
+                    base_fee_before_curie
+                },
                 fee_overhead,
                 fee_scalar,
-                l1_blob_basefee: 1,
-                commit_scalar: 0,
-                blob_scalar: 0,
+                l1_blob_basefee,
+                commit_scalar,
+                blob_scalar,
             };
-            let tx_data_gas_cost = witnesses[3];
             self.gadget.assign(
                 region,
                 0,
                 l1_fee,
                 TxL1Fee::default(),
-                tx_data_gas_cost.as_u64(),
-                0, // TODO: check if need update here
+                tx_data_gas_cost,
+                tx_signed_length,
             )?;
+
             self.tx_data_gas_cost.assign(
                 region,
                 0,
                 Value::known(tx_data_gas_cost.to_scalar().unwrap()),
             )?;
-            self.expected_tx_l1_fee.assign(
-                region,
-                0,
-                Value::known(witnesses[4].to_scalar().unwrap()),
-            )?;
+
+            self.is_curie
+                .assign(region, 0, Value::known(F::from(is_curie)))?;
+            let rlp_signed_len = if is_curie == 1 { tx_signed_length } else { 0 };
+            self.tx_signed_length
+                .assign(region, 0, Value::known(F::from(rlp_signed_len)))?;
+
+            let expected_tx_l1_fee = if is_curie == 1 {
+                tx_l1_fee_after_curie
+            } else {
+                tx_l1_fee_before_curie
+            };
+            self.expected_tx_l1_fee
+                .assign(region, 0, Value::known(F::from(expected_tx_l1_fee)))?;
 
             Ok(())
         }
