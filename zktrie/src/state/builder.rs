@@ -111,10 +111,10 @@ impl From<zktrie::AccountData> for AccountData {
 
 impl From<&AccountData> for state_db::Account {
     fn from(acc_data: &AccountData) -> Self {
-        acc_data.check();
         if acc_data.keccak_code_hash.is_zero() {
-            state_db::Account::zero()
+            state_db::Account::empty()
         } else {
+            acc_data.check();
             Self {
                 nonce: acc_data.nonce.into(),
                 balance: acc_data.balance,

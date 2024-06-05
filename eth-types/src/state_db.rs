@@ -13,7 +13,7 @@ use std::{
 #[cfg(feature = "scroll")]
 mod l2;
 
-static ACCOUNT_ZERO: LazyLock<Account> = LazyLock::new(Account::zero);
+static ACCOUNT_EMPTY: LazyLock<Account> = LazyLock::new(Account::empty);
 /// Hash value for empty code hash.
 static EMPTY_CODE_HASH: LazyLock<Hash> = LazyLock::new(|| CodeDB::hash(&[]));
 /// bytes of empty code hash, in little endian order.
@@ -85,8 +85,8 @@ pub struct Account {
 }
 
 impl Account {
-    /// Return an empty account, with all values set at zero.
-    pub fn zero() -> Self {
+    /// Return an empty account, with all values set at empty.
+    pub fn empty() -> Self {
         Self {
             nonce: Word::zero(),
             balance: Word::zero(),
@@ -172,7 +172,7 @@ impl StateDB {
     pub fn get_account(&self, addr: &Address) -> (bool, &Account) {
         match self.state.get(addr) {
             Some(acc) => (true, acc),
-            None => (false, &(*ACCOUNT_ZERO)),
+            None => (false, &(*ACCOUNT_EMPTY)),
         }
     }
 
@@ -207,7 +207,7 @@ impl StateDB {
             true
         } else {
             log::trace!("insert empty account for addr {:?}", addr);
-            self.state.insert(*addr, Account::zero());
+            self.state.insert(*addr, Account::empty());
             false
         };
         (found, self.state.get_mut(addr).expect("addr not inserted"))
@@ -337,7 +337,7 @@ impl StateDB {
 
     /// Set account as self destructed.
     pub fn destruct_account(&mut self, addr: Address) {
-        self.state.insert(addr, Account::zero());
+        self.state.insert(addr, Account::empty());
         self.destructed_account.insert(addr);
     }
 
@@ -365,7 +365,7 @@ impl StateDB {
         self.touched_account = HashSet::new();
         for addr in self.destructed_account.clone() {
             let (_, account) = self.get_account_mut(&addr);
-            *account = ACCOUNT_ZERO.clone();
+            *account = ACCOUNT_EMPTY.clone();
         }
         self.refund = 0;
     }
@@ -390,7 +390,7 @@ mod statedb_tests {
         // Get non-existing account
         let (found, acc) = statedb.get_account(&addr_a);
         assert!(!found);
-        assert_eq!(acc, &Account::zero());
+        assert_eq!(acc, &Account::empty());
 
         // Get non-existing storage key for non-existing account
         let (found, value) = statedb.get_storage(&addr_a, &Word::from(2));
@@ -400,7 +400,7 @@ mod statedb_tests {
         // Get mut non-existing account and set nonce
         let (found, acc) = statedb.get_account_mut(&addr_a);
         assert!(!found);
-        assert_eq!(acc, &Account::zero());
+        assert_eq!(acc, &Account::empty());
         acc.nonce = Word::from(100);
 
         // Get existing account and check nonce

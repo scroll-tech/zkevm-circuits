@@ -61,7 +61,7 @@ impl BlockData {
         let access_set = AccessSet::from_geth_data(&geth_data);
         // Initialize all accesses accounts to zero
         for addr in access_set.state.keys() {
-            sdb.set_account(addr, state_db::Account::zero());
+            sdb.set_account(addr, state_db::Account::empty());
         }
 
         for account in geth_data.accounts {
