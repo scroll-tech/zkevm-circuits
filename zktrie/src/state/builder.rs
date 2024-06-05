@@ -304,7 +304,7 @@ impl<T: CanRead + Default> TryFrom<&[Bytes]> for TrieProof<T> {
     }
 }
 
-pub(crate) fn verify_proof_leaf<T: Default>(inp: TrieProof<T>, key_buf: &[u8; 32]) -> TrieProof<T> {
+pub(crate) fn verify_proof_leaf<T: Default + std::fmt::Debug>(inp: TrieProof<T>, key_buf: &[u8; 32]) -> TrieProof<T> {
     let first_16bytes: [u8; 16] = key_buf[..16].try_into().expect("expect first 16 bytes");
     let last_16bytes: [u8; 16] = key_buf[16..].try_into().expect("expect last 16 bytes");
 
