@@ -1050,12 +1050,21 @@ mod tests {
     use witgen::AddressTableRow;
     use zkevm_circuits::util::MockChallenges;
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Copy, Debug)]
+    enum MockEntry {
+        Index([Option<Fr>; 2]),
+        Decode([Option<Fr>; 2]),
+        Phase([Option<bool>; 3]),
+        Position([Option<Fr>; 3]),
+    }
+
+    #[derive(Clone, Debug, Default)]
     struct SeqExecMock {
         literals: Vec<u8>,
         seq_conf: SequenceInfo,
         insts: Vec<AddressTableRow>,
         exec_trace: Vec<SequenceExec>,
+        mocks: Vec<(usize, MockEntry)>,
     }
 
     impl SeqExecMock {
@@ -1115,6 +1124,7 @@ mod tests {
                 seq_conf,
                 insts,
                 exec_trace,
+                ..Default::default()
             }
         }
     }
@@ -1228,6 +1238,7 @@ mod tests {
                         let seq_info = &tr.seq_conf;
                         let exec_trace = &tr.exec_trace;
                         blk_ind = seq_info.block_idx;
+                        let begin_offset = offset;
                         (offset, decoded_len, decoded_rlc) = config.assign_block(
                             &mut region,
                             chng_val.keccak_input(),
@@ -1240,15 +1251,42 @@ mod tests {
                             &self.output,
                         )?;
 
-                        // config.config.mock_assign(
-                        //     &mut layouter,
-                        //     chng_val.keccak_input(),
-                        //     self.insts.len(),
-                        //     &self.exec_trace,
-                        //     &self.literals,
-                        //     &self.outputs,
-                        //     50,
-                        // )?;
+                        for (mock_offset, entry) in &tr.mocks {
+                            match entry {
+                                MockEntry::Decode(mock) => config.mock_assign(
+                                    &mut region,
+                                    begin_offset + mock_offset,
+                                    [None, None],
+                                    *mock,
+                                    [None, None, None],
+                                    [None, None, None],
+                                ),
+                                MockEntry::Index(mock) => config.mock_assign(
+                                    &mut region,
+                                    begin_offset + mock_offset,
+                                    *mock,
+                                    [None, None],
+                                    [None, None, None],
+                                    [None, None, None],
+                                ),
+                                MockEntry::Phase(mock) => config.mock_assign(
+                                    &mut region,
+                                    begin_offset + mock_offset,
+                                    [None, None],
+                                    [None, None],
+                                    *mock,
+                                    [None, None, None],
+                                ),
+                                MockEntry::Position(mock) => config.mock_assign(
+                                    &mut region,
+                                    begin_offset + mock_offset,
+                                    [None, None],
+                                    [None, None],
+                                    [None, None, None],
+                                    *mock,
+                                ),
+                            }?;
+                        }
                     }
 
                     let end_offset = offset + 10;
