@@ -159,25 +159,26 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
 
                 match self.case {
                     // sound case
-                    UnsoundCase::None => {}
+                    UnsoundCase::None => {},
 
                     // First block index is not 1
-                    IncorrectInitialBlockIdx => {
+                    UnsoundCase::IncorrectInitialBlockIdx => {
                         let block_idx_cell =
-                            assigned_literals_header_table_rows[0].block_idx.expect("cell is assigned").cell();
+                            assigned_literals_header_table_rows[0].clone().block_idx.expect("cell is assigned").cell();
                         let _modified_cell = region.assign_advice(
                             || "Change the first block index value",
                             block_idx_cell.column.try_into().expect("assigned cell col is valid"),
                             block_idx_cell.row_offset,
                             || Value::known(Fr::from(2)),
                         )?;
-                    }
+                    },
 
                     // Block index should increment by 1 with each valid row
-                    IncorrectBlockIdxTransition => {
+                    UnsoundCase::IncorrectBlockIdxTransition => {
                         let row_idx: usize =
                             rng.gen_range(0..assigned_literals_header_table_rows.len());
                         let block_idx_cell = assigned_literals_header_table_rows[row_idx]
+                            .clone()
                             .block_idx
                             .expect("cell is assigned");
                         let _modified_cell = region.assign_advice(
@@ -190,12 +191,12 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             block_idx_cell.cell().row_offset,
                             || block_idx_cell.value() + Value::known(Fr::one()),
                         )?;
-                    }
+                    },
 
                     // Padding indicator transitions from 1 -> 0
-                    IrregularPaddingTransition => {
+                    UnsoundCase::IrregularPaddingTransition => {
                         let row_idx: usize = rng.gen_range(0..assigned_padding_cells.len());
-                        let is_padding_cell = assigned_padding_cells[row_idx];
+                        let is_padding_cell = assigned_padding_cells[row_idx].clone();
 
                         let _modified_cell = region.assign_advice(
                             || "Flip is_padding value in the padding section",
@@ -207,13 +208,14 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             is_padding_cell.cell().row_offset,
                             || Value::known(Fr::zero()),
                         )?;
-                    }
+                    },
 
                     // Regen size is not calculated correctly
-                    IncorrectRegenSize => {
+                    UnsoundCase::IncorrectRegenSize => {
                         let row_idx: usize =
                             rng.gen_range(0..assigned_literals_header_table_rows.len());
                         let regen_size_cell = assigned_literals_header_table_rows[row_idx]
+                            .clone()
                             .regen_size
                             .expect("cell is assigned");
 
@@ -227,7 +229,7 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             regen_size_cell.cell().row_offset,
                             || regen_size_cell.value() + Value::known(Fr::one()),
                         )?;
-                    }
+                    },
                 }
 
                 Ok(())

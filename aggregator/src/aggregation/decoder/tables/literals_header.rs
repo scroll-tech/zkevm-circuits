@@ -231,6 +231,7 @@ impl LiteralsHeaderTable {
         // soundness_debug
         // #[cfg(feature = "soundness-tests")]
         let mut assigned_literals_header_table_rows = Vec::with_capacity(n_enabled);
+        let mut assigned_padding_cells: Vec<AssignedCell<F, F>> = vec![];
 
         layouter.assign_region(
             || "LiteralsHeaderTable",
@@ -265,9 +266,9 @@ impl LiteralsHeaderTable {
 
                     let regen_size = le_bits_to_value(&sizing_bits[0..n_bits_regen]);
 
-                    let mut block_assigned_cells: Vec<AssignedCell<F, F>> = vec![];
+                    let mut assigned_table_row = AssignedLiteralsHeaderTableRow::default();
 
-                    for (col, value, annotation) in [
+                    for (idx, (col, value, annotation)) in [
                         (self.block_idx, block_idx, "block_idx"),
                         (self.byte0, byte0, "byte0"),
                         (self.byte1, byte1, "byte1"),
@@ -286,36 +287,35 @@ impl LiteralsHeaderTable {
                         (self.byte0_rs_3, byte0 >> 3, "byte0_rs_3"),
                         (self.byte0_rs_4, byte0 >> 4, "byte0_rs_4"),
                         (self.is_padding.column, 0, "is_padding"),
-                    ] {
-                        block_assigned_cells.push(
-                            region
-                                .assign_advice(
-                                    || annotation,
-                                    col,
-                                    offset,
-                                    || Value::known(F::from(value)),
-                                )
-                                .expect("failed witness assignment"),
-                        );
+                    ].into_iter().enumerate() {
+                        let _assigned_cell = region
+                            .assign_advice(
+                                || annotation,
+                                col,
+                                offset,
+                                || Value::known(F::from(value)),
+                            )
+                            .expect("failed witness assignment");
+
+                        // soundness_debug
+                        // #[cfg(feature = "soundness-tests")]
+                        match idx {
+                            0 => { assigned_table_row.block_idx = Some(_assigned_cell) },
+                            1 => { assigned_table_row.byte0 = Some(_assigned_cell) },
+                            2 => { assigned_table_row.byte1 = Some(_assigned_cell) },
+                            3 => { assigned_table_row.byte2 = Some(_assigned_cell) },
+                            4 => { assigned_table_row.regen_size = Some(_assigned_cell) },
+                            5 => { assigned_table_row.size_format_bit0 = Some(_assigned_cell) },
+                            6 => { assigned_table_row.size_format_bit1 = Some(_assigned_cell) },
+                            7 => { assigned_table_row.byte0_rs_3 = Some(_assigned_cell) },
+                            8 => { assigned_table_row.byte0_rs_4 = Some(_assigned_cell) },
+                            9 => { assigned_table_row.is_padding = Some(_assigned_cell) },
+                            _ => {},
+                        }
                     }
 
-                    // soundness_debug
-                    // #[cfg(feature = "soundness-tests")]
-                    assigned_literals_header_table_rows.push(AssignedLiteralsHeaderTableRow {
-                        block_idx: Some(block_assigned_cells[0]),
-                        byte0: Some(block_assigned_cells[1]),
-                        byte1: Some(block_assigned_cells[2]),
-                        byte2: Some(block_assigned_cells[3]),
-                        regen_size: Some(block_assigned_cells[4]),
-                        size_format_bit0: Some(block_assigned_cells[5]),
-                        size_format_bit1: Some(block_assigned_cells[6]),
-                        byte0_rs_3: Some(block_assigned_cells[7]),
-                        byte0_rs_4: Some(block_assigned_cells[8]),
-                        is_padding: Some(block_assigned_cells[9]),
-                    });
+                    assigned_literals_header_table_rows.push(assigned_table_row);
                 }
-
-                let mut assigned_padding_cells: Vec<AssignedCell<F, F>> = vec![];
 
                 for offset in literals_headers.len()..n_enabled {
                     assigned_padding_cells.push(
@@ -330,15 +330,17 @@ impl LiteralsHeaderTable {
                     );
                 }
 
-                // soundness_debug
-                // #[cfg(feature = "soundness-tests")]
-                return Ok((assigned_literals_header_table_rows, assigned_padding_cells));
-
-                // soundness_debug
-                // #[cfg(not(feature = "soundness-tests"))]
-                // return Ok(());
+                Ok(())
             },
-        )
+        );
+
+        // soundness_debug
+        // #[cfg(feature = "soundness-tests")]
+        return Ok((assigned_literals_header_table_rows, assigned_padding_cells));
+
+        // soundness_debug
+        // #[cfg(not(feature = "soundness-tests"))]
+        // return Ok(());
     }
 }
 
