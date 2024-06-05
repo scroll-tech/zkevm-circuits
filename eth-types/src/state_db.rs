@@ -163,6 +163,7 @@ impl StateDB {
 
     /// Set an [`Account`] at `addr` in the StateDB.
     pub fn set_account(&mut self, addr: &Address, acc: Account) {
+        acc.check();
         self.state.insert(*addr, acc);
     }
 
