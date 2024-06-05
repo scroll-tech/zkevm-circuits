@@ -97,20 +97,23 @@ impl Account {
         }
     }
 
-    /// Return if account is empty or not.
-    pub fn is_empty(&self) -> bool {
+    fn check(&self) {
         debug_assert_ne!(
             self.code_hash,
             Hash::zero(),
             "codehash inside statedb should never be 0, {self:?}"
         );
         let is_code_hash_empty = self.code_hash.eq(&CodeDB::empty_code_hash());
-        if is_code_hash_empty {
-            debug_assert_eq!(Word::zero(), self.code_size);
-        }
-        if !is_code_hash_empty {
-            debug_assert_ne!(Word::zero(), self.code_size);
-        }
+        let is_keccak_code_hash_empty = self.keccak_code_hash == *KECCAK_CODE_HASH_EMPTY;
+        let is_code_size_empty = self.code_size == Word::zero();
+        debug_assert_eq!(is_code_hash_empty, is_keccak_code_hash_empty);
+        debug_assert_eq!(is_code_hash_empty, is_code_size_empty, "{self:?}");
+    }
+
+    /// Return if account is empty or not.
+    pub fn is_empty(&self) -> bool {
+        self.check();
+        let is_code_hash_empty = self.code_hash.eq(&CodeDB::empty_code_hash());
         self.nonce.is_zero() && self.balance.is_zero() && is_code_hash_empty
     }
 

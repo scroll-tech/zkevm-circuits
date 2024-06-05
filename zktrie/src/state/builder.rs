@@ -70,15 +70,17 @@ pub struct AccountData {
 }
 
 impl AccountData {
-    /// is empty account
-    pub fn is_empty(&self) -> bool {
-        //let is_poseidon_code_hash_zero = self.poseidon_code_hash.is_zero();
-        //let is_keccak_code_hash_zero = self.keccak_code_hash.is_zero();
+    fn check(&self) {
         let is_poseidon_code_hash_empty = self.poseidon_code_hash == *POSEIDON_CODE_HASH_EMPTY;
         let is_keccak_code_hash_empty = self.keccak_code_hash == *KECCAK_CODE_HASH_EMPTY;
         let is_code_size_empty = self.code_size == 0;
         debug_assert_eq!(is_poseidon_code_hash_empty, is_keccak_code_hash_empty);
         debug_assert_eq!(is_poseidon_code_hash_empty, is_code_size_empty, "{self:?}");
+    }
+    /// is empty account
+    pub fn is_empty(&self) -> bool {
+        self.check();
+        let is_poseidon_code_hash_empty = self.poseidon_code_hash == *POSEIDON_CODE_HASH_EMPTY;
         let is_nonce_empty = self.nonce == 0;
         let is_balance_empty = self.balance.is_zero();
         is_poseidon_code_hash_empty && is_nonce_empty && is_balance_empty
@@ -109,6 +111,7 @@ impl From<zktrie::AccountData> for AccountData {
 
 impl From<&AccountData> for state_db::Account {
     fn from(acc_data: &AccountData) -> Self {
+        acc_data.check();
         if acc_data.keccak_code_hash.is_zero() {
             state_db::Account::zero()
         } else {
