@@ -320,6 +320,7 @@ pub(crate) fn verify_proof_leaf<T: Default>(inp: TrieProof<T>, key_buf: &[u8; 32
         if key_fr == secure_hash {
             inp
         } else {
+            log::error!("invalid verify_proof_leaf, key preimage {}, inp {:?}", hex::encode(key_buf), inp);
             Default::default()
         }
     } else {
