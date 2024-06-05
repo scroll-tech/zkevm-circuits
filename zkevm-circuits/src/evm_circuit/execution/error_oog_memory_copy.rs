@@ -12,7 +12,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
                 MemoryExpansionGadget,
             },
-            or, select, CachedRegion, Cell, Word,
+            or, not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -98,16 +98,26 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         cb.stack_pop(src_memory_addr.offset_rlc());
         cb.stack_pop(dst_memory_addr.length_rlc());
 
-        cb.condition(is_mcopy.expr(), |cb| {
+        // for mcopy
+        let memory_expansion_mcopy = cb.condition(is_mcopy.expr(), |cb| {
             cb.require_equal("mcopy src_address length == dst_address length", src_memory_addr.length_rlc(),
             dst_memory_addr.length_rlc());
+            let memory_expansion_mcopy = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset(), 
+            src_memory_addr.end_offset()]);
+            memory_expansion_mcopy
         });
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
+        // for others (CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY)
+        let memory_expansion_normal = cb.condition(not::expr(is_mcopy.expr()), |cb| {
+            MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()])
+        });
+        
+        let memory_expansion_cost = select::expr(is_mcopy.expr(),
+        memory_expansion_mcopy.gas_cost(), memory_expansion_normal.gas_cost());
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             dst_memory_addr.length(),
-            memory_expansion.gas_cost(),
+            memory_expansion_cost,
         );
 
         let constant_gas_cost = select::expr(
