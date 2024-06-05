@@ -133,7 +133,13 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
             ));
         }
 
+        #[cfg(feature = "soundness-tests")]
         let (assigned_literals_header_table_rows, assigned_padding_cells) = config
+            .literals_header_table
+            .assign(&mut layouter, literal_headers, n_enabled)?;
+
+        #[cfg(not(feature = "soundness-tests"))]
+        let _ = config
             .literals_header_table
             .assign(&mut layouter, literal_headers, n_enabled)?;
 
@@ -158,6 +164,7 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
 
                 let mut rng = rand::thread_rng();
 
+                #[cfg(feature = "soundness-tests")]
                 match self.case {
                     // sound case
                     UnsoundCase::None => {}
@@ -273,6 +280,7 @@ fn run(case: UnsoundCase) -> Result<(), Vec<VerifyFailure>> {
     batch_files.sort();
 
     let mut multi_batch_data = Vec::with_capacity(500_000);
+
     for batch_file in batch_files {
         let batch_data = fs::read(batch_file).expect("batch file reads successfully");
         multi_batch_data.extend_from_slice(&batch_data);
