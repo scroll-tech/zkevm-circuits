@@ -4,8 +4,7 @@ mod compression;
 mod mock_chunk;
 mod rlc;
 
-// soundness_debug
-// #[cfg(feature = "soundness_tests")]
+#[cfg(feature = "soundness_tests")]
 mod literals_header;
 
 #[macro_export]
