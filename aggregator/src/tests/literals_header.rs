@@ -73,12 +73,12 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
 
         let MultiBlockProcessResult {
             witness_rows,
-            literal_bytes: decoded_literals,
-            fse_aux_tables,
-            block_info_arr,
-            sequence_info_arr,
-            address_table_rows: address_table_arr,
-            sequence_exec_results,
+            literal_bytes: _l,
+            fse_aux_tables: _f,
+            block_info_arr: _b,
+            sequence_info_arr: _s,
+            address_table_rows: _a,
+            sequence_exec_results: _seq,
         } = process(&self.compressed, Value::known(Fr::from(12345)));
 
         // Load auxiliary tables

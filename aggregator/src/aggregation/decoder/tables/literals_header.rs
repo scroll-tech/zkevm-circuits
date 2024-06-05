@@ -335,11 +335,12 @@ impl LiteralsHeaderTable {
 
                 Ok(())
             },
-        );
+        )?;
 
         // soundness_debug
         // #[cfg(feature = "soundness-tests")]
-        return Ok((assigned_literals_header_table_rows, assigned_padding_cells));
+        // return Ok((assigned_literals_header_table_rows, assigned_padding_cells));
+        Ok((assigned_literals_header_table_rows, assigned_padding_cells))
 
         // soundness_debug
         // #[cfg(not(feature = "soundness-tests"))]
