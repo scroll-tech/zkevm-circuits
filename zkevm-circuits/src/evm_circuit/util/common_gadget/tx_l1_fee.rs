@@ -448,7 +448,6 @@ mod tests {
                 is_curie,
                 gadget,
                 tx_data_gas_cost,
-                // #[cfg(feature = "l1_fee_curie")]
                 tx_signed_length,
                 expected_tx_l1_fee,
             }
