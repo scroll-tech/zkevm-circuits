@@ -27,6 +27,8 @@ pub mod bytecode;
 pub mod evm_types;
 pub mod forks;
 pub mod geth_types;
+/// L2 system contracts
+pub mod l2_predeployed;
 pub mod l2_types;
 pub mod sign_types;
 pub mod state_db;
