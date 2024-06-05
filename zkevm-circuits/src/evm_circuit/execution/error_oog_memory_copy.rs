@@ -189,6 +189,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_extcodecopy = opcode == OpcodeId::EXTCODECOPY;
+        let is_mcopy = opcode == OpcodeId::MCOPY;
 
         log::debug!(
             "ErrorOutOfGasMemoryCopy: opcode = {}, gas_left = {}, gas_cost = {}",
@@ -220,21 +221,29 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
         // self.src_offset
         //     .assign(region, offset, Some(src_offset.to_le_bytes()))?;
-        self.src_memory_addr
+        let src_memory_addr = self.src_memory_addr
             .assign(region, offset, src_offset, copy_size)?;
-        let memory_addr = self
+        let dst_memory_addr = self
             .dst_memory_addr
             .assign(region, offset, dst_offset, copy_size)?;
         let (_, memory_expansion_cost) =
             self.memory_expansion_normal
-                .assign(region, offset, step.memory_word_size(), [memory_addr])?;
+                .assign(region, offset, step.memory_word_size(), [src_memory_addr])?;
 
-        // TODO: assign memory_expansion_mcopy
+        // assign memory_expansion_mcopy
+        let (_, memory_expansion_cost_mcopy) = self.memory_expansion_mcopy.assign(region, offset, step.memory_word_size(), [
+            src_memory_addr, dst_memory_addr
+        ])?;
+
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
             offset,
             MemoryExpandedAddressGadget::<F>::length_value(dst_offset, copy_size),
-            memory_expansion_cost,
+            if is_mcopy {
+                memory_expansion_cost_mcopy
+            }else {
+                memory_expansion_cost
+            },
         )?;
         let constant_gas_cost = if is_extcodecopy {
             if is_warm {
