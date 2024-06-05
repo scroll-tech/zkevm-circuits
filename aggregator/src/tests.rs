@@ -4,8 +4,7 @@ mod compression;
 mod mock_chunk;
 mod rlc;
 
-// soundness_debug
-// #[cfg(feature = "soundness_tests")]
+#[cfg(feature = "soundness-tests")]
 mod bitstring;
 
 #[macro_export]

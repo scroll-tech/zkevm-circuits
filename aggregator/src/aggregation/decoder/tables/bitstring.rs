@@ -469,9 +469,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
         witness_rows: &[ZstdWitnessRow<Fr>],
         n_enabled: usize,
     ) -> Result<AssignedBitstringTableRows, Error> {
-        // soundness_debug
-        // #[cfg(feature = "soundness-tests")]
-        let mut assigned_bitstring_table_rows = Vec::with_capacity(n_enabled);
+        let mut assigned_bitstring_table_rows: Vec<AssignedBitstringTableRow> = Vec::with_capacity(n_enabled);
 
         layouter.assign_region(
             || "Bitstring Table",
@@ -504,8 +502,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                         || Value::known(Fr::from(bit_index as u64)),
                     )?;
 
-                    // soundness_debug
-                    // #[cfg(feature = "soundness-tests")]
+                    #[cfg(feature = "soundness-tests")]
                     assigned_bitstring_table_rows.push(AssignedBitstringTableRow {
                         q_start: Some(_assigned_q_start),
                         bit_index: Some(_assigned_bit_index),
@@ -765,8 +762,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                         || Value::known(Fr::one()),
                     )?;
 
-                    // soundness_debug
-                    // #[cfg(feature = "soundness-tests")]
+                    #[cfg(feature = "soundness-tests")]
                     {
                         assigned_bitstring_table_rows[idx].is_padding = Some(_assigned_is_padding);
                     }

@@ -184,13 +184,13 @@ impl Circuit<Fr> for TestBitstringCircuit {
                                 byte_idx_1_cell.cell().column.try_into().expect("assigned cell col is valid"),
                                 byte_idx_1_cell.cell().row_offset,
                                 || byte_idx_1_cell.value() + Value::known(Fr::one()),
-                            );
+                            )?;
                             region.assign_advice(
                                 || "corrupt byte_idx at a random location in the assigned witness",
                                 byte_idx_3_cell.cell().column.try_into().expect("assigned cell col is valid"),
                                 byte_idx_3_cell.cell().row_offset,
                                 || byte_idx_3_cell.value() + Value::known(Fr::one()),
-                            );
+                            )?;
                         }
                     },
 
