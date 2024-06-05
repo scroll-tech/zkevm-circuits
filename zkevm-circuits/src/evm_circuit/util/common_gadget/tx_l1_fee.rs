@@ -362,6 +362,7 @@ mod tests {
 
     #[test]
     fn test_tx_l1_fee_with_right_values() {
+        // test both before & after curie upgrade
         for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE] {
             let witnesses = [
                 is_curie.into(),
@@ -386,6 +387,7 @@ mod tests {
 
     #[test]
     fn test_tx_l1_fee_with_wrong_values() {
+        // test both before & after curie upgrade
         for is_curie in [TEST_BEFORE_CURIE, TEST_AFTER_CURIE] {
             let witnesses = [
                 is_curie.into(),
@@ -393,6 +395,7 @@ mod tests {
                 TEST_FEE_OVERHEAD.into(),
                 TEST_FEE_SCALAR.into(),
                 TEST_TX_DATA_GAS_COST.into(),
+                // set wrong l1 fee
                 TEST_TX_L1_FEE_BEFORE_CURIE + 1,
                 // Curie fields
                 TEST_BASE_FEE_AFTER_CURIE.into(),
@@ -400,6 +403,7 @@ mod tests {
                 COMMIT_SCALAR.into(),
                 BLOB_SCALAR.into(),
                 TEST_TX_RLP_SIGNED_LENGTH,
+                // set wrong l1 fee
                 TEST_TX_L1_FEE_AFTER_CURIE + 1,
             ]
             .map(U256::from);
@@ -433,8 +437,6 @@ mod tests {
                 tx_data_gas_cost.expr(),
                 tx_signed_length.expr(),
             );
-
-            // ADD tx_signed_length.expr()
 
             cb.require_equal(
                 "tx_l1_fee must be correct",
