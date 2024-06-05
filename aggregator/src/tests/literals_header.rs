@@ -1,17 +1,15 @@
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Fixed},
 };
 use rand;
-use std::collections::BTreeMap;
-use zkevm_circuits::table::{BitwiseOpTable, Pow2Table, RangeTable, U8Table};
-
-use crate::{
-    decoder::tables::{FixedTable, FseTable},
-    witgen::{FseAuxiliaryTableData, FseTableKind},
-};
+use rand::Rng;
+use std::io::Write;
+use zkevm_circuits::table::RangeTable;
+use crate::aggregation::decoder::tables::LiteralsHeaderTable;
+use crate::aggregation::witgen::{MultiBlockProcessResult, process, init_zstd_encoder, ZstdTag, ZstdWitnessRow};
 
 #[derive(Clone)]
 struct TestLiteralsHeaderConfig {
@@ -53,10 +51,14 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
         let q_enable = meta.fixed_column();
 
         // Helper tables
+        let range8 = RangeTable::construct(meta);
+        let range16 = RangeTable::construct(meta);
         let literals_header_table = LiteralsHeaderTable::configure(meta, q_enable, range8, range16);
 
         Self::Config {
             q_enable,
+            range8,
+            range16,
             literals_header_table,
         }
     }
@@ -67,7 +69,6 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let n_enabled = (1 << self.k) - Self::Config::unusable_rows();
-        let challenges = challenge.values(&layouter);
 
         let MultiBlockProcessResult {
             witness_rows,
@@ -77,11 +78,11 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
             sequence_info_arr,
             address_table_rows: address_table_arr,
             sequence_exec_results,
-        } = process(&self.compressed, challenges.keccak_input());
+        } = process(&self.compressed, Value::known(Fr::from(12345)));
 
         // Load auxiliary tables
-        self.range8.load(layouter)?;
-        self.range16.load(layouter)?;
+        config.range8.load(&mut layouter)?;
+        config.range16.load(&mut layouter)?;
 
         /////////////////////////////////////////
         ///// Assign LiteralHeaderTable  ////////
@@ -131,9 +132,9 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
             ));
         }
 
-        (assigned_literals_header_table_rows, assigned_padding_cells) = self
+        let (assigned_literals_header_table_rows, assigned_padding_cells) = config
             .literals_header_table
-            .assign(layouter, literal_headers, n_enabled)?;
+            .assign(&mut layouter, literal_headers, n_enabled)?;
 
         // Modify assigned witness values
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
@@ -163,13 +164,13 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                     // First block index is not 1
                     IncorrectInitialBlockIdx => {
                         let block_idx_cell =
-                            assigned_literals_header_table_rows[0].block_idx.cell();
-                        region.assign_advice(
+                            assigned_literals_header_table_rows[0].block_idx.expect("cell is assigned").cell();
+                        let _modified_cell = region.assign_advice(
                             || "Change the first block index value",
-                            cell.column.try_into().expect("assigned cell col is valid"),
-                            cell.row_offset,
+                            block_idx_cell.column.try_into().expect("assigned cell col is valid"),
+                            block_idx_cell.row_offset,
                             || Value::known(Fr::from(2)),
-                        )
+                        )?;
                     }
 
                     // Block index should increment by 1 with each valid row
@@ -178,32 +179,34 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             rng.gen_range(0..assigned_literals_header_table_rows.len());
                         let block_idx_cell = assigned_literals_header_table_rows[row_idx]
                             .block_idx
-                            .cell();
-                        region.assign_advice(
+                            .expect("cell is assigned");
+                        let _modified_cell = region.assign_advice(
                             || "Corrupt the block index value at a random location",
                             block_idx_cell
+                                .cell()
                                 .column
                                 .try_into()
                                 .expect("assigned cell col is valid"),
-                            block_idx_cell.row_offset,
+                            block_idx_cell.cell().row_offset,
                             || block_idx_cell.value() + Value::known(Fr::one()),
-                        )
+                        )?;
                     }
 
                     // Padding indicator transitions from 1 -> 0
                     IrregularPaddingTransition => {
                         let row_idx: usize = rng.gen_range(0..assigned_padding_cells.len());
-                        let is_padding_cell = assigned_padding_cells[row_idx].is_padding.cell();
+                        let is_padding_cell = assigned_padding_cells[row_idx];
 
-                        region.assign_advice(
+                        let _modified_cell = region.assign_advice(
                             || "Flip is_padding value in the padding section",
                             is_padding_cell
+                                .cell()
                                 .column
                                 .try_into()
                                 .expect("assigned cell col is valid"),
-                            is_padding_cell.row_offset,
+                            is_padding_cell.cell().row_offset,
                             || Value::known(Fr::zero()),
-                        )
+                        )?;
                     }
 
                     // Regen size is not calculated correctly
@@ -212,17 +215,18 @@ impl Circuit<Fr> for TestLiteralsHeaderCircuit {
                             rng.gen_range(0..assigned_literals_header_table_rows.len());
                         let regen_size_cell = assigned_literals_header_table_rows[row_idx]
                             .regen_size
-                            .cell();
+                            .expect("cell is assigned");
 
-                        region.assign_advice(
+                        let _modified_cell = region.assign_advice(
                             || "Invalidate the regen_size value at a random location",
                             regen_size_cell
+                                .cell()
                                 .column
                                 .try_into()
                                 .expect("assigned cell col is valid"),
-                            regen_size_cell.row_offset,
+                            regen_size_cell.cell().row_offset,
                             || regen_size_cell.value() + Value::known(Fr::one()),
-                        )
+                        )?;
                     }
                 }
 

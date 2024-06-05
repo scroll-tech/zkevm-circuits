@@ -19,28 +19,32 @@ use crate::aggregation::{
     util::BooleanAdvice,
 };
 
-#[cfg(feature = "soundness-tests")]
+// soundness_debug
+// #[cfg(feature = "soundness-tests")]
 #[derive(Default, Debug, Clone)]
-pub struct AssignedLiteralsHeaderTableRow {
-    pub block_idx: Option<AssignedCell<Fr, Fr>>,
-    pub byte0: Option<AssignedCell<Fr, Fr>>,
-    pub byte1: Option<AssignedCell<Fr, Fr>>,
-    pub byte2: Option<AssignedCell<Fr, Fr>>,
-    pub size_format_bit0: Option<AssignedCell<Fr, Fr>>,
-    pub size_format_bit1: Option<AssignedCell<Fr, Fr>>,
-    pub byte0_rs_3: Option<AssignedCell<Fr, Fr>>,
-    pub byte0_rs_4: Option<AssignedCell<Fr, Fr>>,
-    pub regen_size: Option<AssignedCell<Fr, Fr>>,
+pub struct AssignedLiteralsHeaderTableRow<F: Field> {
+    pub block_idx: Option<AssignedCell<F, F>>,
+    pub byte0: Option<AssignedCell<F, F>>,
+    pub byte1: Option<AssignedCell<F, F>>,
+    pub byte2: Option<AssignedCell<F, F>>,
+    pub size_format_bit0: Option<AssignedCell<F, F>>,
+    pub size_format_bit1: Option<AssignedCell<F, F>>,
+    pub byte0_rs_3: Option<AssignedCell<F, F>>,
+    pub byte0_rs_4: Option<AssignedCell<F, F>>,
+    pub regen_size: Option<AssignedCell<F, F>>,
+    pub is_padding: Option<AssignedCell<F, F>>,
 }
 
-#[cfg(feature = "soundness-tests")]
-pub(crate) type AssignedLiteralsHeaderTableRows = (
-    Vec<AssignedLiteralsHeaderTableRow>,
-    Vec<AssignedCell<Fr, Fr>>,
+// soundness_debug
+// #[cfg(feature = "soundness-tests")]
+pub(crate) type AssignedLiteralsHeaderTableRows<F> = (
+    Vec<AssignedLiteralsHeaderTableRow<F>>,
+    Vec<AssignedCell<F, F>>,
 );
 
-#[cfg(not(feature = "soundness-tests"))]
-pub(crate) type AssignedLiteralsHeaderTableRows = ();
+// soundness_debug
+// #[cfg(not(feature = "soundness-tests"))]
+// pub(crate) type AssignedLiteralsHeaderTableRows = ();
 
 /// Helper table to decode the regenerated size from the Literals Header.
 #[derive(Clone, Debug)]
@@ -223,8 +227,9 @@ impl LiteralsHeaderTable {
         layouter: &mut impl Layouter<F>,
         literals_headers: Vec<(u64, u64, (u64, u64, u64))>,
         n_enabled: usize,
-    ) -> Result<AssignedLiteralsHeaderTableRows, Error> {
-        #[cfg(feature = "soundness-tests")]
+    ) -> Result<AssignedLiteralsHeaderTableRows<F>, Error> {
+        // soundness_debug
+        // #[cfg(feature = "soundness-tests")]
         let mut assigned_literals_header_table_rows = Vec::with_capacity(n_enabled);
 
         layouter.assign_region(
@@ -294,18 +299,19 @@ impl LiteralsHeaderTable {
                         );
                     }
 
-                    #[cfg(feature = "soundness-tests")]
+                    // soundness_debug
+                    // #[cfg(feature = "soundness-tests")]
                     assigned_literals_header_table_rows.push(AssignedLiteralsHeaderTableRow {
-                        block_idx: block_assigned_cells[0],
-                        byte0: block_assigned_cells[1],
-                        byte1: block_assigned_cells[2],
-                        byte2: block_assigned_cells[3],
-                        regen_size: block_assigned_cells[4],
-                        size_format_bit0: block_assigned_cells[5],
-                        size_format_bit1: block_assigned_cells[6],
-                        byte0_rs_3: block_assigned_cells[7],
-                        byte0_rs_4: block_assigned_cells[8],
-                        is_padding: block_assigned_cells[9],
+                        block_idx: Some(block_assigned_cells[0]),
+                        byte0: Some(block_assigned_cells[1]),
+                        byte1: Some(block_assigned_cells[2]),
+                        byte2: Some(block_assigned_cells[3]),
+                        regen_size: Some(block_assigned_cells[4]),
+                        size_format_bit0: Some(block_assigned_cells[5]),
+                        size_format_bit1: Some(block_assigned_cells[6]),
+                        byte0_rs_3: Some(block_assigned_cells[7]),
+                        byte0_rs_4: Some(block_assigned_cells[8]),
+                        is_padding: Some(block_assigned_cells[9]),
                     });
                 }
 
@@ -324,11 +330,13 @@ impl LiteralsHeaderTable {
                     );
                 }
 
-                #[cfg(feature = "soundness-tests")]
+                // soundness_debug
+                // #[cfg(feature = "soundness-tests")]
                 return Ok((assigned_literals_header_table_rows, assigned_padding_cells));
 
-                #[cfg(not(feature = "soundness-tests"))]
-                return Ok(());
+                // soundness_debug
+                // #[cfg(not(feature = "soundness-tests"))]
+                // return Ok(());
             },
         )
     }
