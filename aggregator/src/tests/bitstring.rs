@@ -91,7 +91,10 @@ impl Circuit<Fr> for TestBitstringCircuit {
             &witness_rows,
             n_enabled,
         )?;
-        let table_1_padding_start_offset = assigned_bitstring_table_1_rows.iter().position(|row| row.bit.is_none()).expect("table within capacity");
+        let table_1_padding_start_offset = assigned_bitstring_table_1_rows
+            .iter()
+            .position(|row| row.bit.is_none())
+            .expect("table within capacity");
 
         let assigned_bitstring_table_2_rows = config.bitstring_table_2.assign(
             &mut layouter,
@@ -99,7 +102,10 @@ impl Circuit<Fr> for TestBitstringCircuit {
             &witness_rows,
             n_enabled,
         )?;
-        let table_2_padding_start_offset = assigned_bitstring_table_2_rows.iter().position(|row| row.bit.is_none()).expect("table within capacity");
+        let table_2_padding_start_offset = assigned_bitstring_table_2_rows
+            .iter()
+            .position(|row| row.bit.is_none())
+            .expect("table within capacity");
 
         let assigned_bitstring_table_3_rows = config.bitstring_table_3.assign(
             &mut layouter,
@@ -107,7 +113,10 @@ impl Circuit<Fr> for TestBitstringCircuit {
             &witness_rows,
             n_enabled,
         )?;
-        let table_3_padding_start_offset = assigned_bitstring_table_3_rows.iter().position(|row| row.bit.is_none()).expect("table within capacity");
+        let table_3_padding_start_offset = assigned_bitstring_table_3_rows
+            .iter()
+            .position(|row| row.bit.is_none())
+            .expect("table within capacity");
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         layouter.assign_region(
