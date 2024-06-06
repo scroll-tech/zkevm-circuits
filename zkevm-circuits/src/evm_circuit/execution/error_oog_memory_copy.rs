@@ -139,14 +139,23 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
         );
 
-        // constaint of four opcode's constant gas cost is indeed the same.  
-        // in case some constant gas cost of them changes in the future.
-        cb.require_equal("Constant gas cost is same for CALLDATACOPY, CODECOPY", OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
-        OpcodeId::CODECOPY.constant_gas_cost().expr());
-        cb.require_equal("Constant gas cost is same for CALLDATACOPY, RETURNDATACOPY", OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
-        OpcodeId::RETURNDATACOPY.constant_gas_cost().expr());
-        cb.require_equal("Constant gas cost is same for CALLDATACOPY, MCOPY", OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
-        OpcodeId::MCOPY.constant_gas_cost().expr());
+        // constraint of four opcodes' (CALLDATACOPY, CODECOPY, RETURNDATACOPY and MCOPY) constant
+        // gas cost is the same. in case some of them changes in the future.
+        cb.require_equal(
+            "Constant gas cost is same for CALLDATACOPY, CODECOPY",
+            OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
+            OpcodeId::CODECOPY.constant_gas_cost().expr(),
+        );
+        cb.require_equal(
+            "Constant gas cost is same for CALLDATACOPY, RETURNDATACOPY",
+            OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
+            OpcodeId::RETURNDATACOPY.constant_gas_cost().expr(),
+        );
+        cb.require_equal(
+            "Constant gas cost is same for CALLDATACOPY, MCOPY",
+            OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
+            OpcodeId::MCOPY.constant_gas_cost().expr(),
+        );
 
         let insufficient_gas = LtGadget::construct(
             cb,
