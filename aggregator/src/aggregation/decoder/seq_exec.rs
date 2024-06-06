@@ -1050,6 +1050,7 @@ mod tests {
     use witgen::AddressTableRow;
     use zkevm_circuits::util::MockChallenges;
 
+    #[allow(dead_code)]
     #[derive(Clone, Copy, Debug)]
     enum MockEntry {
         Index([Option<Fr>; 2]),
@@ -1065,6 +1066,7 @@ mod tests {
         insts: Vec<AddressTableRow>,
         exec_trace: Vec<SequenceExec>,
         mocks: Vec<(usize, MockEntry)>,
+        literal_mocks: Option<Vec<u8>>,
     }
 
     impl SeqExecMock {
@@ -1204,11 +1206,15 @@ mod tests {
                     .seq_cfg
                     .mock_assign(&mut layouter, &blk_trace.seq_conf)?;
 
+                let literals = blk_trace
+                    .literal_mocks
+                    .as_ref()
+                    .unwrap_or(&blk_trace.literals);
+
                 config.literal_tbl.mock_assign(
                     &mut layouter,
                     blk_trace.seq_conf.block_idx as u64,
-                    blk_trace
-                        .literals
+                    literals
                         .iter()
                         .copied()
                         .map(|b| b as u64)
@@ -1252,6 +1258,7 @@ mod tests {
                         )?;
 
                         for (mock_offset, entry) in &tr.mocks {
+                            assert!(mock_offset + begin_offset <= offset);
                             match entry {
                                 MockEntry::Decode(mock) => config.mock_assign(
                                     &mut region,
@@ -1467,5 +1474,174 @@ mod tests {
         let mock_prover =
             MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
         mock_prover.verify().unwrap();
+    }
+
+    #[test]
+    fn seq_exec_neg_literal_unmatch() {
+        // no instructions, we only copy literals to output
+        let mut output = Vec::new();
+        let base_trace_blk1 = SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+            ]),
+            &mut output,
+        );
+        let base_trace_blk2 = SeqExecMock::mock_generate(
+            2,
+            Vec::from("g".as_bytes()),
+            AddressTableRow::mock_samples_full([[17, 0, 3, 14, 5, 6], [8, 1, 2, 5, 14, 5]]),
+            &mut output,
+        );
+
+        assert_eq!(output, Vec::from("abcddeabcdeabfabcgfa".as_bytes()));
+
+        let mut literal_unmatch_blk = base_trace_blk1.clone();
+        literal_unmatch_blk.literal_mocks = Some(Vec::from("abcdefg".as_bytes()));
+        let lit_unmatch_circuit_1 = SeqExecMockCircuit {
+            traces: vec![literal_unmatch_blk, base_trace_blk2.clone()],
+            output: output.clone(),
+        };
+        let mut literal_unmatch_blk = base_trace_blk1.clone();
+        literal_unmatch_blk.literal_mocks = Some(Vec::from("abddef".as_bytes()));
+        let lit_unmatch_circuit_2 = SeqExecMockCircuit {
+            traces: vec![literal_unmatch_blk, base_trace_blk2.clone()],
+            output: output.clone(),
+        };
+        let mut literal_unmatch_blk1 = base_trace_blk1.clone();
+        literal_unmatch_blk1.literal_mocks = Some(Vec::from("abcde".as_bytes()));
+        let mut literal_unmatch_blk2 = base_trace_blk2.clone();
+        literal_unmatch_blk2.literal_mocks = Some(Vec::from("fg".as_bytes()));
+        let lit_unmatch_circuit_3 = SeqExecMockCircuit {
+            traces: vec![literal_unmatch_blk1, literal_unmatch_blk2],
+            output: output.clone(),
+        };
+
+        let k = 12;
+        for circuit in [
+            lit_unmatch_circuit_1,
+            lit_unmatch_circuit_2,
+            lit_unmatch_circuit_3,
+        ] {
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
+    }
+
+    #[test]
+    fn seq_exec_neg_phases() {
+        // no instructions, we only copy literals to output
+        let mut output = Vec::new();
+        let base_trace_blk1 = SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+                [4, 0, 1, 1, 5, 6],
+            ]),
+            &mut output,
+        );
+        let base_trace_blk2 = SeqExecMock::mock_generate(
+            2,
+            Vec::from("g".as_bytes()),
+            AddressTableRow::mock_samples_full([[18, 0, 3, 15, 1, 5], [7, 0, 2, 4, 15, 1]]),
+            &mut output,
+        );
+
+        assert_eq!(output, Vec::from("abcddeabcdeabbfabcfag".as_bytes()));
+
+        let mut mis_phase_blk1 = base_trace_blk1.clone();
+        assert_eq!(mis_phase_blk1.exec_trace.len(), 7);
+        assert_eq!(mis_phase_blk1.exec_trace[6].0, 4);
+        assert_eq!(mis_phase_blk1.exec_trace[5].0, 3);
+        mis_phase_blk1.exec_trace[6].0 = 3;
+        mis_phase_blk1.mocks = vec![
+            (14, MockEntry::Index([None, Some(Fr::from(4u64))])),
+            (14, MockEntry::Phase([Some(false), None, None])),
+        ];
+
+        let circuit_mis_phase_1 = SeqExecMockCircuit {
+            traces: vec![mis_phase_blk1, base_trace_blk2],
+            output,
+        };
+
+        let k = 12;
+        for circuit in [circuit_mis_phase_1] {
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
+    }
+
+    #[test]
+    fn seq_exec_neg_insts() {
+        // no instructions, we only copy literals to output
+        let mut output = Vec::new();
+        let base_trace_blk = SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+                [4, 0, 1, 1, 5, 6],
+            ]),
+            &mut output,
+        );
+
+        assert_eq!(output, Vec::from("abcddeabcdeabbf".as_bytes()));
+
+        let mut output_mis = Vec::new();
+        SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+                [4, 0, 2, 1, 5, 6],
+            ]),
+            &mut output_mis,
+        );
+
+        assert_eq!(output_mis, Vec::from("abcddeabcdeabbbf".as_bytes()));
+
+        let mut mis_inst_blk = base_trace_blk.clone();
+        let tr = &mut mis_inst_blk.exec_trace[5].1;
+        assert_eq!(*tr, SequenceExecInfo::BackRef(12..13));
+        // build the mis-match len to 2
+        *tr = SequenceExecInfo::BackRef(12..14);
+
+        let circuit_mis_inst_1 = SeqExecMockCircuit {
+            traces: vec![mis_inst_blk],
+            output: output_mis,
+        };
+        let mut mis_inst_blk = base_trace_blk.clone();
+        let tr = &mut mis_inst_blk.exec_trace[5].1;
+        // build the mis-match offset to 2
+        *tr = SequenceExecInfo::BackRef(11..12);
+        let circuit_mis_inst_2 = SeqExecMockCircuit {
+            traces: vec![mis_inst_blk],
+            output: Vec::from("abcddeabcdeabaf".as_bytes()),
+        };
+
+        let k = 12;
+        for circuit in [circuit_mis_inst_1, circuit_mis_inst_2] {
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
     }
 }
