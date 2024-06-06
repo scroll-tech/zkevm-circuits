@@ -91,18 +91,23 @@ impl Circuit<Fr> for TestBitstringCircuit {
             &witness_rows,
             n_enabled,
         )?;
+        let table_1_padding_start_offset = assigned_bitstring_table_1_rows.iter().position(|row| row.bit.is_none()).expect("table within capacity");
+
         let assigned_bitstring_table_2_rows = config.bitstring_table_2.assign(
             &mut layouter,
             &block_info_arr,
             &witness_rows,
             n_enabled,
         )?;
+        let table_2_padding_start_offset = assigned_bitstring_table_2_rows.iter().position(|row| row.bit.is_none()).expect("table within capacity");
+
         let assigned_bitstring_table_3_rows = config.bitstring_table_3.assign(
             &mut layouter,
             &block_info_arr,
             &witness_rows,
             n_enabled,
         )?;
+        let table_3_padding_start_offset = assigned_bitstring_table_3_rows.iter().position(|row| row.bit.is_none()).expect("table within capacity");
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         layouter.assign_region(
@@ -130,46 +135,23 @@ impl Circuit<Fr> for TestBitstringCircuit {
 
                     // bits are not the correct representation of byte_1/byte_2/byte_3
                     UnsoundCase::IncorrectBitDecomposition => {
-                        for assigned_rows in [
-                            &assigned_bitstring_table_1_rows,
-                            &assigned_bitstring_table_2_rows,
-                            &assigned_bitstring_table_3_rows,
+                        for (assigned_rows, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, table_3_padding_start_offset),
                         ] {
-                            let row_idx: usize = rng.gen_range(0..assigned_rows.len());
-                            let bit_cell = assigned_rows[row_idx].bit.clone().expect("cell is assigned");
-                            let bit_value = assigned_rows[row_idx].bit_f.expect("bit value exits");
+                            // Note: For some input data, especially for BitstringTable<3>, 
+                            // the assigned rows will be all padding as there were no 3-byte read operations performed during decoding.
+                            if padding_start_offset > 0 {
+                                let row_idx: usize = rng.gen_range(0..padding_start_offset);
+                                let bit_cell = assigned_rows[row_idx].bit.clone().expect("cell is assigned");
+                                let bit_value = assigned_rows[row_idx].bit_f.expect("bit value exits");
 
-                            region.assign_advice(
-                                || "corrupt bit decomposition at a random location in the assigned witness",
-                                bit_cell.cell().column.try_into().expect("assigned cell col is valid"),
-                                bit_cell.cell().row_offset,
-                                || if bit_value > Fr::zero() {
-                                    Value::known(Fr::zero())
-                                } else {
-                                    Value::known(Fr::one())
-                                },
-                            )?;
-                        }
-                    },
-
-                    // bits are not the correct representation of byte_1/byte_2/byte_3 due to incorrect endianness (wrong is_reverse)
-                    UnsoundCase::IncorrectBitDecompositionEndianness => {
-                        for (assigned_rows, end_idx) in [
-                            (&assigned_bitstring_table_1_rows, 7),
-                            (&assigned_bitstring_table_2_rows, 15),
-                            (&assigned_bitstring_table_3_rows, 23),
-                        ] {
-                            // Sample the first index of a multi-byte operation
-                            let row_idx = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
-                            let is_reverse = assigned_rows[row_idx].is_reverse.clone().expect("cell is assigned");
-                            let is_reverse_f = assigned_rows[row_idx].is_reverse_f.expect("is_reverse value exists");
-
-                            for bit_idx in 0..end_idx {
                                 region.assign_advice(
-                                    || "inject incorrect is_reverse to a read operation",
-                                    is_reverse.cell().column.try_into().expect("assigned cell col is valid"),
-                                    row_idx + bit_idx,
-                                    || if is_reverse_f > Fr::zero() {
+                                    || "corrupt bit decomposition at a random location in the assigned witness",
+                                    bit_cell.cell().column.try_into().expect("assigned cell col is valid"),
+                                    bit_cell.cell().row_offset,
+                                    || if bit_value > Fr::zero() {
                                         Value::known(Fr::zero())
                                     } else {
                                         Value::known(Fr::one())
@@ -179,149 +161,192 @@ impl Circuit<Fr> for TestBitstringCircuit {
                         }
                     },
 
+                    // bits are not the correct representation of byte_1/byte_2/byte_3 due to incorrect endianness (wrong is_reverse)
+                    UnsoundCase::IncorrectBitDecompositionEndianness => {
+                        for (assigned_rows, end_idx, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, 7, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, 15, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, 23, table_3_padding_start_offset),
+                        ] {
+                            if padding_start_offset > 0 {
+                                // Sample the first index of a multi-byte operation
+                                let row_idx = (rng.gen_range(0..(padding_start_offset/(end_idx + 1))) - 1) * (end_idx + 1);
+                                let is_reverse = assigned_rows[row_idx].is_reverse.clone().expect("cell is assigned");
+                                let is_reverse_f = assigned_rows[row_idx].is_reverse_f.expect("is_reverse value exists");
+
+                                for bit_idx in 0..end_idx {
+                                    region.assign_advice(
+                                        || "inject incorrect is_reverse to a read operation",
+                                        is_reverse.cell().column.try_into().expect("assigned cell col is valid"),
+                                        row_idx + bit_idx,
+                                        || if is_reverse_f > Fr::zero() {
+                                            Value::known(Fr::zero())
+                                        } else {
+                                            Value::known(Fr::one())
+                                        },
+                                    )?;
+                                }
+                            }
+                        }
+                    },
+
                     // byte_idx_1/2/3 delta value is not boolean
                     UnsoundCase::IrregularTransitionByteIdx => {
-                        for assigned_rows in [
-                            &assigned_bitstring_table_1_rows,
-                            &assigned_bitstring_table_2_rows,
-                            &assigned_bitstring_table_3_rows,
+                        for (assigned_rows, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, table_3_padding_start_offset),
                         ] {
-                            let row_idx: usize = rng.gen_range(0..assigned_rows.len());
-                            let byte_idx_1_cell = assigned_rows[row_idx].byte_idx_1.clone().expect("cell is assigned");
-                            let _byte_idx_2_cell = assigned_rows[row_idx].byte_idx_2.clone().expect("cell is assigned");
-                            let byte_idx_3_cell = assigned_rows[row_idx].byte_idx_3.clone().expect("cell is assigned");
+                            if padding_start_offset > 0 {
+                                let row_idx: usize = rng.gen_range(0..padding_start_offset);
+                                let byte_idx_1_cell = assigned_rows[row_idx].byte_idx_1.clone().expect("cell is assigned");
+                                let _byte_idx_2_cell = assigned_rows[row_idx].byte_idx_2.clone().expect("cell is assigned");
+                                let byte_idx_3_cell = assigned_rows[row_idx].byte_idx_3.clone().expect("cell is assigned");
 
-                            region.assign_advice(
-                                || "corrupt byte_idx at a random location in the assigned witness (+1 for byte_idx_1)",
-                                byte_idx_1_cell.cell().column.try_into().expect("assigned cell col is valid"),
-                                byte_idx_1_cell.cell().row_offset,
-                                || byte_idx_1_cell.value() + Value::known(Fr::one()),
-                            )?;
-                            region.assign_advice(
-                                || "corrupt byte_idx at a random location in the assigned witness",
-                                byte_idx_3_cell.cell().column.try_into().expect("assigned cell col is valid"),
-                                byte_idx_3_cell.cell().row_offset,
-                                || byte_idx_3_cell.value() + Value::known(Fr::one()),
-                            )?;
+                                region.assign_advice(
+                                    || "corrupt byte_idx at a random location in the assigned witness (+1 for byte_idx_1)",
+                                    byte_idx_1_cell.cell().column.try_into().expect("assigned cell col is valid"),
+                                    byte_idx_1_cell.cell().row_offset,
+                                    || byte_idx_1_cell.value() + Value::known(Fr::one()),
+                                )?;
+                                region.assign_advice(
+                                    || "corrupt byte_idx at a random location in the assigned witness",
+                                    byte_idx_3_cell.cell().column.try_into().expect("assigned cell col is valid"),
+                                    byte_idx_3_cell.cell().row_offset,
+                                    || byte_idx_3_cell.value() + Value::known(Fr::one()),
+                                )?;
+                            }
                         }
                     },
 
                     // The boolean from_start does not start at bit_idx = 0
                     UnsoundCase::IrregularValueFromStart => {
-                        for (assigned_rows, end_idx) in [
-                            (&assigned_bitstring_table_1_rows, 7),
-                            (&assigned_bitstring_table_2_rows, 15),
-                            (&assigned_bitstring_table_3_rows, 23),
+                        for (assigned_rows, end_idx, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, 7, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, 15, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, 23, table_3_padding_start_offset),
                         ] {
-                            // Sample the first index of a multi-byte operation
-                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
-                            let from_start = assigned_rows[read_idx].from_start.clone().expect("cell is assigned");
+                            if padding_start_offset > 0 {
+                                // Sample the first index of a multi-byte operation
+                                let read_idx: usize = (rng.gen_range(0..(padding_start_offset/(end_idx + 1))) - 1) * (end_idx + 1);
+                                let from_start = assigned_rows[read_idx].from_start.clone().expect("cell is assigned");
 
-                            region.assign_advice(
-                                || "Make from_start at bit_index=0 zero",
-                                from_start.cell().column.try_into().expect("assigned cell col is valid"),
-                                read_idx,
-                                || Value::known(Fr::zero()),
-                            )?;
+                                region.assign_advice(
+                                    || "Make from_start at bit_index=0 zero",
+                                    from_start.cell().column.try_into().expect("assigned cell col is valid"),
+                                    read_idx,
+                                    || Value::known(Fr::zero()),
+                                )?;
+                            }
                         }
                     },
 
                     // The boolean until_end does not end at bit_idx = 7/15/23
                     UnsoundCase::IrregularValueUntilEnd => {
-                        for (assigned_rows, end_idx) in [
-                            (&assigned_bitstring_table_1_rows, 7),
-                            (&assigned_bitstring_table_2_rows, 15),
-                            (&assigned_bitstring_table_3_rows, 23),
+                        for (assigned_rows, end_idx, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, 7, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, 15, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, 23, table_3_padding_start_offset),
                         ] {
-                            // Sample the first index of a multi-byte operation
-                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
-                            let until_end = assigned_rows[read_idx + end_idx].until_end.clone().expect("cell is assigned");
+                            if padding_start_offset > 0 {
+                                // Sample the first index of a multi-byte operation
+                                let read_idx: usize = (rng.gen_range(0..(padding_start_offset/(end_idx + 1))) - 1) * (end_idx + 1);
+                                let until_end = assigned_rows[read_idx + end_idx].until_end.clone().expect("cell is assigned");
 
-                            region.assign_advice(
-                                || "Make until_end at bit_index=end_index zero",
-                                until_end.cell().column.try_into().expect("assigned cell col is valid"),
-                                read_idx + end_idx,
-                                || Value::known(Fr::zero()),
-                            )?;
+                                region.assign_advice(
+                                    || "Make until_end at bit_index=end_index zero",
+                                    until_end.cell().column.try_into().expect("assigned cell col is valid"),
+                                    read_idx + end_idx,
+                                    || Value::known(Fr::zero()),
+                                )?;
+                            }
                         }
                     },
 
                     // The boolean from_start flips from 0 -> 1
                     UnsoundCase::IrregularTransitionFromStart => {
-                        for (assigned_rows, end_idx) in [
-                            (&assigned_bitstring_table_1_rows, 7),
-                            (&assigned_bitstring_table_2_rows, 15),
-                            (&assigned_bitstring_table_3_rows, 23),
+                        for (assigned_rows, end_idx, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, 7, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, 15, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, 23, table_3_padding_start_offset),
                         ] {
-                            // Sample the first index of a multi-byte operation
-                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
-                            let from_start = assigned_rows[read_idx + end_idx].from_start.clone().expect("cell is assigned");
+                            if padding_start_offset > 0 {
+                                // Sample the first index of a multi-byte operation
+                                let read_idx: usize = (rng.gen_range(0..(padding_start_offset/(end_idx + 1))) - 1) * (end_idx + 1);
+                                let from_start = assigned_rows[read_idx + end_idx].from_start.clone().expect("cell is assigned");
 
-                            region.assign_advice(
-                                || "Make from_start at bit_index=end_index one",
-                                from_start.cell().column.try_into().expect("assigned cell col is valid"),
-                                read_idx + end_idx,
-                                || Value::known(Fr::one()),
-                            )?;
+                                region.assign_advice(
+                                    || "Make from_start at bit_index=end_index one",
+                                    from_start.cell().column.try_into().expect("assigned cell col is valid"),
+                                    read_idx + end_idx,
+                                    || Value::known(Fr::one()),
+                                )?;
+                            }
                         }
                     },
 
                     // The boolean until_end flips from 1 -> 0
                     UnsoundCase::IrregularTransitionUntilEnd => {
-                        for (assigned_rows, end_idx) in [
-                            (&assigned_bitstring_table_1_rows, 7),
-                            (&assigned_bitstring_table_2_rows, 15),
-                            (&assigned_bitstring_table_3_rows, 23),
+                        for (assigned_rows, end_idx, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, 7, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, 15, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, 23, table_3_padding_start_offset),
                         ] {
-                            // Sample the first index of a multi-byte operation
-                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
-                            let until_end = assigned_rows[read_idx + end_idx].until_end.clone().expect("cell is assigned");
+                            if padding_start_offset > 0 {
+                                // Sample the first index of a multi-byte operation
+                                let read_idx: usize = (rng.gen_range(0..(padding_start_offset/(end_idx + 1))) - 1) * (end_idx + 1);
+                                let until_end = assigned_rows[read_idx + end_idx].until_end.clone().expect("cell is assigned");
 
-                            region.assign_advice(
-                                || "Make until_end at bit_index=end_index zero",
-                                until_end.cell().column.try_into().expect("assigned cell col is valid"),
-                                read_idx + end_idx,
-                                || Value::known(Fr::zero()),
-                            )?;
+                                region.assign_advice(
+                                    || "Make until_end at bit_index=end_index zero",
+                                    until_end.cell().column.try_into().expect("assigned cell col is valid"),
+                                    read_idx + end_idx,
+                                    || Value::known(Fr::zero()),
+                                )?;
+                            }
                         }
                     },
 
                     // The bitstring_value is not constant for a bitstring
                     UnsoundCase::InconsistentBitstringValue => {
-                        for assigned_rows in [
-                            &assigned_bitstring_table_1_rows,
-                            &assigned_bitstring_table_2_rows,
-                            &assigned_bitstring_table_3_rows,
+                        for (assigned_rows, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, table_3_padding_start_offset),
                         ] {
-                            let row_idx: usize = rng.gen_range(0..assigned_rows.len());
-                            let bitstring_value_cell = assigned_rows[row_idx].bitstring_value.clone().expect("cell is assigned");
+                            if padding_start_offset > 0 {
+                                let row_idx: usize = rng.gen_range(0..padding_start_offset);
+                                let bitstring_value_cell = assigned_rows[row_idx].bitstring_value.clone().expect("cell is assigned");
 
-                            region.assign_advice(
-                                || "corrupt bitstring_value at a random location in the assigned witness",
-                                bitstring_value_cell.cell().column.try_into().expect("assigned cell col is valid"),
-                                bitstring_value_cell.cell().row_offset,
-                                || bitstring_value_cell.value() + Value::known(Fr::one()),
-                            )?;
+                                region.assign_advice(
+                                    || "corrupt bitstring_value at a random location in the assigned witness",
+                                    bitstring_value_cell.cell().column.try_into().expect("assigned cell col is valid"),
+                                    bitstring_value_cell.cell().row_offset,
+                                    || bitstring_value_cell.value() + Value::known(Fr::one()),
+                                )?;
+                            }
                         }
                     },
 
                     // The bitstring_value and bitstring_value_acc do not agree at the last set bit
                     UnsoundCase::InconsistentEndBitstringAccValue => {
-                        for (assigned_rows, end_idx) in [
-                            (&assigned_bitstring_table_1_rows, 7),
-                            (&assigned_bitstring_table_2_rows, 15),
-                            (&assigned_bitstring_table_3_rows, 23),
+                        for (assigned_rows, end_idx, padding_start_offset) in [
+                            (&assigned_bitstring_table_1_rows, 7, table_1_padding_start_offset),
+                            (&assigned_bitstring_table_2_rows, 15, table_2_padding_start_offset),
+                            (&assigned_bitstring_table_3_rows, 23, table_3_padding_start_offset),
                         ] {
-                            // Sample the first index of a multi-byte operation
-                            let read_idx: usize = (rng.gen_range(0..assigned_rows.len()/8) - 1) * (end_idx + 1);
-                            let bitstring_value_acc = assigned_rows[read_idx + end_idx].bitstring_value_acc.clone().expect("cell is assigned");
+                            if padding_start_offset > 0 {
+                                // Sample the first index of a multi-byte operation
+                                let read_idx: usize = (rng.gen_range(0..(padding_start_offset/(end_idx + 1))) - 1) * (end_idx + 1);
+                                let bitstring_value_acc = assigned_rows[read_idx + end_idx].bitstring_value_acc.clone().expect("cell is assigned");
 
-                            region.assign_advice(
-                                || "Make end bitstring_value_acc value different at bit_index=end_index",
-                                bitstring_value_acc.cell().column.try_into().expect("assigned cell col is valid"),
-                                read_idx + end_idx,
-                                || bitstring_value_acc.value() + Value::known(Fr::one()),
-                            )?;
+                                region.assign_advice(
+                                    || "Make end bitstring_value_acc value different at bit_index=end_index",
+                                    bitstring_value_acc.cell().column.try_into().expect("assigned cell col is valid"),
+                                    read_idx + end_idx,
+                                    || bitstring_value_acc.value() + Value::known(Fr::one()),
+                                )?;
+                            }
                         }
                     },
                 }
