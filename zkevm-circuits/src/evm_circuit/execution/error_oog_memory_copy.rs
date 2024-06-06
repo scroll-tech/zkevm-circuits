@@ -107,11 +107,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
                 src_memory_addr.length_rlc(),
                 dst_memory_addr.length_rlc(),
             );
-            let memory_expansion_mcopy = MemoryExpansionGadget::construct(
+            MemoryExpansionGadget::construct(
                 cb,
                 [src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
-            );
-            memory_expansion_mcopy
+            )
         });
 
         // for others (CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY)
@@ -245,7 +244,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             [src_memory_addr, dst_memory_addr],
         )?;
 
-        println!("is_mcopy {}", is_mcopy);
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
             offset,
@@ -365,7 +363,7 @@ mod tests {
                 TestingData::new_for_mcopy(*src_offset, *dest_offset, *copy_size, None);
 
             test_root(&testing_data);
-            //test_internal(&testing_data);
+            test_internal(&testing_data);
         }
     }
 
