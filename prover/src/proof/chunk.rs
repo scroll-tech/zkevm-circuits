@@ -23,7 +23,10 @@ impl ChunkProof {
         pk: Option<&ProvingKey<G1Affine>>,
         chunk_hash: Option<ChunkHash>,
     ) -> Result<Self> {
-        let protocol = serde_json::to_vec(&snark.protocol)?;
+        let mut protocol = snark.protocol.clone();
+        // skip this field when serde. For old format compatibility.
+        protocol.quotient.num_chunk = 0;
+        let protocol = serde_json::to_vec(&protocol)?;
         let proof = Proof::new(snark.proof, &snark.instances, pk);
 
         Ok(Self {
