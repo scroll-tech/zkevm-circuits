@@ -135,9 +135,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
                 GasCost::WARM_ACCESS.expr(),
                 GasCost::COLD_ACCOUNT_ACCESS.expr(),
             ),
-            // Constant gas cost is same for CALLDATACOPY, CODECOPY，RETURNDATACOPY and mcopy.
+            // Constant gas cost is same for CALLDATACOPY, CODECOPY, RETURNDATACOPY and MCOPY.
             OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
         );
+
+        // constaint of four opcode's constant gas cost is indeed the same.  
+        // in case some constant gas cost of them changes in the future.
+        cb.require_equal("Constant gas cost is same for CALLDATACOPY, CODECOPY", OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
+        OpcodeId::CODECOPY.constant_gas_cost().expr());
+        cb.require_equal("Constant gas cost is same for CALLDATACOPY, RETURNDATACOPY", OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
+        OpcodeId::RETURNDATACOPY.constant_gas_cost().expr());
+        cb.require_equal("Constant gas cost is same for CALLDATACOPY, MCOPY", OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
+        OpcodeId::MCOPY.constant_gas_cost().expr());
 
         let insufficient_gas = LtGadget::construct(
             cb,
