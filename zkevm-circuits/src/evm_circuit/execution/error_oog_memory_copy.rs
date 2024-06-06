@@ -223,8 +223,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
         self.external_address
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
-        // self.src_offset
-        //     .assign(region, offset, Some(src_offset.to_le_bytes()))?;
+
         let src_memory_addr = self
             .src_memory_addr
             .assign(region, offset, src_offset, copy_size)?;
@@ -235,7 +234,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [src_memory_addr],
+            [dst_memory_addr],
         )?;
 
         // assign memory_expansion_mcopy
@@ -275,6 +274,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             region,
             offset,
             F::from(opcode.as_u64()) - F::from(OpcodeId::EXTCODECOPY.as_u64()),
+        )?;
+        self.is_mcopy.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::MCOPY.as_u64()),
         )?;
         self.common_error_gadget.assign(
             region,
