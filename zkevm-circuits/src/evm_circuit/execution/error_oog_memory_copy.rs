@@ -135,7 +135,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
                 GasCost::WARM_ACCESS.expr(),
                 GasCost::COLD_ACCOUNT_ACCESS.expr(),
             ),
-            // Constant gas cost is same for CALLDATACOPY, CODECOPY and RETURNDATACOPY.
+            // Constant gas cost is same for CALLDATACOPY, CODECOPY，RETURNDATACOPY and mcopy.
             OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
         );
 
