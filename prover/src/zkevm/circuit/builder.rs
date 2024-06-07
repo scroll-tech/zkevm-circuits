@@ -15,7 +15,7 @@ use zkevm_circuits::{
     witness::block_convert,
 };
 
-static CHAIN_ID: LazyLock<u64> = LazyLock::new(|| read_env_var("CHAIN_ID", 53077));
+static CHAIN_ID: LazyLock<u64> = LazyLock::new(|| read_env_var("CHAIN_ID", 534352));
 
 pub fn calculate_row_usage_of_witness_block(
     witness_block: &Block,
