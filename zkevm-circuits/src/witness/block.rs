@@ -77,8 +77,6 @@ pub struct Block {
 pub struct BlockContexts {
     /// Hashmap that maps block number to its block context.
     pub ctxs: BTreeMap<u64, BlockContext>,
-    /// relax mode flag inherited from block builder
-    pub relax_mode: bool,
 }
 
 impl Block {
@@ -466,8 +464,8 @@ impl BlockContext {
     }
 }
 
-impl From<&circuit_input_builder::Chunk> for BlockContexts {
-    fn from(block: &circuit_input_builder::Chunk) -> Self {
+impl From<&circuit_input_builder::Blocks> for BlockContexts {
+    fn from(block: &circuit_input_builder::Blocks) -> Self {
         Self {
             ctxs: block
                 .blocks
@@ -490,14 +488,13 @@ impl From<&circuit_input_builder::Chunk> for BlockContexts {
                     )
                 })
                 .collect::<BTreeMap<_, _>>(),
-            relax_mode: block.is_relaxed(),
         }
     }
 }
 
 /// Build a witness block
 pub fn block_convert(
-    block: &circuit_input_builder::Chunk,
+    block: &circuit_input_builder::Blocks,
     code_db: &eth_types::state_db::CodeDB,
 ) -> Result<Block, Error> {
     let rws = RwMap::from(&block.container);

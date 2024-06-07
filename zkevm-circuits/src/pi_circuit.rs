@@ -153,20 +153,18 @@ impl PublicData {
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
                 // sanity check on coinbase & difficulty
-                if !self.block_ctxs.relax_mode {
-                    let coinbase = get_coinbase_constant();
-                    assert_eq!(
-                        coinbase, block.coinbase,
-                        "[block {}] COINBASE const: {}, block.coinbase: {}",
-                        block_num, coinbase, block.coinbase
-                    );
-                    let difficulty = get_difficulty_constant();
-                    assert_eq!(
-                        difficulty, block.difficulty,
-                        "[block {}] DIFFICULTY const: {}, block.difficulty: {}",
-                        block_num, difficulty, block.difficulty
-                    );
-                }
+                let coinbase = get_coinbase_constant();
+                assert_eq!(
+                    coinbase, block.coinbase,
+                    "[block {}] COINBASE const: {}, block.coinbase: {}",
+                    block_num, coinbase, block.coinbase
+                );
+                let difficulty = get_difficulty_constant();
+                assert_eq!(
+                    difficulty, block.difficulty,
+                    "[block {}] DIFFICULTY const: {}, block.difficulty: {}",
+                    block_num, difficulty, block.difficulty
+                );
 
                 let num_all_txs = num_all_txs_in_blocks
                     .get(block_num)

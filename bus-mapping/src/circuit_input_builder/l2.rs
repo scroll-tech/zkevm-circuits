@@ -1,4 +1,4 @@
-pub use super::block::{BlockContext, Chunk};
+pub use super::block::{BlockContext, Blocks};
 use crate::{
     circuit_input_builder::{self, Block, CircuitInputBuilder, CircuitsParams},
     error::Error,
@@ -99,7 +99,7 @@ impl CircuitInputBuilder {
         sdb: StateDB,
         code_db: CodeDB,
         mpt_init_state: ZktrieState,
-        block: &Chunk,
+        block: &Blocks,
     ) -> Self {
         Self {
             sdb,
@@ -167,7 +167,7 @@ impl CircuitInputBuilder {
         code_db.insert(Vec::new());
         code_db.update_codedb(&sdb, &l2_trace)?;
 
-        let mut builder_block = circuit_input_builder::Chunk::init(chain_id, circuits_params);
+        let mut builder_block = circuit_input_builder::Blocks::init(chain_id, circuits_params);
         builder_block.prev_state_root = old_root.to_word();
         builder_block.start_l1_queue_index = l2_trace.start_l1_queue_index;
         let mut builder = Self {
@@ -239,12 +239,5 @@ impl CircuitInputBuilder {
 
         self.apply_l2_trace(l2_trace)?;
         Ok(())
-    }
-
-    /// make finalize actions on building, must called after
-    /// all block trace have been input
-    pub fn finalize_building(&mut self) -> Result<(), Error> {
-        self.set_value_ops_call_context_rwc_eor();
-        self.set_end_block()
     }
 }

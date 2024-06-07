@@ -9,7 +9,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{Address, Hash, ToWord, Word, H256};
+use eth_types::{Address, ToWord, Word, H256};
 use std::collections::{BTreeMap, HashMap};
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -149,9 +149,9 @@ impl Block {
     }
 }
 
-/// Circuit Input related to a block.
+/// Circuit Input related to many blocks, or a `Chunk`.
 #[derive(Debug, Default, Clone)]
-pub struct Chunk {
+pub struct Blocks {
     /// Blocks inside this chunk
     pub blocks: BTreeMap<u64, Block>,
     /// State root of the previous block
@@ -166,8 +166,6 @@ pub struct Chunk {
     pub txs: Vec<Transaction>,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
-    /// ..
-    pub code: HashMap<Hash, Vec<u8>>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Block-wise steps
@@ -184,13 +182,10 @@ pub struct Chunk {
     pub precompile_events: PrecompileEvents,
     /// circuit capacity counter
     copy_counter: usize,
-    /// relax mode indicate builder and circuit would skip
-    /// some sanity check, used by testing and debugging
-    relax_mode: bool,
 }
 
-impl Chunk {
-    /// Init `Block` from circuit params
+impl Blocks {
+    /// Init from circuit params
     pub fn init(chain_id: u64, circuits_params: CircuitsParams) -> Self {
         Self {
             chain_id,
@@ -198,23 +193,10 @@ impl Chunk {
             ..Default::default()
         }
     }
-    /// Create a new block.
-    pub fn new(
-        chain_id: u64,
-        history_hashes: Vec<Word>,
-        eth_block: &eth_types::Block<eth_types::Transaction>,
-        circuits_params: CircuitsParams,
-    ) -> Result<Self, Error> {
-        let mut block = Self {
-            block_steps: BlockSteps::default(),
-            exp_events: Vec::new(),
-            chain_id,
-            circuits_params,
-            ..Default::default()
-        };
-        let info = Block::new(chain_id, history_hashes, eth_block)?;
-        block.blocks.insert(info.number.as_u64(), info);
-        Ok(block)
+
+    /// Add a new block
+    pub fn add_block(&mut self, block: Block) {
+        self.blocks.insert(block.number.as_u64(), block);
     }
 
     /// Create a new block.
@@ -253,11 +235,6 @@ impl Chunk {
         self.chain_id
     }
 
-    /// Return if the relax mode
-    pub fn is_relaxed(&self) -> bool {
-        self.relax_mode
-    }
-
     /// State root after all blocks in this chunk
     pub fn end_state_root(&self) -> Word {
         self.blocks
@@ -279,17 +256,9 @@ impl Chunk {
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
     }
-
-    /// switch to relax mode (used by testing and debugging,
-    /// see the note in definition of `relax_mode`)
-    #[cfg(feature = "test")]
-    pub fn relax(mut self) -> Self {
-        self.relax_mode = true;
-        self
-    }
 }
 
-impl Chunk {
+impl Blocks {
     /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
         self.copy_counter += event.full_length() as usize;

@@ -8,7 +8,7 @@ use ethers_providers::JsonRpcClient;
 use external_tracer::TraceConfig;
 use hex::decode_to_slice;
 
-use super::{AccessSet, Block, Chunk, CircuitInputBuilder, CircuitsParams};
+use super::{AccessSet, Block, Blocks, CircuitInputBuilder, CircuitsParams};
 use crate::{error::Error, rpc::GethClient};
 
 use std::{collections::HashMap, iter};
@@ -301,13 +301,10 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         _prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = Chunk::new(
-            self.chain_id,
-            history_hashes,
-            eth_block,
-            self.circuits_params,
-        )?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, &block);
+        let mut blocks = Blocks::init(self.chain_id, self.circuits_params);
+        let block = Block::new(self.chain_id, history_hashes, eth_block)?;
+        blocks.add_block(block);
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, &blocks);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }

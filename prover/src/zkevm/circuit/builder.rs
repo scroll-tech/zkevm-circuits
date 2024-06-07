@@ -103,7 +103,7 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
 
 pub fn dummy_witness_block() -> Result<Block> {
     log::debug!("generate dummy witness block");
-    let builder_block = circuit_input_builder::Chunk::init(*CHAIN_ID, get_super_circuit_params());
+    let builder_block = circuit_input_builder::Blocks::init(*CHAIN_ID, get_super_circuit_params());
     let mut builder: CircuitInputBuilder =
         CircuitInputBuilder::new(StateDB::new(), CodeDB::new(), &builder_block);
     builder.finalize_building()?;

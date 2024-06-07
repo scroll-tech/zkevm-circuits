@@ -147,7 +147,7 @@ impl CircuitCapacityChecker {
                 // notice the prev_root in current builder may be not invalid (since the state has
                 // changed but we may not update it in light mode)
                 let mut builder_block =
-                    circuit_input_builder::Chunk::init(trace.chain_id, get_super_circuit_params());
+                    circuit_input_builder::Blocks::init(trace.chain_id, get_super_circuit_params());
                 builder_block.start_l1_queue_index = trace.start_l1_queue_index;
                 builder_block.prev_state_root = mpt_state
                     .as_ref()
