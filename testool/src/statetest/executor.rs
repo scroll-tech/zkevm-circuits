@@ -314,10 +314,7 @@ fn trace_config_to_witness_block_l2(
         Ok(_) => 0,
     };
 
-    set_env_coinbase(&block_trace.coinbase.address.unwrap());
-    env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
-    let difficulty_be_bytes = [0u8; 32];
-    env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+    eth_types::constants::set_scroll_block_constants_with_trace(&block_trace);
     let mut builder =
         CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace.clone(), false)
             .expect("could not handle block tx");
@@ -640,12 +637,12 @@ pub fn run_test(
         // and use seperate tools to test trace files.
         #[cfg(feature = "inner-prove")]
         {
-            set_env_coinbase(&st.env.current_coinbase);
+            eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
             prover::test::inner_prove(&test_id, &witness_block);
         }
         #[cfg(feature = "chunk-prove")]
         {
-            set_env_coinbase(&st.env.current_coinbase);
+            eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
             prover::test::chunk_prove(&test_id, prover::ChunkProvingTask::from(vec![scroll_trace]));
         }
 
@@ -699,17 +696,6 @@ pub fn run_test(
     }
     log::info!("{test_id}: run-test END");
     Ok(())
-}
-
-#[cfg(feature = "scroll")]
-fn set_env_coinbase(coinbase: &Address) -> String {
-    let coinbase = format!("0x{}", hex::encode(coinbase));
-    env::set_var("COINBASE", &coinbase);
-
-    // Used for inner-prove and chunk-prove.
-    env::set_var("INNER_LAYER_ID", &coinbase);
-
-    coinbase
 }
 
 #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]

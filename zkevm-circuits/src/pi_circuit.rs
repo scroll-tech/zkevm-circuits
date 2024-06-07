@@ -7,13 +7,17 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
+use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData};
 
 use crate::{
     evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable, util::Field,
 };
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{geth_types::TxType, Address, Hash, ToBigEndian, Word, H256};
+use eth_types::{
+    constants::{get_coinbase_constant, get_difficulty_constant},
+    geth_types::TxType,
+    Address, Hash, ToBigEndian, Word, H256,
+};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
@@ -37,7 +41,6 @@ use crate::{
     tx_circuit::{CHAIN_ID_OFFSET as CHAIN_ID_OFFSET_IN_TX, TX_LEN},
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
-use bus_mapping::util::read_env_var;
 use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -60,19 +63,6 @@ use crate::{
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
-
-fn get_coinbase_constant() -> Address {
-    let default_coinbase = if cfg!(feature = "scroll") {
-        Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
-    } else {
-        Address::zero()
-    };
-    read_env_var("COINBASE", default_coinbase)
-}
-
-fn get_difficulty_constant() -> Word {
-    read_env_var("DIFFICULTY", Word::zero())
-}
 
 /// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
