@@ -17,7 +17,6 @@ mod evm;
 pub mod inner;
 pub mod io;
 pub mod proof;
-#[cfg(feature = "test")]
 pub mod test;
 pub mod types;
 pub mod utils;

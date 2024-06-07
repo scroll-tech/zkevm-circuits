@@ -272,7 +272,7 @@ fn trace_config_to_witness_block_l2(
     suite: TestSuite,
     circuits_params: CircuitsParams,
     verbose: bool,
-) -> Result<Option<(Block, CircuitInputBuilder)>, StateTestError> {
+) -> Result<Option<(eth_types::l2_types::BlockTrace, Block, CircuitInputBuilder)>, StateTestError> {
     let block_trace = external_tracer::l2trace(&trace_config);
 
     let block_trace = match (block_trace, st.exception) {
@@ -318,8 +318,9 @@ fn trace_config_to_witness_block_l2(
     env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
     let difficulty_be_bytes = [0u8; 32];
     env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
-    let mut builder = CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace, false)
-        .expect("could not handle block tx");
+    let mut builder =
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace.clone(), false)
+            .expect("could not handle block tx");
     builder
         .finalize_building()
         .expect("could not finalize building block");
@@ -331,7 +332,7 @@ fn trace_config_to_witness_block_l2(
     if exceed_max_steps != 0 {
         return Err(StateTestError::SkipTestMaxSteps(exceed_max_steps));
     }
-    Ok(Some((block, builder)))
+    Ok(Some((block_trace, block, builder)))
 }
 
 #[cfg(not(feature = "scroll"))]
@@ -538,25 +539,32 @@ pub fn run_test(
     };
 
     #[cfg(feature = "scroll")]
-    let result = trace_config_to_witness_block_l2(
-        trace_config.clone(),
-        st.clone(),
-        suite.clone(),
-        circuits_params,
-        circuits_config.verbose,
-    )?;
+    let (scroll_trace, witness_block, mut builder) = {
+        let result = trace_config_to_witness_block_l2(
+            trace_config.clone(),
+            st.clone(),
+            suite.clone(),
+            circuits_params,
+            circuits_config.verbose,
+        )?;
+        match result {
+            Some((scroll_trace, witness_block, builder)) => (scroll_trace, witness_block, builder),
+            None => return Ok(()),
+        }
+    };
     #[cfg(not(feature = "scroll"))]
-    let result = trace_config_to_witness_block_l1(
-        trace_config.clone(),
-        st.clone(),
-        suite.clone(),
-        circuits_params,
-        circuits_config.verbose,
-    )?;
-
-    let (witness_block, mut builder) = match result {
-        Some((witness_block, builder)) => (witness_block, builder),
-        None => return Ok(()),
+    let (witness_block, mut builder) = {
+        let result = trace_config_to_witness_block_l1(
+            trace_config.clone(),
+            st.clone(),
+            suite.clone(),
+            circuits_params,
+            circuits_config.verbose,
+        )?;
+        match result {
+            Some((witness_block, builder)) => (witness_block, builder),
+            None => return Ok(()),
+        }
     };
 
     log::debug!("witness_block created");
@@ -626,6 +634,10 @@ pub fn run_test(
         }
     } else {
         log::debug!("test super circuit {}", *CIRCUIT);
+
+        // TODO: these codes are too difficult to maintain.
+        // The correct way is to dump trace files,
+        // and use seperate tools to test trace files.
         #[cfg(feature = "inner-prove")]
         {
             set_env_coinbase(&st.env.current_coinbase);
@@ -634,8 +646,9 @@ pub fn run_test(
         #[cfg(feature = "chunk-prove")]
         {
             set_env_coinbase(&st.env.current_coinbase);
-            prover::test::chunk_prove(&test_id, &witness_block);
+            prover::test::chunk_prove(&test_id, prover::ChunkProvingTask::from(vec![scroll_trace]));
         }
+
         #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
         mock_prove(&test_id, &witness_block);
     };
