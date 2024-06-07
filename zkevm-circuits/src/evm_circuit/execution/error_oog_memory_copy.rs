@@ -480,12 +480,13 @@ mod tests {
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
                 let cur_memory_word_size = (src_offset + 31) / 32;
-                let memory_word_size = (dst_offset + copy_size + 31) / 32;
+                let next_memory_word_size = std::cmp::max((dst_offset + copy_size + 31) / 32, 
+                cur_memory_word_size);
 
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + memory_copier_gas_cost(
                         cur_memory_word_size,
-                        memory_word_size,
+                        next_memory_word_size,
                         copy_size,
                         GasCost::COPY.as_u64(),
                     )
