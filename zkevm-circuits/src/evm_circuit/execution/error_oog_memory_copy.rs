@@ -478,9 +478,13 @@ mod tests {
             };
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
-                let cur_memory_word_size = (src_offset + 31) / 32;
-                let next_memory_word_size = std::cmp::max((dst_offset + copy_size + 31) / 32, 
-                cur_memory_word_size);
+                // no memory operation before mcopy
+                let cur_memory_word_size = 0;
+                let next_memory_word_size = if copy_size == 0 {
+                    cur_memory_word_size
+                } else {
+                    (std::cmp::max(src_offset, dst_offset) + copy_size + 31) / 32
+                };
 
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + memory_copier_gas_cost(
