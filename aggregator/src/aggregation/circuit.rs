@@ -26,7 +26,7 @@ use aggregator_snark_verifier::{
 };
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use aggregator_snark_verifier_sdk::halo2::aggregation::aggregate;
-use aggregator_snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
+use aggregator_snark_verifier_sdk::{CircuitExt, Snark};
 use zkevm_circuits::util::Challenges;
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
@@ -48,7 +48,7 @@ pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
-    pub snarks_with_padding: Vec<SnarkWitness>,
+    pub snarks_with_padding: Vec<Snark>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
     // - the batch's public_input_hash (32 elements)

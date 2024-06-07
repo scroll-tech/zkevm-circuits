@@ -28,7 +28,7 @@ use aggregator_snark_verifier::{
 };
 use aggregator_snark_verifier_sdk::{
     halo2::aggregation::{aggregate, Svk},
-    Snark, SnarkWitness,
+    Snark,
 };
 use ark_std::{end_timer, start_timer};
 use rand::Rng;
@@ -47,7 +47,7 @@ use super::config::CompressionConfig;
 #[derive(Clone, Debug)]
 pub struct CompressionCircuit {
     pub(crate) svk: KzgSuccinctVerifyingKey<G1Affine>,
-    pub(crate) snark: SnarkWitness,
+    pub(crate) snark: Snark,
     /// whether this circuit compresses a fresh snark
     pub(crate) has_accumulator: bool,
     /// instances, flattened.
@@ -74,7 +74,7 @@ impl Circuit<Fr> for CompressionCircuit {
 
         Self {
             svk: self.svk,
-            snark: SnarkWitness::without_witnesses(&self.snark),
+            snark: Snark::without_witnesses(&self.snark),
             has_accumulator: false,
             flattened_instances,
             as_proof: Value::unknown(),
@@ -217,7 +217,7 @@ impl CompressionCircuit {
         &self.svk
     }
 
-    pub fn snark(&self) -> &SnarkWitness {
+    pub fn snark(&self) -> &Snark {
         &self.snark
     }
 
