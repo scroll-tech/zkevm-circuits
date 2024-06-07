@@ -6,9 +6,8 @@ use zkevm_circuits::witness;
 mod builder;
 mod super_circuit;
 pub use self::builder::{
-    block_traces_to_witness_block,
-    calculate_row_usage_of_witness_block,
-    finalize_builder, print_chunk_stats, validite_block_traces,
+    block_traces_to_witness_block, calculate_row_usage_of_witness_block, finalize_builder,
+    print_chunk_stats, validite_block_traces,
 };
 pub use super_circuit::SuperCircuit;
 

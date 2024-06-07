@@ -104,7 +104,7 @@ impl Block {
     ) -> Result<Self, Error> {
         Self::new_with_l1_queue_index(chain_id, 0, history_hashes, eth_block)
     }
-    
+
     /// Create a new block.
     pub fn new_with_l1_queue_index(
         chain_id: u64,

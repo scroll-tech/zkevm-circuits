@@ -67,7 +67,7 @@ impl CircuitInputBuilder {
                 std::mem::drop(geth_trace);
             });
         }
-        
+
         log::debug!("apply_l2_trace done for block {:?}", block_num);
         //self.sdb.list_accounts();
         Ok(())

@@ -318,9 +318,8 @@ fn trace_config_to_witness_block_l2(
     env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
     let difficulty_be_bytes = [0u8; 32];
     env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
-    let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace, false)
-            .expect("could not handle block tx");
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace, false)
+        .expect("could not handle block tx");
     builder
         .finalize_building()
         .expect("could not finalize building block");
