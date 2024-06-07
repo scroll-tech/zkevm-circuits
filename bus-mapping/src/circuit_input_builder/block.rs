@@ -258,7 +258,7 @@ impl Chunk {
         self.relax_mode
     }
 
-    /// Get state root after this chunk
+    /// State root after all blocks in this chunk
     pub fn end_state_root(&self) -> Word {
         self.blocks
             .last_key_value()

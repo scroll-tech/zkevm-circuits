@@ -271,12 +271,13 @@ impl Transaction {
     /// Create a new Self.
     pub fn new(
         call_id: usize,
+        chain_id: u64,
         sdb: &StateDB,
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Self, Error> {
-        let chain_id = eth_tx.chain_id.unwrap_or_default().as_u64();
+        let tx_chain_id = eth_tx.chain_id.unwrap_or_default().as_u64();
         let block_num = eth_tx.block_number.unwrap().as_u64();
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -342,6 +343,9 @@ impl Transaction {
         let (l1_fee, l1_fee_committed) = if tx_type.is_l1_msg() {
             Default::default()
         } else {
+            // tx.chain_id can be zero for legacy tx.
+            // So we should not use that.
+            // We need to use "global" chain id.
             (
                 TxL1Fee::get_current_values_from_state_db(sdb, chain_id, block_num),
                 TxL1Fee::get_committed_values_from_state_db(sdb, chain_id, block_num),
@@ -359,7 +363,7 @@ impl Transaction {
         Ok(Self {
             block_num,
             hash: eth_tx.hash,
-            chain_id,
+            chain_id: tx_chain_id,
             tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
