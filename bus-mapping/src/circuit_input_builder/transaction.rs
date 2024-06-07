@@ -29,8 +29,6 @@ pub struct TransactionContext {
     id: usize,
     /// The index of logs made in the transaction.
     pub(crate) log_id: usize,
-    /// Identifier if this transaction is last one of the block or not.
-    is_last_tx: bool,
     /// Call stack.
     pub(crate) calls: Vec<CallContext>,
     /// Call `is_success` indexed by `call_index`.
@@ -48,11 +46,7 @@ pub struct TransactionContext {
 
 impl TransactionContext {
     /// Create a new Self.
-    pub fn new(
-        eth_tx: &eth_types::Transaction,
-        geth_trace: &GethExecTrace,
-        is_last_tx: bool,
-    ) -> Result<Self, Error> {
+    pub fn new(eth_tx: &eth_types::Transaction, geth_trace: &GethExecTrace) -> Result<Self, Error> {
         let call_is_success = geth_trace.call_trace.gen_call_is_success(vec![]);
 
         let mut tx_ctx = Self {
@@ -62,7 +56,6 @@ impl TransactionContext {
                 .as_u64() as usize
                 + 1,
             log_id: 0,
-            is_last_tx,
             call_is_success,
             call_is_success_offset: 0,
             calls: Vec::new(),
@@ -85,11 +78,6 @@ impl TransactionContext {
     /// Return id of the this transaction.
     pub fn id(&self) -> usize {
         self.id
-    }
-
-    /// Return is_last_tx of the this transaction.
-    pub fn is_last_tx(&self) -> bool {
-        self.is_last_tx
     }
 
     /// Return the calls in this transaction.

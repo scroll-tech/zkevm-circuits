@@ -853,7 +853,7 @@ impl<
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
         Self::build_from_witness_block(block)
     }
-    /// ..
+    /// Build super circuit from witness block
     pub fn build_from_witness_block(
         block: Block,
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {

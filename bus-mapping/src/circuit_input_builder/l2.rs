@@ -1,6 +1,6 @@
-pub use super::block::{Block, BlockContext};
+pub use super::block::{BlockContext, Chunk};
 use crate::{
-    circuit_input_builder::{self, BlockHead, CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{self, Block, CircuitInputBuilder, CircuitsParams},
     error::Error,
 };
 use eth_types::{
@@ -21,15 +21,13 @@ fn dump_code_db(cdb: &CodeDB) {
 }
 
 impl CircuitInputBuilder {
-    fn apply_l2_trace(&mut self, block_trace: BlockTrace, is_last: bool) -> Result<(), Error> {
+    fn apply_l2_trace(&mut self, block_trace: BlockTrace) -> Result<(), Error> {
         log::trace!(
-            "apply_l2_trace start, block num {:?}, is_last {is_last}",
+            "apply_l2_trace start, block num {:?}",
             block_trace.header.number
         );
         //self.sdb.list_accounts();
-        if is_last {
-            dump_code_db(&self.code_db);
-        }
+        //dump_code_db(&self.code_db);
 
         let eth_block = EthBlock::from(&block_trace);
         let geth_trace: Vec<eth_types::GethExecTrace> = block_trace
@@ -41,8 +39,8 @@ impl CircuitInputBuilder {
             self.block.chain_id, block_trace.chain_id,
             "unexpected chain id in new block_trace"
         );
-        // TODO: Get the history_hashes.
-        let mut header = BlockHead::new_with_l1_queue_index(
+        // Scroll EVM disables BLOCKHASH opcode, so here we don't need any hashes.
+        let mut block = Block::new_with_l1_queue_index(
             self.block.chain_id,
             block_trace.start_l1_queue_index,
             Vec::new(),
@@ -50,14 +48,15 @@ impl CircuitInputBuilder {
         )?;
         // override zeroed minder field with additional "coinbase" field in blocktrace
         if let Some(address) = block_trace.coinbase.address {
-            header.coinbase = address;
+            block.coinbase = address;
         }
-        let block_num = header.number.as_u64();
+        let block_num = block.number.as_u64();
         // TODO: should be check the block number is in sequence?
-        self.block.headers.insert(block_num, header);
+        self.block.blocks.insert(block_num, block);
         // note the actions when `handle_rwc_reversion` argument (the 4th one)
         // is true is executing outside this closure
-        self.handle_block_inner(&eth_block, &geth_trace, false, is_last)?;
+        self.handle_block_inner(&eth_block, &geth_trace)?;
+
         // TODO: remove this when GethExecStep don't contains heap data
         // send to another thread to drop the heap data
         // here we use a magic number from benchmark to decide whether to
@@ -68,6 +67,7 @@ impl CircuitInputBuilder {
                 std::mem::drop(geth_trace);
             });
         }
+        
         log::debug!("apply_l2_trace done for block {:?}", block_num);
         //self.sdb.list_accounts();
         Ok(())
@@ -99,7 +99,7 @@ impl CircuitInputBuilder {
         sdb: StateDB,
         code_db: CodeDB,
         mpt_init_state: ZktrieState,
-        block: &Block,
+        block: &Chunk,
     ) -> Self {
         Self {
             sdb,
@@ -114,7 +114,6 @@ impl CircuitInputBuilder {
     pub fn new_from_l2_trace(
         circuits_params: CircuitsParams,
         l2_trace: BlockTrace,
-        more: bool,
         light_mode: bool,
     ) -> Result<Self, Error> {
         let chain_id = l2_trace.chain_id;
@@ -164,19 +163,11 @@ impl CircuitInputBuilder {
             *sdb.get_storage_mut(&addr, &key).1 = val.into();
         }
 
-        /*
-        let (zero_coinbase_exist, _) = sdb.get_account(&Default::default());
-        if !zero_coinbase_exist {
-            sdb.set_account(&Default::default(), state_db::Account::zero());
-        }
-        */
-
         let mut code_db = CodeDB::new();
         code_db.insert(Vec::new());
         code_db.update_codedb(&sdb, &l2_trace)?;
 
-        let mut builder_block = circuit_input_builder::Block::from_headers(&[], circuits_params);
-        builder_block.chain_id = chain_id;
+        let mut builder_block = circuit_input_builder::Chunk::init(chain_id, circuits_params);
         builder_block.prev_state_root = old_root.to_word();
         builder_block.start_l1_queue_index = l2_trace.start_l1_queue_index;
         let mut builder = Self {
@@ -187,12 +178,12 @@ impl CircuitInputBuilder {
             mpt_init_state,
         };
 
-        builder.apply_l2_trace(l2_trace, !more)?;
+        builder.apply_l2_trace(l2_trace)?;
         Ok(builder)
     }
 
-    /// ...
-    pub fn add_more_l2_trace(&mut self, l2_trace: BlockTrace, more: bool) -> Result<(), Error> {
+    /// Apply more l2 traces
+    pub fn add_more_l2_trace(&mut self, l2_trace: BlockTrace) -> Result<(), Error> {
         // update init state new data from storage
         if let Some(mpt_init_state) = &mut self.mpt_init_state {
             mpt_init_state.update_from_trace(
@@ -246,7 +237,7 @@ impl CircuitInputBuilder {
 
         self.code_db.update_codedb(&self.sdb, &l2_trace)?;
 
-        self.apply_l2_trace(l2_trace, !more)?;
+        self.apply_l2_trace(l2_trace)?;
         Ok(())
     }
 

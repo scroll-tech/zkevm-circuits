@@ -46,7 +46,6 @@ impl CircuitInputBuilderTx {
                 prestate: block.geth_traces[0].prestate.clone(),
                 call_trace: block.geth_traces[0].call_trace.clone(),
             },
-            false,
         )
         .unwrap();
 

@@ -348,7 +348,8 @@ impl BlockContext {
             timestamp: Default::default(),
             base_fee: Default::default(),
             history_hashes: vec![],
-            eth_block: Default::default(),
+            parent_hash: Default::default(),
+            state_root: Default::default(),
         }
     }
 }

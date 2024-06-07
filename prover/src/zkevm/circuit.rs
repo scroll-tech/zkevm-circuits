@@ -1,3 +1,4 @@
+use builder::dummy_witness_block;
 use halo2_proofs::halo2curves::bn256::Fr;
 use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::witness;
@@ -5,9 +6,9 @@ use zkevm_circuits::witness;
 mod builder;
 mod super_circuit;
 pub use self::builder::{
-    block_trace_to_witness_block, block_traces_to_witness_block,
-    block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_witness_block,
-    print_chunk_stats, validite_block_traces,
+    block_traces_to_witness_block,
+    calculate_row_usage_of_witness_block,
+    finalize_builder, print_chunk_stats, validite_block_traces,
 };
 pub use super_circuit::SuperCircuit;
 
@@ -25,7 +26,7 @@ pub trait TargetCircuit {
     where
         Self: Sized,
     {
-        let witness_block = block_traces_to_witness_block(vec![])?;
+        let witness_block = dummy_witness_block()?;
         let circuit = Self::from_witness_block(&witness_block)?.0;
         Ok(circuit)
     }

@@ -9,7 +9,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{Address, Hash, ToWord, Word};
+use eth_types::{Address, Hash, ToWord, Word, H256};
 use std::collections::{BTreeMap, HashMap};
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -70,7 +70,7 @@ impl Default for BlockSteps {
 
 /// Circuit Input related to a block.
 #[derive(Debug, Clone)]
-pub struct BlockHead {
+pub struct Block {
     /// chain id
     pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
@@ -90,51 +90,21 @@ pub struct BlockHead {
     pub base_fee: Word,
     /// start l1 queue index
     pub start_l1_queue_index: u64,
-    /// Original block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Parent block hash
+    pub parent_hash: H256,
+    /// State root of this block
+    pub state_root: H256,
 }
-impl BlockHead {
+impl Block {
     /// Create a new block.
     pub fn new(
         chain_id: u64,
         history_hashes: Vec<Word>,
         eth_block: &eth_types::Block<eth_types::Transaction>,
     ) -> Result<Self, Error> {
-        if eth_block.base_fee_per_gas.is_none() {
-            // FIXME: resolve this once we have proper EIP-1559 support
-            log::debug!(
-                "This does not look like a EIP-1559 block - base_fee_per_gas defaults to zero"
-            );
-        }
-
-        Ok(Self {
-            chain_id,
-            history_hashes,
-            start_l1_queue_index: 0,
-            coinbase: eth_block
-                .author
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-            gas_limit: eth_block.gas_limit.low_u64(),
-            number: eth_block
-                .number
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
-                .low_u64()
-                .into(),
-            timestamp: eth_block.timestamp,
-            difficulty: if eth_block.difficulty.is_zero() {
-                eth_block
-                    .mix_hash
-                    .unwrap_or_default()
-                    .to_fixed_bytes()
-                    .into()
-            } else {
-                eth_block.difficulty
-            },
-            base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
-            eth_block: eth_block.clone(),
-        })
+        Self::new_with_l1_queue_index(chain_id, 0, history_hashes, eth_block)
     }
-
+    
     /// Create a new block.
     pub fn new_with_l1_queue_index(
         chain_id: u64,
@@ -173,17 +143,17 @@ impl BlockHead {
                 eth_block.difficulty
             },
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
-            eth_block: eth_block.clone(),
+            parent_hash: eth_block.parent_hash,
+            state_root: eth_block.state_root,
         })
     }
 }
 
 /// Circuit Input related to a block.
 #[derive(Debug, Default, Clone)]
-pub struct Block {
-    /// The `Block` struct is in fact "chunk" for l2
-    /// while "headers" are "Blocks" insides a chunk
-    pub headers: BTreeMap<u64, BlockHead>,
+pub struct Chunk {
+    /// Blocks inside this chunk
+    pub blocks: BTreeMap<u64, Block>,
     /// State root of the previous block
     pub prev_state_root: Word,
     /// Withdraw root
@@ -219,15 +189,11 @@ pub struct Block {
     relax_mode: bool,
 }
 
-impl Block {
-    /// ...
-    pub fn from_headers(headers: &[BlockHead], circuits_params: CircuitsParams) -> Self {
+impl Chunk {
+    /// Init `Block` from circuit params
+    pub fn init(chain_id: u64, circuits_params: CircuitsParams) -> Self {
         Self {
-            block_steps: BlockSteps::default(),
-            headers: headers
-                .iter()
-                .map(|b| (b.number.as_u64(), b.clone()))
-                .collect::<BTreeMap<_, _>>(),
+            chain_id,
             circuits_params,
             ..Default::default()
         }
@@ -246,8 +212,8 @@ impl Block {
             circuits_params,
             ..Default::default()
         };
-        let info = BlockHead::new(chain_id, history_hashes, eth_block)?;
-        block.headers.insert(info.number.as_u64(), info);
+        let info = Block::new(chain_id, history_hashes, eth_block)?;
+        block.blocks.insert(info.number.as_u64(), info);
         Ok(block)
     }
 
@@ -267,13 +233,13 @@ impl Block {
             circuits_params,
             ..Default::default()
         };
-        let info = BlockHead::new_with_l1_queue_index(
+        let info = Block::new_with_l1_queue_index(
             chain_id,
             start_l1_queue_index,
             history_hashes,
             eth_block,
         )?;
-        block.headers.insert(info.number.as_u64(), info);
+        block.blocks.insert(info.number.as_u64(), info);
         Ok(block)
     }
 
@@ -292,12 +258,21 @@ impl Block {
         self.relax_mode
     }
 
-    /// ..
+    /// Get state root after this chunk
     pub fn end_state_root(&self) -> Word {
-        self.headers
+        self.blocks
             .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root.to_word())
+            .map(|(_, blk)| blk.state_root.to_word())
             .unwrap_or(self.prev_state_root)
+    }
+
+    /// Get last block number
+    pub fn last_block_num(&self) -> u64 {
+        self.blocks
+            .iter()
+            .next_back()
+            .map(|(k, _)| *k)
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -314,7 +289,7 @@ impl Block {
     }
 }
 
-impl Block {
+impl Chunk {
     /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
         self.copy_counter += event.full_length() as usize;

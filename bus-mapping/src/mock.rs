@@ -1,8 +1,6 @@
 //! Mock types and functions to generate mock data useful for tests
 
-use crate::circuit_input_builder::{
-    AccessSet, Block, BlockHead, CircuitInputBuilder, CircuitsParams,
-};
+use crate::circuit_input_builder::{AccessSet, Block, Chunk, CircuitInputBuilder, CircuitsParams};
 use eth_types::{
     geth_types::GethData,
     state_db::{self, CodeDB, StateDB},
@@ -37,17 +35,13 @@ impl BlockData {
     /// Generate a new CircuitInputBuilder initialized with the context of the
     /// BlockData.
     pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder {
-        let mut block = Block::from_headers(
-            &[
-                BlockHead::new(self.chain_id, self.history_hashes.clone(), &self.eth_block)
-                    .unwrap(),
-            ],
-            Default::default(),
-        );
+        let header =
+            Block::new(self.chain_id, self.history_hashes.clone(), &self.eth_block).unwrap();
+        let mut block = Chunk::init(self.chain_id, Default::default());
+        block.blocks.insert(header.number.as_u64(), header);
         // FIXME: better fetch a real state root instead of a mock one
         block.prev_state_root = MOCK_OLD_STATE_ROOT.into();
         block.circuits_params = self.circuits_params;
-        block.chain_id = self.chain_id;
         CircuitInputBuilder::new(self.sdb.clone(), self.code_db.clone(), &block)
     }
     /// Create a new block from the given Geth data.

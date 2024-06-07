@@ -102,7 +102,7 @@ impl ChunkInfo {
             .context
             .ctxs
             .last_key_value()
-            .map(|(_, b_ctx)| b_ctx.eth_block.state_root)
+            .map(|(_, b_ctx)| b_ctx.state_root)
             .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
 
         Self {

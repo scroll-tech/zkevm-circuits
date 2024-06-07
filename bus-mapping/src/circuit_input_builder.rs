@@ -15,14 +15,14 @@ mod l2;
 mod tracer_tests;
 mod transaction;
 
-pub use self::block::BlockHead;
+pub use self::block::Block;
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
 };
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
-pub use block::{Block, BlockContext};
+pub use block::{BlockContext, Chunk};
 pub use builder_client::{build_state_code_db, BuilderClient};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
@@ -165,9 +165,9 @@ pub struct CircuitInputBuilder {
     pub sdb: StateDB,
     /// Map of account codes by code hash
     pub code_db: CodeDB,
-    /// Block
-    pub block: Block,
-    /// Block Context
+    /// TODO: rename this to chunk
+    pub block: Chunk,
+    /// TODO: rename this to chunk_ctx
     pub block_ctx: BlockContext,
     #[cfg(feature = "scroll")]
     /// Initial Zktrie Status for a incremental updating
@@ -177,7 +177,7 @@ pub struct CircuitInputBuilder {
 impl<'a> CircuitInputBuilder {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: &Block) -> Self {
+    pub fn new(sdb: StateDB, code_db: CodeDB, block: &Chunk) -> Self {
         Self {
             sdb,
             code_db,
@@ -189,17 +189,17 @@ impl<'a> CircuitInputBuilder {
     }
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new_from_headers(
+    pub fn new_from_params(
+        chain_id: u64,
         circuits_params: CircuitsParams,
         sdb: StateDB,
         code_db: CodeDB,
-        headers: &[BlockHead],
     ) -> Self {
         // lispczz@scroll:
         // the `block` here is in fact "chunk" for l2.
         // while "headers" in the "block"(usually single tx) for l2.
         // But to reduce the code conflicts with upstream, we still use the name `block`
-        Self::new(sdb, code_db, &Block::from_headers(headers, circuits_params))
+        Self::new(sdb, code_db, &Chunk::init(chain_id, circuits_params))
     }
 
     /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
@@ -270,7 +270,9 @@ impl<'a> CircuitInputBuilder {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        self.handle_block_inner(eth_block, geth_traces, true, true)
+        self.handle_block_inner(eth_block, geth_traces)?;
+        self.finalize_building()?;
+        Ok(())
     }
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
@@ -278,8 +280,6 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-        is_last_block: bool,
-        check_last_tx: bool,
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
         log::info!(
@@ -323,11 +323,7 @@ impl<'a> CircuitInputBuilder {
             let mut tx = tx.clone();
             // Chunk can contain multi blocks, so transaction_index needs to be updated
             tx.transaction_index = Some(self.block.txs.len().into());
-            self.handle_tx(
-                &tx,
-                geth_trace,
-                check_last_tx && tx_index + 1 == eth_block.transactions.len(),
-            )?;
+            self.handle_tx(&tx, geth_trace)?;
             log::debug!(
                 "after handle {}th tx: rwc {:?}, total gas {:?}",
                 chunk_tx_idx,
@@ -375,10 +371,6 @@ impl<'a> CircuitInputBuilder {
                     }
                 }
             }
-        }
-        if is_last_block {
-            self.set_value_ops_call_context_rwc_eor();
-            self.set_end_block()?;
         }
         log::info!(
             "handle_block_inner, total gas {:?}",
@@ -484,7 +476,7 @@ impl<'a> CircuitInputBuilder {
 
         let last_block_num = state
             .block
-            .headers
+            .blocks
             .last_key_value()
             .map(|(_, v)| v.number)
             .unwrap_or_default();
@@ -555,7 +547,6 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
-        is_last_tx: bool,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
@@ -573,7 +564,7 @@ impl<'a> CircuitInputBuilder {
             );
         }
 
-        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
+        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace)?;
         let mut debug_tx = tx.clone();
         debug_tx.input.clear();
         debug_tx.rlp_bytes.clear();

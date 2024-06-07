@@ -166,7 +166,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
         call.address,
         state
             .block
-            .headers
+            .blocks
             .get(&state.tx.block_num)
             .unwrap()
             .coinbase,
@@ -601,12 +601,7 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         log::trace!("l1 tx, no refund");
     }
 
-    let block_info = state
-        .block
-        .headers
-        .get(&state.tx.block_num)
-        .unwrap()
-        .clone();
+    let block_info = state.block.blocks.get(&state.tx.block_num).unwrap().clone();
     let effective_tip = if cfg!(feature = "scroll") {
         state.tx.gas_price
     } else {
