@@ -7,6 +7,7 @@ use crate::{
 use anyhow::bail;
 use eth_types::l2_types::BlockTrace;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::witness::Block;
 
 impl<C: TargetCircuit> Prover<C> {
@@ -24,8 +25,8 @@ impl<C: TargetCircuit> Prover<C> {
             "mock proving chunk, chunk metric {:?}",
             metric_of_witness_block(witness_block)
         );
-        let (circuit, instance) = C::from_witness_block(witness_block)?;
-        let prover = MockProver::<Fr>::run(*INNER_DEGREE, &circuit, instance)?;
+        let circuit = C::from_witness_block(witness_block)?;
+        let prover = MockProver::<Fr>::run(*INNER_DEGREE, &circuit, circuit.instances())?;
         if let Err(errs) = prover.verify_par() {
             log::error!("err num: {}", errs.len());
             for err in &errs {

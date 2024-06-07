@@ -24,7 +24,7 @@ impl Prover {
 
         let degree = *INNER_DEGREE;
 
-        let (circuit, _instance) = C::from_witness_block(witness_block)?;
+        let circuit = C::from_witness_block(witness_block)?;
 
         Self::assert_if_mock_prover(id, degree, &circuit);
 

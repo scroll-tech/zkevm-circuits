@@ -593,6 +593,7 @@ impl<
         .unwrap()
     }
 
+    /// Create circuit instance of witness block
     fn new_from_block(block: &Block) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
