@@ -361,7 +361,6 @@ mod tests {
         for (src_offset, dest_offset, copy_size) in TESTING_MCOPY_PARIS {
             let testing_data =
                 TestingData::new_for_mcopy(*src_offset, *dest_offset, *copy_size, None);
-
             test_root(&testing_data);
             test_internal(&testing_data);
         }
@@ -479,13 +478,18 @@ mod tests {
             };
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
-                let cur_memory_word_size = (src_offset + 31) / 32;
-                let memory_word_size = (dst_offset + copy_size + 31) / 32;
+                // no memory operation before mcopy
+                let cur_memory_word_size = 0;
+                let next_memory_word_size = if copy_size == 0 {
+                    cur_memory_word_size
+                } else {
+                    (std::cmp::max(src_offset, dst_offset) + copy_size + 31) / 32
+                };
 
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + memory_copier_gas_cost(
                         cur_memory_word_size,
-                        memory_word_size,
+                        next_memory_word_size,
                         copy_size,
                         GasCost::COPY.as_u64(),
                     )
