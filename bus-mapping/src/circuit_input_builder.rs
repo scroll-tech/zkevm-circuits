@@ -479,17 +479,16 @@ impl<'a> CircuitInputBuilder {
             )?;
         }
 
-        let last_block_num = state
-            .block
-            .blocks
-            .last_key_value()
-            .map(|(_, v)| v.number)
-            .unwrap_or_default();
+        let last_block_num = state.block.last_block_num();
 
         // Curie sys contract upgrade
-        let is_curie_fork_block =
-            curie::is_curie_fork_block(state.block.chain_id, last_block_num.as_u64());
+        let is_curie_fork_block = curie::is_curie_fork_block(state.block.chain_id, last_block_num);
         if is_curie_fork_block {
+            log::info!(
+                "apply curie, chain id {}, block num {}",
+                state.block.chain_id,
+                last_block_num
+            );
             curie::apply_curie(&mut state, &mut end_block_step)?;
         }
 
