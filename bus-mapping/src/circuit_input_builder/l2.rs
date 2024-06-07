@@ -30,6 +30,7 @@ impl CircuitInputBuilder {
         //dump_code_db(&self.code_db);
 
         let eth_block = EthBlock::from(&block_trace);
+        log::trace!("eth_block block number {:?}", eth_block.number);
         let geth_trace: Vec<eth_types::GethExecTrace> = block_trace
             .execution_results
             .into_iter()
@@ -52,7 +53,7 @@ impl CircuitInputBuilder {
         }
         let block_num = block.number.as_u64();
         // TODO: should be check the block number is in sequence?
-        self.block.blocks.insert(block_num, block);
+        self.block.add_block(block);
         // note the actions when `handle_rwc_reversion` argument (the 4th one)
         // is true is executing outside this closure
         self.handle_block_inner(&eth_block, &geth_trace)?;

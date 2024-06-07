@@ -196,6 +196,7 @@ impl Blocks {
 
     /// Add a new block
     pub fn add_block(&mut self, block: Block) {
+        log::debug!("add_block with number {}", block.number.as_u64());
         self.blocks.insert(block.number.as_u64(), block);
     }
 
