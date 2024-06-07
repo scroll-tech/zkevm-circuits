@@ -500,7 +500,7 @@ pub fn block_convert(
     let rws = RwMap::from(&block.container);
     rws.check_value()?;
     let num_txs = block.txs().len();
-    let last_block_num = block.last_block_num();
+    let last_block_num = block.last_block_num().unwrap_or_default();
     let chain_id = block.chain_id();
     rws.check_rw_counter_sanity();
     if block

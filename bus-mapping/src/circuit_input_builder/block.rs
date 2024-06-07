@@ -245,12 +245,8 @@ impl Blocks {
     }
 
     /// Get last block number
-    pub fn last_block_num(&self) -> u64 {
-        self.blocks
-            .iter()
-            .next_back()
-            .map(|(k, _)| *k)
-            .unwrap_or_default()
+    pub fn last_block_num(&self) -> Option<u64> {
+        self.blocks.iter().next_back().map(|(k, _)| *k)
     }
 
     #[cfg(test)]
