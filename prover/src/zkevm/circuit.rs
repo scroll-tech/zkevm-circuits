@@ -1,16 +1,8 @@
-use eth_types::l2_types::BlockTrace;
 use halo2_proofs::halo2curves::bn256::Fr;
 use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::witness;
 
-#[cfg(feature = "scroll")]
-mod l2_builder;
-#[cfg(feature = "scroll")]
-use l2_builder as builder;
-#[cfg(not(feature = "scroll"))]
-mod l1_builder;
-#[cfg(not(feature = "scroll"))]
-use l1_builder as builder;
+mod builder;
 mod super_circuit;
 pub use self::builder::{
     block_trace_to_witness_block, block_traces_to_witness_block,
@@ -27,37 +19,15 @@ pub trait TargetCircuit {
     /// The actual inner circuit that implements Circuit trait.
     type Inner: CircuitExt<Fr>;
 
-    /// Name tag of the circuit.
-    /// This tag will be used as a key to index the circuit.
-    /// It is therefore important that the name is unique.
-    fn name() -> String;
-
     /// Generate a dummy circuit with an empty trace.
     /// This is useful for generating vk and pk.
-    fn dummy_inner_circuit() -> Self::Inner
+    fn dummy_inner_circuit() -> anyhow::Result<Self::Inner>
     where
         Self: Sized,
     {
-        Self::from_block_traces(vec![]).unwrap().0
-    }
-
-    /// Build the inner circuit and the instances from a traces
-    fn from_block_trace(block_trace: BlockTrace) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
-    where
-        Self: Sized,
-    {
-        Self::from_block_traces(vec![block_trace])
-    }
-
-    /// Build the inner circuit and the instances from a list of traces
-    fn from_block_traces(
-        block_traces: Vec<BlockTrace>,
-    ) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
-    where
-        Self: Sized,
-    {
-        let witness_block = block_traces_to_witness_block(block_traces)?;
-        Self::from_witness_block(&witness_block)
+        let witness_block = block_traces_to_witness_block(vec![])?;
+        let circuit = Self::from_witness_block(&witness_block)?.0;
+        Ok(circuit)
     }
 
     /// Build the inner circuit and the instances from the witness block
@@ -66,22 +36,4 @@ pub trait TargetCircuit {
     ) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
     where
         Self: Sized;
-
-    fn estimate_block_rows(block_trace: BlockTrace) -> anyhow::Result<usize> {
-        let witness_block = block_trace_to_witness_block(block_trace)?;
-        Ok(Self::estimate_rows_from_witness_block(&witness_block))
-    }
-
-    fn estimate_rows(block_traces: Vec<BlockTrace>) -> anyhow::Result<usize> {
-        let witness_block = block_traces_to_witness_block(block_traces)?;
-        Ok(Self::estimate_rows_from_witness_block(&witness_block))
-    }
-
-    fn estimate_rows_from_witness_block(_witness_block: &witness::Block) -> usize {
-        0
-    }
-
-    fn public_input_len() -> usize {
-        0
-    }
 }

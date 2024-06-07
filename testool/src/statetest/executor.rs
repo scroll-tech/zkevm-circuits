@@ -215,9 +215,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                     || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
                 ..Default::default()
             },
-            chain_config: None,
-            #[cfg(feature = "scroll")]
-            l1_queue_index: 0,
+            ..Default::default()
         },
         st.result,
     )
@@ -426,6 +424,7 @@ fn trace_config_to_witness_block_l1(
         geth_traces: geth_traces.clone(),
         accounts: trace_config.accounts.values().cloned().collect(),
         eth_block: eth_block.clone(),
+        ..Default::default()
     };
 
     let block_data =

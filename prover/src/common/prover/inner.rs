@@ -28,7 +28,7 @@ impl Prover {
 
         Self::assert_if_mock_prover(id, degree, &circuit);
 
-        let (params, pk) = self.params_and_pk(id, degree, &C::dummy_inner_circuit())?;
+        let (params, pk) = self.params_and_pk(id, degree, &C::dummy_inner_circuit()?)?;
         log::info!(
             "gen_inner_snark vk transcript_repr {:?}",
             pk.get_vk().transcript_repr()
