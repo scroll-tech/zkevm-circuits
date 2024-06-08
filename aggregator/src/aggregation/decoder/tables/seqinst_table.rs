@@ -1473,6 +1473,13 @@ mod tests {
         wrong_offset_row.cooked_match_offset = 1113;
         let neg_case_offset_2 = vec![vec![(1, wrong_offset_row, None)]];
 
+        let mut wrong_lit_row = base_data[0][1].clone();
+        assert_eq!(wrong_lit_row.literal_length, 22);
+        wrong_lit_row.literal_length = 23;
+        let wrong_lit_1 = vec![vec![(2, wrong_lit_row.clone(), None)]];
+        wrong_lit_row.literal_length = 20;
+        let wrong_lit_2 = vec![vec![(2, wrong_lit_row.clone(), None)]];
+
         let mut out_order_row_1 = base_data[0][0].clone();
         let mut out_order_row_2 = base_data[0][1].clone();
         assert_eq!(out_order_row_1.literal_length_acc, 11);
@@ -1487,6 +1494,8 @@ mod tests {
         for mock_rows in [
             neg_case_offset_1,
             neg_case_offset_2,
+            wrong_lit_1,
+            wrong_lit_2,
             neg_case_outoforder_seq,
         ] {
             let circuit = SeqTable {
