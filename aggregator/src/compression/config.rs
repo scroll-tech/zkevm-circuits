@@ -1,13 +1,15 @@
-use halo2_proofs::{
-    halo2curves::bn256::{Fq, Fr, G1Affine},
-    plonk::{Column, ConstraintSystem, Instance},
-};
-use snark_verifier::loader::halo2::halo2_ecc::{
-    ecc::{BaseFieldEccChip, EccChip},
-    fields::fp::FpConfig,
-    halo2_base::{
-        gates::{flex_gate::FlexGateConfig, range::RangeConfig},
-        utils::modulus,
+use aggregator_snark_verifier::{
+    halo2_base::halo2_proofs::{
+        halo2curves::bn256::{Fq, Fr, G1Affine},
+        plonk::{Column, ConstraintSystem, Instance},
+    },
+    loader::halo2::halo2_ecc::{
+        ecc::{BaseFieldEccChip, EccChip},
+        fields::fp::FpConfig,
+        halo2_base::{
+            gates::{flex_gate::FlexGateConfig, range::RangeConfig},
+            utils::modulus,
+        },
     },
 };
 
@@ -21,7 +23,7 @@ use crate::{
 /// This config is hard coded for BN256 curve
 pub struct CompressionConfig {
     /// Non-native field chip configurations
-    pub base_field_config: FpConfig<Fr, Fq>,
+    pub base_field_config: FpConfig<Fr>,
     /// Instance for public input
     pub instance: Column<Instance>,
 }

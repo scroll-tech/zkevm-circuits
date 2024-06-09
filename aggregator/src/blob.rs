@@ -3,15 +3,13 @@ use crate::{
     BatchHash, ChunkInfo,
 };
 
+use aggregator_snark_verifier::halo2_base::halo2_proofs::circuit::Value;
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::{
     k256::sha2::{Digest, Sha256},
     utils::keccak256,
 };
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::{bls12_381::Scalar, bn256::Fr},
-};
+use halo2curves::{bls12_381::Scalar, bn256::Fr};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;

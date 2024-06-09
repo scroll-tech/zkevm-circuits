@@ -21,11 +21,12 @@ once_cell.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
-halo2-base.workspace = true
-halo2-ecc.workspace = true
-halo2_proofs.workspace = true
-snark-verifier.workspace = true
-snark-verifier-sdk.workspace = true
+# halo2-base.workspace = true
+# halo2-ecc.workspace = true
+# halo2_proofs.workspace = true
+halo2curves.workspace = true
+aggregator-snark-verifier.workspace = true
+aggregator-snark-verifier-sdk.workspace = true
 strum.workspace = true
 strum_macros.workspace = true
 

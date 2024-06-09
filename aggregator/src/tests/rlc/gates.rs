@@ -1,6 +1,6 @@
 //! Tests the RLC gates
 
-use halo2_proofs::{
+use aggregator_snark_verifier::halo2_base::halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
     halo2curves::bn256::Fr,
@@ -23,6 +23,7 @@ struct ArithTestCircuit {
 }
 
 impl Circuit<Fr> for ArithTestCircuit {
+    type Params = ();
     type Config = RlcConfig;
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {

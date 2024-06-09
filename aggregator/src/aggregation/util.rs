@@ -1,8 +1,8 @@
-use gadgets::util::Expr;
-use halo2_proofs::{
+use aggregator_snark_verifier::halo2_base::halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
+use gadgets::util::Expr;
 use zkevm_circuits::util::Field;
 
 #[derive(Clone, Copy, Debug)]

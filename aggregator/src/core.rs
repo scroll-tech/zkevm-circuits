@@ -1,31 +1,30 @@
 use std::iter::repeat;
 
-use ark_std::{end_timer, start_timer};
-use ethers_core::utils::keccak256;
-use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
-        pairing::Engine,
+use aggregator_snark_verifier::{
+    halo2_base::halo2_proofs::{
+        circuit::{AssignedCell, Layouter, Region, Value},
+        halo2curves::{
+            bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
+            pairing::Engine,
+        },
+        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
     },
-    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-};
-use itertools::Itertools;
-use rand::Rng;
-use snark_verifier::{
     loader::native::NativeLoader,
     pcs::{
-        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
+        kzg::{Bdfg21, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
     },
     util::arithmetic::fe_to_limbs,
-    verifier::PlonkVerifier,
     Error,
 };
-use snark_verifier_sdk::{
-    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
-    Snark,
+use aggregator_snark_verifier_sdk::{
+    halo2::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
+    PlonkVerifier, Snark,
 };
+use ark_std::{end_timer, start_timer};
+use ethers_core::utils::keccak256;
+use itertools::Itertools;
+use rand::Rng;
 use zkevm_circuits::{
     keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
     util::Challenges,
@@ -78,7 +77,7 @@ pub(crate) fn extract_accumulators_and_proof(
             log::trace!("acc extraction {}-th acc check: left {:?}", i, left);
             log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
             if left != right {
-                return Err(snark_verifier::Error::AssertionFailure(format!(
+                return Err(Error::AssertionFailure(format!(
                     "accumulator check failed {left:?} {right:?}, index {i}",
                 )));
             }
@@ -95,7 +94,7 @@ pub(crate) fn extract_accumulators_and_proof(
         // accumulated ec_pt = ec_pt_1 * 1 + ec_pt_2 * r + ... + ec_pt_n * r^{n-1}
         // ec_pt can be lhs and rhs
         // r is the challenge squeezed from proof
-        KzgAs::<Kzg<Bn256, Bdfg21>>::create_proof::<PoseidonTranscript<NativeLoader, Vec<u8>>, _>(
+        KzgAs::<Bn256, Bdfg21>::create_proof::<PoseidonTranscript<NativeLoader, Vec<u8>>, _>(
             &Default::default(),
             &accumulators,
             &mut transcript_write,
@@ -110,7 +109,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
     params: &ParamsKZG<Bn256>,
     snarks: &[Snark],
     rng: impl Rng + Send,
-) -> Result<(Vec<u8>, Vec<Fr>), snark_verifier::Error> {
+) -> Result<(Vec<u8>, Vec<Fr>), Error> {
     // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
     let (accumulator, as_proof) =
         extract_accumulators_and_proof(params, snarks, rng, &params.g2(), &params.s_g2())?;
@@ -131,7 +130,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
         log::trace!("circuit acc check: right {:?}", right);
 
         if left != right {
-            return Err(snark_verifier::Error::AssertionFailure(format!(
+            return Err(Error::AssertionFailure(format!(
                 "accumulator check failed {left:?} {right:?}",
             )));
         }
@@ -172,7 +171,7 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
         chunk_is_valid_cell32s: &[AssignedCell<Fr, Fr>],
         num_valid_snarks: AssignedCell<Fr, Fr>,
         chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
-    ) -> Result<Self, halo2_proofs::plonk::Error> {
+    ) -> Result<Self, Error> {
         let mut inputs = vec![];
         let mut input_rlcs = vec![];
         let mut outputs = vec![];
@@ -285,7 +284,7 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
         plonk_config: &RlcConfig,
         region: &mut Region<Fr>,
         offset: &mut usize,
-    ) -> Result<(), halo2_proofs::plonk::Error> {
+    ) -> Result<(), Error> {
         for (input_rlcs, (output_rlcs, data_len)) in self
             .input_rlcs
             .iter()
@@ -465,7 +464,7 @@ fn copy_constraints<const N_SNARKS: usize>(
     layouter
         .assign_region(
             || "copy constraints",
-            |mut region| -> Result<(), halo2_proofs::plonk::Error> {
+            |mut region| -> Result<(), Error> {
                 if is_first_time {
                     // this region only use copy constraints and do not affect the shape of the
                     // layouter
@@ -617,7 +616,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<ExtractedHashCells<N_SNARKS>, halo2_proofs::plonk::Error> {
+            |mut region| -> Result<ExtractedHashCells<N_SNARKS>, Error> {
                 let mut offset = 0;
                 rlc_config.init(&mut region)?;
                 // ====================================================
@@ -631,14 +630,14 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 let chunk_is_valid_cells = chunks_are_valid
                     .iter()
-                    .map(|chunk_is_valid| -> Result<_, halo2_proofs::plonk::Error> {
+                    .map(|chunk_is_valid| -> Result<_, Error> {
                         rlc_config.load_private(
                             &mut region,
                             &Fr::from(*chunk_is_valid as u64),
                             &mut offset,
                         )
                     })
-                    .collect::<Result<Vec<_>, halo2_proofs::plonk::Error>>()?;
+                    .collect::<Result<Vec<_>, Error>>()?;
 
                 let chunk_is_valid_cell32s = chunk_is_valid_cells
                     .iter()
@@ -649,7 +648,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 let chunks_are_padding = chunk_is_valid_cells
                     .iter()
                     .map(|chunk_is_valid| rlc_config.not(&mut region, chunk_is_valid, &mut offset))
-                    .collect::<Result<Vec<_>, halo2_proofs::plonk::Error>>()?;
+                    .collect::<Result<Vec<_>, Error>>()?;
 
                 let num_valid_snarks =
                     constrain_flags(rlc_config, &mut region, &chunk_is_valid_cells, &mut offset)?;
@@ -874,7 +873,7 @@ fn constrain_flags(
     region: &mut Region<Fr>,
     chunk_are_valid: &[AssignedCell<Fr, Fr>],
     offset: &mut usize,
-) -> Result<AssignedCell<Fr, Fr>, halo2_proofs::plonk::Error> {
+) -> Result<AssignedCell<Fr, Fr>, Error> {
     assert!(!chunk_are_valid.is_empty());
 
     let one = {

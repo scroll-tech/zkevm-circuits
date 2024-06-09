@@ -1,12 +1,14 @@
 use crate::{blob::BatchData, witgen::MultiBlockProcessResult};
-use ark_std::{end_timer, start_timer};
-use halo2_base::{Context, ContextParams};
-use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
-    plonk::{Circuit, ConstraintSystem, Error, Selector},
-    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+use aggregator_snark_verifier::halo2_base::{
+    halo2_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner, Value},
+        halo2curves::bn256::{Bn256, Fr, G1Affine},
+        plonk::{Circuit, ConstraintSystem, Error, Selector},
+        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+    },
+    Context,
 };
+use ark_std::{end_timer, start_timer};
 use itertools::Itertools;
 use rand::Rng;
 #[cfg(not(feature = "disable_proof_aggregation"))]
@@ -14,18 +16,20 @@ use std::rc::Rc;
 use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
-use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
+use aggregator_snark_verifier::halo2_base;
+use aggregator_snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::{
+use aggregator_snark_verifier::{
     loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader},
-    pcs::kzg::{Bdfg21, Kzg},
+    pcs::kzg::{Bdfg21, KzgAs},
 };
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier_sdk::{aggregate, flatten_accumulator};
-use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
+use aggregator_snark_verifier_sdk::halo2::aggregation::aggregate;
+use aggregator_snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
 use zkevm_circuits::util::Challenges;
 
+#[cfg(not(feature = "disable_proof_aggregation"))]
+use crate::util::flatten_accumulator;
 use crate::{
     aggregation::witgen::process,
     batch::BatchHash,
@@ -61,7 +65,7 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
         batch_hash: BatchHash<N_SNARKS>,
-    ) -> Result<Self, snark_verifier::Error> {
+    ) -> Result<Self, aggregator_snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
         // sanity check: snarks's public input matches chunk_hashes
@@ -120,6 +124,7 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
 }
 
 impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
+    type Params = ();
     type Config = (AggregationConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
@@ -243,7 +248,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     // - new accumulator to be verified on chain
                     //
                     log::debug!("aggregation: assigning aggregation");
-                    let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
+                    let (assigned_aggregation_instances, acc) = aggregate::<KzgAs<Bn256, Bdfg21>>(
                         &self.svk,
                         &loader,
                         &self.snarks_with_padding,

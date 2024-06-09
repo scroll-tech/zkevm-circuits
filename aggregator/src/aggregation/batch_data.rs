@@ -1,11 +1,13 @@
-use ethers_core::utils::keccak256;
-use halo2_ecc::bigint::CRTInteger;
-use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::bn256::Fr,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
-    poly::Rotation,
+use aggregator_snark_verifier::{
+    halo2_base::halo2_proofs::{
+        circuit::{AssignedCell, Layouter, Region, Value},
+        halo2curves::bn256::Fr,
+        plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
+        poly::Rotation,
+    },
+    halo2_ecc::bigint::CRTInteger,
 };
+use ethers_core::utils::keccak256;
 use itertools::Itertools;
 use zkevm_circuits::{
     table::{KeccakTable, LookupTable, RangeTable, U8Table},
