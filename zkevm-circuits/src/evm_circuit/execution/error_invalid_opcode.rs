@@ -77,15 +77,12 @@ mod test {
     #[cfg(feature = "scroll")]
     use eth_types::address;
 
-    static TESTING_INVALID_CODES: [&[u8]; 6] = [
-        // Single invalid opcode
-        &[0x0e],
-        &[0x4f],
-        &[0xa5],
-        &[0xf6],
-        &[0xfe],
-        // Multiple invalid opcodes
-        &[0x0c, 0x5e],
+    static TESTING_INVALID_CODES: [&[u8]; 5] = [
+        &[0x0e], // a random usused opcode
+        &[0xfe], // the "INVALID"
+        &[0x5c], // TLOAD
+        &[0x4a], // BLOBBASEFEE
+        &[0x48], // BASEFEE
     ];
 
     #[test]

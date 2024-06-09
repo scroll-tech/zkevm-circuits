@@ -30,7 +30,8 @@ use eth_types::{
         memory::{MemoryRange, MemoryWordRange},
         Gas, GasCost, Memory, MemoryAddress, MemoryRef, OpcodeId, StackAddress, MAX_CODE_SIZE,
     },
-    Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
+    Address, Bytecode, GethExecError, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use log::trace;
@@ -1622,6 +1623,7 @@ impl<'a> CircuitInputStateRef<'a> {
         next_step: Option<&GethExecStep>,
     ) -> Result<Option<ExecError>, Error> {
         if matches!(step.op, OpcodeId::INVALID(_)) {
+            assert_eq!(step.error, Some(GethExecError::InvalidOpcode(step.op)));
             return Ok(Some(ExecError::InvalidOpcode));
         }
 

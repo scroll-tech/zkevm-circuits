@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/imdario/mergo"
@@ -166,6 +167,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		LondonBlock:         big.NewInt(0),
 		ShanghaiBlock:       big.NewInt(0),
 		BernoulliBlock:      big.NewInt(0),
+		CurieBlock:          big.NewInt(math.MaxInt64),
 		Scroll: params.ScrollConfig{
 			FeeVaultAddress: &config.Block.Coinbase,
 		},
