@@ -1015,6 +1015,14 @@ impl<F: Field> SeqExecConfig<F> {
                 region.assign_advice(|| "mock decode", col, offset, || Value::known(val))?;
             }
         }
+        if let Some(val) = decode_mock[1] {
+            region.assign_advice(
+                || "mock decode rlc",
+                self.decoded_rlc,
+                offset,
+                || Value::known(val),
+            )?;
+        }
 
         for (mock_val, col) in
             pos_mock
@@ -1048,7 +1056,6 @@ mod tests {
         circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
     };
     use witgen::AddressTableRow;
-    use zkevm_circuits::util::MockChallenges;
 
     #[allow(dead_code)]
     #[derive(Clone, Copy, Debug)]
@@ -1137,13 +1144,14 @@ mod tests {
         inst_tbl: SeqInstTable<Fr>,
         literal_tbl: LiteralTable,
         seq_cfg: SequenceConfig,
-        chng_mock: MockChallenges,
+        //chng_mock: MockChallenges,
     }
 
     #[derive(Clone, Default)]
     struct SeqExecMockCircuit {
         traces: Vec<SeqExecMock>,
         padding_mocks: Vec<(usize, MockEntry)>,
+        all_padding_mocks: Vec<MockEntry>,
         output: Vec<u8>,
     }
 
@@ -1177,23 +1185,15 @@ mod tests {
 
             let inst_tbl = SeqInstTable::configure(meta);
 
-            let chng_mock = MockChallenges::construct_p1(meta);
-            let chng = chng_mock.exprs(meta);
+            let chng = 0.expr();
 
-            let config = SeqExecConfig::configure(
-                meta,
-                chng.keccak_input(),
-                &literal_tbl,
-                &inst_tbl,
-                &seq_cfg,
-            );
+            let config = SeqExecConfig::configure(meta, chng, &literal_tbl, &inst_tbl, &seq_cfg);
 
             Self::Config {
                 config,
                 literal_tbl,
                 inst_tbl,
                 seq_cfg,
-                chng_mock,
             }
         }
 
@@ -1224,7 +1224,7 @@ mod tests {
                 )?;
             }
 
-            let chng_val = config.chng_mock.values(&layouter);
+            let chng_val = Value::known(Fr::zero());
             let assigned_rows = layouter.assign_region(
                 || "mock exec output region",
                 |mut region| {
@@ -1235,6 +1235,43 @@ mod tests {
                     let mut decoded_len = 0usize;
                     let mut decoded_rlc = Value::known(Fr::zero());
                     let mut blk_ind = 0;
+
+                    let fill_mock_row =
+                        |region: &mut Region<Fr>, offset: usize, entry: &MockEntry| match entry {
+                            MockEntry::Decode(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                [None, None],
+                                *mock,
+                                [None, None, None],
+                                [None, None, None],
+                            ),
+                            MockEntry::Index(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                *mock,
+                                [None, None],
+                                [None, None, None],
+                                [None, None, None],
+                            ),
+                            MockEntry::Phase(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                [None, None],
+                                [None, None],
+                                *mock,
+                                [None, None, None],
+                            ),
+                            MockEntry::Position(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                [None, None],
+                                [None, None],
+                                [None, None, None],
+                                *mock,
+                            ),
+                        };
+
                     for tr in &self.traces {
                         let literals = tr
                             .literals
@@ -1248,7 +1285,7 @@ mod tests {
                         let begin_offset = offset;
                         (offset, decoded_len, decoded_rlc) = config.assign_block(
                             &mut region,
-                            chng_val.keccak_input(),
+                            chng_val,
                             offset,
                             decoded_len,
                             decoded_rlc,
@@ -1259,41 +1296,8 @@ mod tests {
                         )?;
 
                         for (mock_offset, entry) in &tr.mocks {
-                            assert!(mock_offset + begin_offset <= offset);
-                            match entry {
-                                MockEntry::Decode(mock) => config.mock_assign(
-                                    &mut region,
-                                    begin_offset + mock_offset,
-                                    [None, None],
-                                    *mock,
-                                    [None, None, None],
-                                    [None, None, None],
-                                ),
-                                MockEntry::Index(mock) => config.mock_assign(
-                                    &mut region,
-                                    begin_offset + mock_offset,
-                                    *mock,
-                                    [None, None],
-                                    [None, None, None],
-                                    [None, None, None],
-                                ),
-                                MockEntry::Phase(mock) => config.mock_assign(
-                                    &mut region,
-                                    begin_offset + mock_offset,
-                                    [None, None],
-                                    [None, None],
-                                    *mock,
-                                    [None, None, None],
-                                ),
-                                MockEntry::Position(mock) => config.mock_assign(
-                                    &mut region,
-                                    begin_offset + mock_offset,
-                                    [None, None],
-                                    [None, None],
-                                    [None, None, None],
-                                    *mock,
-                                ),
-                            }?;
+                            assert!(mock_offset + begin_offset < offset);
+                            fill_mock_row(&mut region, begin_offset + mock_offset, entry)?;
                         }
                     }
 
@@ -1306,42 +1310,14 @@ mod tests {
                         decoded_rlc,
                         blk_ind as u64 + 1,
                     )?;
+                    for (offset, entry) in (offset..end_offset)
+                        .flat_map(|i| self.all_padding_mocks.iter().map(move |entry| (i, entry)))
+                    {
+                        fill_mock_row(&mut region, offset, entry)?;
+                    }
 
                     for (mock_offset, entry) in &self.padding_mocks {
-                        match entry {
-                            MockEntry::Decode(mock) => config.mock_assign(
-                                &mut region,
-                                offset + mock_offset,
-                                [None, None],
-                                *mock,
-                                [None, None, None],
-                                [None, None, None],
-                            ),
-                            MockEntry::Index(mock) => config.mock_assign(
-                                &mut region,
-                                offset + mock_offset,
-                                *mock,
-                                [None, None],
-                                [None, None, None],
-                                [None, None, None],
-                            ),
-                            MockEntry::Phase(mock) => config.mock_assign(
-                                &mut region,
-                                offset + mock_offset,
-                                [None, None],
-                                [None, None],
-                                *mock,
-                                [None, None, None],
-                            ),
-                            MockEntry::Position(mock) => config.mock_assign(
-                                &mut region,
-                                offset + mock_offset,
-                                [None, None],
-                                [None, None],
-                                [None, None, None],
-                                *mock,
-                            ),
-                        }?;
+                        fill_mock_row(&mut region, offset + mock_offset, entry)?;
                     }
 
                     Ok(end_offset)
@@ -1606,12 +1582,12 @@ mod tests {
         );
         let base_trace_blk2 = SeqExecMock::mock_generate(
             2,
-            Vec::from("g".as_bytes()),
-            AddressTableRow::mock_samples_full([[18, 0, 3, 15, 1, 5], [7, 0, 2, 4, 15, 1]]),
+            Vec::from("gg".as_bytes()),
+            AddressTableRow::mock_samples_full([[4, 2, 2, 1, 1, 5]]),
             &mut output,
         );
 
-        assert_eq!(output, Vec::from("abcddeabcdeabbfabcfag".as_bytes()));
+        assert_eq!(output, Vec::from("abcddeabcdeabbfgggg".as_bytes()));
 
         // try to put the final phase into previous one
         let mut mis_phase_blk1 = base_trace_blk1.clone();
@@ -1648,11 +1624,25 @@ mod tests {
             ..Default::default()
         };
 
+        // detect phase must work in a normal row
+        let mut mis_phase_blk4 = base_trace_blk2.clone();
+        mis_phase_blk4.mocks = vec![
+            (3, MockEntry::Phase([Some(false), Some(false), Some(false)])),
+            (3, MockEntry::Decode([Some(Fr::from(18)), Some(Fr::zero())])),
+        ];
+        let circuit_mis_phase_4 = SeqExecMockCircuit {
+            traces: vec![base_trace_blk1.clone(), mis_phase_blk4],
+            output: Vec::from("abcddeabcdeabbfggg".as_bytes()),
+            all_padding_mocks: vec![MockEntry::Decode([Some(Fr::from(18)), None])],
+            ..Default::default()
+        };
+
         let k = 12;
         for circuit in [
             circuit_mis_phase_1,
             circuit_mis_phase_2,
             circuit_mis_phase_3,
+            circuit_mis_phase_4,
         ] {
             let mock_prover =
                 MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
@@ -1749,6 +1739,7 @@ mod tests {
                 (0, MockEntry::Decode([Some(Fr::from(15)), None])),
                 (1, MockEntry::Index([Some(Fr::from(2)), Some(Fr::zero())])),
             ],
+            ..Default::default()
         };
 
         let k = 12;
@@ -1760,11 +1751,13 @@ mod tests {
             traces: vec![base_trace_blk.clone()],
             output: output.clone(),
             padding_mocks: vec![(4, MockEntry::Index([Some(Fr::from(3)), None]))],
+            ..Default::default()
         };
         let circuit_mal_decode_len = SeqExecMockCircuit {
             traces: vec![base_trace_blk.clone()],
             output: output.clone(),
             padding_mocks: vec![(4, MockEntry::Decode([Some(Fr::from(16)), None]))],
+            ..Default::default()
         };
         let circuit_mal_inst = SeqExecMockCircuit {
             traces: vec![base_trace_blk.clone()],
@@ -1773,6 +1766,7 @@ mod tests {
                 (0, MockEntry::Index([Some(Fr::from(1)), Some(Fr::from(5))])),
                 (0, MockEntry::Phase([Some(true), Some(true), None])),
             ],
+            ..Default::default()
         };
 
         for circuit in [
