@@ -421,11 +421,12 @@ pub(crate) fn assign_keccak_table(
     //      chunk[0].prev_state_root ||
     //      chunk[k-1].post_state_root ||
     //      chunk[k-1].withdraw_root ||
-    //      batch_data_hash)
+    //      batch_data_hash||
+    //      z || y ||versioned_hash)
     // (2) chunk[i].piHash preimage =
     //      (chain id ||
     //      chunk[i].prevStateRoot || chunk[i].postStateRoot ||
-    //      chunk[i].withdrawRoot || chunk[i].datahash)
+    //      chunk[i].withdrawRoot || chunk[i].datahash || chunk[i].txdatahash)
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
@@ -497,7 +498,8 @@ fn copy_constraints<const N_SNARKS: usize>(
                 //      chunk[k-1].withdraw_root ||
                 //      batch_data_hash ||
                 //      z ||
-                //      y
+                //      y ||
+                //      versioned_hash
                 //   )
                 //
                 // chunk[i].piHash =
@@ -699,7 +701,8 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 //      chunk[0].prev_state_root ||
                 //      chunk[k-1].post_state_root ||
                 //      chunk[k-1].withdraw_root ||
-                //      batch_data_hash )
+                //      batch_data_hash ||
+                //      z || y || versioned_hash)
                 //
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
 
@@ -785,7 +788,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // keccak(
                 //        chain id ||
                 //        chunk[i].prevStateRoot || chunk[i].postStateRoot || chunk[i].withdrawRoot
-                //        || chunk[i].datahash)
+                //        || chunk[i].datahash || chunk[i].tx_data_hash)
                 for i in 0..N_SNARKS - 1 {
                     for j in 0..DIGEST_LEN {
                         // sanity check

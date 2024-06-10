@@ -15,7 +15,7 @@ use crate::{
 /// - the last (#N_SNARKS-k) chunks are from empty traces
 /// A BatchHash consists of 2 hashes.
 /// - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
-///   chunk_k-1.withdraw_root || batch_data_hash)
+///   chunk_k-1.withdraw_root || batch_data_hash || z || y || versioned_hash)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
 pub struct BatchHash<const N_SNARKS: usize> {
     /// Chain ID of the network.
@@ -29,7 +29,7 @@ pub struct BatchHash<const N_SNARKS: usize> {
     pub(crate) data_hash: H256,
     /// The public input hash, as calculated on-chain:
     /// - keccak256( chain_id || prev_state_root || next_state_root || withdraw_trie_root ||
-    ///   batch_data_hash || z || y )
+    ///   batch_data_hash || z || y || versioned_hash)
     pub(crate) public_input_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
