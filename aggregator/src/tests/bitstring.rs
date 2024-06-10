@@ -424,6 +424,7 @@ fn run(case: UnsoundCase) -> Result<(), Vec<VerifyFailure>> {
 
     let prover =
         MockProver::run(k, &test_circuit, vec![]).expect("unexpected failure: MockProver::run");
+
     prover.verify_par()
 }
 

@@ -509,6 +509,9 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                         bit_index: Some(_assigned_bit_index),
                         ..Default::default()
                     });
+
+                    #[cfg(not(feature = "soundness-tests"))]
+                    assigned_bitstring_table_rows.push(AssignedBitstringTableRow::default());
                 }
 
                 let n_witness_rows = witness_rows.len();
@@ -791,11 +794,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
             },
         )?;
 
-        #[cfg(feature = "soundness-tests")]
-        return Ok(assigned_bitstring_table_rows);
-
-        #[cfg(not(feature = "soundness-tests"))]
-        return Ok(vec![]);
+        Ok(assigned_bitstring_table_rows)
     }
 }
 
