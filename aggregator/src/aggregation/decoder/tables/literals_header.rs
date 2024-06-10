@@ -19,7 +19,6 @@ use crate::aggregation::{
     util::BooleanAdvice,
 };
 
-#[cfg(feature = "soundness-tests")]
 #[derive(Default, Debug, Clone)]
 pub struct AssignedLiteralsHeaderTableRow<F: Field> {
     pub block_idx: Option<AssignedCell<F, F>>,
@@ -34,14 +33,10 @@ pub struct AssignedLiteralsHeaderTableRow<F: Field> {
     pub is_padding: Option<AssignedCell<F, F>>,
 }
 
-#[cfg(feature = "soundness-tests")]
 pub(crate) type AssignedLiteralsHeaderTableRows<F> = (
     Vec<AssignedLiteralsHeaderTableRow<F>>,
     Vec<AssignedCell<F, F>>,
 );
-
-#[cfg(not(feature = "soundness-tests"))]
-pub(crate) type AssignedLiteralsHeaderTableRows<F> = F;
 
 /// Helper table to decode the regenerated size from the Literals Header.
 #[derive(Clone, Debug)]
@@ -225,9 +220,8 @@ impl LiteralsHeaderTable {
         literals_headers: Vec<(u64, u64, (u64, u64, u64))>,
         n_enabled: usize,
     ) -> Result<AssignedLiteralsHeaderTableRows<F>, Error> {
-        #[cfg(feature = "soundness-tests")]
-        let mut assigned_literals_header_table_rows = Vec::with_capacity(n_enabled);
-        #[cfg(feature = "soundness-tests")]
+        let mut assigned_literals_header_table_rows: Vec<AssignedLiteralsHeaderTableRow<F>> =
+            vec![];
         let mut assigned_padding_cells: Vec<AssignedCell<F, F>> = vec![];
 
         layouter.assign_region(
@@ -263,7 +257,6 @@ impl LiteralsHeaderTable {
 
                     let regen_size = le_bits_to_value(&sizing_bits[0..n_bits_regen]);
 
-                    #[cfg(feature = "soundness-tests")]
                     let mut assigned_table_row = AssignedLiteralsHeaderTableRow::default();
 
                     for (idx, (col, value, annotation)) in [
@@ -314,11 +307,9 @@ impl LiteralsHeaderTable {
                         }
                     }
 
-                    #[cfg(feature = "soundness-tests")]
                     assigned_literals_header_table_rows.push(assigned_table_row);
                 }
 
-                #[cfg(feature = "soundness-tests")]
                 for offset in literals_headers.len()..n_enabled {
                     assigned_padding_cells.push(
                         region
@@ -336,11 +327,7 @@ impl LiteralsHeaderTable {
             },
         )?;
 
-        #[cfg(feature = "soundness-tests")]
-        return Ok((assigned_literals_header_table_rows, assigned_padding_cells));
-
-        #[cfg(not(feature = "soundness-tests"))]
-        return Ok(F::zero());
+        Ok((assigned_literals_header_table_rows, assigned_padding_cells))
     }
 }
 
