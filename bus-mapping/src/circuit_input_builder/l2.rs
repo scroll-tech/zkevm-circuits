@@ -7,7 +7,7 @@ use eth_types::{
     self,
     l2_types::{trace::collect_codes, BlockTrace, StorageTrace},
     state_db::{self, CodeDB, StateDB},
-    Address, EthBlock, ToWord, Word,
+    Address, EthBlock, ToWord, Word, H256,
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::ZktrieState;
@@ -86,7 +86,7 @@ impl CircuitInputBuilder {
 
     fn collect_storage_proofs(
         storage_trace: &StorageTrace,
-    ) -> impl Iterator<Item = (&Address, &Word, impl IntoIterator<Item = &[u8]>)> + Clone {
+    ) -> impl Iterator<Item = (&Address, &H256, impl IntoIterator<Item = &[u8]>)> + Clone {
         storage_trace.storage_proofs.iter().flat_map(|(k, kv_map)| {
             kv_map
                 .iter()
@@ -161,6 +161,7 @@ impl CircuitInputBuilder {
             &l2_trace.storage_trace,
         )) {
             let ((addr, key), val) = parsed.map_err(Error::IoError)?;
+            let key = key.to_word();
             *sdb.get_storage_mut(&addr, &key).1 = val.into();
         }
 
@@ -223,7 +224,8 @@ impl CircuitInputBuilder {
 
         let new_storages = ZktrieState::parse_storage_from_proofs(
             Self::collect_storage_proofs(&l2_trace.storage_trace).filter(|(addr, key, _)| {
-                let (existed, _) = self.sdb.get_committed_storage(addr, key);
+                let key = key.to_word();
+                let (existed, _) = self.sdb.get_committed_storage(addr, &key);
                 !existed
             }),
         )
@@ -231,7 +233,7 @@ impl CircuitInputBuilder {
             HashMap::new(),
             |mut m, parsed| -> Result<HashMap<(Address, Word), Word>, Error> {
                 let ((addr, key), val) = parsed.map_err(Error::IoError)?;
-                m.insert((addr, key), val.into());
+                m.insert((addr, key.to_word()), val.into());
                 Ok(m)
             },
         )?;

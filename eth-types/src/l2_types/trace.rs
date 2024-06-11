@@ -6,14 +6,27 @@ use crate::{
     Address, Error, H256,
 };
 use ethers_core::types::Bytes;
+use itertools::Itertools;
 
 /// Update codedb from statedb and trace
 pub fn collect_codes(
     block: &BlockTrace,
     sdb: Option<&StateDB>,
 ) -> Result<Vec<(H256, Vec<u8>)>, Error> {
+    if !block.codes.is_empty() {
+        log::debug!("codes available in trace, skip collecting");
+        return Ok(block
+            .codes
+            .iter()
+            .map(|b| (b.hash, b.code.to_vec()))
+            .collect_vec());
+    }
+
+    log::debug!("collect_codes for block {:?}", block.header.number);
+    if sdb.is_none() {
+        log::warn!("collect_codes without sdb can be slow");
+    }
     let mut codes = Vec::new();
-    log::debug!("build_codedb for block {:?}", block.header.number);
     for (er_idx, execution_result) in block.execution_results.iter().enumerate() {
         if let Some(bytecode) = &execution_result.byte_code {
             let bytecode = decode_bytecode(bytecode)?.to_vec();

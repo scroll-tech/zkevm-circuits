@@ -3,12 +3,13 @@
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     EthBlock, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
-    ToBigEndian, Transaction, Word, H256,
+    ToBigEndian, Transaction, H256,
 };
 use ethers_core::types::{
     transaction::eip2930::{AccessList, AccessListItem},
     Address, Bytes, U256, U64,
 };
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use trace::collect_codes;
@@ -36,7 +37,7 @@ pub struct BlockTraceV2 {
     /// txs
     pub transactions: Vec<TransactionTrace>,
     /// Accessed bytecodes with hashes
-    pub codes: Vec<(H256, Vec<u8>)>,
+    pub codes: Vec<BytecodeTrace>,
     /// storage trace BEFORE execution
     #[serde(rename = "storageTrace")]
     pub storage_trace: StorageTrace,
@@ -47,7 +48,14 @@ pub struct BlockTraceV2 {
 
 impl From<BlockTrace> for BlockTraceV2 {
     fn from(b: BlockTrace) -> Self {
-        let codes = collect_codes(&b, None).expect("collect codes should not fail");
+        let codes = collect_codes(&b, None)
+            .expect("collect codes should not fail")
+            .into_iter()
+            .map(|(hash, code)| BytecodeTrace {
+                hash,
+                code: code.into(),
+            })
+            .collect_vec();
         BlockTraceV2 {
             codes,
             chain_id: b.chain_id,
@@ -60,9 +68,20 @@ impl From<BlockTrace> for BlockTraceV2 {
     }
 }
 
+/// Bytecode
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+pub struct BytecodeTrace {
+    /// poseidon code hash
+    pub hash: H256,
+    /// bytecode
+    pub code: Bytes,
+}
+
 /// l2 block full trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct BlockTrace {
+    /// Version string
+    pub version: String,
     /// chain id
     #[serde(rename = "chainID", default)]
     pub chain_id: u64,
@@ -75,6 +94,9 @@ pub struct BlockTrace {
     /// execution results
     #[serde(rename = "executionResults")]
     pub execution_results: Vec<ExecutionResult>,
+    /// Accessed bytecodes with hashes
+    #[serde(default)]
+    pub codes: Vec<BytecodeTrace>,
     /// storage trace BEFORE execution
     #[serde(rename = "storageTrace")]
     pub storage_trace: StorageTrace,
@@ -127,7 +149,6 @@ impl From<&BlockTrace> for EthBlock {
         }
     }
 }
-
 
 impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
     fn from(block: &BlockTraceV2) -> Self {
@@ -313,7 +334,7 @@ impl From<&TransactionTrace> for revm_primitives::TxEnv {
 /// account trie proof in storage proof
 pub type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
 /// storage trie proof in storage proof
-pub type StorageTrieProofs = HashMap<Address, HashMap<Word, Vec<Bytes>>>;
+pub type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 /// storage trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
@@ -403,11 +424,11 @@ pub struct ExecStep {
     pub depth: isize,
     pub error: Option<GethExecError>,
     #[cfg(feature = "enable-stack")]
-    pub stack: Option<Vec<Word>>,
+    pub stack: Option<Vec<crate::Word>>,
     #[cfg(feature = "enable-memory")]
-    pub memory: Option<Vec<Word>>,
+    pub memory: Option<Vec<crate::Word>>,
     #[cfg(feature = "enable-storage")]
-    pub storage: Option<HashMap<Word, Word>>,
+    pub storage: Option<HashMap<crate::Word, crate::Word>>,
     #[serde(rename = "extraData")]
     pub extra_data: Option<ExtraData>,
 }
@@ -468,6 +489,8 @@ pub struct AccountProofWrapper {
     pub keccak_code_hash: Option<H256>,
     #[serde(rename = "poseidonCodeHash")]
     pub poseidon_code_hash: Option<H256>,
+    #[serde(rename = "codeSize")]
+    pub code_size: u64,
     pub storage: Option<StorageProofWrapper>,
 }
 
@@ -477,4 +500,16 @@ pub struct AccountProofWrapper {
 pub struct StorageProofWrapper {
     pub key: Option<U256>,
     pub value: Option<U256>,
+}
+
+#[ignore]
+#[test]
+fn test_block_trace_convert() {
+    let trace_v1: BlockTrace =
+        crate::utils::from_json_file("src/testdata/trace_v1_5224657.json").expect("should load");
+    let trace_v2: BlockTraceV2 = trace_v1.into();
+    let mut fd = std::fs::File::create("src/testdata/trace_v2_5224657.json").unwrap();
+    serde_json::to_writer_pretty(&mut fd, &trace_v2).unwrap();
+    // then we can use this command to compare the traces:
+    // vimdiff <(jq -S "del(.executionResults)|del(.txStorageTraces)" src/testdata/trace_v1_5224657.json) <(jq -S . src/testdata/trace_v2_5224657.json)
 }
