@@ -299,7 +299,7 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
             .zip_eq(self.output_rlcs.iter())
             .enumerate()
         {
-            log::info!(
+            log::debug!(
                 "{}-th rlc {:?} {:?}",
                 i,
                 input_rlcs.value(),
