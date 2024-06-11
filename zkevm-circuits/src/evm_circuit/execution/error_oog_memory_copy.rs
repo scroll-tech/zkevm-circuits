@@ -376,18 +376,17 @@ mod tests {
         test_for_edge_memory_size(0xffffffff1, 0xffffffff0);
     }
 
+    // this test added by auditing fix memory expansion case https://github.com/scroll-tech/zkevm-circuits/pull/1321
     #[test]
-    fn test_oog_mcopy_max_src_expanded_address() {
-        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
-        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
-        let src_offset = 0xffffffff1;
-        let copy_size = 0xffffffff0;
-        let dest_offset = 0x100;
+    fn test_oog_mcopy_src_larger_dst_addr() {
+        let copy_size = 0xff;
+        let src_offset = 0x20e0;
+        let dest_offset = 0x20;
         let testing_data =
         TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, None);
 
         test_root(&testing_data);
-        //test_internal(&testing_data);
+        test_internal(&testing_data);
     }
 
     #[test]
@@ -503,7 +502,11 @@ mod tests {
                     (std::cmp::max(src_offset, dst_offset) + copy_size + 31) / 32
                 };
 
+                println!("cur_memory_word_size {}, next_memory_word_size{}", cur_memory_word_size, 
+                 next_memory_word_size);
+
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
+                    + OpcodeId::MCOPY.constant_gas_cost().0
                     + memory_copier_gas_cost(
                         cur_memory_word_size,
                         next_memory_word_size,
