@@ -1637,12 +1637,38 @@ mod tests {
             ..Default::default()
         };
 
+        // detect out of order phases
+        let mut mis_phase_blk5 = base_trace_blk2.clone();
+        mis_phase_blk5.mocks = vec![
+            (0, MockEntry::Decode([None, Some(Fr::from(0x66))])), //the decoded byte become 'f'
+            (
+                0,
+                MockEntry::Position([Some(Fr::zero()), None, Some(Fr::one())]),
+            ),
+            (
+                1,
+                MockEntry::Position([Some(Fr::one()), None, Some(Fr::one())]),
+            ),
+            (
+                2,
+                MockEntry::Position([Some(Fr::from(2)), None, Some(Fr::one())]),
+            ),
+            (0, MockEntry::Phase([None, Some(false), Some(true)])),
+            (2, MockEntry::Phase([None, Some(true), Some(false)])),
+        ];
+        let circuit_mis_phase_5 = SeqExecMockCircuit {
+            traces: vec![base_trace_blk1.clone(), mis_phase_blk5],
+            output: output.clone(),
+            ..Default::default()
+        };
+
         let k = 12;
         for circuit in [
             circuit_mis_phase_1,
             circuit_mis_phase_2,
             circuit_mis_phase_3,
             circuit_mis_phase_4,
+            circuit_mis_phase_5,
         ] {
             let mock_prover =
                 MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
