@@ -128,6 +128,31 @@ impl From<&BlockTrace> for EthBlock {
     }
 }
 
+
+impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
+    fn from(block: &BlockTraceV2) -> Self {
+        revm_primitives::BlockEnv {
+            number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
+            coinbase: block.coinbase.address.unwrap().0.into(),
+            timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
+            gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
+            basefee: revm_primitives::U256::from_be_bytes(
+                block
+                    .header
+                    .base_fee_per_gas
+                    .unwrap_or_default()
+                    .to_be_bytes(),
+            ),
+            difficulty: revm_primitives::U256::from_be_bytes(block.header.difficulty.to_be_bytes()),
+            prevrandao: block
+                .header
+                .mix_hash
+                .map(|h| revm_primitives::B256::from(h.to_fixed_bytes())),
+            blob_excess_gas_and_price: None,
+        }
+    }
+}
+
 impl From<&BlockTrace> for revm_primitives::BlockEnv {
     fn from(block: &BlockTrace) -> Self {
         revm_primitives::BlockEnv {
