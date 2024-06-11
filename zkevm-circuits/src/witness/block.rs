@@ -29,7 +29,6 @@ use super::{
 };
 use crate::util::Challenges;
 
-// TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
 #[derive(Debug, Clone, Default)]
@@ -78,8 +77,6 @@ pub struct Block {
 pub struct BlockContexts {
     /// Hashmap that maps block number to its block context.
     pub ctxs: BTreeMap<u64, BlockContext>,
-    /// relax mode flag inherited from block builder
-    pub relax_mode: bool,
 }
 
 impl Block {
@@ -104,7 +101,7 @@ impl Block {
             .context
             .ctxs
             .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root)
+            .map(|(_, blk)| blk.state_root)
             .unwrap_or(H256(self.prev_state_root.to_be_bytes()));
         if post_state_root_in_trie != post_state_root_in_header {
             log::error!(
@@ -359,8 +356,10 @@ pub struct BlockContext {
     pub history_hashes: Vec<Word>,
     /// The chain id
     pub chain_id: u64,
-    /// Original Block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Parent block hash
+    pub parent_hash: H256,
+    /// State root of this block
+    pub state_root: H256,
 }
 
 impl BlockContext {
@@ -453,7 +452,7 @@ impl BlockContext {
                     .checked_sub((len_history - idx) as u64)
                     .unwrap_or_default();
                 if block_number + 1 == self.number.low_u64() {
-                    debug_assert_eq!(self.eth_block.parent_hash.to_word(), hash.into());
+                    debug_assert_eq!(self.parent_hash.to_word(), hash.into());
                 }
                 [
                     Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
@@ -465,11 +464,11 @@ impl BlockContext {
     }
 }
 
-impl From<&circuit_input_builder::Block> for BlockContexts {
-    fn from(block: &circuit_input_builder::Block) -> Self {
+impl From<&circuit_input_builder::Blocks> for BlockContexts {
+    fn from(block: &circuit_input_builder::Blocks) -> Self {
         Self {
             ctxs: block
-                .headers
+                .blocks
                 .values()
                 .map(|block| {
                     (
@@ -483,32 +482,37 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
                             base_fee: block.base_fee,
                             history_hashes: block.history_hashes.clone(),
                             chain_id: block.chain_id,
-                            eth_block: block.eth_block.clone(),
+                            parent_hash: block.parent_hash,
+                            state_root: block.state_root,
                         },
                     )
                 })
                 .collect::<BTreeMap<_, _>>(),
-            relax_mode: block.is_relaxed(),
         }
     }
 }
 
-/// Convert a block struct in bus-mapping to a witness block used in circuits
+/// Build a witness block
 pub fn block_convert(
-    block: &circuit_input_builder::Block,
+    block: &circuit_input_builder::Blocks,
     code_db: &eth_types::state_db::CodeDB,
 ) -> Result<Block, Error> {
     let rws = RwMap::from(&block.container);
     rws.check_value()?;
     let num_txs = block.txs().len();
-    let last_block_num = block
-        .headers
-        .iter()
-        .next_back()
-        .map(|(k, _)| *k)
-        .unwrap_or_default();
+    let last_block_num = block.last_block_num().unwrap_or_default();
     let chain_id = block.chain_id();
     rws.check_rw_counter_sanity();
+    if block
+        .block_steps
+        .end_block_step
+        .bus_mapping_instance
+        .is_empty()
+    {
+        return Err(Error::InternalError(
+            "invalid end_block. Forget to call CircuitInputBuilder::set_end_block()?",
+        ));
+    }
     let padding_step = step_convert(&block.block_steps.padding_step, last_block_num);
     let end_block_step = step_convert(&block.block_steps.end_block_step, last_block_num);
     log::trace!(
@@ -558,7 +562,7 @@ pub fn block_convert(
         log::error!("withdraw root is not avaliable");
     }
 
-    Ok(Block {
+    let block = Block {
         context: BlockContexts::from(block),
         rws,
         txs: block
@@ -605,5 +609,6 @@ pub fn block_convert(
         chain_id,
         start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
-    })
+    };
+    Ok(block)
 }

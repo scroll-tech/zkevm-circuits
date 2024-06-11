@@ -24,6 +24,7 @@ pub mod macros;
 pub mod error;
 #[macro_use]
 pub mod bytecode;
+pub mod constants;
 pub mod evm_types;
 pub mod forks;
 pub mod geth_types;

@@ -398,7 +398,7 @@ impl<F: Field> SeqExecConfig<F> {
                 |cb| {
                     cb.require_equal(
                         "inside a inst, backref phase keep 1 once it changed to 1",
-                        s_back_ref_phase_prev.expr(),
+                        s_back_ref_phase.expr(),
                         1.expr(),
                     );
                 },

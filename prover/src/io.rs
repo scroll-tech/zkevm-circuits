@@ -13,19 +13,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn from_json_file<'de, P: serde::Deserialize<'de>>(file_path: &str) -> anyhow::Result<P> {
-    if !Path::new(&file_path).exists() {
-        anyhow::bail!("File {file_path} doesn't exist");
-    }
-
-    let fd = File::open(file_path)?;
-    let mut deserializer = serde_json::Deserializer::from_reader(fd);
-    deserializer.disable_recursion_limit();
-    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
-
-    Ok(serde::Deserialize::deserialize(deserializer)?)
-}
-
 pub fn serialize_fr(f: &Fr) -> Vec<u8> {
     f.to_bytes().to_vec()
 }
@@ -48,25 +35,10 @@ pub fn deserialize_fr_matrix(l3_buf: Vec<Vec<Vec<u8>>>) -> Vec<Vec<Fr>> {
     l3_buf.into_iter().map(deserialize_fr_vec).collect()
 }
 
-pub fn serialize_fr_tensor(t: &[Vec<Vec<Fr>>]) -> Vec<Vec<Vec<Vec<u8>>>> {
-    t.iter()
-        .map(|m| serialize_fr_matrix(m.as_slice()))
-        .collect()
-}
-
-pub fn deserialize_fr_tensor(l4_buf: Vec<Vec<Vec<Vec<u8>>>>) -> Vec<Vec<Vec<Fr>>> {
-    l4_buf.into_iter().map(deserialize_fr_matrix).collect()
-}
-
 pub fn serialize_instance(instance: &[Vec<Fr>]) -> Vec<u8> {
     let instances_for_serde = serialize_fr_matrix(instance);
 
     serde_json::to_vec(&instances_for_serde).unwrap()
-}
-
-pub fn load_instance(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
-    let instances: Vec<Vec<Vec<Vec<u8>>>> = serde_json::from_reader(buf).unwrap();
-    deserialize_fr_tensor(instances)
 }
 
 pub fn read_all(filename: &str) -> Vec<u8> {

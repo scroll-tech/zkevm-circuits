@@ -41,8 +41,7 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     /// Destination offset and size to copy
     dst_memory_addr: MemoryExpandedAddressGadget<F>,
     // mcopy expansion
-    //memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
-    memory_expansion_mcopy: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+    memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     // other kind(CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY) expansion
     memory_expansion_normal: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
@@ -110,8 +109,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             );
             MemoryExpansionGadget::construct(
                 cb,
-                //[src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
-                [dst_memory_addr.end_offset()],
+                [src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
             )
         });
 
@@ -243,8 +241,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            //[src_memory_addr, dst_memory_addr],
-            [dst_memory_addr],
+            [src_memory_addr, dst_memory_addr],
         )?;
 
         let memory_copier_gas = self.memory_copier_gas.assign(

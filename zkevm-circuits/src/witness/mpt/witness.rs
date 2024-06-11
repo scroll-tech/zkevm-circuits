@@ -505,10 +505,10 @@ use eth_types::Bytes;
 use serde::Deserialize;
 
 type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
-type StorageTrieProofs = HashMap<Address, HashMap<Word, Vec<Bytes>>>;
+type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 type AccountDatas = HashMap<Address, AccountData>;
-type StorageDatas = HashMap<(Address, Word), StorageData>;
+type StorageDatas = HashMap<(Address, H256), StorageData>;
 
 #[derive(Deserialize, Default, Debug, Clone)]
 struct StorageTrace {
@@ -598,7 +598,7 @@ fn witgen_update_one() {
     assert_eq!(
         Some(U256::from(10u32)),
         storages
-            .get(&(target_addr, U256::zero()))
+            .get(&(target_addr, H256::zero()))
             .map(AsRef::as_ref)
             .copied()
     );

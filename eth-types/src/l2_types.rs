@@ -3,14 +3,19 @@
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     EthBlock, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
-    ToBigEndian, Transaction, Word, H256,
+    ToBigEndian, Transaction, H256,
 };
 use ethers_core::types::{
     transaction::eip2930::{AccessList, AccessListItem},
     Address, Bytes, U256, U64,
 };
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use trace::collect_codes;
+
+/// Trace related helpers
+pub mod trace;
 
 #[cfg(feature = "enable-memory")]
 use crate::evm_types::Memory;
@@ -21,7 +26,62 @@ use crate::evm_types::Storage;
 
 /// l2 block full trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
+pub struct BlockTraceV2 {
+    /// chain id
+    #[serde(rename = "chainID", default)]
+    pub chain_id: u64,
+    /// coinbase's status AFTER execution
+    pub coinbase: AccountProofWrapper,
+    /// block
+    pub header: EthBlock,
+    /// txs
+    pub transactions: Vec<TransactionTrace>,
+    /// Accessed bytecodes with hashes
+    pub codes: Vec<BytecodeTrace>,
+    /// storage trace BEFORE execution
+    #[serde(rename = "storageTrace")]
+    pub storage_trace: StorageTrace,
+    /// l1 tx queue
+    #[serde(rename = "startL1QueueIndex", default)]
+    pub start_l1_queue_index: u64,
+}
+
+impl From<BlockTrace> for BlockTraceV2 {
+    fn from(b: BlockTrace) -> Self {
+        let codes = collect_codes(&b, None)
+            .expect("collect codes should not fail")
+            .into_iter()
+            .map(|(hash, code)| BytecodeTrace {
+                hash,
+                code: code.into(),
+            })
+            .collect_vec();
+        BlockTraceV2 {
+            codes,
+            chain_id: b.chain_id,
+            coinbase: b.coinbase,
+            header: b.header,
+            transactions: b.transactions,
+            storage_trace: b.storage_trace,
+            start_l1_queue_index: b.start_l1_queue_index,
+        }
+    }
+}
+
+/// Bytecode
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+pub struct BytecodeTrace {
+    /// poseidon code hash
+    pub hash: H256,
+    /// bytecode
+    pub code: Bytes,
+}
+
+/// l2 block full trace
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct BlockTrace {
+    /// Version string
+    pub version: String,
     /// chain id
     #[serde(rename = "chainID", default)]
     pub chain_id: u64,
@@ -34,6 +94,9 @@ pub struct BlockTrace {
     /// execution results
     #[serde(rename = "executionResults")]
     pub execution_results: Vec<ExecutionResult>,
+    /// Accessed bytecodes with hashes
+    #[serde(default)]
+    pub codes: Vec<BytecodeTrace>,
     /// storage trace BEFORE execution
     #[serde(rename = "storageTrace")]
     pub storage_trace: StorageTrace,
@@ -83,6 +146,30 @@ impl From<&BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             ..b.header.clone()
+        }
+    }
+}
+
+impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
+    fn from(block: &BlockTraceV2) -> Self {
+        revm_primitives::BlockEnv {
+            number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
+            coinbase: block.coinbase.address.unwrap().0.into(),
+            timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
+            gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
+            basefee: revm_primitives::U256::from_be_bytes(
+                block
+                    .header
+                    .base_fee_per_gas
+                    .unwrap_or_default()
+                    .to_be_bytes(),
+            ),
+            difficulty: revm_primitives::U256::from_be_bytes(block.header.difficulty.to_be_bytes()),
+            prevrandao: block
+                .header
+                .mix_hash
+                .map(|h| revm_primitives::B256::from(h.to_fixed_bytes())),
+            blob_excess_gas_and_price: None,
         }
     }
 }
@@ -247,7 +334,7 @@ impl From<&TransactionTrace> for revm_primitives::TxEnv {
 /// account trie proof in storage proof
 pub type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
 /// storage trie proof in storage proof
-pub type StorageTrieProofs = HashMap<Address, HashMap<Word, Vec<Bytes>>>;
+pub type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 /// storage trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
@@ -337,11 +424,11 @@ pub struct ExecStep {
     pub depth: isize,
     pub error: Option<GethExecError>,
     #[cfg(feature = "enable-stack")]
-    pub stack: Option<Vec<Word>>,
+    pub stack: Option<Vec<crate::Word>>,
     #[cfg(feature = "enable-memory")]
-    pub memory: Option<Vec<Word>>,
+    pub memory: Option<Vec<crate::Word>>,
     #[cfg(feature = "enable-storage")]
-    pub storage: Option<HashMap<Word, Word>>,
+    pub storage: Option<HashMap<crate::Word, crate::Word>>,
     #[serde(rename = "extraData")]
     pub extra_data: Option<ExtraData>,
 }
@@ -402,6 +489,8 @@ pub struct AccountProofWrapper {
     pub keccak_code_hash: Option<H256>,
     #[serde(rename = "poseidonCodeHash")]
     pub poseidon_code_hash: Option<H256>,
+    #[serde(rename = "codeSize")]
+    pub code_size: u64,
     pub storage: Option<StorageProofWrapper>,
 }
 
@@ -411,4 +500,16 @@ pub struct AccountProofWrapper {
 pub struct StorageProofWrapper {
     pub key: Option<U256>,
     pub value: Option<U256>,
+}
+
+#[ignore]
+#[test]
+fn test_block_trace_convert() {
+    let trace_v1: BlockTrace =
+        crate::utils::from_json_file("src/testdata/trace_v1_5224657.json").expect("should load");
+    let trace_v2: BlockTraceV2 = trace_v1.into();
+    let mut fd = std::fs::File::create("src/testdata/trace_v2_5224657.json").unwrap();
+    serde_json::to_writer_pretty(&mut fd, &trace_v2).unwrap();
+    // then we can use this command to compare the traces:
+    // vimdiff <(jq -S "del(.executionResults)|del(.txStorageTraces)" src/testdata/trace_v1_5224657.json) <(jq -S . src/testdata/trace_v2_5224657.json)
 }

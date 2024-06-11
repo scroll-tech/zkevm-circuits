@@ -15,14 +15,14 @@ mod l2;
 mod tracer_tests;
 mod transaction;
 
-pub use self::block::BlockHead;
+pub use self::block::Block;
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
 };
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
-pub use block::{Block, BlockContext};
+pub use block::{BlockContext, Blocks};
 pub use builder_client::{build_state_code_db, BuilderClient};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
@@ -165,9 +165,9 @@ pub struct CircuitInputBuilder {
     pub sdb: StateDB,
     /// Map of account codes by code hash
     pub code_db: CodeDB,
-    /// Block
-    pub block: Block,
-    /// Block Context
+    /// TODO: rename this to chunk
+    pub block: Blocks,
+    /// TODO: rename this to chunk_ctx
     pub block_ctx: BlockContext,
     #[cfg(feature = "scroll")]
     /// Initial Zktrie Status for a incremental updating
@@ -177,11 +177,11 @@ pub struct CircuitInputBuilder {
 impl<'a> CircuitInputBuilder {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: &Block) -> Self {
+    pub fn new(sdb: StateDB, code_db: CodeDB, blocks: &Blocks) -> Self {
         Self {
             sdb,
             code_db,
-            block: block.clone(),
+            block: blocks.clone(),
             block_ctx: BlockContext::new(),
             #[cfg(feature = "scroll")]
             mpt_init_state: Default::default(),
@@ -189,17 +189,17 @@ impl<'a> CircuitInputBuilder {
     }
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new_from_headers(
+    pub fn new_from_params(
+        chain_id: u64,
         circuits_params: CircuitsParams,
         sdb: StateDB,
         code_db: CodeDB,
-        headers: &[BlockHead],
     ) -> Self {
         // lispczz@scroll:
         // the `block` here is in fact "chunk" for l2.
         // while "headers" in the "block"(usually single tx) for l2.
         // But to reduce the code conflicts with upstream, we still use the name `block`
-        Self::new(sdb, code_db, &Block::from_headers(headers, circuits_params))
+        Self::new(sdb, code_db, &Blocks::init(chain_id, circuits_params))
     }
 
     /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
@@ -270,6 +270,13 @@ impl<'a> CircuitInputBuilder {
         }
     }
 
+    /// make finalize actions on building, must called after
+    /// all block trace have been input
+    pub fn finalize_building(&mut self) -> Result<(), Error> {
+        self.set_value_ops_call_context_rwc_eor();
+        self.set_end_block()
+    }
+
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
@@ -277,7 +284,9 @@ impl<'a> CircuitInputBuilder {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        self.handle_block_inner(eth_block, geth_traces, true, true)
+        self.handle_block_inner(eth_block, geth_traces)?;
+        self.finalize_building()?;
+        Ok(())
     }
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
@@ -285,8 +294,6 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-        is_last_block: bool,
-        check_last_tx: bool,
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
         log::info!(
@@ -297,25 +304,14 @@ impl<'a> CircuitInputBuilder {
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let chunk_tx_idx = self.block.txs.len();
             if self.block.txs.len() >= self.block.circuits_params.max_txs {
-                if self.block.is_relaxed() {
-                    log::warn!(
-                        "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}, would process for partial block",
-                        self.block.circuits_params.max_txs,
-                        chunk_tx_idx,
-                        tx.transaction_index.unwrap_or_default(),
-                        tx.hash
-                    );
-                    break;
-                } else {
-                    log::error!(
-                        "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
-                        self.block.circuits_params.max_txs,
-                        chunk_tx_idx,
-                        tx.transaction_index.unwrap_or_default(),
-                        tx.hash
-                    );
-                    return Err(Error::InternalError("tx num overflow"));
-                }
+                log::error!(
+                    "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
+                    self.block.circuits_params.max_txs,
+                    chunk_tx_idx,
+                    tx.transaction_index.unwrap_or_default(),
+                    tx.hash
+                );
+                return Err(Error::InternalError("tx num overflow"));
             }
             let geth_trace = &geth_traces[tx_index];
             log::info!(
@@ -330,62 +326,14 @@ impl<'a> CircuitInputBuilder {
             let mut tx = tx.clone();
             // Chunk can contain multi blocks, so transaction_index needs to be updated
             tx.transaction_index = Some(self.block.txs.len().into());
-            self.handle_tx(
-                &tx,
-                geth_trace,
-                check_last_tx && tx_index + 1 == eth_block.transactions.len(),
-            )?;
+            self.handle_tx(&tx, geth_trace)?;
             log::debug!(
                 "after handle {}th tx: rwc {:?}, total gas {:?}",
                 chunk_tx_idx,
                 self.block_ctx.rwc,
                 self.block_ctx.cumulative_gas_used
             );
-            for account_post_state in &geth_trace.account_after {
-                let account_post_state: eth_types::l2_types::AccountProofWrapper =
-                    account_post_state.clone();
-                if let Some(address) = account_post_state.address {
-                    let local_acc = self.sdb.get_account(&address).1;
-                    log::trace!("local acc {local_acc:?}, trace acc {account_post_state:?}");
-                    if local_acc.balance != account_post_state.balance.unwrap() {
-                        log::error!("incorrect balance")
-                    }
-                    if local_acc.nonce != account_post_state.nonce.unwrap().into() {
-                        log::error!("incorrect nonce")
-                    }
-                    let p_hash = account_post_state.poseidon_code_hash.unwrap();
-                    if p_hash.is_zero() {
-                        if !local_acc.is_empty() {
-                            log::error!("incorrect poseidon_code_hash")
-                        }
-                    } else {
-                        if local_acc.code_hash != p_hash {
-                            log::error!("incorrect poseidon_code_hash")
-                        }
-                    }
-                    let k_hash = account_post_state.keccak_code_hash.unwrap();
-                    if k_hash.is_zero() {
-                        if !local_acc.is_empty() {
-                            log::error!("incorrect keccak_code_hash")
-                        }
-                    } else {
-                        if local_acc.keccak_code_hash != k_hash {
-                            log::error!("incorrect keccak_code_hash")
-                        }
-                    }
-                    if let Some(storage) = account_post_state.storage {
-                        let k = storage.key.unwrap();
-                        let local_v = self.sdb.get_storage(&address, &k).1;
-                        if *local_v != storage.value.unwrap() {
-                            log::error!("incorrect storage for k = {k}");
-                        }
-                    }
-                }
-            }
-        }
-        if is_last_block {
-            self.set_value_ops_call_context_rwc_eor();
-            self.set_end_block()?;
+            self.check_post_state(&geth_trace.account_after);
         }
         log::info!(
             "handle_block_inner, total gas {:?}",
@@ -394,6 +342,48 @@ impl<'a> CircuitInputBuilder {
         Ok(())
     }
 
+    fn check_post_state(&self, post_states: &[eth_types::l2_types::AccountProofWrapper]) {
+        for account_post_state in post_states {
+            let account_post_state = account_post_state.clone();
+            if let Some(address) = account_post_state.address {
+                let local_acc = self.sdb.get_account(&address).1;
+                log::trace!("local acc {local_acc:?}, trace acc {account_post_state:?}");
+                if local_acc.balance != account_post_state.balance.unwrap() {
+                    log::error!("incorrect balance")
+                }
+                if local_acc.nonce != account_post_state.nonce.unwrap().into() {
+                    log::error!("incorrect nonce")
+                }
+                let p_hash = account_post_state.poseidon_code_hash.unwrap();
+                if p_hash.is_zero() {
+                    if !local_acc.is_empty() {
+                        log::error!("incorrect poseidon_code_hash")
+                    }
+                } else {
+                    if local_acc.code_hash != p_hash {
+                        log::error!("incorrect poseidon_code_hash")
+                    }
+                }
+                let k_hash = account_post_state.keccak_code_hash.unwrap();
+                if k_hash.is_zero() {
+                    if !local_acc.is_empty() {
+                        log::error!("incorrect keccak_code_hash")
+                    }
+                } else {
+                    if local_acc.keccak_code_hash != k_hash {
+                        log::error!("incorrect keccak_code_hash")
+                    }
+                }
+                if let Some(storage) = account_post_state.storage {
+                    let k = storage.key.unwrap();
+                    let local_v = self.sdb.get_storage(&address, &k).1;
+                    if *local_v != storage.value.unwrap() {
+                        log::error!("incorrect storage for k = {k}");
+                    }
+                }
+            }
+        }
+    }
     fn print_rw_usage(&self) {
         // opcode -> (count, mem_rw_len, stack_rw_len)
         let mut opcode_info_map = BTreeMap::new();
@@ -489,18 +479,19 @@ impl<'a> CircuitInputBuilder {
             )?;
         }
 
-        let last_block_num = state
-            .block
-            .headers
-            .last_key_value()
-            .map(|(_, v)| v.number)
-            .unwrap_or_default();
-
-        // Curie sys contract upgrade
-        let is_curie_fork_block =
-            curie::is_curie_fork_block(state.block.chain_id, last_block_num.as_u64());
-        if is_curie_fork_block {
-            curie::apply_curie(&mut state, &mut end_block_step)?;
+        // 0-block chunk is only valid for vk gen.
+        if let Some(last_block_num) = state.block.last_block_num() {
+            // Curie sys contract upgrade
+            let is_curie_fork_block =
+                curie::is_curie_fork_block(state.block.chain_id, last_block_num);
+            if is_curie_fork_block {
+                log::info!(
+                    "apply curie, chain id {}, block num {}",
+                    state.block.chain_id,
+                    last_block_num
+                );
+                curie::apply_curie(&mut state, &mut end_block_step)?;
+            }
         }
 
         state.push_op(
@@ -562,7 +553,6 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
-        is_last_tx: bool,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
@@ -580,7 +570,7 @@ impl<'a> CircuitInputBuilder {
             );
         }
 
-        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
+        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace)?;
         let mut debug_tx = tx.clone();
         debug_tx.input.clear();
         debug_tx.rlp_bytes.clear();
@@ -734,12 +724,6 @@ impl CircuitInputBuilder {
             .txs
             .iter()
             .any(|tx| tx.has_l2_different_evm_behaviour_step())
-    }
-
-    /// enable relax mode for testing
-    pub fn enable_relax_mode(mut self) -> Self {
-        self.block = self.block.relax();
-        self
     }
 }
 

@@ -1,6 +1,4 @@
-use super::circuit::{
-    block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_witness_block,
-};
+use super::circuit::{calculate_row_usage_of_witness_block, finalize_builder};
 use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
 use eth_types::{
     l2_types::BlockTrace,
@@ -149,8 +147,7 @@ impl CircuitCapacityChecker {
                 // notice the prev_root in current builder may be not invalid (since the state has
                 // changed but we may not update it in light mode)
                 let mut builder_block =
-                    circuit_input_builder::Block::from_headers(&[], get_super_circuit_params());
-                builder_block.chain_id = trace.chain_id;
+                    circuit_input_builder::Blocks::init(trace.chain_id, get_super_circuit_params());
                 builder_block.start_l1_queue_index = trace.start_l1_queue_index;
                 builder_block.prev_state_root = mpt_state
                     .as_ref()
@@ -171,21 +168,19 @@ impl CircuitCapacityChecker {
                 } else {
                     CircuitInputBuilder::new(sdb, CodeDB::new(), &builder_block)
                 };
-                builder.add_more_l2_trace(trace, false)?;
+                builder.add_more_l2_trace(trace)?;
                 (builder, Some(code_db))
             } else {
                 (
                     CircuitInputBuilder::new_from_l2_trace(
                         get_super_circuit_params(),
                         trace,
-                        false,
                         self.light_mode,
                     )?,
                     None,
                 )
             };
-        let witness_block =
-            block_traces_to_witness_block_with_updated_state(vec![], &mut estimate_builder)?;
+        let witness_block = finalize_builder(&mut estimate_builder)?;
         let mut rows = calculate_row_usage_of_witness_block(&witness_block)?;
 
         let mut code_db = codedb_prev.unwrap_or_else(CodeDB::new);

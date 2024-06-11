@@ -593,6 +593,7 @@ impl<
         .unwrap()
     }
 
+    /// Create circuit instance of witness block
     fn new_from_block(block: &Block) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
@@ -853,7 +854,7 @@ impl<
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
         Self::build_from_witness_block(block)
     }
-    /// ..
+    /// Build super circuit from witness block
     pub fn build_from_witness_block(
         block: Block,
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {

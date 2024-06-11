@@ -1,4 +1,5 @@
 use eth_types::{
+    constants::SCROLL_COINBASE,
     geth_types::{self, Account, BlockConstants},
     state_db::{self, CodeDB, StateDB},
     utils::hash_code_keccak,
@@ -8,9 +9,10 @@ use ethers_providers::JsonRpcClient;
 use external_tracer::TraceConfig;
 use hex::decode_to_slice;
 
-use super::{AccessSet, Block, BlockHead, CircuitInputBuilder, CircuitsParams};
+use super::{AccessSet, Block, Blocks, CircuitInputBuilder, CircuitsParams};
 use crate::{error::Error, rpc::GethClient};
 
+use std::str::FromStr;
 use std::{collections::HashMap, iter};
 
 /// Struct that wraps a GethClient and contains methods to perform all the steps
@@ -301,37 +303,30 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         _prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = Block::new(
-            self.chain_id,
-            history_hashes,
-            eth_block,
-            self.circuits_params,
-        )?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, &block);
+        let mut blocks = Blocks::init(self.chain_id, self.circuits_params);
+        let block = Block::new(self.chain_id, history_hashes, eth_block)?;
+        blocks.add_block(block);
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, &blocks);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }
 
     /// Step 5. For each step in TxExecTraces, gen the associated ops and state
     /// circuit inputs
-    pub fn gen_inputs_from_state_multi(
+    pub fn gen_inputs_from_state_multi_blocks(
         &self,
         sdb: StateDB,
         code_db: CodeDB,
         blocks_and_traces: &[(EthBlock, Vec<eth_types::GethExecTrace>)],
     ) -> Result<CircuitInputBuilder, Error> {
-        let mut builder = CircuitInputBuilder::new_from_headers(
-            self.circuits_params,
-            sdb,
-            code_db,
-            Default::default(),
-        );
-        for (idx, (eth_block, geth_traces)) in blocks_and_traces.iter().enumerate() {
-            let is_last = idx == blocks_and_traces.len() - 1;
-            let header = BlockHead::new(self.chain_id, Default::default(), eth_block)?;
-            builder.block.headers.insert(header.number.as_u64(), header);
-            builder.handle_block_inner(eth_block, geth_traces, is_last, is_last)?;
+        let mut builder =
+            CircuitInputBuilder::new_from_params(self.chain_id, self.circuits_params, sdb, code_db);
+        for (eth_block, geth_traces) in blocks_and_traces {
+            let block = Block::new(self.chain_id, Default::default(), eth_block)?;
+            builder.block.blocks.insert(block.number.as_u64(), block);
+            builder.handle_block_inner(eth_block, geth_traces)?;
         }
+        builder.finalize_building()?;
         Ok(builder)
     }
 
@@ -399,7 +394,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         }
         let (proofs, codes) = self.get_state(block_num_begin, access_set).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
-        let builder = self.gen_inputs_from_state_multi(state_db, code_db, &blocks_and_traces)?;
+        let builder =
+            self.gen_inputs_from_state_multi_blocks(state_db, code_db, &blocks_and_traces)?;
         Ok(builder)
     }
 
@@ -463,14 +459,21 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         } else {
             proofs
         };
+
+        // We will not need to regen pk each time if we use same coinbase.
+        //let coinbase =  eth_block.author.unwrap();
+        let coinbase = Address::from_str(SCROLL_COINBASE).unwrap();
+        //let difficulty = eth_block.difficulty;
+        let difficulty = Word::zero();
+
         Ok(TraceConfig {
             chain_id: self.chain_id,
             history_hashes: vec![eth_block.parent_hash.to_word()],
             block_constants: BlockConstants {
-                coinbase: eth_block.author.unwrap(),
+                coinbase,
                 timestamp: eth_block.timestamp,
                 number: eth_block.number.unwrap(),
-                difficulty: eth_block.difficulty,
+                difficulty,
                 gas_limit: eth_block.gas_limit,
                 base_fee: eth_block.base_fee_per_gas.unwrap(),
             },
@@ -514,12 +517,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         trace_config: &TraceConfig,
     ) -> Result<CircuitInputBuilder, Error> {
         let block_trace = external_tracer::l2trace(trace_config)?;
-        let mut builder = CircuitInputBuilder::new_from_l2_trace(
-            self.circuits_params,
-            block_trace,
-            false,
-            false,
-        )?;
+        let mut builder =
+            CircuitInputBuilder::new_from_l2_trace(self.circuits_params, block_trace, false)?;
         builder
             .finalize_building()
             .expect("could not finalize building block");

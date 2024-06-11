@@ -223,7 +223,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                         params,
                         self.test_ctx.unwrap().l2_trace().clone(),
                         false,
-                        false,
                     )
                     .expect("could not handle block tx");
                     builder
