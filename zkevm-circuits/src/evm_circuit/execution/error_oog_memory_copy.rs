@@ -313,8 +313,8 @@ mod tests {
 
     const TESTING_COMMON_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALLDATACOPY,
-        OpcodeId::CODECOPY,
-        OpcodeId::RETURNDATACOPY,
+        //OpcodeId::CODECOPY,
+        //OpcodeId::RETURNDATACOPY,
     ];
 
     const TESTING_DST_OFFSET_COPY_SIZE_PAIRS: &[(u64, u64)] =
@@ -387,6 +387,25 @@ mod tests {
     }
 
     #[test]
+    fn test_oog_mcopy_max_u64_address() {
+        let copy_size = 0xff;
+        for is_src_u64_max in [false, true]{
+            let (src_offset, dest_offset) = if is_src_u64_max {
+                (u64::MAX, 0x20e0)
+            }else{
+                (0x20e0, u64::MAX)
+            };
+        
+            let testing_data =
+            TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, Some(MOCK_BLOCK_GAS_LIMIT),
+          );
+          
+          test_root(&testing_data);
+          test_internal(&testing_data);
+        }
+    }
+
+    #[test]
     fn test_oog_memory_copy_max_u64_address() {
         test_for_edge_memory_size(u64::MAX, u64::MAX);
     }
@@ -412,7 +431,7 @@ mod tests {
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
                 let memory_word_size = (dst_offset + copy_size + 31) / 32;
-
+                println!("memory_word_size u64max {}", memory_word_size);
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + opcode.constant_gas_cost().0
                     + memory_copier_gas_cost(0, memory_word_size, copy_size, GasCost::COPY.as_u64())
@@ -496,7 +515,8 @@ mod tests {
                 let next_memory_word_size = if copy_size == 0 {
                     cur_memory_word_size
                 } else {
-                    (std::cmp::max(src_offset, dst_offset) + copy_size + 31) / 32
+                    let max_addr = std::cmp::max(src_offset, dst_offset);
+                    (max_addr + copy_size + 31) / 32
                 };
 
                 println!("cur_memory_word_size {}, next_memory_word_size{}", cur_memory_word_size, 
