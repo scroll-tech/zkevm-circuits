@@ -19,7 +19,8 @@ use std::{collections::HashMap, iter};
 /// necessary to generate the circuit inputs for a block by querying geth for
 /// the necessary information and using the CircuitInputBuilder.
 pub struct BuilderClient<P: JsonRpcClient> {
-    cli: GethClient<P>,
+    /// ...
+    pub cli: GethClient<P>,
     chain_id: u64,
     circuits_params: CircuitsParams,
 }
@@ -447,7 +448,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         Ok(builder)
     }
 
-    async fn get_trace_config(
+    /// ...
+    pub async fn get_trace_config(
         &self,
         eth_block: &EthBlock,
         geth_traces: impl Iterator<Item = &GethExecTrace>,

@@ -1,7 +1,7 @@
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
 use eth_types::{evm_types::OpcodeId, geth_types::TxType, Block, GethExecTrace, Transaction, H256};
 use ethers::prelude::Middleware;
-use integration_tests::{get_client, get_provider, log_init, END_BLOCK, START_BLOCK};
+use integration_tests::{get_client, get_provider, log_init, START_BLOCK};
 use log::*;
 use std::{
     array, env,
@@ -10,7 +10,6 @@ use std::{
     ops::Deref,
     path::PathBuf,
     sync::{atomic::AtomicUsize, Arc},
-    time::Duration,
 };
 use tokio::task::JoinSet;
 
@@ -105,7 +104,7 @@ async fn load_transactions(
     categorized_txs: Arc<[AtomicUsize; 6]>,
 ) {
     let client = get_provider();
-    let mut current_block = *END_BLOCK as u64;
+    let mut current_block = client.get_block_number().await.unwrap().as_u64();
     if current_block < DENCUN_BLOCK {
         current_block = DENCUN_BLOCK;
     }
@@ -254,7 +253,7 @@ async fn save_transaction(
     )
     .expect("failed to create dir");
 
-    while let Ok(mut tx) = saving_txs_rx.recv_async().await {
+    'outer: while let Ok(mut tx) = saving_txs_rx.recv_async().await {
         let tx_hash = tx.tx_hash;
         trace!("save_transaction worker#{idx} saving tx#{}", tx_hash);
         if tx.trace.is_none() {
@@ -294,15 +293,19 @@ async fn save_transaction(
         let serialized = serialized.unwrap();
 
         for (i, (opcode, dir)) in [
-            OpcodeId::MCOPY,
-            OpcodeId::TLOAD,
             OpcodeId::TSTORE,
+            OpcodeId::TLOAD,
+            OpcodeId::MCOPY,
             OpcodeId::BASEFEE,
         ]
         .into_iter()
-        .zip(["mcopy", "tload", "tstore", "basefee"])
+        .zip(["tstore", "tload", "mcopy", "basefee"])
         .enumerate()
         {
+            let count = categorized_txs[i].load(std::sync::atomic::Ordering::SeqCst);
+            if count > 50 {
+                continue;
+            }
             if geth_trace.struct_logs.iter().any(|step| step.op == opcode) {
                 trace!(
                     "save_transaction worker#{idx} saving tx#{} to {}",
@@ -314,6 +317,7 @@ async fn save_transaction(
                     .await
                     .expect("failed to write file");
                 categorized_txs[i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                continue 'outer;
             }
         }
 
@@ -322,6 +326,10 @@ async fn save_transaction(
             .into_iter()
             .enumerate()
         {
+            let count = categorized_txs[i + 4].load(std::sync::atomic::Ordering::SeqCst);
+            if count > 50 {
+                continue;
+            }
             if tx_type == ty {
                 trace!(
                     "save_transaction worker#{idx} saving tx#{} to {}",
@@ -333,8 +341,10 @@ async fn save_transaction(
                     .await
                     .expect("failed to write file");
                 categorized_txs[i + 4].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                continue 'outer;
             }
         }
+        break;
     }
     info!("save_transaction worker#{idx} shutdown");
 }
