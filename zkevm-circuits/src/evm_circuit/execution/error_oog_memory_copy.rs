@@ -41,7 +41,8 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     /// Destination offset and size to copy
     dst_memory_addr: MemoryExpandedAddressGadget<F>,
     // mcopy expansion
-    memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+    //memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+    memory_expansion_mcopy: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     // other kind(CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY) expansion
     memory_expansion_normal: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
@@ -109,7 +110,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             );
             MemoryExpansionGadget::construct(
                 cb,
-                [src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
+                //[src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
+                [dst_memory_addr.end_offset()],
             )
         });
 
@@ -241,7 +243,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [src_memory_addr, dst_memory_addr],
+            //[src_memory_addr, dst_memory_addr],
+            [dst_memory_addr],
         )?;
 
         let memory_copier_gas = self.memory_copier_gas.assign(
@@ -372,6 +375,20 @@ mod tests {
         // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
         // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
         test_for_edge_memory_size(0xffffffff1, 0xffffffff0);
+    }
+
+    #[test]
+    fn test_oog_mcopy_max_src_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        let src_offset = 0xffffffff1;
+        let copy_size = 0xffffffff0;
+        let dest_offset = 0x100;
+        let testing_data =
+        TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, None);
+
+        test_root(&testing_data);
+        //test_internal(&testing_data);
     }
 
     #[test]
