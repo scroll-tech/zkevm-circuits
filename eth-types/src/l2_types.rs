@@ -11,6 +11,10 @@ use ethers_core::types::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use trace::collect_codes;
+
+/// Trace related helpers
+pub mod trace;
 
 #[cfg(feature = "enable-memory")]
 use crate::evm_types::Memory;
@@ -18,6 +22,43 @@ use crate::evm_types::Memory;
 use crate::evm_types::Stack;
 #[cfg(feature = "enable-storage")]
 use crate::evm_types::Storage;
+
+/// l2 block full trace
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+pub struct BlockTraceV2 {
+    /// chain id
+    #[serde(rename = "chainID", default)]
+    pub chain_id: u64,
+    /// coinbase's status AFTER execution
+    pub coinbase: AccountProofWrapper,
+    /// block
+    pub header: EthBlock,
+    /// txs
+    pub transactions: Vec<TransactionTrace>,
+    /// Accessed bytecodes with hashes
+    pub codes: Vec<(H256, Vec<u8>)>,
+    /// storage trace BEFORE execution
+    #[serde(rename = "storageTrace")]
+    pub storage_trace: StorageTrace,
+    /// l1 tx queue
+    #[serde(rename = "startL1QueueIndex", default)]
+    pub start_l1_queue_index: u64,
+}
+
+impl From<BlockTrace> for BlockTraceV2 {
+    fn from(b: BlockTrace) -> Self {
+        let codes = collect_codes(&b, None).expect("collect codes should not fail");
+        BlockTraceV2 {
+            codes,
+            chain_id: b.chain_id,
+            coinbase: b.coinbase,
+            header: b.header,
+            transactions: b.transactions,
+            storage_trace: b.storage_trace,
+            start_l1_queue_index: b.start_l1_queue_index,
+        }
+    }
+}
 
 /// l2 block full trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]

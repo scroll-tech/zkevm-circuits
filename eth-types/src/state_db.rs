@@ -10,9 +10,6 @@ use std::{
     sync::LazyLock,
 };
 
-#[cfg(feature = "scroll")]
-mod l2;
-
 static ACCOUNT_ZERO: LazyLock<Account> = LazyLock::new(Account::zero);
 /// Hash value for empty code hash.
 static EMPTY_CODE_HASH: LazyLock<Hash> = LazyLock::new(|| CodeDB::hash(&[]));
@@ -48,11 +45,14 @@ impl CodeDB {
         codedb.insert(Vec::new());
         codedb
     }
-    /// Insert code indexed by code hash, and return the code hash.
+    /// Insert code along with code hash
+    pub fn insert_with_hash(&mut self, hash: H256, code: Vec<u8>) {
+        self.0.insert(hash, code);
+    }
+    /// Insert code to CodeDB, and return the code hash.
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
         let hash = Self::hash(&code);
-
-        self.0.insert(hash, code);
+        self.insert_with_hash(hash, code);
         hash
     }
     /// Specify code hash for empty code (nil)

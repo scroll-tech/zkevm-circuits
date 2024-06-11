@@ -5,7 +5,7 @@ use crate::{
 };
 use eth_types::{
     self,
-    l2_types::{BlockTrace, StorageTrace},
+    l2_types::{trace::collect_codes, BlockTrace, StorageTrace},
     state_db::{self, CodeDB, StateDB},
     Address, EthBlock, ToWord, Word,
 };
@@ -166,7 +166,11 @@ impl CircuitInputBuilder {
 
         let mut code_db = CodeDB::new();
         code_db.insert(Vec::new());
-        code_db.update_codedb(&sdb, &l2_trace)?;
+
+        let codes = collect_codes(&l2_trace, Some(&sdb))?;
+        for (hash, code) in codes {
+            code_db.insert_with_hash(hash, code);
+        }
 
         let mut builder_block = circuit_input_builder::Blocks::init(chain_id, circuits_params);
         builder_block.prev_state_root = old_root.to_word();
@@ -236,7 +240,10 @@ impl CircuitInputBuilder {
             *self.sdb.get_storage_mut(&addr, &key).1 = val;
         }
 
-        self.code_db.update_codedb(&self.sdb, &l2_trace)?;
+        let codes = collect_codes(&l2_trace, Some(&self.sdb))?;
+        for (hash, code) in codes {
+            self.code_db.insert_with_hash(hash, code);
+        }
 
         self.apply_l2_trace(l2_trace)?;
         Ok(())
