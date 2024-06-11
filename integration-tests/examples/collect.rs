@@ -1,7 +1,7 @@
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
 use eth_types::{evm_types::OpcodeId, geth_types::TxType, Block, GethExecTrace, Transaction, H256};
 use ethers::prelude::Middleware;
-use integration_tests::{get_client, get_provider, log_init, START_BLOCK};
+use integration_tests::{get_client, get_provider, log_init};
 use log::*;
 use std::{
     array, env,
@@ -110,9 +110,7 @@ async fn load_transactions(
     }
     let mut total_pending_txs = 0;
     let mut total_txs = 0;
-    while !shutdown.load(std::sync::atomic::Ordering::Relaxed)
-        && current_block > *START_BLOCK as u64
-    {
+    while !shutdown.load(std::sync::atomic::Ordering::Relaxed) && current_block > DENCUN_BLOCK {
         // let mut backoff = Duration::from_secs(1);
         // while client.get_block_number().await.unwrap().as_u64() < current_block {
         //     if backoff == Duration::from_secs(1) {
