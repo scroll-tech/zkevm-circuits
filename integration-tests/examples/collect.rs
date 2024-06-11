@@ -342,7 +342,6 @@ async fn save_transaction(
                 continue 'outer;
             }
         }
-        break;
     }
     info!("save_transaction worker#{idx} shutdown");
 }
