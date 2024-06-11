@@ -147,7 +147,7 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
         8
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block) -> Self {
         let event_limit = block.circuits_params.max_keccak_rows / MODEXPCONFIG_EACH_CHIP_ROWS;
 
         let mut exp_events = block.get_big_modexp();
@@ -165,7 +165,7 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
         Self(exp_events, Default::default())
     }
 
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         let exp_events = block.get_big_modexp();
         let real_len = exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS;
         (

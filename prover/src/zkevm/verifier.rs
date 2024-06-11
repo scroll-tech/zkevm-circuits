@@ -1,7 +1,7 @@
 use crate::{
     common,
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
-    consts::CHUNK_VK_FILENAME,
+    consts::chunk_vk_filename,
     io::force_to_read,
     ChunkProof,
 };
@@ -31,7 +31,7 @@ impl Verifier {
     }
 
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        let raw_vk = force_to_read(assets_dir, &CHUNK_VK_FILENAME);
+        let raw_vk = force_to_read(assets_dir, &chunk_vk_filename());
 
         env::set_var("COMPRESSION_CONFIG", &*LAYER2_CONFIG_PATH);
         common::Verifier::from_params_dir(params_dir, *LAYER2_DEGREE, &raw_vk).into()

@@ -1,4 +1,4 @@
-use crate::{io::deserialize_vk, utils::load_params, Proof};
+use crate::{io::deserialize_vk, utils::load_params};
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::VerifyingKey,
@@ -36,10 +36,6 @@ impl<C: CircuitExt<Fr>> Verifier<C> {
         let params = load_params(params_dir, degree, None).unwrap();
 
         Self::from_params(params, vk)
-    }
-
-    pub fn verify_proof(&self, proof: Proof) -> bool {
-        self.verify_snark(proof.to_snark())
     }
 
     pub fn verify_snark(&self, snark: Snark) -> bool {

@@ -888,7 +888,7 @@ pub(crate) fn keccak<F: Field>(
     }
 }
 
-/// ...
+/// Genenrate keccak circuit witness from preimages
 pub fn multi_keccak<F: Field>(
     bytes: &[Vec<u8>],
     challenges: Challenges<Value<F>>,
@@ -919,6 +919,8 @@ pub fn multi_keccak<F: Field>(
         });
     }
 
+    let total_len: usize = bytes.iter().map(|b| b.len()).sum();
+    log::info!("multi keccak total len {total_len}");
     // TODO: optimize the `extend` using Iter?
     let real_rows: Vec<_> = bytes
         .par_iter()

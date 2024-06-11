@@ -1,9 +1,13 @@
 //! Transaction & TransactionContext utility module.
 
-use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
+use super::{
+    call::ReversionGroup, curie::is_curie_enabled, Call, CallContext, CallKind, CodeSource,
+    ExecStep,
+};
 use crate::{l2_predeployed::l1_gas_price_oracle, Error};
+use eth_types::evm_types::gas_utils::tx_data_gas_cost;
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
+    evm_types::OpcodeId,
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
     state_db::{CodeDB, StateDB},
@@ -25,8 +29,6 @@ pub struct TransactionContext {
     id: usize,
     /// The index of logs made in the transaction.
     pub(crate) log_id: usize,
-    /// Identifier if this transaction is last one of the block or not.
-    is_last_tx: bool,
     /// Call stack.
     pub(crate) calls: Vec<CallContext>,
     /// Call `is_success` indexed by `call_index`.
@@ -44,11 +46,7 @@ pub struct TransactionContext {
 
 impl TransactionContext {
     /// Create a new Self.
-    pub fn new(
-        eth_tx: &eth_types::Transaction,
-        geth_trace: &GethExecTrace,
-        is_last_tx: bool,
-    ) -> Result<Self, Error> {
+    pub fn new(eth_tx: &eth_types::Transaction, geth_trace: &GethExecTrace) -> Result<Self, Error> {
         let call_is_success = geth_trace.call_trace.gen_call_is_success(vec![]);
 
         let mut tx_ctx = Self {
@@ -58,7 +56,6 @@ impl TransactionContext {
                 .as_u64() as usize
                 + 1,
             log_id: 0,
-            is_last_tx,
             call_is_success,
             call_is_success_offset: 0,
             calls: Vec::new(),
@@ -81,11 +78,6 @@ impl TransactionContext {
     /// Return id of the this transaction.
     pub fn id(&self) -> usize {
         self.id
-    }
-
-    /// Return is_last_tx of the this transaction.
-    pub fn is_last_tx(&self) -> bool {
-        self.is_last_tx
     }
 
     /// Return the calls in this transaction.
@@ -204,6 +196,8 @@ pub struct Transaction {
     pub rlp_bytes: Vec<u8>,
     /// RLP bytes for signing
     pub rlp_unsigned_bytes: Vec<u8>,
+    /// RLP bytes for signed tx
+    pub rlp_signed_bytes: Vec<u8>,
     /// Current values of L1 fee
     pub l1_fee: TxL1Fee,
     /// Committed values of L1 fee
@@ -233,6 +227,7 @@ impl From<&Transaction> for geth_types::Transaction {
             gas_fee_cap: Some(tx.gas_fee_cap),
             gas_tip_cap: Some(tx.gas_tip_cap),
             rlp_unsigned_bytes: tx.rlp_unsigned_bytes.clone(),
+            //rlp_signed_bytes: tx.rlp_signed_bytes.clone(),
             rlp_bytes: tx.rlp_bytes.clone(),
             tx_type: tx.tx_type,
             ..Default::default()
@@ -261,6 +256,7 @@ impl Transaction {
             },
             rlp_bytes: vec![],
             rlp_unsigned_bytes: vec![],
+            rlp_signed_bytes: vec![],
             calls: Vec::new(),
             steps: Vec::new(),
             block_num: Default::default(),
@@ -275,11 +271,14 @@ impl Transaction {
     /// Create a new Self.
     pub fn new(
         call_id: usize,
+        chain_id: u64,
         sdb: &StateDB,
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Self, Error> {
+        let tx_chain_id = eth_tx.chain_id.unwrap_or_default().as_u64();
+        let block_num = eth_tx.block_number.unwrap().as_u64();
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
             return Err(Error::AccountNotFound(eth_tx.from));
@@ -344,9 +343,12 @@ impl Transaction {
         let (l1_fee, l1_fee_committed) = if tx_type.is_l1_msg() {
             Default::default()
         } else {
+            // tx.chain_id can be zero for legacy tx.
+            // So we should not use that.
+            // We need to use "global" chain id.
             (
-                TxL1Fee::get_current_values_from_state_db(sdb),
-                TxL1Fee::get_committed_values_from_state_db(sdb),
+                TxL1Fee::get_current_values_from_state_db(sdb, chain_id, block_num),
+                TxL1Fee::get_committed_values_from_state_db(sdb, chain_id, block_num),
             )
         };
 
@@ -355,13 +357,17 @@ impl Transaction {
             l1_fee,
             l1_fee_committed
         );
+        let rlp_signed_bytes = eth_tx.rlp().to_vec();
+        //debug_assert_eq!(H256(ethers_core::utils::keccak256(&bytes)), eth_tx.hash);
 
         Ok(Self {
-            block_num: eth_tx.block_number.unwrap().as_u64(),
+            block_num,
             hash: eth_tx.hash,
+            chain_id: tx_chain_id,
             tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
+            rlp_signed_bytes,
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
@@ -371,7 +377,6 @@ impl Transaction {
             to: eth_tx.to,
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
-            chain_id: eth_tx.chain_id.unwrap_or_default().as_u64(), // FIXME
             calls: vec![call],
             steps: Vec::new(),
             signature: Signature {
@@ -432,9 +437,12 @@ impl Transaction {
 
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
-        let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
-
-        self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
+        self.l1_fee
+            .tx_l1_fee(
+                tx_data_gas_cost(&self.rlp_bytes),
+                self.rlp_signed_bytes.len() as u64,
+            )
+            .0
     }
 }
 
@@ -470,28 +478,70 @@ impl Transaction {
 /// Transaction L1 fee for L1GasPriceOracle contract
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct TxL1Fee {
+    /// chain id
+    pub chain_id: u64,
+    /// block number
+    pub block_number: u64,
     /// L1 base fee
     pub base_fee: u64,
     /// L1 fee overhead
     pub fee_overhead: u64,
     /// L1 fee scalar
     pub fee_scalar: u64,
+    /// L1 blob fee
+    pub l1_blob_basefee: u64,
+    /// L1 commit scalar
+    pub commit_scalar: u64,
+    /// l1 blob scalar
+    pub blob_scalar: u64,
 }
 
 impl TxL1Fee {
     /// Calculate L1 fee and remainder of transaction.
-    pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
+    pub fn tx_l1_fee(&self, tx_data_gas_cost: u64, tx_rlp_signed_len: u64) -> (u64, u64) {
+        let is_curie = is_curie_enabled(self.chain_id, self.block_number);
+        if is_curie {
+            self.tx_l1_fee_after_curie(tx_rlp_signed_len)
+        } else {
+            self.tx_l1_fee_before_curie(tx_data_gas_cost)
+        }
+    }
+
+    fn tx_l1_fee_before_curie(&self, tx_data_gas_cost: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
         let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
         let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
-
         (
             (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
             (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
         )
     }
 
-    fn get_current_values_from_state_db(sdb: &StateDB) -> Self {
+    fn tx_l1_fee_after_curie(&self, tx_rlp_signed_len: u64) -> (u64, u64) {
+        // for curie upgrade:
+        // new formula: https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee.go#L165
+        // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee",
+        let tx_l1_fee = self.commit_scalar as u128 * self.base_fee as u128
+            + self.blob_scalar as u128 * tx_rlp_signed_len as u128 * self.l1_blob_basefee as u128;
+        log::debug!(
+            "tx_l1_fee {} commit_scalar {} base_fee {} blob_scalar {}
+            tx_rlp_signed_len {} l1_blob_basefee {}  tx_quient {},reminder {}",
+            tx_l1_fee,
+            self.commit_scalar,
+            self.base_fee,
+            self.blob_scalar,
+            tx_rlp_signed_len,
+            self.l1_blob_basefee,
+            tx_l1_fee / TX_L1_FEE_PRECISION as u128,
+            tx_l1_fee % TX_L1_FEE_PRECISION as u128
+        );
+        (
+            (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
+            (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
+        )
+    }
+
+    fn get_current_values_from_state_db(sdb: &StateDB, chain_id: u64, block_number: u64) -> Self {
         let [base_fee, fee_overhead, fee_scalar] = [
             &l1_gas_price_oracle::BASE_FEE_SLOT,
             &l1_gas_price_oracle::OVERHEAD_SLOT,
@@ -502,15 +552,30 @@ impl TxL1Fee {
                 .1
                 .as_u64()
         });
+        let [l1_blob_basefee, commit_scalar, blob_scalar] = [
+            &l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
+            &l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+            &l1_gas_price_oracle::BLOB_SCALAR_SLOT,
+        ]
+        .map(|slot| {
+            sdb.get_storage(&l1_gas_price_oracle::ADDRESS, slot)
+                .1
+                .as_u64()
+        });
 
         Self {
+            chain_id,
+            block_number,
             base_fee,
             fee_overhead,
             fee_scalar,
+            l1_blob_basefee,
+            commit_scalar,
+            blob_scalar,
         }
     }
 
-    fn get_committed_values_from_state_db(sdb: &StateDB) -> Self {
+    fn get_committed_values_from_state_db(sdb: &StateDB, chain_id: u64, block_number: u64) -> Self {
         let [base_fee, fee_overhead, fee_scalar] = [
             &l1_gas_price_oracle::BASE_FEE_SLOT,
             &l1_gas_price_oracle::OVERHEAD_SLOT,
@@ -522,10 +587,26 @@ impl TxL1Fee {
                 .as_u64()
         });
 
+        let [l1_blob_basefee, commit_scalar, blob_scalar] = [
+            &l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
+            &l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+            &l1_gas_price_oracle::BLOB_SCALAR_SLOT,
+        ]
+        .map(|slot| {
+            sdb.get_committed_storage(&l1_gas_price_oracle::ADDRESS, slot)
+                .1
+                .as_u64()
+        });
+
         Self {
+            chain_id,
+            block_number,
             base_fee,
             fee_overhead,
             fee_scalar,
+            l1_blob_basefee,
+            commit_scalar,
+            blob_scalar,
         }
     }
 }

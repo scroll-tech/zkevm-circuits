@@ -915,8 +915,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("booleans for reducing degree (part one)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (bv_gt_0xc0, bv_eq_0xc0) = byte_value_gte_0xc0.expr(meta, None);
-            let (bv_lt_0xf8, _) = byte_value_lte_0xf8.expr(meta, None);
+            let (bv_gt_0xc0, bv_eq_0xc0) = byte_value_gte_0xc0.expr(meta);
+            let (bv_lt_0xf8, _) = byte_value_lte_0xf8.expr(meta);
 
             // use sum instead of or because is_tag_* cannot be true at the same time
             cb.require_equal(
@@ -1049,7 +1049,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 let tag_expr = tag_expr(meta);
                 let byte_value_expr = byte_value_expr(meta);
 
-                let (bv_lt_0x80, bv_eq_0x80) = byte_value_lte_0x80.expr(meta, None);
+                let (bv_lt_0x80, bv_eq_0x80) = byte_value_lte_0x80.expr(meta);
 
                 // case 1: 0x00 <= byte_value < 0x80
                 let case_1 = and::expr([bv_lt_0x80, not::expr(is_tag_end_expr(meta))]);
@@ -1215,8 +1215,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("state transition: DecodeTagStart => Bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (bv_gt_0x80, _) = byte_value_gte_0x80.expr(meta, None);
-            let (bv_lt_0xb8, _) = byte_value_lte_0xb8.expr(meta, None);
+            let (bv_gt_0x80, _) = byte_value_gte_0x80.expr(meta);
+            let (bv_lt_0xb8, _) = byte_value_lte_0xb8.expr(meta);
 
             // condition.
             cb.condition(and::expr([
@@ -1250,8 +1250,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("state transition: Bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (tidx_lt_tlen, tidx_eq_tlen) = tidx_lte_tlength.expr(meta, None);
-            let (mlen_lt_0x20, mlen_eq_0x20) = mlength_lte_0x20.expr(meta, None);
+            let (tidx_lt_tlen, tidx_eq_tlen) = tidx_lte_tlength.expr(meta);
+            let (mlen_lt_0x20, mlen_eq_0x20) = mlength_lte_0x20.expr(meta);
 
             let b = select::expr(
                 mlen_lt_0x20,
@@ -1279,7 +1279,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             // Bytes => DecodeTagStart
             cb.condition(tidx_eq_tlen, |cb| {
                 // assertions
-                let (lt, eq) = tlength_lte_mlength.expr(meta, Some(Rotation::cur()));
+                let (lt, eq) = tlength_lte_mlength.expr(meta);
                 cb.require_equal(
                     "tag_length <= max_length",
                     // we can use `sum` instead of `or` for two reasons
@@ -1311,8 +1311,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("state transition: DecodeTagStart => LongBytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (bv_gt_0xb8, bv_eq_0xb8) = byte_value_gte_0xb8.expr(meta, None);
-            let (bv_lt_0xc0, _) = byte_value_lte_0xc0.expr(meta, None);
+            let (bv_gt_0xb8, bv_eq_0xb8) = byte_value_gte_0xb8.expr(meta);
+            let (bv_lt_0xc0, _) = byte_value_lte_0xc0.expr(meta);
 
             // condition: "0xb8 <= byte_value < 0xc0"
             cb.condition(and::expr([
@@ -1345,7 +1345,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("state transition: LongBytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (tidx_lt_tlen, tidx_eq_tlen) = tidx_lte_tlength.expr(meta, None);
+            let (tidx_lt_tlen, tidx_eq_tlen) = tidx_lte_tlength.expr(meta);
 
             // LongBytes => LongBytes
             cb.condition(tidx_lt_tlen, |cb| {
@@ -1389,7 +1389,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("state transition: DecodeTagStart => LongList", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (bv_gt_0xf8, bv_eq_0xf8) = byte_value_gte_0xf8.expr(meta, None);
+            let (bv_gt_0xf8, bv_eq_0xf8) = byte_value_gte_0xf8.expr(meta);
 
             let cond = and::expr([
                 sum::expr([bv_gt_0xf8, bv_eq_0xf8]),
@@ -1420,7 +1420,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("state transition: LongList", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (tidx_lt_tlen, tidx_eq_tlen) = tidx_lte_tlength.expr(meta, None);
+            let (tidx_lt_tlen, tidx_eq_tlen) = tidx_lte_tlength.expr(meta);
 
             // LongList => LongList
             cb.condition(tidx_lt_tlen, |cb| {
@@ -1444,7 +1444,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             // LongList => DecodeTagStart
             cb.condition(tidx_eq_tlen.expr(), |cb| {
                 // assertions
-                let (lt, eq) = tlength_lte_mlength.expr(meta, Some(Rotation::cur()));
+                let (lt, eq) = tlength_lte_mlength.expr(meta);
                 cb.require_equal("tag_length <= max_length", sum::expr([lt, eq]), true.expr());
 
                 // state transitions
@@ -2399,7 +2399,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             let enable = select::expr(
                 sum::expr([
                     meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::next()),
-                    is_padding_in_dt.expr(Rotation::next())(meta),
+                    is_next_end(meta),
                 ]),
                 0.expr(),
                 meta.query_advice(is_pop_op_lookup, Rotation::cur()),
@@ -3275,7 +3275,7 @@ impl<F: Field, RLP> Default for RlpCircuit<F, RLP> {
 impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
     type Config = RlpCircuitConfig<F>;
 
-    fn new_from_block(block: &Block<F>) -> Self {
+    fn new_from_block(block: &Block) -> Self {
         let max_txs = block.circuits_params.max_txs;
         let size = block.circuits_params.max_rlp_rows;
         debug_assert!(block.txs.len() <= max_txs);
@@ -3306,7 +3306,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
         config.assign(layouter, &self.txs, self.size, challenges)
     }
 
-    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &Block) -> (usize, usize) {
         let challenges: Challenges<Value<F>> =
             Challenges::mock(Value::unknown(), Value::unknown(), Value::unknown());
         let sm_rows: usize = block

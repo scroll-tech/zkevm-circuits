@@ -24,8 +24,12 @@ pub mod macros;
 pub mod error;
 #[macro_use]
 pub mod bytecode;
+pub mod constants;
 pub mod evm_types;
+pub mod forks;
 pub mod geth_types;
+/// L2 system contracts
+pub mod l2_predeployed;
 pub mod l2_types;
 pub mod sign_types;
 pub mod state_db;
@@ -61,6 +65,9 @@ use crate::evm_types::Memory;
 use crate::evm_types::Stack;
 #[cfg(feature = "enable-storage")]
 use crate::evm_types::Storage;
+
+/// Main Block type
+pub type EthBlock = Block<Transaction>;
 
 /// Used for FFI with Golang. Bytes in golang will be serialized as base64 by default.
 pub mod base64 {

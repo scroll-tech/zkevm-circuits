@@ -90,7 +90,7 @@ mod tests {
             max_rlp_rows: 256,
             ..Default::default()
         };
-        let (_, circuit, instance, _) =
+        let (_, circuit, instance) =
             SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>::build(
                 block,
                 circuits_params,

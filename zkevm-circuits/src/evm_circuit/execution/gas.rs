@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
+        _block: &Block,
         _transaction: &Transaction,
         _call: &Call,
         step: &ExecStep,

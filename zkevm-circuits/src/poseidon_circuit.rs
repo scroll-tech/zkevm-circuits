@@ -54,7 +54,7 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
 impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     type Config = PoseidonCircuitConfig<F>;
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block) -> Self {
         let max_hashes = block.circuits_params.max_poseidon_rows / F::hash_block_size();
         #[allow(unused_mut)]
         let mut poseidon_table_data: PoseidonHashTable<F> = PoseidonHashTable::default();
@@ -91,7 +91,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         Self(poseidon_table_data, max_hashes)
     }
 
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         let mut path_hash_counter: std::collections::HashMap<[u8; 32], usize> = Default::default();
         let mut account_counter: std::collections::HashMap<[u8; 32], usize> = Default::default();
         let mut storage_counter: std::collections::HashMap<[u8; 32], usize> = Default::default();
@@ -237,7 +237,7 @@ impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
 
 #[cfg(feature = "zktrie")]
 fn get_storage_poseidon_witness<F: Field>(
-    block: &crate::witness::Block<F>,
+    block: &crate::witness::Block,
 ) -> Vec<([F; 2], F, Option<F>)> {
     use itertools::Itertools;
     use mpt_circuits::{gadgets::mpt_update::hash_traces, types::Proof};

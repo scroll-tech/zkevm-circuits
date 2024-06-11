@@ -127,7 +127,7 @@ pub(crate) const N_BYTES_MEMORY_CHUNK: usize = N_BYTES_WORD;
 
 pub(crate) const STACK_CAPACITY: usize = 1024;
 
-// Number of bytes that will be used of prorgam counter. Although the maximum
+// Number of bytes that will be used of program counter. Although the maximum
 // size of execution bytecode could be at most 128kB due to the size limit of a
 // transaction, which could be covered by 3 bytes, we still support program
 // counter to u64 as go-ethereum in case transaction size is allowed larger in

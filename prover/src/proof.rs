@@ -3,31 +3,21 @@ use crate::{
     types::base64,
     utils::short_git_version,
 };
-use anyhow::{bail, Result};
+use anyhow::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, ProvingKey, VerifyingKey},
 };
 use serde_derive::{Deserialize, Serialize};
-use snark_verifier::{
-    util::{
-        arithmetic::Domain,
-        protocol::{Expression, QuotientPolynomial},
-    },
-    Protocol,
-};
 use snark_verifier_sdk::{verify_evm_proof, Snark};
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
+use std::{fs::File, path::PathBuf};
 
 mod batch;
 mod chunk;
 mod evm;
 
 pub use batch::BatchProof;
-pub use chunk::ChunkProof;
+pub use chunk::{compare_chunk_info, ChunkProof};
 pub use evm::EvmProof;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -100,16 +90,6 @@ impl Proof {
         &self.vk
     }
 
-    pub fn to_snark(self) -> Snark {
-        let instances = self.instances();
-
-        Snark {
-            protocol: dummy_protocol(),
-            proof: self.proof,
-            instances,
-        }
-    }
-
     pub fn vk<C: Circuit<Fr>>(&self) -> VerifyingKey<G1Affine> {
         deserialize_vk::<C>(&self.vk)
     }
@@ -133,56 +113,20 @@ pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {
     let file_path = dump_proof_path(dir, filename);
-    if !Path::new(&file_path).exists() {
-        bail!("File {file_path} doesn't exist");
-    }
-
-    let fd = File::open(file_path)?;
-    let mut deserializer = serde_json::Deserializer::from_reader(fd);
-    deserializer.disable_recursion_limit();
-    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
-
-    Ok(serde::Deserialize::deserialize(deserializer)?)
+    Ok(eth_types::utils::from_json_file(&file_path)?)
 }
 
 fn dump_proof_path(dir: &str, filename: &str) -> String {
     format!("{dir}/full_proof_{filename}.json")
 }
 
-fn dummy_protocol() -> Protocol<G1Affine> {
-    Protocol {
-        domain: Domain {
-            k: 0,
-            n: 0,
-            n_inv: Fr::zero(),
-            gen: Fr::zero(),
-            gen_inv: Fr::zero(),
-        },
-        preprocessed: vec![],
-        num_instance: vec![],
-        num_witness: vec![],
-        num_challenge: vec![],
-        evaluations: vec![],
-        queries: vec![],
-        quotient: QuotientPolynomial {
-            chunk_degree: 0,
-            numerator: Expression::Challenge(1),
-        },
-        //Default::default(),
-        transcript_initial_state: None,
-        instance_committing_key: None,
-        linearization: None,
-        accumulator_indices: Default::default(),
-    }
-}
-
+/// Encode instances as concatenated U256
 fn serialize_instance(instance: &[Fr]) -> Vec<u8> {
     let bytes: Vec<_> = instance
         .iter()
         .flat_map(|value| serialize_fr(value).into_iter().rev())
         .collect();
     assert_eq!(bytes.len() % 32, 0);
-
     bytes
 }
 

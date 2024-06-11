@@ -132,7 +132,10 @@ impl MptUpdates {
     }
 
     /// initialize a mock witness generator that is consistent with the old values of self.updates
-    pub(crate) fn mock_fill_state_roots(&mut self) {
+    /// Update 2024.05.22: since we implemented "retrace" feature, this method is no longer useful
+    /// https://github.com/scroll-tech/zkevm-circuits/pull/1260
+    #[deprecated]
+    pub(crate) fn build_prestate_trie(&mut self) {
         init_hash_scheme();
         let temp_trie = ZktrieState::default();
         let mut wit_gen = WitnessGenerator::from(&temp_trie);
@@ -165,7 +168,7 @@ impl MptUpdates {
         }
         self.old_root = U256::from_big_endian(wit_gen.root().as_bytes());
         self.fill_state_roots_from_generator(wit_gen);
-        log::debug!("mocking fill_state_roots done");
+        log::debug!("build_prestate_trie done");
         self.pretty_print();
     }
 
@@ -286,21 +289,12 @@ impl MptUpdates {
                 MptUpdate::from_rows(key, rows, i, rows_len, old_root, new_root)
             })
             .collect();
-        let mpt_updates = MptUpdates {
+        MptUpdates {
             old_root,
             new_root,
             updates,
             ..Default::default()
-        };
-        // FIXME: we can remove this assert after the code runs a while and everything is ok?
-        #[cfg(debug_assertions)]
-        {
-            let mut rows = rows.to_vec();
-            rows.sort_by_key(Rw::as_key);
-            let old_updates = Self::from_rws_with_mock_state_roots(&rows, old_root, new_root);
-            assert_eq!(old_updates.updates, mpt_updates.updates);
         }
-        mpt_updates
     }
 
     pub(crate) fn from_rws_with_mock_state_roots(

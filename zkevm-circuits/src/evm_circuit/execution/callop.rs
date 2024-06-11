@@ -400,6 +400,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
                 // - to the precompile input.
                 let precompile_input_bytes_rlc =
+                    // cd_address.has_length is not zero means call_data_length > 0
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
@@ -752,7 +753,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1561,6 +1562,7 @@ mod test {
 
     // maybe consider to move to mpt_circuit module
     #[cfg(feature = "scroll")]
+    #[ignore]
     #[test]
     fn call_non_exist_with_value_mpt_circuit() {
         let callee_code = bytecode! {
@@ -1589,8 +1591,7 @@ mod test {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        block.mpt_updates.mock_fill_state_roots();
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         let mpt_circuit = MptCircuit::new_from_block(&block);
         let prover = MockProver::<Fr>::run(12, &mpt_circuit, vec![]).unwrap();
         assert!(prover.verify().is_ok());

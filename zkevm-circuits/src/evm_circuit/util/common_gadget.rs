@@ -31,11 +31,13 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+mod curie;
 mod tx_access_list;
 mod tx_eip1559;
 mod tx_l1_fee;
 mod tx_l1_msg;
 
+pub(crate) use curie::CurieGadget;
 pub(crate) use tx_access_list::TxAccessListGadget;
 pub(crate) use tx_eip1559::TxEip1559Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
@@ -267,7 +269,7 @@ impl<F: Field> RestoreContextGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         call: &Call,
         step: &ExecStep,
         rw_offset: usize,
@@ -841,6 +843,7 @@ impl<F: Field> TransferToGadget<F> {
         } else {
             (0.into(), 0.into())
         };
+
         debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
         self.receiver.assign(
             region,
@@ -1554,7 +1557,7 @@ impl<F: Field> CommonErrorGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         call: &Call,
         step: &ExecStep,
         rw_offset: usize,
@@ -1573,7 +1576,7 @@ impl<F: Field> CommonErrorGadget<F> {
 
     pub(crate) fn get_push_rlc(
         region: &CachedRegion<'_, '_, F>,
-        block: &Block<F>,
+        block: &Block,
         call: &Call,
         step: &ExecStep,
     ) -> Value<F> {

@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for JumpdestGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _: &Block<F>,
+        _: &Block,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

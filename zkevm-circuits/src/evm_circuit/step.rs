@@ -42,6 +42,7 @@ pub enum ExecutionState {
     EndTx,
     EndInnerBlock,
     EndBlock,
+    Padding,
     // Opcode successful cases
     STOP,
     ADD_SUB,     // ADD, SUB
@@ -613,6 +614,7 @@ impl<F: Field> Step<F> {
                 end_tx: cell_manager.query_cell(CellType::StoragePhase1),
             }
         };
+        assert_eq!(cell_manager.get_height(), STEP_STATE_HEIGHT);
         Self {
             state,
             cell_manager,
@@ -632,7 +634,7 @@ impl<F: Field> Step<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
+        _block: &Block,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

@@ -1,14 +1,12 @@
 //! Tests the RLC gates
 
-use ark_std::test_rng;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use rand::RngCore;
-use zkevm_circuits::util::Challenges;
+use zkevm_circuits::{table::KeccakTable, util::Challenges};
 
 use crate::{aggregation::RlcConfig, util::rlc};
 
@@ -32,8 +30,9 @@ impl Circuit<Fr> for ArithTestCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let challenges = Challenges::construct(meta);
-        RlcConfig::configure(meta, challenges)
+        let challenges = Challenges::construct_p1(meta);
+        let keccak_table = KeccakTable::construct(meta);
+        RlcConfig::configure(meta, &keccak_table, challenges)
     }
 
     fn synthesize(
@@ -41,8 +40,6 @@ impl Circuit<Fr> for ArithTestCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let mut rng = test_rng();
-
         let mut first_pass = true;
 
         layouter.assign_region(
@@ -140,37 +137,6 @@ impl Circuit<Fr> for ArithTestCircuit {
                         config.rlc_with_flag(&mut region, &inputs, &f5, &flag, &mut offset)?;
                     region.constrain_equal(res.cell(), res_rec.cell())?;
                 }
-                // unit test: decomposition
-                {
-                    for _ in 0..10 {
-                        let tmp = Fr::from(rng.next_u64());
-                        let tmp = config.load_private(&mut region, &tmp, &mut offset)?;
-                        config.decomposition(&mut region, &tmp, 64, &mut offset)?;
-                    }
-                }
-                // unit test: is smaller than
-                {
-                    for _ in 0..10 {
-                        let a = Fr::from(rng.next_u32() as u64);
-                        let b = Fr::from(rng.next_u32() as u64);
-                        let c = if a < b { Fr::one() } else { Fr::zero() };
-                        let a = config.load_private(&mut region, &a, &mut offset)?;
-                        let b = config.load_private(&mut region, &b, &mut offset)?;
-                        let c = config.load_private(&mut region, &c, &mut offset)?;
-                        let c_rec = config.is_smaller_than(&mut region, &a, &b, &mut offset)?;
-                        region.constrain_equal(c.cell(), c_rec.cell())?;
-                    }
-
-                    // equality check
-                    let a = Fr::from(rng.next_u32() as u64);
-                    let b = a;
-                    let c = Fr::zero();
-                    let a = config.load_private(&mut region, &a, &mut offset)?;
-                    let b = config.load_private(&mut region, &b, &mut offset)?;
-                    let c = config.load_private(&mut region, &c, &mut offset)?;
-                    let c_rec = config.is_smaller_than(&mut region, &a, &b, &mut offset)?;
-                    region.constrain_equal(c.cell(), c_rec.cell())?;
-                }
                 // unit test: is zero
                 {
                     let should_be_false = config.is_zero(&mut region, &f1, &mut offset)?;
@@ -178,16 +144,6 @@ impl Circuit<Fr> for ArithTestCircuit {
                     region.constrain_equal(should_be_false.cell(), zero.cell())?;
 
                     let should_be_true = config.is_zero(&mut region, &zero, &mut offset)?;
-                    let one = config.load_private(&mut region, &Fr::one(), &mut offset)?;
-                    region.constrain_equal(should_be_true.cell(), one.cell())?;
-                }
-                // unit test: is equal
-                {
-                    let should_be_false = config.is_equal(&mut region, &f1, &f2, &mut offset)?;
-                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
-                    region.constrain_equal(should_be_false.cell(), zero.cell())?;
-
-                    let should_be_true = config.is_equal(&mut region, &f1, &f1, &mut offset)?;
                     let one = config.load_private(&mut region, &Fr::one(), &mut offset)?;
                     region.constrain_equal(should_be_true.cell(), one.cell())?;
                 }

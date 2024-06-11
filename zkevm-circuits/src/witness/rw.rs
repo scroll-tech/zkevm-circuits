@@ -23,7 +23,7 @@ use super::MptUpdates;
 const ERR_MSG_FIRST: &str = "first access reads don't change value";
 const ERR_MSG_NON_FIRST: &str = "non-first access reads don't change value";
 
-/// Rw constainer for a witness block
+/// Rw container for a witness block
 #[derive(Debug, Default, Clone)]
 pub struct RwMap(pub HashMap<RwTableTag, Vec<Rw>>);
 

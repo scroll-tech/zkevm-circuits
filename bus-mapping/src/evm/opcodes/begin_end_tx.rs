@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     circuit_input_builder::{
-        Call, CircuitInputStateRef, CopyAccessList, CopyBytes, CopyDataType, CopyEvent, ExecStep,
-        NumberOrHash,
+        curie::is_curie_enabled, Call, CircuitInputStateRef, CopyAccessList, CopyBytes,
+        CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     l2_predeployed::l1_gas_price_oracle,
     operation::{
@@ -95,7 +95,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             }
         }
     } else {
-        // else, add 3 RW read operations for transaction L1 fee.
+        // else, add 3 ( or 6 after curie) RW read operations for transaction L1 fee.
         gen_tx_l1_fee_ops(state, &mut exec_step)?;
     }
 
@@ -108,7 +108,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     )?;
 
     // the rw delta before is:
-    // + for non-l1 msg tx: 3 (rw for fee oracle contrace)
+    // + for non-l1 msg tx: 3 or 6 (rw for fee oracle contrace)
     // + for scroll l1-msg tx:
     //   * caller existed: 1 (read codehash)
     //   * caller not existed: 3 (read codehash and create account)
@@ -166,7 +166,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
         call.address,
         state
             .block
-            .headers
+            .blocks
             .get(&state.tx.block_num)
             .unwrap()
             .coinbase,
@@ -601,12 +601,7 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         log::trace!("l1 tx, no refund");
     }
 
-    let block_info = state
-        .block
-        .headers
-        .get(&state.tx.block_num)
-        .unwrap()
-        .clone();
+    let block_info = state.block.blocks.get(&state.tx.block_num).unwrap().clone();
     let effective_tip = if cfg!(feature = "scroll") {
         state.tx.gas_price
     } else {
@@ -616,18 +611,20 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let coinbase_reward = if state.tx.tx_type.is_l1_msg() {
         Word::zero()
     } else {
-        effective_tip * gas_cost + state.tx_ctx.l1_fee
-    };
-    log::trace!(
-        "coinbase reward = ({} - {}) * ({} - {} - {}) = {} or 0 for l1 msg",
-        state.tx.gas_price,
-        block_info.base_fee,
-        state.tx.gas,
-        exec_step.gas_left.0,
-        effective_refund,
-        coinbase_reward
-    );
+        let coinbase_reward = effective_tip * gas_cost + state.tx_ctx.l1_fee;
+        log::trace!(
+            "coinbase reward = ({} - {}) * ({} - {} - {}) + {} = {}",
+            state.tx.gas_price,
+            block_info.base_fee,
+            state.tx.gas,
+            exec_step.gas_left.0,
+            effective_refund,
+            state.tx_ctx.l1_fee,
+            coinbase_reward
+        );
 
+        coinbase_reward
+    };
     let (found, coinbase_account) = state.sdb.get_account_mut(&block_info.coinbase);
     if !found {
         log::error!("coinbase account not found: {}", block_info.coinbase);
@@ -729,7 +726,7 @@ fn write_tx_receipt(
     Ok(())
 }
 
-// Add 3 RW read operations for transaction L1 fee.
+// Add 3(or 6 after curie) RW read operations for transaction L1 fee.
 fn gen_tx_l1_fee_ops(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
@@ -739,10 +736,17 @@ fn gen_tx_l1_fee_ops(
     let base_fee = Word::from(state.tx.l1_fee.base_fee);
     let fee_overhead = Word::from(state.tx.l1_fee.fee_overhead);
     let fee_scalar = Word::from(state.tx.l1_fee.fee_scalar);
+    let l1_blob_basefee = Word::from(state.tx.l1_fee.l1_blob_basefee);
+    let commit_scalar = Word::from(state.tx.l1_fee.commit_scalar);
+    let blob_scalar = Word::from(state.tx.l1_fee.blob_scalar);
 
     let base_fee_committed = Word::from(state.tx.l1_fee_committed.base_fee);
     let fee_overhead_committed = Word::from(state.tx.l1_fee_committed.fee_overhead);
     let fee_scalar_committed = Word::from(state.tx.l1_fee_committed.fee_scalar);
+
+    let l1_blob_basefee_committed = Word::from(state.tx.l1_fee_committed.l1_blob_basefee);
+    let commit_scalar_committed = Word::from(state.tx.l1_fee_committed.commit_scalar);
+    let blob_scalar_committed = Word::from(state.tx.l1_fee_committed.blob_scalar);
 
     state.push_op(
         exec_step,
@@ -780,6 +784,49 @@ fn gen_tx_l1_fee_ops(
             fee_scalar_committed,
         ),
     )?;
+
+    // curie operations
+    let chain_id = state.block.chain_id;
+    let block_number = state.tx.block_num;
+    if is_curie_enabled(chain_id, block_number) {
+        state.push_op(
+            exec_step,
+            RW::READ,
+            StorageOp::new(
+                *l1_gas_price_oracle::ADDRESS,
+                *l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
+                l1_blob_basefee,
+                l1_blob_basefee,
+                tx_id,
+                l1_blob_basefee_committed,
+            ),
+        )?;
+        state.push_op(
+            exec_step,
+            RW::READ,
+            StorageOp::new(
+                *l1_gas_price_oracle::ADDRESS,
+                *l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+                commit_scalar,
+                commit_scalar,
+                tx_id,
+                commit_scalar_committed,
+            ),
+        )?;
+        state.push_op(
+            exec_step,
+            RW::READ,
+            StorageOp::new(
+                *l1_gas_price_oracle::ADDRESS,
+                *l1_gas_price_oracle::BLOB_SCALAR_SLOT,
+                blob_scalar,
+                blob_scalar,
+                tx_id,
+                blob_scalar_committed,
+            ),
+        )?;
+    }
+
     Ok(())
 }
 

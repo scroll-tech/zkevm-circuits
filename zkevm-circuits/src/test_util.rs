@@ -2,7 +2,7 @@
 
 use crate::{
     copy_circuit::CopyCircuit,
-    evm_circuit::EvmCircuit,
+    evm_circuit::{cached::EvmCircuitCached, EvmCircuit},
     state_circuit::StateCircuit,
     util::{log2_ceil, SubCircuit},
     witness::{Block, Rw},
@@ -81,11 +81,11 @@ fn init_env_logger() {
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<CircuitsParams>,
-    block: Option<Block<Fr>>,
+    block: Option<Block>,
     evm_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
     state_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
     copy_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
-    block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
+    block_modifiers: Vec<Box<dyn Fn(&mut Block)>>,
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
@@ -125,7 +125,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
     /// Generates a CTBC from a [`Block`] passed with all the other fields
     /// set to [`Default`].
-    pub fn new_from_block(block: Block<Fr>) -> Self {
+    pub fn new_from_block(block: Block) -> Self {
         Self::empty().block(block)
     }
 
@@ -148,7 +148,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     }
 
     /// Allows to pass a [`Block`] already built to the constructor.
-    pub fn block(mut self, block: Block<Fr>) -> Self {
+    pub fn block(mut self, block: Block) -> Self {
         self.block = Some(block);
         self
     }
@@ -192,7 +192,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     ///
     /// That removes the need in a lot of tests to build the block outside of
     /// the builder because they need to modify something particular.
-    pub fn block_modifier(mut self, modifier: Box<dyn Fn(&mut Block<Fr>)>) -> Self {
+    pub fn block_modifier(mut self, modifier: Box<dyn Fn(&mut Block)>) -> Self {
         self.block_modifiers.push(modifier);
         self
     }
@@ -211,18 +211,17 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         params.max_txs = NTX;
         log::debug!("params in CircuitTestBuilder: {:?}", params);
 
-        let block: Block<Fr> = if self.block.is_some() {
+        let block: Block = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             // use scroll l2 trace
-            let full_witness_block = false;
+            let full_witness_block = cfg!(feature = "scroll");
             let mut block = if full_witness_block {
                 #[cfg(feature = "scroll")]
                 {
                     let mut builder = CircuitInputBuilder::new_from_l2_trace(
                         params,
                         self.test_ctx.unwrap().l2_trace().clone(),
-                        false,
                         false,
                     )
                     .expect("could not handle block tx");
@@ -231,10 +230,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                         .expect("could not finalize building block");
                     let mut block =
                         crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-                    crate::witness::block_apply_mpt_state(
-                        &mut block,
-                        &builder.mpt_init_state.unwrap(),
-                    );
+                    block.apply_mpt_updates(&builder.mpt_init_state.unwrap());
                     block
                 }
 
@@ -266,7 +262,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             assert!(k <= 20);
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = EvmCircuit::get_test_cicuit_from_block(block.clone());
+            let circuit = EvmCircuitCached::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             evm_checks(prover, &active_gate_rows, &active_lookup_rows)

@@ -9,7 +9,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{Address, Hash, ToWord, Word};
+use eth_types::{Address, ToWord, Word, H256};
 use std::collections::{BTreeMap, HashMap};
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -46,21 +46,21 @@ impl BlockContext {
 /// Block-wise execution steps that don't belong to any Transaction.
 #[derive(Debug, Clone)]
 pub struct BlockSteps {
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub padding_step: ExecStep,
+    /// EndBlock step that appears in the last EVM row.
+    pub end_block_step: ExecStep,
 }
 
 impl Default for BlockSteps {
     fn default() -> Self {
         Self {
-            end_block_not_last: ExecStep {
-                exec_state: ExecState::EndBlock,
+            padding_step: ExecStep {
+                exec_state: ExecState::Padding,
                 ..ExecStep::default()
             },
-            end_block_last: ExecStep {
+            end_block_step: ExecStep {
                 exec_state: ExecState::EndBlock,
                 ..ExecStep::default()
             },
@@ -70,7 +70,7 @@ impl Default for BlockSteps {
 
 /// Circuit Input related to a block.
 #[derive(Debug, Clone)]
-pub struct BlockHead {
+pub struct Block {
     /// chain id
     pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
@@ -90,49 +90,19 @@ pub struct BlockHead {
     pub base_fee: Word,
     /// start l1 queue index
     pub start_l1_queue_index: u64,
-    /// Original block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Parent block hash
+    pub parent_hash: H256,
+    /// State root of this block
+    pub state_root: H256,
 }
-impl BlockHead {
+impl Block {
     /// Create a new block.
     pub fn new(
         chain_id: u64,
         history_hashes: Vec<Word>,
         eth_block: &eth_types::Block<eth_types::Transaction>,
     ) -> Result<Self, Error> {
-        if eth_block.base_fee_per_gas.is_none() {
-            // FIXME: resolve this once we have proper EIP-1559 support
-            log::debug!(
-                "This does not look like a EIP-1559 block - base_fee_per_gas defaults to zero"
-            );
-        }
-
-        Ok(Self {
-            chain_id,
-            history_hashes,
-            start_l1_queue_index: 0,
-            coinbase: eth_block
-                .author
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-            gas_limit: eth_block.gas_limit.low_u64(),
-            number: eth_block
-                .number
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
-                .low_u64()
-                .into(),
-            timestamp: eth_block.timestamp,
-            difficulty: if eth_block.difficulty.is_zero() {
-                eth_block
-                    .mix_hash
-                    .unwrap_or_default()
-                    .to_fixed_bytes()
-                    .into()
-            } else {
-                eth_block.difficulty
-            },
-            base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
-            eth_block: eth_block.clone(),
-        })
+        Self::new_with_l1_queue_index(chain_id, 0, history_hashes, eth_block)
     }
 
     /// Create a new block.
@@ -173,17 +143,17 @@ impl BlockHead {
                 eth_block.difficulty
             },
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
-            eth_block: eth_block.clone(),
+            parent_hash: eth_block.parent_hash,
+            state_root: eth_block.state_root,
         })
     }
 }
 
-/// Circuit Input related to a block.
+/// Circuit Input related to many blocks, or a `Chunk`.
 #[derive(Debug, Default, Clone)]
-pub struct Block {
-    /// The `Block` struct is in fact "chunk" for l2
-    /// while "headers" are "Blocks" insides a chunk
-    pub headers: BTreeMap<u64, BlockHead>,
+pub struct Blocks {
+    /// Blocks inside this chunk
+    pub blocks: BTreeMap<u64, Block>,
     /// State root of the previous block
     pub prev_state_root: Word,
     /// Withdraw root
@@ -196,8 +166,6 @@ pub struct Block {
     pub txs: Vec<Transaction>,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
-    /// ..
-    pub code: HashMap<Hash, Vec<u8>>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Block-wise steps
@@ -214,59 +182,22 @@ pub struct Block {
     pub precompile_events: PrecompileEvents,
     /// circuit capacity counter
     copy_counter: usize,
-    /// relax mode indicate builder and circuit would skip
-    /// some sanity check, used by testing and debugging
-    relax_mode: bool,
 }
 
-impl Block {
-    /// ...
-    pub fn from_headers(headers: &[BlockHead], circuits_params: CircuitsParams) -> Self {
+impl Blocks {
+    /// Init from circuit params
+    pub fn init(chain_id: u64, circuits_params: CircuitsParams) -> Self {
         Self {
-            block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-            },
-            headers: headers
-                .iter()
-                .map(|b| (b.number.as_u64(), b.clone()))
-                .collect::<BTreeMap<_, _>>(),
+            chain_id,
             circuits_params,
             ..Default::default()
         }
     }
-    /// Create a new block.
-    pub fn new(
-        chain_id: u64,
-        history_hashes: Vec<Word>,
-        eth_block: &eth_types::Block<eth_types::Transaction>,
-        circuits_params: CircuitsParams,
-    ) -> Result<Self, Error> {
-        let mut block = Self {
-            block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-            },
-            exp_events: Vec::new(),
-            chain_id,
-            circuits_params,
-            ..Default::default()
-        };
-        let info = BlockHead::new(chain_id, history_hashes, eth_block)?;
-        block.headers.insert(info.number.as_u64(), info);
-        Ok(block)
+
+    /// Add a new block
+    pub fn add_block(&mut self, block: Block) {
+        log::debug!("add_block with number {}", block.number.as_u64());
+        self.blocks.insert(block.number.as_u64(), block);
     }
 
     /// Create a new block.
@@ -278,29 +209,20 @@ impl Block {
         circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         let mut block = Self {
-            block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-            },
+            block_steps: BlockSteps::default(),
             exp_events: Vec::new(),
             chain_id,
             start_l1_queue_index,
             circuits_params,
             ..Default::default()
         };
-        let info = BlockHead::new_with_l1_queue_index(
+        let info = Block::new_with_l1_queue_index(
             chain_id,
             start_l1_queue_index,
             history_hashes,
             eth_block,
         )?;
-        block.headers.insert(info.number.as_u64(), info);
+        block.blocks.insert(info.number.as_u64(), info);
         Ok(block)
     }
 
@@ -314,34 +236,26 @@ impl Block {
         self.chain_id
     }
 
-    /// Return if the relax mode
-    pub fn is_relaxed(&self) -> bool {
-        self.relax_mode
+    /// State root after all blocks in this chunk
+    pub fn end_state_root(&self) -> Word {
+        self.blocks
+            .last_key_value()
+            .map(|(_, blk)| blk.state_root.to_word())
+            .unwrap_or(self.prev_state_root)
     }
 
-    /// ..
-    pub fn end_state_root(&self) -> Word {
-        self.headers
-            .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root.to_word())
-            .unwrap_or(self.prev_state_root)
+    /// Get last block number
+    pub fn last_block_num(&self) -> Option<u64> {
+        self.blocks.iter().next_back().map(|(k, _)| *k)
     }
 
     #[cfg(test)]
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
     }
-
-    /// switch to relax mode (used by testing and debugging,
-    /// see the note in defination of `relax_mode`)
-    #[cfg(feature = "test")]
-    pub fn relax(mut self) -> Self {
-        self.relax_mode = true;
-        self
-    }
 }
 
-impl Block {
+impl Blocks {
     /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
         self.copy_counter += event.full_length() as usize;

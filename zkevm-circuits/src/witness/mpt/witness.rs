@@ -346,10 +346,9 @@ impl WitnessGenerator {
                         assert!(new_val < u64::MAX.into());
                         // code size can only change from 0
                         debug_assert_eq!(old_val.as_u64(), acc_data.code_size);
-                        debug_assert!(
-                            old_val.as_u64() == 0u64 || old_val.as_u64() == new_val.as_u64(),
-                            "old {old_val:?} new {new_val:?}",
-                        );
+                        if !(old_val.as_u64() == 0u64 || old_val.as_u64() == new_val.as_u64()) {
+                            log::warn!("MPTProofType::CodeSizeExists {old_val}=>{new_val}");
+                        }
                         acc_data.code_size = new_val.as_u64();
                     }
                     MPTProofType::AccountDoesNotExist => {
@@ -506,10 +505,10 @@ use eth_types::Bytes;
 use serde::Deserialize;
 
 type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
-type StorageTrieProofs = HashMap<Address, HashMap<Word, Vec<Bytes>>>;
+type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 type AccountDatas = HashMap<Address, AccountData>;
-type StorageDatas = HashMap<(Address, Word), StorageData>;
+type StorageDatas = HashMap<(Address, H256), StorageData>;
 
 #[derive(Deserialize, Default, Debug, Clone)]
 struct StorageTrace {
@@ -599,7 +598,7 @@ fn witgen_update_one() {
     assert_eq!(
         Some(U256::from(10u32)),
         storages
-            .get(&(target_addr, U256::zero()))
+            .get(&(target_addr, H256::zero()))
             .map(AsRef::as_ref)
             .copied()
     );

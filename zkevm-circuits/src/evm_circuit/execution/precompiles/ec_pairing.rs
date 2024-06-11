@@ -305,7 +305,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _transaction: &Transaction,
         call: &Call,
         step: &ExecStep,

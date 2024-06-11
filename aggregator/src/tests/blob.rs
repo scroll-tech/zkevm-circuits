@@ -2,12 +2,9 @@ use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
     },
-    blob::{
-        BlobAssignments, BlobData, N_BYTES_U256, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA,
-        N_ROWS_METADATA,
-    },
+    blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
     param::ConfigParams,
-    MAX_AGG_SNARKS,
+    BatchDataConfig, MAX_AGG_SNARKS,
 };
 use halo2_base::{
     gates::range::{RangeConfig, RangeStrategy},
@@ -26,7 +23,7 @@ use zkevm_circuits::{
 
 #[derive(Default)]
 struct BlobCircuit {
-    data: BlobData,
+    data: BatchData<MAX_AGG_SNARKS>,
 
     overwrite_num_valid_chunks: bool,
     overwrite_challenge_digest: Option<usize>,
@@ -46,7 +43,8 @@ struct BlobConfig {
     keccak_table: KeccakTable,
 
     rlc: RlcConfig,
-    blob_data: BlobDataConfig,
+    batch_data_config: BatchDataConfig<MAX_AGG_SNARKS>,
+    blob_data: BlobDataConfig<MAX_AGG_SNARKS>,
     barycentric: BarycentricEvaluationConfig,
 }
 
@@ -60,10 +58,10 @@ impl Circuit<Fr> for BlobCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let u8_table = U8Table::construct(meta);
         let range_table = RangeTable::construct(meta);
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let keccak_table = KeccakTable::construct(meta);
 
-        let rlc = RlcConfig::configure(meta, challenges);
+        let rlc = RlcConfig::configure(meta, &keccak_table, challenges);
 
         let parameters = ConfigParams::aggregation_param();
         let range = RangeConfig::<Fr>::configure(
@@ -79,13 +77,14 @@ impl Circuit<Fr> for BlobCircuit {
         let barycentric = BarycentricEvaluationConfig::construct(range);
 
         let challenge_expressions = challenges.exprs(meta);
-        let blob_data = BlobDataConfig::configure(
+        let batch_data_config = BatchDataConfig::configure(
             meta,
-            challenge_expressions,
+            &challenge_expressions,
             u8_table,
             range_table,
             &keccak_table,
         );
+        let blob_data = BlobDataConfig::configure(meta, &challenge_expressions, u8_table);
 
         BlobConfig {
             challenges,
@@ -93,6 +92,7 @@ impl Circuit<Fr> for BlobCircuit {
             keccak_table,
 
             rlc,
+            batch_data_config,
             blob_data,
             barycentric,
         }
@@ -128,12 +128,12 @@ impl Circuit<Fr> for BlobCircuit {
                     },
                 );
 
-                let blob = BlobAssignments::from(&self.data);
+                let point_eval = PointEvaluationAssignments::from(&self.data);
                 Ok(config.barycentric.assign(
                     &mut ctx,
-                    &blob.coefficients,
-                    blob.challenge_digest,
-                    blob.evaluation,
+                    &point_eval.coefficients,
+                    point_eval.challenge_digest,
+                    point_eval.evaluation,
                 ))
             },
         )?;
@@ -159,16 +159,25 @@ impl Circuit<Fr> for BlobCircuit {
             },
         )?;
 
-        config.blob_data.load_range_tables(&mut layouter)?;
+        config.batch_data_config.load_range_tables(&mut layouter)?;
+
+        config.blob_data.assign(
+            &mut layouter,
+            challenge_values,
+            &config.rlc,
+            &self.data,
+            &barycentric_assignments.barycentric_assignments,
+        )?;
 
         layouter.assign_region(
-            || "BlobDataConfig",
+            || "BatchDataConfig",
             |mut region| {
-                let assigned_rows =
-                    config
-                        .blob_data
-                        .assign_rows(&mut region, challenge_values, &self.data)?;
-                let assigned_blob_data_export = config.blob_data.assign_internal_checks(
+                let assigned_rows = config.batch_data_config.assign_rows(
+                    &mut region,
+                    challenge_values,
+                    &self.data,
+                )?;
+                let assigned_batch_data_export = config.batch_data_config.assign_internal_checks(
                     &mut region,
                     challenge_values,
                     &config.rlc,
@@ -196,18 +205,19 @@ impl Circuit<Fr> for BlobCircuit {
                     increment_cell(&mut region, &assigned_rows[i].is_padding)?;
                 }
                 if self.overwrite_num_valid_chunks {
-                    increment_cell(&mut region, &assigned_blob_data_export.num_valid_chunks)?;
+                    increment_cell(&mut region, &assigned_batch_data_export.num_valid_chunks)?;
                 }
                 if let Some(i) = self.overwrite_challenge_digest {
                     increment_cell(
                         &mut region,
-                        &assigned_rows[N_ROWS_BLOB_DATA_CONFIG - N_BYTES_U256 + i].byte,
+                        &assigned_rows[BatchData::<MAX_AGG_SNARKS>::n_rows() - N_BYTES_U256 + i]
+                            .byte,
                     )?;
                 }
                 if let Some((i, j)) = self.overwrite_chunk_data_digests {
                     increment_cell(
                         &mut region,
-                        &assigned_blob_data_export.chunk_data_digests[i][j],
+                        &assigned_batch_data_export.chunk_data_digests[i][j],
                     )?;
                 }
                 Ok(())
@@ -229,7 +239,7 @@ fn increment_cell(
     )
 }
 
-fn check_data(data: BlobData) -> Result<(), Vec<VerifyFailure>> {
+fn check_data(data: BatchData<MAX_AGG_SNARKS>) -> Result<(), Vec<VerifyFailure>> {
     let circuit = BlobCircuit {
         data,
         ..Default::default()
@@ -238,7 +248,8 @@ fn check_data(data: BlobData) -> Result<(), Vec<VerifyFailure>> {
 }
 
 fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
-    let k = 20;
+    // TODO: check where rows were not sufficient that we had to increase k from 20 to 21.
+    let k = 21;
     let mock_prover = MockProver::<Fr>::run(k, circuit, vec![]).expect("failed to run mock prover");
     mock_prover.verify_par()
 }
@@ -246,7 +257,7 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 #[test]
 fn blob_circuit_completeness() {
     // single chunk in batch, but the chunk has a size of N_ROWS_DATA
-    let full_blob = vec![vec![123; N_ROWS_DATA]];
+    let full_blob = vec![vec![123; BatchData::<MAX_AGG_SNARKS>::n_rows_data()]];
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
     let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
@@ -278,12 +289,12 @@ fn blob_circuit_completeness() {
         empty_and_nonempty_chunks,
         all_empty_except_last,
     ] {
-        assert_eq!(check_data(BlobData::from(&blob)), Ok(()), "{:?}", blob);
+        assert_eq!(check_data(BatchData::from(&blob)), Ok(()), "{:?}", blob);
     }
 }
 
-fn generic_blob_data() -> BlobData {
-    BlobData::from(&vec![
+fn generic_batch_data() -> BatchData<MAX_AGG_SNARKS> {
+    BatchData::from(&vec![
         vec![3, 100, 24, 30],
         vec![],
         vec![100; 300],
@@ -295,34 +306,34 @@ fn generic_blob_data() -> BlobData {
 }
 
 #[test]
-fn generic_blob_data_is_valid() {
-    assert_eq!(check_data(generic_blob_data()), Ok(()));
+fn generic_batch_data_is_valid() {
+    assert_eq!(check_data(generic_batch_data()), Ok(()));
 }
 
 #[test]
 fn inconsistent_chunk_size() {
-    let mut blob_data = generic_blob_data();
+    let mut blob_data = generic_batch_data();
     blob_data.chunk_sizes[4] += 1;
     assert!(check_data(blob_data).is_err());
 }
 
 #[test]
 fn too_many_empty_chunks() {
-    let mut blob_data = generic_blob_data();
+    let mut blob_data = generic_batch_data();
     blob_data.num_valid_chunks += 1;
     assert!(check_data(blob_data).is_err());
 }
 
 #[test]
 fn too_few_empty_chunks() {
-    let mut blob_data = generic_blob_data();
+    let mut blob_data = generic_batch_data();
     blob_data.num_valid_chunks -= 1;
     assert!(check_data(blob_data).is_err());
 }
 
 #[test]
 fn inconsistent_chunk_bytes() {
-    let mut blob_data = generic_blob_data();
+    let mut blob_data = generic_batch_data();
     blob_data.chunk_data[0].push(128);
     assert!(check_data(blob_data).is_err());
 }
@@ -330,7 +341,7 @@ fn inconsistent_chunk_bytes() {
 #[test]
 fn overwrite_num_valid_chunks() {
     let circuit = BlobCircuit {
-        data: generic_blob_data(),
+        data: generic_batch_data(),
         overwrite_num_valid_chunks: true,
         ..Default::default()
     };
@@ -341,7 +352,7 @@ fn overwrite_num_valid_chunks() {
 fn overwrite_challenge_digest_byte() {
     for i in [0, 1, 10, 31] {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_challenge_digest: Some(i),
             ..Default::default()
         };
@@ -353,7 +364,7 @@ fn overwrite_challenge_digest_byte() {
 fn overwrite_chunk_data_digest_byte() {
     for indices in [(0, 0), (4, 30), (10, 31), (MAX_AGG_SNARKS - 1, 2)] {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_chunk_data_digests: Some(indices),
             ..Default::default()
         };
@@ -364,17 +375,17 @@ fn overwrite_chunk_data_digest_byte() {
 const OVERWRITE_ROWS: [usize; 6] = [
     0,
     10,
-    N_ROWS_METADATA - 1,
-    N_ROWS_METADATA,
-    N_ROWS_METADATA + 100,
-    N_ROWS_METADATA + N_ROWS_DATA - 1,
+    BatchData::<MAX_AGG_SNARKS>::n_rows_metadata() - 1,
+    BatchData::<MAX_AGG_SNARKS>::n_rows_metadata(),
+    BatchData::<MAX_AGG_SNARKS>::n_rows_metadata() + 100,
+    BatchData::<MAX_AGG_SNARKS>::n_rows_metadata() + BatchData::<MAX_AGG_SNARKS>::n_rows_data() - 1,
 ];
 
 #[test]
 fn overwrite_chunk_idx() {
     for row in OVERWRITE_ROWS {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_chunk_idx: Some(row),
             ..Default::default()
         };
@@ -386,7 +397,7 @@ fn overwrite_chunk_idx() {
 fn overwrite_accumulator() {
     for row in OVERWRITE_ROWS {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_accumulator: Some(row),
             ..Default::default()
         };
@@ -398,7 +409,7 @@ fn overwrite_accumulator() {
 fn overwrite_preimage_rlc() {
     for row in OVERWRITE_ROWS {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_preimage_rlc: Some(row),
             ..Default::default()
         };
@@ -410,7 +421,7 @@ fn overwrite_preimage_rlc() {
 fn overwrite_digest_rlc() {
     for row in OVERWRITE_ROWS {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_digest_rlc: Some(row),
             ..Default::default()
         };
@@ -422,7 +433,7 @@ fn overwrite_digest_rlc() {
 fn overwrite_is_boundary() {
     for row in OVERWRITE_ROWS {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_is_boundary: Some(row),
             ..Default::default()
         };
@@ -434,7 +445,7 @@ fn overwrite_is_boundary() {
 fn overwrite_is_padding() {
     for row in OVERWRITE_ROWS {
         let circuit = BlobCircuit {
-            data: generic_blob_data(),
+            data: generic_batch_data(),
             overwrite_is_padding: Some(row),
             ..Default::default()
         };

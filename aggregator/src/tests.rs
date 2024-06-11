@@ -23,7 +23,8 @@ macro_rules! layer_0 {
         );
         log::trace!("finished layer 0 pk generation for circuit");
 
-        let snark = gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>);
+        let snark =
+            gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>).unwrap();
         log::trace!("finished layer 0 snark generation for circuit");
 
         assert!(verify_snark_shplonk::<$circuit_type>(
@@ -74,7 +75,8 @@ macro_rules! compression_layer_snark {
             compression_circuit.clone(),
             &mut rng,
             None::<String>, // Some(&$path.join(Path::new("layer_1.snark"))),
-        );
+        )
+        .unwrap();
         log::trace!(
             "finished layer {} snark generation for circuit",
             $layer_index

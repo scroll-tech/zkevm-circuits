@@ -51,7 +51,7 @@ impl Default for MockBlock {
             state_root: Hash::zero(),
             transactions_root: Hash::zero(),
             receipts_root: Hash::zero(),
-            number: U64([0u64]),
+            number: U64([1u64]),
             gas_used: Word::zero(),
             gas_limit: *MOCK_GASLIMIT,
             base_fee_per_gas: *MOCK_BASEFEE,

@@ -163,7 +163,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         _: &Call,
         step: &ExecStep,

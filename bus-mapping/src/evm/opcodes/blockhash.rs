@@ -32,7 +32,7 @@ impl Opcode for Blockhash {
                 state.block.sha3_inputs.push(sha3_input);
                 sha3_output
             } else {
-                let block_head = state.block.headers.get(&current_block_number).unwrap();
+                let block_head = state.block.blocks.get(&current_block_number).unwrap();
                 let offset = (current_block_number - block_number.as_u64()) as usize;
                 let total_history_hashes = block_head.history_hashes.len();
                 block_head.history_hashes[total_history_hashes - offset]

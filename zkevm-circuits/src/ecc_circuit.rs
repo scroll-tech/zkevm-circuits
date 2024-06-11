@@ -1316,7 +1316,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
     type Config = EccCircuitConfig<F>;
 
-    fn new_from_block(block: &Block<F>) -> Self {
+    fn new_from_block(block: &Block) -> Self {
         Self {
             max_add_ops: block.circuits_params.max_ec_ops.ec_add,
             max_mul_ops: block.circuits_params.max_ec_ops.ec_mul,
@@ -1352,7 +1352,7 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         Ok(())
     }
 
-    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &Block) -> (usize, usize) {
         let row_num = if block.circuits_params.max_vertical_circuit_rows == 0 {
             Self::min_num_rows()
         } else {

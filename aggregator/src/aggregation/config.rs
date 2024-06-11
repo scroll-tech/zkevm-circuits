@@ -12,21 +12,22 @@ use snark_verifier::{
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
-    table::{KeccakTable, RangeTable, U8Table},
+    table::{BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
     util::{Challenges, SubCircuitConfig},
 };
 
 use crate::{
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
+    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs,
+    RlcConfig,
 };
 
 #[derive(Debug, Clone)]
 #[rustfmt::skip]
 /// Configurations for aggregation circuit.
 /// This config is hard coded for BN256 curve.
-pub struct AggregationConfig {
+pub struct AggregationConfig<const N_SNARKS: usize> {
     /// Non-native field chip configurations
     pub base_field_config: FpConfig<Fr, Fq>,
     /// Keccak circuit configurations
@@ -34,7 +35,11 @@ pub struct AggregationConfig {
     /// RLC config
     pub rlc_config: RlcConfig,
     /// The blob data's config.
-    pub blob_data_config: BlobDataConfig,
+    pub blob_data_config: BlobDataConfig<N_SNARKS>,
+    /// The batch data's config.
+    pub batch_data_config: BatchDataConfig<N_SNARKS>,
+    /// The zstd decoder's config.
+    pub decoder_config: DecoderConfig<1024, 512>,
     /// Config to do the barycentric evaluation on blob polynomial.
     pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores
@@ -44,7 +49,7 @@ pub struct AggregationConfig {
     pub instance: Column<Instance>,
 }
 
-impl AggregationConfig {
+impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
     /// Build a configuration from parameters.
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
@@ -55,9 +60,6 @@ impl AggregationConfig {
             params.limb_bits == BITS && params.num_limbs == LIMBS,
             "For now we fix limb_bits = {BITS}, otherwise change code",
         );
-
-        // RLC configuration
-        let rlc_config = RlcConfig::configure(meta, challenges);
 
         // hash configuration for aggregation circuit
         let (keccak_table, keccak_circuit_config) = {
@@ -75,6 +77,9 @@ impl AggregationConfig {
             )
         };
 
+        // RLC configuration
+        let rlc_config = RlcConfig::configure(meta, &keccak_table, challenges);
+
         // base field configuration for aggregation circuit
         let base_field_config = FpConfig::configure(
             meta,
@@ -90,6 +95,7 @@ impl AggregationConfig {
             params.degree as usize,
         );
 
+        // Barycentric.
         let barycentric = BarycentricEvaluationConfig::construct(base_field_config.range.clone());
 
         let columns = keccak_circuit_config.cell_manager.columns();
@@ -106,12 +112,41 @@ impl AggregationConfig {
         // enable equality for the is_final column
         meta.enable_equality(keccak_circuit_config.keccak_table.is_final);
 
-        // Blob data.
+        // Batch data and Blob data.
         let u8_table = U8Table::construct(meta);
         let range_table = RangeTable::construct(meta);
         let challenges_expr = challenges.exprs(meta);
-        let blob_data_config =
-            BlobDataConfig::configure(meta, challenges_expr, u8_table, range_table, &keccak_table);
+        let blob_data_config = BlobDataConfig::configure(meta, &challenges_expr, u8_table);
+        let batch_data_config = BatchDataConfig::configure(
+            meta,
+            &challenges_expr,
+            u8_table,
+            range_table,
+            &keccak_table,
+        );
+
+        // Zstd decoder.
+        let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+        let pow2_table = Pow2Table::construct(meta);
+        let range8 = RangeTable::construct(meta);
+        let range16 = RangeTable::construct(meta);
+        let range512 = RangeTable::construct(meta);
+        let range_block_len = RangeTable::construct(meta);
+        let bitwise_op_table = BitwiseOpTable::construct(meta);
+        let decoder_config = DecoderConfig::configure(
+            meta,
+            &challenges_expr,
+            DecoderConfigArgs {
+                pow_rand_table,
+                pow2_table,
+                u8_table,
+                range8,
+                range16,
+                range512,
+                range_block_len,
+                bitwise_op_table,
+            },
+        );
 
         // Instance column stores public input column
         // - the accumulator
@@ -120,6 +155,9 @@ impl AggregationConfig {
         let instance = meta.instance_column();
         meta.enable_equality(instance);
 
+        println!("meta degree = {:?}", meta.degree());
+        debug_assert!(meta.degree() <= 9);
+
         Self {
             base_field_config,
             rlc_config,
@@ -127,6 +165,8 @@ impl AggregationConfig {
             keccak_circuit_config,
             instance,
             barycentric,
+            batch_data_config,
+            decoder_config,
         }
     }
 
@@ -149,4 +189,32 @@ impl AggregationConfig {
     pub fn ecc_chip(&self) -> BaseFieldEccChip<G1Affine> {
         EccChip::construct(self.base_field_config.clone())
     }
+}
+
+#[test]
+fn aggregation_circuit_degree() {
+    use halo2_ecc::fields::fp::FpStrategy;
+    let mut cs = ConstraintSystem::<Fr>::default();
+    let param = ConfigParams {
+        strategy: FpStrategy::Simple,
+        degree: 20,
+        num_advice: vec![59],
+        num_lookup_advice: vec![7],
+        num_fixed: 2,
+        lookup_bits: 18,
+        limb_bits: 88,
+        num_limbs: 3,
+    };
+    let challenges = Challenges::construct_p1(&mut cs);
+    AggregationConfig::<{ crate::constants::MAX_AGG_SNARKS }>::configure(
+        &mut cs, &param, challenges,
+    );
+    cs = cs.chunk_lookups();
+    let stats = zkevm_circuits::util::circuit_stats(&cs);
+    let degree = cs.degree();
+    let phases = cs.max_phase();
+    assert!(degree <= 9);
+    assert!(phases <= 1);
+    log::info!("stats {stats:#?}");
+    log::info!("agg circuit degree: {}", degree);
 }

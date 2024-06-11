@@ -495,6 +495,7 @@ pub fn constrain_rw_counter<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
     is_last_col: Column<Advice>,
+    is_first: Expression<F>,
     is_rw_type: Expression<F>,
     is_row_end: Expression<F>,
     is_memory_copy: Expression<F>,
@@ -503,7 +504,9 @@ pub fn constrain_rw_counter<F: Field>(
 ) {
     // Decrement rwc_inc_left for the next row, when an RW operation happens.
     let rwc_diff = is_rw_type.expr() * is_row_end.expr();
-    let new_value = meta.query_advice(rwc_inc_left, CURRENT) - rwc_diff;
+    let cur_rwc_inc_left = meta.query_advice(rwc_inc_left, CURRENT);
+    let new_value = cur_rwc_inc_left.clone() - rwc_diff;
+
     let is_last = meta.query_advice(is_last_col, CURRENT);
     let is_last_two = meta.query_advice(is_last_col, NEXT_ROW);
 
@@ -528,7 +531,7 @@ pub fn constrain_rw_counter<F: Field>(
     // normal case( `rwc_inc_left` decrease by 1 or 0 for consecutive read steps--> write step
     // --> read step -->write step ...).
     cb.condition(
-        is_memory_copy * not::expr(is_last_two) * not::expr(is_last.clone()),
+        is_memory_copy.clone() * not::expr(is_last_two.clone()) * not::expr(is_last.clone()),
         |cb| {
             cb.require_equal(
                 "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
@@ -537,6 +540,23 @@ pub fn constrain_rw_counter<F: Field>(
             );
         },
     );
+
+    // the last row is write row.
+    cb.condition(is_memory_copy.clone() * is_last.clone(), |cb| {
+        cb.require_equal(
+            "constrain last rwc_inc_left == 1 ",
+            cur_rwc_inc_left,
+            1.expr(),
+        );
+    });
+    // second(write) step's rwc_inc_left is half of the first.
+    cb.condition(is_memory_copy * is_first, |cb| {
+        cb.require_equal(
+            "rwc_inc_left[0] ==  2 * rwc_inc_left[1] ",
+            meta.query_advice(rwc_inc_left, CURRENT),
+            2.expr() * meta.query_advice(rwc_inc_left, NEXT_ROW),
+        );
+    });
 
     // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
     cb.condition(not::expr(is_last.expr()), |cb| {
