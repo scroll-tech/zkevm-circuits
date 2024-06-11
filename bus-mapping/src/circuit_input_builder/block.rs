@@ -292,7 +292,7 @@ impl Block {
         self.relax_mode
     }
 
-    /// ..
+    /// State root after all blocks in this chunk
     pub fn end_state_root(&self) -> Word {
         self.headers
             .last_key_value()
