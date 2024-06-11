@@ -714,11 +714,11 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &mut offset,
                 )?;
 
-                log::info!(
+                log::debug!(
                     "batch data hash rlc recomputed: {:?}",
                     batch_data_hash_rlc.value()
                 );
-                log::info!(
+                log::debug!(
                     "batch data hash rlc from table: {:?}",
                     assigned_hash_cells.output_rlcs[N_SNARKS + 1].value()
                 );
@@ -769,11 +769,11 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
                 )?;
 
-                log::info!(
+                log::debug!(
                     "batch data hash rlc reconstructed: {:?}",
                     batch_data_hash_reconstructed_rlc.value()
                 );
-                log::info!(
+                log::debug!(
                     "batch data hash rlc from table: {:?}",
                     assigned_hash_cells.input_rlcs[N_SNARKS + 1].value()
                 );
