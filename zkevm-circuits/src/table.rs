@@ -3135,6 +3135,8 @@ impl PowOfRandTable {
                     )?;
                 }
 
+                log::debug!("assign pow of rand with rows {} done", max_rows);
+
                 Ok(())
             },
         )

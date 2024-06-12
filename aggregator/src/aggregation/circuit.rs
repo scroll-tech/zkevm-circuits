@@ -1,4 +1,4 @@
-use crate::{blob::BatchData, witgen::MultiBlockProcessResult};
+use crate::{blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -489,7 +489,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 address_table_arr,
                 sequence_exec_info_arr,
                 &challenges,
-                20, // TODO: configure k for aggregation circuit instead of hard-coded here.
+                LOG_DEGREE, // TODO: configure k for aggregation circuit instead of hard-coded here.
             )?;
 
             layouter.assign_region(
