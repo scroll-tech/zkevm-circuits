@@ -4,7 +4,7 @@
 //!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
 //!  `1/x` otherwise
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -157,7 +157,7 @@ impl<F: Field> Chip<F> for IsZeroChip<F> {
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 
-    use eth_types::Field;
+    use crate::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,

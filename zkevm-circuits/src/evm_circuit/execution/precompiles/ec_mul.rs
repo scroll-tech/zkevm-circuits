@@ -16,8 +16,9 @@ use crate::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToLittleEndian, U256};
 use gadgets::util::{and, not, or, select, split_u256, sum, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

@@ -24,8 +24,9 @@ use crate::{
     witness::{Block, Call, ExecStep},
 };
 use either::Either;
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToLittleEndian, U256};
 use gadgets::util::{select, sum};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

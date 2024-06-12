@@ -16,7 +16,7 @@
 // |--------|-----------|-----------|-----------|-----------|
 // last row is padding to fit in 8 rows range_check_64 chip
 
-use eth_types::{Field, Word, ToU16LittleEndian};
+use eth_types::{Word, ToU16LittleEndian};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
@@ -26,6 +26,7 @@ use halo2_proofs::{
 use crate::{
     range::{UIntRangeCheckChip, UIntRangeCheckInstruction},
     util::{expr_from_u16, pow_of_two, split_u256, split_u256_limb64, Expr},
+    Field,
 };
 
 /// Config for the MulAddChip.
@@ -438,9 +439,8 @@ impl<F: Field> MulAddChip<F> {
 
 #[cfg(test)]
 mod test {
-    use std::marker::PhantomData;
-
-    use eth_types::{Field, Word};
+    use crate::Field;
+    use eth_types::Word;
     use halo2_proofs::{
         circuit::{SimpleFloorPlanner, Value},
         dev::MockProver,
@@ -448,6 +448,7 @@ mod test {
         plonk::{Circuit, Selector},
     };
     use rand::Rng;
+    use std::marker::PhantomData;
 
     use crate::mul_add::{MulAddChip, MulAddConfig};
 

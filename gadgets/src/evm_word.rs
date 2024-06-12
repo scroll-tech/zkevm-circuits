@@ -6,8 +6,8 @@
 //! In the zkevm circuit, this `encode(word)` expression will not be directly
 //! looked up. Instead, it will be folded into the bus mapping lookup.
 
+use crate::Field;
 use crate::Variable;
-use eth_types::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},

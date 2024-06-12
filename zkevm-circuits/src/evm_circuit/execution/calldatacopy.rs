@@ -21,7 +21,8 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

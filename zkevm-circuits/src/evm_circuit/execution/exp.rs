@@ -1,7 +1,8 @@
 use crate::util::Field;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, ToLittleEndian};
 use gadgets::util::{and, not, split_u256, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
