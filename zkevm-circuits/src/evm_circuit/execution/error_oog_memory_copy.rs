@@ -373,6 +373,29 @@ mod tests {
         test_for_edge_memory_size(0xffffffff1, 0xffffffff0);
     }
 
+    // add expand address to max case.
+    #[test]
+    fn test_oog_mcopy_max_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        let copy_size = 0xffffffff0;
+
+        for is_src_max_expand in [false, true]{
+            // src_offset (or dest_offset) + copy_size > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+            let (src_offset, dest_offset) = if is_src_max_expand {
+                (0xffffffff1, 0x20e0)
+            }else{
+                (0x20e0, 0xffffffff1)
+            };
+        
+            let testing_data =
+            TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, Some(MOCK_BLOCK_GAS_LIMIT));
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        }
+    }
+
     // this test added by auditing fix memory expansion case https://github.com/scroll-tech/zkevm-circuits/pull/1321
     #[test]
     fn test_oog_mcopy_src_larger_dst_addr() {
@@ -390,6 +413,7 @@ mod tests {
     fn test_oog_mcopy_max_u64_address() {
         let copy_size = 0xff;
         for is_src_u64_max in [false, true]{
+            // assign src_offset or dest_offset to u64::MAX
             let (src_offset, dest_offset) = if is_src_u64_max {
                 (u64::MAX, 0x20e0)
             }else{
@@ -399,7 +423,7 @@ mod tests {
             let testing_data =
             TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, Some(MOCK_BLOCK_GAS_LIMIT),
           );
-          
+
           test_root(&testing_data);
           test_internal(&testing_data);
         }
