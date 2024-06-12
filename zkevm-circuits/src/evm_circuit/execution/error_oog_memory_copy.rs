@@ -313,8 +313,8 @@ mod tests {
 
     const TESTING_COMMON_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALLDATACOPY,
-        //OpcodeId::CODECOPY,
-        //OpcodeId::RETURNDATACOPY,
+        OpcodeId::CODECOPY,
+        OpcodeId::RETURNDATACOPY,
     ];
 
     const TESTING_DST_OFFSET_COPY_SIZE_PAIRS: &[(u64, u64)] =
@@ -380,16 +380,20 @@ mod tests {
         // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
         let copy_size = 0xffffffff0;
 
-        for is_src_max_expand in [false, true]{
+        for is_src_max_expand in [false, true] {
             // src_offset (or dest_offset) + copy_size > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
             let (src_offset, dest_offset) = if is_src_max_expand {
                 (0xffffffff1, 0x20e0)
-            }else{
+            } else {
                 (0x20e0, 0xffffffff1)
             };
-        
-            let testing_data =
-            TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, Some(MOCK_BLOCK_GAS_LIMIT));
+
+            let testing_data = TestingData::new_for_mcopy(
+                src_offset,
+                dest_offset,
+                copy_size,
+                Some(MOCK_BLOCK_GAS_LIMIT),
+            );
 
             test_root(&testing_data);
             test_internal(&testing_data);
@@ -402,30 +406,33 @@ mod tests {
         let copy_size = 0xff;
         let src_offset = 0x20e0;
         let dest_offset = 0x20;
-        let testing_data =
-        TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, None);
+        let testing_data = TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, None);
 
         test_root(&testing_data);
         test_internal(&testing_data);
     }
 
+    // test src_offset or dest_offset is u64::MAX
     #[test]
     fn test_oog_mcopy_max_u64_address() {
         let copy_size = 0xff;
-        for is_src_u64_max in [false, true]{
+        for is_src_u64_max in [false, true] {
             // assign src_offset or dest_offset to u64::MAX
             let (src_offset, dest_offset) = if is_src_u64_max {
                 (u64::MAX, 0x20e0)
-            }else{
+            } else {
                 (0x20e0, u64::MAX)
             };
-        
-            let testing_data =
-            TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, Some(MOCK_BLOCK_GAS_LIMIT),
-          );
 
-          test_root(&testing_data);
-          test_internal(&testing_data);
+            let testing_data = TestingData::new_for_mcopy(
+                src_offset,
+                dest_offset,
+                copy_size,
+                Some(MOCK_BLOCK_GAS_LIMIT),
+            );
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
         }
     }
 
@@ -543,8 +550,10 @@ mod tests {
                     (max_addr + copy_size + 31) / 32
                 };
 
-                println!("cur_memory_word_size {}, next_memory_word_size{}", cur_memory_word_size, 
-                 next_memory_word_size);
+                println!(
+                    "cur_memory_word_size {}, next_memory_word_size{}",
+                    cur_memory_word_size, next_memory_word_size
+                );
 
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + OpcodeId::MCOPY.constant_gas_cost().0
@@ -666,4 +675,6 @@ mod tests {
             test_internal(&testing_data);
         });
     }
+
+    // TODO: negative test zone
 }
