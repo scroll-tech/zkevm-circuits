@@ -23,7 +23,7 @@ use eth_types::{
     evm_types::{GasCost, OpcodeId},
     ToLittleEndian, U256,
 };
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{circuit::Value, plonk::{Error, Expression}};
 
 /// Gadget to implement the corresponding out of gas errors for
 /// [`OpcodeId::CALLDATACOPY`], [`OpcodeId::CODECOPY`],
@@ -225,7 +225,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let src_memory_addr = self
             .src_memory_addr
-            .assign(region, offset, src_offset, copy_size)?;
+            .assign(region, offset, src_offset, copy_size + 1)?;
         let dst_memory_addr = self
             .dst_memory_addr
             .assign(region, offset, dst_offset, copy_size)?;
@@ -294,12 +294,48 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryAddrExpandGadget<F>{
+    /// Source offset and size to copy
+    src_memory_addr: MemoryExpandedAddressGadget<F>,
+    /// Destination offset and size to copy
+    dst_memory_addr: MemoryExpandedAddressGadget<F>,
+    // mcopy expansion
+    memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+}
+
+impl<F:Field> MemoryAddrExpandGadget<F>{
+    fn construct(cb: &mut EVMConstraintBuilder<F>, is_mcopy: Expression<F>) -> Self {
+        let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
+        // src can also be possible to overflow for mcopy.
+        let src_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
+         // for mcopy
+        let memory_expansion_mcopy = cb.condition(is_mcopy.expr(), |cb| {
+            cb.require_equal(
+                "mcopy src_address length == dst_address length",
+                src_memory_addr.length_rlc(),
+                dst_memory_addr.length_rlc(),
+            );
+            MemoryExpansionGadget::construct(
+                cb,
+                [src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
+            )
+         });
+         Self {
+            src_memory_addr,
+            dst_memory_addr,
+            memory_expansion_mcopy,
+         }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         evm_circuit::test::{rand_bytes, rand_word},
         test_util::CircuitTestBuilder,
+        witness::{Block, Transaction, Call, ExecStep}, 
     };
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
@@ -677,4 +713,52 @@ mod tests {
     }
 
     // TODO: negative test zone
+    #[derive(Clone)]
+    struct ErrOOGMemoryCopyGadgetTestContainer<F> {
+        gadget: ErrorOOGMemoryCopyGadget<F>,
+        //expected_is_success: Cell<F>,
+    }
+
+    impl<F: Field> ErrOOGMemoryCopyGadgetTestContainer<F> {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
+            //let expected_is_success = cb.query_cell();
+            let gadget = ErrorOOGMemoryCopyGadget::<F>::configure(
+                cb);
+
+            // cb.require_equal(
+            //     "tx_l1_fee must be correct",
+            //     gadget.tx_l1_fee(),
+            //     expected_tx_l1_fee.expr(),
+            // );
+
+            ErrOOGMemoryCopyGadgetTestContainer {
+                gadget,
+                // expected_tx_l1_fee,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            //witnesses: &[U256],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            self.gadget.assign_exec_step(
+                region,
+                0,
+                &Block::default(),
+                &Transaction::default(),
+                &Call::default(),
+                // TODO: construct step data
+                &ExecStep::default(),
+            )?;
+
+            // self.expected_is_success
+            //     .assign(region, 0, Value::known(F::from(expected_tx_l1_fee)))?;
+
+            Ok(())
+        }
+    }
+
+
+
 }
