@@ -34,8 +34,9 @@ pub fn collect_codes(
             let code_hash = execution_result
                 .to
                 .as_ref()
-                .and_then(|t| t.poseidon_code_hash)
+                .map(|t| t.poseidon_code_hash)
                 .unwrap_or_else(|| CodeDB::hash(&bytecode));
+            assert_eq!(code_hash, execution_result.code_hash);
             let code_hash = if code_hash.is_zero() {
                 CodeDB::hash(&bytecode)
             } else {

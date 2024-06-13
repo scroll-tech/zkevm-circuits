@@ -208,7 +208,7 @@ impl Blocks {
         eth_block: &eth_types::Block<eth_types::Transaction>,
         circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
-        let mut block = Self {
+        let mut blocks = Self {
             block_steps: BlockSteps::default(),
             exp_events: Vec::new(),
             chain_id,
@@ -216,14 +216,14 @@ impl Blocks {
             circuits_params,
             ..Default::default()
         };
-        let info = Block::new_with_l1_queue_index(
+        let block = Block::new_with_l1_queue_index(
             chain_id,
             start_l1_queue_index,
             history_hashes,
             eth_block,
         )?;
-        block.blocks.insert(info.number.as_u64(), info);
-        Ok(block)
+        blocks.add_block(block);
+        Ok(blocks)
     }
 
     /// Return the list of transactions of this block.

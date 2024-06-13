@@ -31,7 +31,7 @@ pub struct BlockTraceV2 {
     #[serde(rename = "chainID", default)]
     pub chain_id: u64,
     /// coinbase's status AFTER execution
-    pub coinbase: AccountProofWrapper,
+    pub coinbase: AccountTrace,
     /// block
     pub header: EthBlock,
     /// txs
@@ -86,7 +86,7 @@ pub struct BlockTrace {
     #[serde(rename = "chainID", default)]
     pub chain_id: u64,
     /// coinbase's status AFTER execution
-    pub coinbase: AccountProofWrapper,
+    pub coinbase: AccountTrace,
     /// block
     pub header: EthBlock,
     /// txs
@@ -106,6 +106,8 @@ pub struct BlockTrace {
     /// l1 tx queue
     #[serde(rename = "startL1QueueIndex", default)]
     pub start_l1_queue_index: u64,
+    /// Withdraw root
+    pub withdraw_trie_root: H256,
 }
 
 impl From<BlockTrace> for EthBlock {
@@ -154,7 +156,7 @@ impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
     fn from(block: &BlockTraceV2) -> Self {
         revm_primitives::BlockEnv {
             number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
-            coinbase: block.coinbase.address.unwrap().0.into(),
+            coinbase: block.coinbase.address.0.into(),
             timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
             gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
             basefee: revm_primitives::U256::from_be_bytes(
@@ -178,7 +180,7 @@ impl From<&BlockTrace> for revm_primitives::BlockEnv {
     fn from(block: &BlockTrace) -> Self {
         revm_primitives::BlockEnv {
             number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
-            coinbase: block.coinbase.address.unwrap().0.into(),
+            coinbase: block.coinbase.address.0.into(),
             timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
             gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
             basefee: revm_primitives::U256::from_be_bytes(
@@ -369,15 +371,18 @@ pub struct ExecutionResult {
     #[serde(rename = "returnValue", default)]
     pub return_value: String,
     /// Status of from account AFTER execution
-    pub from: Option<AccountProofWrapper>,
+    /// TODO: delete this
+    pub from: Option<AccountTrace>,
     /// Status of to account AFTER execution
-    pub to: Option<AccountProofWrapper>,
+    /// TODO: delete this after curie upgrade
+    pub to: Option<AccountTrace>,
     #[serde(rename = "accountAfter", default)]
     /// List of accounts' (coinbase etc) status AFTER execution
-    pub account_after: Vec<AccountProofWrapper>,
+    pub account_after: Vec<AccountTrace>,
     #[serde(rename = "accountCreated")]
     /// Status of created account AFTER execution
-    pub account_created: Option<AccountProofWrapper>,
+    /// TODO: delete this
+    pub account_created: Option<AccountTrace>,
     #[serde(rename = "poseidonCodeHash")]
     /// code hash of called
     pub code_hash: Option<Hash>,
@@ -461,7 +466,7 @@ pub struct ExtraData {
     #[serde(rename = "codeList")]
     pub code_list: Option<Vec<Bytes>>,
     #[serde(rename = "proofList")]
-    pub proof_list: Option<Vec<AccountProofWrapper>>,
+    pub proof_list: Option<Vec<AccountTrace>>,
 }
 
 impl ExtraData {
@@ -470,10 +475,10 @@ impl ExtraData {
     }
 
     pub fn get_code_hash_at(&self, i: usize) -> Option<H256> {
-        self.get_proof_at(i).and_then(|a| a.poseidon_code_hash)
+        self.get_proof_at(i).map(|a| a.poseidon_code_hash)
     }
 
-    pub fn get_proof_at(&self, i: usize) -> Option<AccountProofWrapper> {
+    pub fn get_proof_at(&self, i: usize) -> Option<AccountTrace> {
         self.proof_list.as_ref().and_then(|p| p.get(i)).cloned()
     }
 }
@@ -481,25 +486,16 @@ impl ExtraData {
 /// account wrapper for account status
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
 #[doc(hidden)]
-pub struct AccountProofWrapper {
-    pub address: Option<Address>,
-    pub nonce: Option<u64>,
-    pub balance: Option<U256>,
+pub struct AccountTrace {
+    pub address: Address,
+    pub nonce: u64,
+    pub balance: U256,
     #[serde(rename = "keccakCodeHash")]
-    pub keccak_code_hash: Option<H256>,
+    pub keccak_code_hash: H256,
     #[serde(rename = "poseidonCodeHash")]
-    pub poseidon_code_hash: Option<H256>,
+    pub poseidon_code_hash: H256,
     #[serde(rename = "codeSize")]
     pub code_size: u64,
-    pub storage: Option<StorageProofWrapper>,
-}
-
-/// storage wrapper for storage status
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[doc(hidden)]
-pub struct StorageProofWrapper {
-    pub key: Option<U256>,
-    pub value: Option<U256>,
 }
 
 #[ignore]

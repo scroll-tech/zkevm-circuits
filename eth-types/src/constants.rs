@@ -41,7 +41,7 @@ pub fn get_difficulty_constant() -> U256 {
 ///  Set scroll block constants using trace
 pub fn set_scroll_block_constants_with_trace(trace: &BlockTrace) {
     set_scroll_block_constants(
-        &trace.coinbase.address.unwrap(),
+        &trace.coinbase.address,
         trace.chain_id,
         U256::zero(),
     )

@@ -677,7 +677,7 @@ pub struct GethExecTrace {
     )]
     /// List of accounts' (coinbase etc) status AFTER execution
     /// Only viable for scroll mode
-    pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
+    pub account_after: Vec<crate::l2_types::AccountTrace>,
     /// prestate trace
     pub prestate: HashMap<Address, GethPrestateTrace>,
     /// call trace
@@ -685,7 +685,7 @@ pub struct GethExecTrace {
     pub call_trace: GethCallTrace,
 }
 
-fn parse_account_after<'de, D>(d: D) -> Result<Vec<crate::l2_types::AccountProofWrapper>, D::Error>
+fn parse_account_after<'de, D>(d: D) -> Result<Vec<crate::l2_types::AccountTrace>, D::Error>
 where
     D: Deserializer<'de>,
 {
