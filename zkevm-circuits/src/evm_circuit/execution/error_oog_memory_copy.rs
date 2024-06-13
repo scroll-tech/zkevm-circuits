@@ -327,7 +327,7 @@ mod tests {
     use crate::{
         evm_circuit::test::{rand_bytes, rand_word},
         evm_circuit::util::math_gadget::test_util::{
-            MathGadgetContainer, UnitTestMathGadgetBaseCircuit,
+            assert_error_matches, MathGadgetContainer, UnitTestMathGadgetBaseCircuit,
         },
         test_util::CircuitTestBuilder,
     };
@@ -336,11 +336,7 @@ mod tests {
     use eth_types::{
         bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256,
     };
-    use halo2_proofs::{
-        circuit::Value,
-        dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
-    };
+    use halo2_proofs::{circuit::Value, dev::MockProver, halo2curves::bn256::Fr};
     use itertools::Itertools;
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -794,30 +790,5 @@ mod tests {
         let result = prover.verify();
         // when not mcopy, should pass.
         assert!(result.is_ok());
-    }
-
-    fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
-        let errors = result.expect_err("result is not an error");
-        assert_eq!(errors.len(), 1, "{errors:?}");
-        match &errors[0] {
-            VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
-                let constraint = format!("{constraint}");
-
-                // here use assert ?
-                if !constraint.contains(name) {
-                    panic!("{constraint} does not contain {name}");
-                }
-            }
-            // TODO: not support following error now.
-            VerifyFailure::Lookup {
-                name: _lookup_name, ..
-            } => panic!(),
-            VerifyFailure::CellNotAssigned { .. } => panic!(),
-            VerifyFailure::ConstraintPoisoned { .. } => panic!(),
-            VerifyFailure::Permutation { .. } => panic!(),
-            &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => {
-                todo!()
-            }
-        }
     }
 }
