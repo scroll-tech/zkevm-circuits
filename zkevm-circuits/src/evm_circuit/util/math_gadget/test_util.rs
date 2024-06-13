@@ -91,7 +91,7 @@ pub(crate) struct UnitTestMathGadgetBaseCircuit<G> {
 }
 
 impl<G> UnitTestMathGadgetBaseCircuit<G> {
-    fn new(size: usize, witnesses: Vec<Word>) -> Self {
+    pub(crate) fn new(size: usize, witnesses: Vec<Word>) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size,
             witnesses,

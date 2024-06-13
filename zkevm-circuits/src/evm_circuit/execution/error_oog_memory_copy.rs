@@ -328,19 +328,19 @@ mod tests {
         evm_circuit::test::{rand_bytes, rand_word},
         test_util::CircuitTestBuilder,
         witness::{Block, Transaction, Call, ExecStep}, 
-        evm_circuit::util::math_gadget::test_util::{test_math_gadget_container, try_test, MathGadgetContainer},
+        evm_circuit::util::math_gadget::test_util::{test_math_gadget_container, UnitTestMathGadgetBaseCircuit, MathGadgetContainer},
     };
 
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256,
+        bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256, ToScalar,
     };
     use itertools::Itertools;
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
         MOCK_BLOCK_GAS_LIMIT,
     };
-    use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
+    use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr, dev::{MockProver, VerifyFailure}};
 
     const TESTING_COMMON_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALLDATACOPY,
@@ -757,18 +757,45 @@ mod tests {
     }
 
     #[test]
-    fn test_tx_l1_fee_with_right_values() {
+    fn test_invlaid_src_offset_length() {
         // test both before & after curie upgrade
         let witnesses = [
-            0x1_u64.into(),
-            0x30.into(),
-            0x20.into(),
+            0x1,
+            0x20,
+            0x30,
+            0x10,
         ]
         .map(U256::from);
 
-        try_test!(ErrOOGMemoryCopyGadgetTestContainer<Fr>, witnesses, true);
+        //try_test!(ErrOOGMemoryCopyGadgetTestContainer<Fr>, witnesses, true);
+        const K: usize = 12;
+        let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(K, witnesses.into());
+
+        let prover = MockProver::<Fr>::run(K as u32, &circuit, vec![]).unwrap();
+        let result = prover.verify();
+        assert_error_matches(result, "mcopy src_address length == dst_address length");
     }
 
-
-
+    fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
+        let errors = result.expect_err("result is not an error");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        match &errors[0] {
+            VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
+                let constraint = format!("{constraint}");
+                
+                // here use assert ?
+                if !constraint.contains(name) {
+                    panic!("{constraint} does not contain {name}");
+                }
+            }
+            // not support following error now.
+            VerifyFailure::Lookup { name: _lookup_name, ..
+            } => panic!(),
+            VerifyFailure::CellNotAssigned { .. } => panic!(),
+            VerifyFailure::ConstraintPoisoned { .. } => panic!(),
+            VerifyFailure::Permutation { .. } => panic!(),
+            &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => todo!(),
+        }
+    }
+    
 }
