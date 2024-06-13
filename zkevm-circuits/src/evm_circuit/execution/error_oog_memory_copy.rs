@@ -327,15 +327,14 @@ mod tests {
     use crate::{
         evm_circuit::test::{rand_bytes, rand_word},
         evm_circuit::util::math_gadget::test_util::{
-            test_math_gadget_container, MathGadgetContainer, UnitTestMathGadgetBaseCircuit,
+            MathGadgetContainer, UnitTestMathGadgetBaseCircuit,
         },
         test_util::CircuitTestBuilder,
-        witness::{Block, Call, ExecStep, Transaction},
     };
 
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToScalar, ToWord, U256,
+        bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256,
     };
     use halo2_proofs::{
         circuit::Value,
