@@ -176,7 +176,7 @@ SubConfigurations --> ConstraintSystem
 We illustrate the `Queries` data structure as below:
 - `Queries`
     - `selector`: this is the `selector` from State Circuit's configuration
-    - `rw_table`: `RwRableQueries`, this follows from `rw_table` and adds some previous data. It includes the following items: `rw_counter`, `prev_rw_counter`, `is_write`, `tag`, `id`, `prev_id`, `address`, `prev_address`, `field_tag`, `storage_key`, `value`, `value_prev`
+    - `rw_table`: `RwTableQueries`, this follows from `rw_table` and adds some previous data. It includes the following items: `rw_counter`, `prev_rw_counter`, `is_write`, `tag`, `id`, `prev_id`, `address`, `prev_address`, `field_tag`, `storage_key`, `value`, `value_prev`
     - `mpt_update_table`: `MptUpdateTableQueries`, this is the same as in MPT table. It includes the following items: `address`, `storage_key`, `proof_type`, `new_root`, `old_root`, `new_value`, `old_value`
     - `lexicographic_ordering_selector`: this is the selector column for the `lexicoragphic_ordering` chip
     - `rw_counter`: `MpiQueries`, this is the query for `multiple_precision_integer` chip. It contains the limbs with number = `N_LIMBS_RW_COUNTER` and the previous limbs
