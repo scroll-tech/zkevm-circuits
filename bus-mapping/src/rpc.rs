@@ -115,7 +115,7 @@ impl<P: JsonRpcClient> GethClient<P> {
     }
 
     /// Calls `eth_getBlockByNumber` via JSON-RPC returning a [`Block`]
-    /// returning all the block information including it's transaction's
+    /// returning all the block information including its transaction's
     /// details.
     pub async fn get_block_by_number(
         &self,
