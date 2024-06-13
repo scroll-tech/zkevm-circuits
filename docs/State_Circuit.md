@@ -71,7 +71,7 @@ State Circuit aims to prove that the `rw_table` is formed correctly. This result
 
 ### Circuit Layout
 
-State Circuit is configured as a  constraint system through various smaller gadgets and chips, where each gadget or chip may consist of Halo2 columns (fixed or advice) or even smaller gadgets or chips. Due to this reason, although we can think of the State Circuit layout in a geometric way as horizontally aligned regions of columns belonging to each of its sub-configurations, it may be better to think in a hierarchical way (tree-like structure). In the below, we describe this hierarchy through the configuration of State Circuit, where each sub-configuration at its smallest gratuity of bifurcation lands in some column of the circuit layout (one can click the interior nodes of the hierarchy tree below to expand/contract the next level):
+State Circuit is configured as a  constraint system through various smaller gadgets and chips, where each gadget or chip may consist of Halo2 columns (fixed or advice) or even smaller gadgets or chips. Due to this reason, although we can think of the State Circuit layout in a geometric way as horizontally aligned regions of columns belonging to each of its sub-configurations, it may be better to think in a hierarchical way (tree-like structure). In the below, we describe this hierarchy through the configuration of State Circuit, where each sub-configuration at its smallest granularity of bifurcation lands in some column of the circuit layout (one can click the interior nodes of the hierarchy tree below to expand/contract the next level):
 
 ```markmap
 # State Circuit Configuration
