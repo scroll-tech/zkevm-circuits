@@ -12,8 +12,9 @@ use crate::{
     util::{build_tx_log_expression, Challenges, Expr, Field},
 };
 use bus_mapping::util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY};
-use eth_types::{state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToScalar, ToWord, H256};
+use eth_types::{state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToWord, H256};
 use gadgets::util::{and, not};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{

@@ -5,9 +5,9 @@ use crate::{
 };
 use eth_types::{
     self,
-    l2_types::{BlockTrace, StorageTrace},
+    l2_types::{trace::collect_codes, BlockTrace, StorageTrace},
     state_db::{self, CodeDB, StateDB},
-    Address, EthBlock, ToWord, Word,
+    Address, EthBlock, ToWord, Word, H256,
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::ZktrieState;
@@ -86,7 +86,7 @@ impl CircuitInputBuilder {
 
     fn collect_storage_proofs(
         storage_trace: &StorageTrace,
-    ) -> impl Iterator<Item = (&Address, &Word, impl IntoIterator<Item = &[u8]>)> + Clone {
+    ) -> impl Iterator<Item = (&Address, &H256, impl IntoIterator<Item = &[u8]>)> + Clone {
         storage_trace.storage_proofs.iter().flat_map(|(k, kv_map)| {
             kv_map
                 .iter()
@@ -161,12 +161,17 @@ impl CircuitInputBuilder {
             &l2_trace.storage_trace,
         )) {
             let ((addr, key), val) = parsed.map_err(Error::IoError)?;
+            let key = key.to_word();
             *sdb.get_storage_mut(&addr, &key).1 = val.into();
         }
 
         let mut code_db = CodeDB::new();
         code_db.insert(Vec::new());
-        code_db.update_codedb(&sdb, &l2_trace)?;
+
+        let codes = collect_codes(&l2_trace, Some(&sdb))?;
+        for (hash, code) in codes {
+            code_db.insert_with_hash(hash, code);
+        }
 
         let mut builder_block = circuit_input_builder::Blocks::init(chain_id, circuits_params);
         builder_block.prev_state_root = old_root.to_word();
@@ -219,7 +224,8 @@ impl CircuitInputBuilder {
 
         let new_storages = ZktrieState::parse_storage_from_proofs(
             Self::collect_storage_proofs(&l2_trace.storage_trace).filter(|(addr, key, _)| {
-                let (existed, _) = self.sdb.get_committed_storage(addr, key);
+                let key = key.to_word();
+                let (existed, _) = self.sdb.get_committed_storage(addr, &key);
                 !existed
             }),
         )
@@ -227,7 +233,7 @@ impl CircuitInputBuilder {
             HashMap::new(),
             |mut m, parsed| -> Result<HashMap<(Address, Word), Word>, Error> {
                 let ((addr, key), val) = parsed.map_err(Error::IoError)?;
-                m.insert((addr, key), val.into());
+                m.insert((addr, key.to_word()), val.into());
                 Ok(m)
             },
         )?;
@@ -236,7 +242,10 @@ impl CircuitInputBuilder {
             *self.sdb.get_storage_mut(&addr, &key).1 = val;
         }
 
-        self.code_db.update_codedb(&self.sdb, &l2_trace)?;
+        let codes = collect_codes(&l2_trace, Some(&self.sdb))?;
+        for (hash, code) in codes {
+            self.code_db.insert_with_hash(hash, code);
+        }
 
         self.apply_l2_trace(l2_trace)?;
         Ok(())

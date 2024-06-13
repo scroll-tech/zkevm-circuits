@@ -17,7 +17,6 @@ use super::{CircuitInputStateRef, ExecStep};
 pub fn get_curie_fork_block(chain_id: u64) -> u64 {
     for (fork, fork_chain_id, fork_blk) in eth_types::forks::hardfork_heights() {
         if fork == eth_types::forks::HardforkId::Curie && chain_id == fork_chain_id {
-            log::debug!("curie fork: chain id {chain_id} block {fork_blk}");
             return fork_blk;
         }
     }
@@ -31,7 +30,11 @@ pub fn is_curie_enabled(chain_id: u64, blk: u64) -> bool {
 
 /// Whether this blk is the hardfork height of curie
 pub fn is_curie_fork_block(chain_id: u64, blk: u64) -> bool {
-    blk == get_curie_fork_block(chain_id)
+    let result = blk == get_curie_fork_block(chain_id);
+    if result {
+        log::info!("curie fork: chain id {chain_id} block {blk}");
+    }
+    result
 }
 
 /// Insert needed rws for the contract upgrade

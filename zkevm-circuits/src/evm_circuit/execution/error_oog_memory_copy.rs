@@ -12,7 +12,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
                 MemoryExpansionGadget,
             },
-            or, select, CachedRegion, Cell, Word,
+            not, or, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -40,10 +40,14 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     src_memory_addr: MemoryExpandedAddressGadget<F>,
     /// Destination offset and size to copy
     dst_memory_addr: MemoryExpandedAddressGadget<F>,
-    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+    // mcopy expansion
+    memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+    // other kind(CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY) expansion
+    memory_expansion_normal: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     is_extcodecopy: IsZeroGadget<F>,
+    is_mcopy: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -72,6 +76,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let is_extcodecopy =
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::EXTCODECOPY.expr());
+        let is_mcopy = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::MCOPY.expr());
 
         cb.condition(is_extcodecopy.expr(), |cb| {
             cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, tx_id.expr());
@@ -95,12 +100,31 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         cb.stack_pop(src_memory_addr.offset_rlc());
         cb.stack_pop(dst_memory_addr.length_rlc());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
-        let memory_copier_gas = MemoryCopierGasGadget::construct(
-            cb,
-            dst_memory_addr.length(),
-            memory_expansion.gas_cost(),
+        // for mcopy
+        let memory_expansion_mcopy = cb.condition(is_mcopy.expr(), |cb| {
+            cb.require_equal(
+                "mcopy src_address length == dst_address length",
+                src_memory_addr.length_rlc(),
+                dst_memory_addr.length_rlc(),
+            );
+            MemoryExpansionGadget::construct(
+                cb,
+                [src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
+            )
+        });
+
+        // for others (CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY)
+        let memory_expansion_normal = cb.condition(not::expr(is_mcopy.expr()), |cb| {
+            MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()])
+        });
+
+        let memory_expansion_cost = select::expr(
+            is_mcopy.expr(),
+            memory_expansion_mcopy.gas_cost(),
+            memory_expansion_normal.gas_cost(),
         );
+        let memory_copier_gas =
+            MemoryCopierGasGadget::construct(cb, dst_memory_addr.length(), memory_expansion_cost);
 
         let constant_gas_cost = select::expr(
             is_extcodecopy.expr(),
@@ -111,7 +135,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
                 GasCost::WARM_ACCESS.expr(),
                 GasCost::COLD_ACCOUNT_ACCESS.expr(),
             ),
-            // Constant gas cost is same for CALLDATACOPY, CODECOPY and RETURNDATACOPY.
+            // Constant gas cost is same for CALLDATACOPY, CODECOPY，RETURNDATACOPY and mcopy.
             OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
         );
 
@@ -147,10 +171,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             external_address,
             src_memory_addr,
             dst_memory_addr,
-            memory_expansion,
+            memory_expansion_mcopy,
+            memory_expansion_normal,
             memory_copier_gas,
             insufficient_gas,
             is_extcodecopy,
+            is_mcopy,
             common_error_gadget,
         }
     }
@@ -166,6 +192,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_extcodecopy = opcode == OpcodeId::EXTCODECOPY;
+        let is_mcopy = opcode == OpcodeId::MCOPY;
 
         log::debug!(
             "ErrorOutOfGasMemoryCopy: opcode = {}, gas_left = {}, gas_cost = {}",
@@ -195,21 +222,37 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
         self.external_address
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
-        // self.src_offset
-        //     .assign(region, offset, Some(src_offset.to_le_bytes()))?;
-        self.src_memory_addr
+
+        let src_memory_addr = self
+            .src_memory_addr
             .assign(region, offset, src_offset, copy_size)?;
-        let memory_addr = self
+        let dst_memory_addr = self
             .dst_memory_addr
             .assign(region, offset, dst_offset, copy_size)?;
-        let (_, memory_expansion_cost) =
-            self.memory_expansion
-                .assign(region, offset, step.memory_word_size(), [memory_addr])?;
+        let (_, memory_expansion_cost) = self.memory_expansion_normal.assign(
+            region,
+            offset,
+            step.memory_word_size(),
+            [dst_memory_addr],
+        )?;
+
+        // assign memory_expansion_mcopy
+        let (_, memory_expansion_cost_mcopy) = self.memory_expansion_mcopy.assign(
+            region,
+            offset,
+            step.memory_word_size(),
+            [src_memory_addr, dst_memory_addr],
+        )?;
+
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
             offset,
             MemoryExpandedAddressGadget::<F>::length_value(dst_offset, copy_size),
-            memory_expansion_cost,
+            if is_mcopy {
+                memory_expansion_cost_mcopy
+            } else {
+                memory_expansion_cost
+            },
         )?;
         let constant_gas_cost = if is_extcodecopy {
             if is_warm {
@@ -230,6 +273,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             region,
             offset,
             F::from(opcode.as_u64()) - F::from(OpcodeId::EXTCODECOPY.as_u64()),
+        )?;
+        self.is_mcopy.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::MCOPY.as_u64()),
         )?;
         self.common_error_gadget.assign(
             region,
@@ -313,7 +361,6 @@ mod tests {
         for (src_offset, dest_offset, copy_size) in TESTING_MCOPY_PARIS {
             let testing_data =
                 TestingData::new_for_mcopy(*src_offset, *dest_offset, *copy_size, None);
-
             test_root(&testing_data);
             test_internal(&testing_data);
         }
@@ -431,13 +478,18 @@ mod tests {
             };
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
-                let cur_memory_word_size = (src_offset + 31) / 32;
-                let memory_word_size = (dst_offset + copy_size + 31) / 32;
+                // no memory operation before mcopy
+                let cur_memory_word_size = 0;
+                let next_memory_word_size = if copy_size == 0 {
+                    cur_memory_word_size
+                } else {
+                    (std::cmp::max(src_offset, dst_offset) + copy_size + 31) / 32
+                };
 
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + memory_copier_gas_cost(
                         cur_memory_word_size,
-                        memory_word_size,
+                        next_memory_word_size,
                         copy_size,
                         GasCost::COPY.as_u64(),
                     )

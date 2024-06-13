@@ -280,7 +280,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
-const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3656 + 2;
+const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3659;
 const FIXED_TABLE_ROWS: usize = FIXED_TABLE_ROWS_NO_BITWISE + 3 * 65536;
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {

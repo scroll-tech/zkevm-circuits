@@ -8,10 +8,9 @@ use crate::{
     util::{get_push_size, Challenges, Expr, Field, SubCircuit, SubCircuitConfig},
     witness,
 };
-use eth_types::{
-    state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToScalar, ToWord, POSEIDON_CODE_HASH_EMPTY,
-};
+use eth_types::{state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToWord, POSEIDON_CODE_HASH_EMPTY};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},

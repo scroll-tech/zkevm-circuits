@@ -24,8 +24,9 @@ use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
     utils::{hash_code, hash_code_keccak},
-    ToScalar, ToWord,
+    ToWord,
 };
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

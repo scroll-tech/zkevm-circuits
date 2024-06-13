@@ -22,8 +22,9 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use core::iter::once;
-use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
+use eth_types::{sign_types::SignData, ToLittleEndian, ToWord, Word, H256, U256};
 use ethers_core::utils::keccak256;
+use gadgets::ToScalar;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{and, not, pow_of_two, split_u256, split_u256_limb64, Expr},
@@ -3134,6 +3135,8 @@ impl PowOfRandTable {
                         || pow_of_rand,
                     )?;
                 }
+
+                log::debug!("assign pow of rand with rows {} done", max_rows);
 
                 Ok(())
             },

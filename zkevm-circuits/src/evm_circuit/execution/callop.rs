@@ -29,8 +29,9 @@ use bus_mapping::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE},
     utils::is_precompiled,
-    ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
+    ToAddress, ToBigEndian, ToLittleEndian, U256,
 };
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::cmp::min;
