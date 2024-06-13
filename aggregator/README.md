@@ -25,7 +25,7 @@ Those 5 hashes are obtained from the caller.
 
 The chunk's public input hash is 
 ```
-chunk_pi_hash := keccak(chain_id || prev_state_root || post_state_root || withdraw_root ||  chunk_data_hash || chunk txdata hash)
+chunk_pi_hash := keccak(chain_id || prev_state_root || post_state_root || withdraw_root ||  chunk_data_hash || chunk_txdata_hash)
 ```
 
 ## Continuous chunks
