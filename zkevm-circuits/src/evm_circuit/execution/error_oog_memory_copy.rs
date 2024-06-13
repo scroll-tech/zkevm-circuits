@@ -39,12 +39,7 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     tx_id: Cell<F>,
     /// Extra stack pop for `EXTCODECOPY`
     external_address: Word<F>,
-    // /// Source offset and size to copy
-    // src_memory_addr: MemoryExpandedAddressGadget<F>,
-    // /// Destination offset and size to copy
-    // dst_memory_addr: MemoryExpandedAddressGadget<F>,
-    // // mcopy expansion
-    // memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+
     addr_expansion_gadget: MemoryAddrExpandGadget<F>,
     // other kind(CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY) expansion
     memory_expansion_normal: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -97,9 +92,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         });
 
         let addr_expansion_gadget = MemoryAddrExpandGadget::construct(cb, is_mcopy.expr());
-        // let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
-        // // src can also be possible to overflow for mcopy.
-        // let src_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
 
         cb.stack_pop(addr_expansion_gadget.dst_memory_addr.offset_rlc());
         cb.stack_pop(addr_expansion_gadget.src_memory_addr.offset_rlc());
@@ -167,9 +159,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             is_warm,
             tx_id,
             external_address,
-            // src_memory_addr,
-            // dst_memory_addr,
-            // memory_expansion_mcopy,
             addr_expansion_gadget,
             memory_expansion_normal,
             memory_copier_gas,
@@ -222,12 +211,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.external_address
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
 
-        let src_memory_addr = self.addr_expansion_gadget.src_memory_addr.assign(
-            region,
-            offset,
-            src_offset,
-            copy_size + 1,
-        )?;
+        let src_memory_addr = self
+            .addr_expansion_gadget
+            .src_memory_addr
+            .assign(region, offset, src_offset, copy_size)?;
         let dst_memory_addr = self
             .addr_expansion_gadget
             .dst_memory_addr
@@ -511,7 +498,6 @@ mod tests {
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
                 let memory_word_size = (dst_offset + copy_size + 31) / 32;
-                println!("memory_word_size u64max {}", memory_word_size);
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + opcode.constant_gas_cost().0
                     + memory_copier_gas_cost(0, memory_word_size, copy_size, GasCost::COPY.as_u64())
@@ -780,7 +766,6 @@ mod tests {
         // test is_mcopy = true
         let witnesses = [0x1, 0x20, 0x30, 0x10].map(U256::from);
 
-        //try_test!(ErrOOGMemoryCopyGadgetTestContainer<Fr>, witnesses, true);
         const K: usize = 12;
         let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(
             K,
