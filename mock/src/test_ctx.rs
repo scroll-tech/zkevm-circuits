@@ -1,4 +1,4 @@
-//! Mock types and functions to generate Test enviroments for ZKEVM tests
+//! Mock types and functions to generate Test environments for ZKEVM tests
 
 use crate::{eth, MockAccount, MockBlock, MockTransaction, MOCK_WALLETS};
 #[cfg(feature = "scroll")]
