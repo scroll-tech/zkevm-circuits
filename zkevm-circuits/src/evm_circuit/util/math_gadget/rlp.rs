@@ -1,6 +1,7 @@
 use crate::util::Field;
-use eth_types::{Address, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, ToLittleEndian, Word};
 use gadgets::util::{and, expr_from_bytes, not, select, sum, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

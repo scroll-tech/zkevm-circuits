@@ -12,7 +12,8 @@ use crate::{
     table::CallContextFieldTag,
     util::{Expr, Field},
 };
-use eth_types::{evm_types::OpcodeId, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::OpcodeId, ToLittleEndian};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

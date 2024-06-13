@@ -13,7 +13,8 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{ToLittleEndian, ToScalar};
+use eth_types::ToLittleEndian;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

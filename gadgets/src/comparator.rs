@@ -1,7 +1,7 @@
 //! Comparator can be used to compare LT, EQ (and indirectly GT) for two
 //! expressions LHS and RHS.
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
     plonk::{ConstraintSystem, Error, Expression, TableColumn, VirtualCells},

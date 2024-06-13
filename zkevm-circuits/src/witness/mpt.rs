@@ -3,7 +3,8 @@ use crate::{
     table::AccountFieldTag,
     util::Field,
 };
-use eth_types::{Address, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, ToLittleEndian, Word, U256};
+use gadgets::ToScalar;
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 use mpt_circuits::{serde::SMTTrace, MPTProofType};

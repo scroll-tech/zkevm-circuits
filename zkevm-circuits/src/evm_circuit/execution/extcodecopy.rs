@@ -22,8 +22,9 @@ use crate::{
     util::Field,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, ToLittleEndian};
 use gadgets::util::Expr;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use super::ExecutionGadget;

@@ -20,11 +20,9 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{
-    evm_types::block_utils::{is_valid_block_number, NUM_PREV_BLOCK_ALLOWED},
-    ToScalar,
-};
+use eth_types::evm_types::block_utils::{is_valid_block_number, NUM_PREV_BLOCK_ALLOWED};
 use gadgets::util::not;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

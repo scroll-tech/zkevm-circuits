@@ -1,4 +1,5 @@
 use ethers_core::types::Signature;
+use gadgets::ToScalar;
 use std::collections::{BTreeMap, HashMap};
 
 #[cfg(any(feature = "test", test))]
@@ -17,9 +18,7 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{
-    sign_types::SignData, Address, ToBigEndian, ToLittleEndian, ToScalar, Word, H256, U256,
-};
+use eth_types::{sign_types::SignData, Address, ToBigEndian, ToLittleEndian, Word, H256, U256};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 

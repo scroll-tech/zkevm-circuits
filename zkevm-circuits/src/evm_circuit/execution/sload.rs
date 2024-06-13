@@ -14,7 +14,7 @@ use crate::{
     table::CallContextFieldTag,
     util::{Expr, Field},
 };
-use eth_types::ToScalar;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
