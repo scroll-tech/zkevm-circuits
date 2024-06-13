@@ -119,6 +119,7 @@ impl Prover {
             if !verifier.verify_chunk_proof(chunk_proof.clone()) {
                 anyhow::bail!("chunk prover cannot generate valid proof");
             }
+            log::info!("verify_chunk_proof done");
         }
 
         Ok(chunk_proof)

@@ -51,9 +51,10 @@ use eth_types::{
         TxType::{Eip155, Eip1559, Eip2930, L1Msg, PreEip155},
     },
     sign_types::SignData,
-    AccessList, Address, ToAddress, ToBigEndian, ToScalar,
+    AccessList, Address, ToAddress, ToBigEndian,
 };
 use ethers_core::utils::keccak256;
+use gadgets::ToScalar;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},

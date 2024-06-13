@@ -15,8 +15,9 @@ use bus_mapping::{
     circuit_input_builder::{TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION},
     l2_predeployed::l1_gas_price_oracle,
 };
-use eth_types::{ToLittleEndian, ToScalar, U256};
+use eth_types::{ToLittleEndian, U256};
 use gadgets::util::not;
+use gadgets::ToScalar;
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Transaction L1 fee gadget for L1GasPriceOracle contract
@@ -337,7 +338,7 @@ mod tests {
         constraint_builder::ConstrainBuilderCommon,
         math_gadget::test_util::{test_math_gadget_container, try_test, MathGadgetContainer},
     };
-    use eth_types::{ToScalar, U256};
+    use eth_types::U256;
     use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
     //refer to test in <https://github.com/scroll-tech/go-ethereum/blob/develop/rollup/fees/rollup_fee_test.go#L10>

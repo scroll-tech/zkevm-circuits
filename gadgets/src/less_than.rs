@@ -1,6 +1,6 @@
 //! Lt chip can be used to compare LT for two expressions LHS and RHS.
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
@@ -188,7 +188,7 @@ impl<F: Field, const N_BYTES: usize> Chip<F> for LtChip<F, N_BYTES> {
 #[cfg(test)]
 mod test {
     use super::{LtChip, LtConfig, LtInstruction};
-    use eth_types::Field;
+    use crate::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,

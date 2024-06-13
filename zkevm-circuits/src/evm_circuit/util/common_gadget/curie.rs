@@ -12,7 +12,6 @@ use crate::{
 };
 
 use eth_types::forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID};
-//use eth_types::{ToLittleEndian, ToScalar, U256};
 use gadgets::util::not;
 use halo2_proofs::{
     circuit::Value,

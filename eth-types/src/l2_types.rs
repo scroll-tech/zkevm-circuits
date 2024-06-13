@@ -81,7 +81,7 @@ pub struct BytecodeTrace {
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct BlockTrace {
     /// Version string
-    pub version: String,
+    //pub version: String,
     /// chain id
     #[serde(rename = "chainID", default)]
     pub chain_id: u64,

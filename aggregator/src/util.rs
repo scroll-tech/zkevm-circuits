@@ -1,4 +1,4 @@
-use eth_types::Field;
+use gadgets::Field;
 use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
 
 #[cfg(test)]

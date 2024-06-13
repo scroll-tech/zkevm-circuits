@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, io::Cursor};
 
 use bitstream_io::{BitRead, BitReader, LittleEndian};
-use eth_types::Field;
 use gadgets::impl_expr;
+use gadgets::Field;
 use halo2_proofs::{circuit::Value, plonk::Expression};
 use itertools::Itertools;
 use std::collections::HashMap;

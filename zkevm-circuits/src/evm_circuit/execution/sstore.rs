@@ -19,9 +19,10 @@ use crate::{
     table::CallContextFieldTag,
     util::Expr,
 };
+use gadgets::ToScalar;
 
 use crate::util::Field;
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

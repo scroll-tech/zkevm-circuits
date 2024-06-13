@@ -1,6 +1,6 @@
 //! IsEqual chip can be used to check equality of two expressions.
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -127,7 +127,7 @@ impl<F: Field> Chip<F> for IsEqualChip<F> {
 mod tests {
     use std::marker::PhantomData;
 
-    use eth_types::Field;
+    use crate::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,

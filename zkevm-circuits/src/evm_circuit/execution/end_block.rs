@@ -23,8 +23,8 @@ use bus_mapping::l2_predeployed::message_queue::{
 use eth_types::{
     forks::HardforkId,
     utils::{hash_code, hash_code_keccak},
-    ToScalar,
 };
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::{Cell as AssignedCell, Value},
     plonk::{Error, Expression},
@@ -108,8 +108,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                         (HardforkId::Curie as u64).expr(),
                         chain_id.expr(),
                         cb.curr.state.block_number.expr(),
-                    ],
-                },
+                    ]},
             );
             // Ref: bus-mapping/src/circuit_input_builder/curie.rs
             // Bytecode changes

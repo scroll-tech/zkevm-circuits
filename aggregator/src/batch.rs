@@ -1,8 +1,9 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use eth_types::{Field, ToBigEndian, H256};
+use eth_types::{ToBigEndian, H256};
 use ethers_core::utils::keccak256;
+use gadgets::Field;
 
 use crate::{
     blob::{BatchData, PointEvaluationAssignments},

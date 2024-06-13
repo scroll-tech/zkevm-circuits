@@ -31,9 +31,10 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
-use eth_types::{utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256};
+use eth_types::{utils::is_precompiled, Address, ToLittleEndian, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, select, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 const PRECOMPILE_COUNT: usize = 9;
