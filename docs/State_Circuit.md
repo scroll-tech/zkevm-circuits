@@ -236,7 +236,7 @@ This chip helps to check a list of values are all 0. This is applied to check wh
 
 ### Constraints
 
-Since there is a large number of misallenous constraints in the State Circuit, here we'll only take one example to give the reader an impression of the style of constraints in State Circuit. 
+Since there is a large number of miscellaneous constraints in the State Circuit, here we'll only take one example to give the reader an impression of the style of constraints in State Circuit. 
 
 We discuss <b>account constraints</b>, which are established in the `ConstraintBuilder`. 
 
