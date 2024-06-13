@@ -96,7 +96,7 @@ and `batch_pi_hash` matches public input.
 
 ```
 for i in 1 ... n
-    chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash || chunk txdata hash)
+    chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash || chunk_txdata_hash)
 ```
 
 This is done by computing the RLCs of chunk[i]'s data_hash for `i=0..k`, and then check the RLC matches the one from the keccak table.
