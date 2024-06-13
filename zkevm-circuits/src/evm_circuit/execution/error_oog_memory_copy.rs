@@ -23,7 +23,10 @@ use eth_types::{
     evm_types::{GasCost, OpcodeId},
     ToLittleEndian, U256,
 };
-use halo2_proofs::{circuit::Value, plonk::{Error, Expression}};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 /// Gadget to implement the corresponding out of gas errors for
 /// [`OpcodeId::CALLDATACOPY`], [`OpcodeId::CODECOPY`],
@@ -104,7 +107,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         // for others (CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY)
         let memory_expansion_normal = cb.condition(not::expr(is_mcopy.expr()), |cb| {
-            MemoryExpansionGadget::construct(cb, [addr_expansion_gadget.dst_memory_addr.end_offset()])
+            MemoryExpansionGadget::construct(
+                cb,
+                [addr_expansion_gadget.dst_memory_addr.end_offset()],
+            )
         });
 
         let memory_expansion_cost = select::expr(
@@ -112,8 +118,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             addr_expansion_gadget.memory_expansion_mcopy.gas_cost(),
             memory_expansion_normal.gas_cost(),
         );
-        let memory_copier_gas =
-            MemoryCopierGasGadget::construct(cb, addr_expansion_gadget.dst_memory_addr.length(), memory_expansion_cost);
+        let memory_copier_gas = MemoryCopierGasGadget::construct(
+            cb,
+            addr_expansion_gadget.dst_memory_addr.length(),
+            memory_expansion_cost,
+        );
 
         let constant_gas_cost = select::expr(
             is_extcodecopy.expr(),
@@ -213,10 +222,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.external_address
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
 
-        let src_memory_addr = self
-            .addr_expansion_gadget
-            .src_memory_addr
-            .assign(region, offset, src_offset, copy_size + 1)?;
+        let src_memory_addr = self.addr_expansion_gadget.src_memory_addr.assign(
+            region,
+            offset,
+            src_offset,
+            copy_size + 1,
+        )?;
         let dst_memory_addr = self
             .addr_expansion_gadget
             .dst_memory_addr
@@ -229,12 +240,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         )?;
 
         // assign memory_expansion_mcopy
-        let (_, memory_expansion_cost_mcopy) = self.addr_expansion_gadget.memory_expansion_mcopy.assign(
-            region,
-            offset,
-            step.memory_word_size(),
-            [src_memory_addr, dst_memory_addr],
-        )?;
+        let (_, memory_expansion_cost_mcopy) =
+            self.addr_expansion_gadget.memory_expansion_mcopy.assign(
+                region,
+                offset,
+                step.memory_word_size(),
+                [src_memory_addr, dst_memory_addr],
+            )?;
 
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
@@ -287,7 +299,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct MemoryAddrExpandGadget<F>{
+pub(crate) struct MemoryAddrExpandGadget<F> {
     /// Source offset and size to copy
     src_memory_addr: MemoryExpandedAddressGadget<F>,
     /// Destination offset and size to copy
@@ -296,12 +308,12 @@ pub(crate) struct MemoryAddrExpandGadget<F>{
     memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
-impl<F:Field> MemoryAddrExpandGadget<F>{
+impl<F: Field> MemoryAddrExpandGadget<F> {
     fn construct(cb: &mut EVMConstraintBuilder<F>, is_mcopy: Expression<F>) -> Self {
         let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
         // src can also be possible to overflow for mcopy.
         let src_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
-         // for mcopy
+        // for mcopy
         let memory_expansion_mcopy = cb.condition(is_mcopy.expr(), |cb| {
             cb.require_equal(
                 "mcopy src_address length == dst_address length",
@@ -312,12 +324,12 @@ impl<F:Field> MemoryAddrExpandGadget<F>{
                 cb,
                 [src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
             )
-         });
-         Self {
+        });
+        Self {
             src_memory_addr,
             dst_memory_addr,
             memory_expansion_mcopy,
-         }
+        }
     }
 }
 
@@ -326,21 +338,27 @@ mod tests {
     use super::*;
     use crate::{
         evm_circuit::test::{rand_bytes, rand_word},
+        evm_circuit::util::math_gadget::test_util::{
+            test_math_gadget_container, MathGadgetContainer, UnitTestMathGadgetBaseCircuit,
+        },
         test_util::CircuitTestBuilder,
-        witness::{Block, Transaction, Call, ExecStep}, 
-        evm_circuit::util::math_gadget::test_util::{test_math_gadget_container, UnitTestMathGadgetBaseCircuit, MathGadgetContainer},
+        witness::{Block, Call, ExecStep, Transaction},
     };
 
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256, ToScalar,
+        bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToScalar, ToWord, U256,
+    };
+    use halo2_proofs::{
+        circuit::Value,
+        dev::{MockProver, VerifyFailure},
+        halo2curves::bn256::Fr,
     };
     use itertools::Itertools;
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
         MOCK_BLOCK_GAS_LIMIT,
     };
-    use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr, dev::{MockProver, VerifyFailure}};
 
     const TESTING_COMMON_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALLDATACOPY,
@@ -713,18 +731,14 @@ mod tests {
         gadget: MemoryAddrExpandGadget<F>,
         is_mcopy: Cell<F>,
     }
-    
+
     impl<F: Field> MathGadgetContainer<F> for ErrOOGMemoryCopyGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             //let expected_is_success = cb.query_cell();
             let is_mcopy = cb.query_cell();
-            let gadget = MemoryAddrExpandGadget::<F>::construct(
-                cb, is_mcopy.expr());
+            let gadget = MemoryAddrExpandGadget::<F>::construct(cb, is_mcopy.expr());
 
-            ErrOOGMemoryCopyGadgetTestContainer {
-                gadget,
-                is_mcopy,           
-            }
+            ErrOOGMemoryCopyGadgetTestContainer { gadget, is_mcopy }
         }
 
         fn assign_gadget_container(
@@ -733,47 +747,68 @@ mod tests {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let [is_mcopy, src_offset, dst_offset, copy_size] =
-            [0, 1, 2, 3].map(|i| witnesses[i].as_u64());
-            self.is_mcopy.assign(region, 0, Value::known(F::from(is_mcopy)))?;
+                [0, 1, 2, 3].map(|i| witnesses[i].as_u64());
+            self.is_mcopy
+                .assign(region, 0, Value::known(F::from(is_mcopy)))?;
             // self.expected_is_success
             //     .assign(region, 0, Value::known(F::from(expected_tx_l1_fee)))?;
-            let src_memory_addr = self
-                .gadget
-                .src_memory_addr
-                .assign(region, 0, src_offset.into(), (copy_size + 1).into())?;
-            let dst_memory_addr = self
-                .gadget
-                .dst_memory_addr
-                .assign(region, 0, dst_offset.into(), copy_size.into())?;
-              // assign memory_expansion_mcopy
-        let (_, memory_expansion_cost_mcopy) = self.gadget.memory_expansion_mcopy.assign(
-            region,
-            0,
-            0,
-            [src_memory_addr, dst_memory_addr],
-        )?;
+            let src_memory_addr = self.gadget.src_memory_addr.assign(
+                region,
+                0,
+                src_offset.into(),
+                (copy_size + 1).into(),
+            )?;
+            let dst_memory_addr = self.gadget.dst_memory_addr.assign(
+                region,
+                0,
+                dst_offset.into(),
+                copy_size.into(),
+            )?;
+            // assign memory_expansion_mcopy
+            let (_, memory_expansion_cost_mcopy) = self.gadget.memory_expansion_mcopy.assign(
+                region,
+                0,
+                0,
+                [src_memory_addr, dst_memory_addr],
+            )?;
             Ok(())
         }
     }
 
     #[test]
     fn test_invlaid_src_offset_length() {
-        // test both before & after curie upgrade
-        let witnesses = [
-            0x1,
-            0x20,
-            0x30,
-            0x10,
-        ]
-        .map(U256::from);
+        // test is_mcopy = true
+        let witnesses = [0x1, 0x20, 0x30, 0x10].map(U256::from);
 
         //try_test!(ErrOOGMemoryCopyGadgetTestContainer<Fr>, witnesses, true);
         const K: usize = 12;
-        let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(K, witnesses.into());
+        let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(
+            K,
+            witnesses.into(),
+        );
 
         let prover = MockProver::<Fr>::run(K as u32, &circuit, vec![]).unwrap();
         let result = prover.verify();
+        // when mcopy, should encounter constraint error.
         assert_error_matches(result, "mcopy src_address length == dst_address length");
+    }
+
+    #[test]
+    fn test_invlaid_src_offset_length_nonmcopy() {
+        // test is_mcopy = true
+        let witnesses = [0x0, 0x20, 0x30, 0x10].map(U256::from);
+
+        //try_test!(ErrOOGMemoryCopyGadgetTestContainer<Fr>, witnesses, true);
+        const K: usize = 12;
+        let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(
+            K,
+            witnesses.into(),
+        );
+
+        let prover = MockProver::<Fr>::run(K as u32, &circuit, vec![]).unwrap();
+        let result = prover.verify();
+        // when not mcopy, should pass.
+        assert!(result.is_ok());
     }
 
     fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
@@ -782,20 +817,22 @@ mod tests {
         match &errors[0] {
             VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
                 let constraint = format!("{constraint}");
-                
+
                 // here use assert ?
                 if !constraint.contains(name) {
                     panic!("{constraint} does not contain {name}");
                 }
             }
             // not support following error now.
-            VerifyFailure::Lookup { name: _lookup_name, ..
+            VerifyFailure::Lookup {
+                name: _lookup_name, ..
             } => panic!(),
             VerifyFailure::CellNotAssigned { .. } => panic!(),
             VerifyFailure::ConstraintPoisoned { .. } => panic!(),
             VerifyFailure::Permutation { .. } => panic!(),
-            &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => todo!(),
+            &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => {
+                todo!()
+            }
         }
     }
-    
 }
