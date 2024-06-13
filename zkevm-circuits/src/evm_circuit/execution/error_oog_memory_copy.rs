@@ -295,6 +295,7 @@ pub(crate) struct MemoryAddrExpandGadget<F> {
     memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
+// construct src_memory_addr, dst_memory_addr and memory_expansion_mcopy.
 impl<F: Field> MemoryAddrExpandGadget<F> {
     fn construct(cb: &mut EVMConstraintBuilder<F>, is_mcopy: Expression<F>) -> Self {
         let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
@@ -585,11 +586,6 @@ mod tests {
                     (max_addr + copy_size + 31) / 32
                 };
 
-                println!(
-                    "cur_memory_word_size {}, next_memory_word_size{}",
-                    cur_memory_word_size, next_memory_word_size
-                );
-
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + OpcodeId::MCOPY.constant_gas_cost().0
                     + memory_copier_gas_cost(
@@ -711,7 +707,8 @@ mod tests {
         });
     }
 
-    // TODO: negative test zone
+    // negative test zone: construct wrong witness(src_addr length) in assign stage, thus cause
+    // expected constraint error.
     #[derive(Clone)]
     struct ErrOOGMemoryCopyGadgetTestContainer<F> {
         gadget: MemoryAddrExpandGadget<F>,
@@ -720,8 +717,8 @@ mod tests {
 
     impl<F: Field> MathGadgetContainer<F> for ErrOOGMemoryCopyGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            //let expected_is_success = cb.query_cell();
             let is_mcopy = cb.query_cell();
+            cb.require_boolean("is_mcopy is bool", is_mcopy.expr());
             let gadget = MemoryAddrExpandGadget::<F>::construct(cb, is_mcopy.expr());
 
             ErrOOGMemoryCopyGadgetTestContainer { gadget, is_mcopy }
@@ -736,12 +733,12 @@ mod tests {
                 [0, 1, 2, 3].map(|i| witnesses[i].as_u64());
             self.is_mcopy
                 .assign(region, 0, Value::known(F::from(is_mcopy)))?;
-            // self.expected_is_success
-            //     .assign(region, 0, Value::known(F::from(expected_tx_l1_fee)))?;
+
             let src_memory_addr = self.gadget.src_memory_addr.assign(
                 region,
                 0,
                 src_offset.into(),
+                // set length = copy_size + 1 which cause constraint not be satisfied.
                 (copy_size + 1).into(),
             )?;
             let dst_memory_addr = self.gadget.dst_memory_addr.assign(
@@ -751,7 +748,7 @@ mod tests {
                 copy_size.into(),
             )?;
             // assign memory_expansion_mcopy
-            let (_, memory_expansion_cost_mcopy) = self.gadget.memory_expansion_mcopy.assign(
+            self.gadget.memory_expansion_mcopy.assign(
                 region,
                 0,
                 0,
@@ -761,6 +758,8 @@ mod tests {
         }
     }
 
+    // test for mcopy case, do constrain: src_address length == dst_address length
+    // so expect specified error.
     #[test]
     fn test_invlaid_src_offset_length() {
         // test is_mcopy = true
@@ -774,16 +773,18 @@ mod tests {
 
         let prover = MockProver::<Fr>::run(K as u32, &circuit, vec![]).unwrap();
         let result = prover.verify();
+
         // when mcopy, should encounter constraint error.
         assert_error_matches(result, "mcopy src_address length == dst_address length");
     }
 
+    // test for non mcopy case, do not constrain: src_address length == dst_address length
+    // so expect test pass.
     #[test]
     fn test_invlaid_src_offset_length_nonmcopy() {
-        // test is_mcopy = true
+        // test is_mcopy = false
         let witnesses = [0x0, 0x20, 0x30, 0x10].map(U256::from);
 
-        //try_test!(ErrOOGMemoryCopyGadgetTestContainer<Fr>, witnesses, true);
         const K: usize = 12;
         let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(
             K,
@@ -808,7 +809,7 @@ mod tests {
                     panic!("{constraint} does not contain {name}");
                 }
             }
-            // not support following error now.
+            // TODO: not support following error now.
             VerifyFailure::Lookup {
                 name: _lookup_name, ..
             } => panic!(),
