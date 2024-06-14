@@ -29,21 +29,17 @@ pub fn collect_codes(
     let mut codes = Vec::new();
     for (er_idx, execution_result) in block.execution_results.iter().enumerate() {
         if let Some(bytecode) = &execution_result.byte_code {
-            let bytecode = decode_bytecode(bytecode)?.to_vec();
-
-            let code_hash = execution_result
-                .to
-                .as_ref()
-                .map(|t| t.poseidon_code_hash)
-                .unwrap_or_else(|| CodeDB::hash(&bytecode));
-            assert_eq!(code_hash, execution_result.code_hash);
-            let code_hash = if code_hash.is_zero() {
-                CodeDB::hash(&bytecode)
-            } else {
-                code_hash
-            };
-            codes.push((code_hash, bytecode));
-            //log::debug!("inserted tx bytecode {:?} {:?}", code_hash, hash);
+            if let Some(to) = &execution_result.to {
+                let bytecode = decode_bytecode(bytecode)?.to_vec();
+                let code_hash = to.poseidon_code_hash;
+                let code_hash = if code_hash.is_zero() {
+                    CodeDB::hash(&bytecode)
+                } else {
+                    code_hash
+                };
+                codes.push((code_hash, bytecode));
+                //log::debug!("inserted tx bytecode {:?} {:?}", code_hash, hash);
+            }
         }
 
         // filter all precompile calls, empty calls and create

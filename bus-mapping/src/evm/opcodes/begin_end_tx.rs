@@ -283,20 +283,21 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     // Keccak table and verify the contract address.
     if state.tx.is_create() {
         // 1. add RLP-bytes for contract address to keccak circuit.
-        state.block.sha3_inputs.push({
+        let address_preimage = {
             let mut stream = ethers_core::utils::rlp::RlpStream::new();
             stream.begin_list(2);
             stream.append(&caller_address);
             stream.append(&nonce_prev);
             stream.out().to_vec()
-        });
+        };
+        state.block.sha3_inputs.push(address_preimage);
         // 2. add init code to keccak circuit.
-        let init_code = state.tx.input.as_slice();
+        let init_code = state.tx.input.clone();
         let length = init_code.len();
-        state.block.sha3_inputs.push(init_code.to_vec());
+        state.block.sha3_inputs.push(init_code.clone());
         // 3. add init code to copy circuit.
-        let code_hash = CodeDB::hash(init_code);
-        let bytes = Bytecode::from(init_code.to_vec())
+        let code_hash = state.code_db.insert(init_code.clone());
+        let bytes = Bytecode::from(init_code)
             .code
             .iter()
             .map(|element| (element.value, element.is_code, false))
