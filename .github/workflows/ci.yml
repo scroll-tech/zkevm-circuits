@@ -284,9 +284,9 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-      uses: actions/checkout@v4
-      uses: crate-ci/typos@v1.22.7
-      with:
-        config: ./typos.toml
-        isolated: true
+      - uses: actions/checkout@v4
+      - uses: crate-ci/typos@v1.22.7
+        with:
+          config: ./typos.toml
+          isolated: true
 
