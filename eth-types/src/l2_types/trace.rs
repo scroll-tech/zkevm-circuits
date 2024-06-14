@@ -99,18 +99,9 @@ pub fn collect_codes(
                             1
                         };
                         let callee_code = data.get_code_at(code_idx);
-                        let code_hash = match step.op {
-                            OpcodeId::CALL | OpcodeId::CALLCODE => data.get_code_hash_at(1),
-                            OpcodeId::STATICCALL => data.get_code_hash_at(0),
-                            _ => {
-                                log::warn!("delegate call will require code hashing, block num {:?}", block.header.number);
-                                None
-                            }
-                        };
                         let addr = call.to.unwrap();
                         trace_code(
                             &mut codes,
-                            code_hash,
                             callee_code.unwrap_or_default(),
                             step,
                             Some(addr),
@@ -123,7 +114,7 @@ pub fn collect_codes(
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
-                        trace_code(&mut codes, None, code.unwrap(), step, None, sdb);
+                        trace_code(&mut codes, code.unwrap(), step, None, sdb);
                     }
 
                     _ => {}
@@ -138,22 +129,21 @@ pub fn collect_codes(
 
 fn trace_code(
     codes: &mut Vec<(H256, Vec<u8>)>,
-    code_hash: Option<H256>,
     code: Bytes,
     step: &ExecStep,
     addr: Option<Address>,
     // sdb is used to read codehash if available without recomputing
     sdb: Option<&StateDB>,
 ) {
-    let code_hash = code_hash.or_else(|| {
-        let addr = addr?;
-        let sdb = sdb.as_ref()?;
-        let (_existed, acc_data) = sdb.get_account(&addr);
-        if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
-            Some(acc_data.code_hash)
-        } else {
-            None
-        }
+    let code_hash = addr.and_then(|addr| {
+        sdb.and_then(|sdb| {
+            let (_existed, acc_data) = sdb.get_account(&addr);
+            if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
+                Some(acc_data.code_hash)
+            } else {
+                None
+            }
+        })
     });
     let code_hash = match code_hash {
         Some(code_hash) if !code_hash.is_zero() => code_hash,

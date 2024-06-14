@@ -465,21 +465,11 @@ impl From<ExecStep> for GethExecStep {
 pub struct ExtraData {
     #[serde(rename = "codeList")]
     pub code_list: Option<Vec<Bytes>>,
-    #[serde(rename = "proofList")]
-    pub proof_list: Option<Vec<AccountTrace>>,
 }
 
 impl ExtraData {
     pub fn get_code_at(&self, i: usize) -> Option<Bytes> {
         self.code_list.as_ref().and_then(|c| c.get(i)).cloned()
-    }
-
-    pub fn get_code_hash_at(&self, i: usize) -> Option<H256> {
-        self.get_proof_at(i).map(|a| a.poseidon_code_hash)
-    }
-
-    pub fn get_proof_at(&self, i: usize) -> Option<AccountTrace> {
-        self.proof_list.as_ref().and_then(|p| p.get(i)).cloned()
     }
 }
 
