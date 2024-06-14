@@ -114,6 +114,7 @@ pub fn collect_codes(
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
+                        log::info!("trace extcodecopy! block {:?}", block.header.number);
                         trace_code(&mut codes, code.unwrap(), step, None, sdb);
                     }
 
