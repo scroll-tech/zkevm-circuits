@@ -8,6 +8,8 @@ use crate::{
 use ethers_core::types::Bytes;
 use itertools::Itertools;
 
+use super::ExecStep;
+
 /// Update codedb from statedb and trace
 pub fn collect_codes(
     block: &BlockTrace,
@@ -30,9 +32,14 @@ pub fn collect_codes(
     for (er_idx, execution_result) in block.execution_results.iter().enumerate() {
         if let Some(bytecode) = &execution_result.byte_code {
             if let Some(to) = &execution_result.to {
+                // Not contract deployment
                 let bytecode = decode_bytecode(bytecode)?.to_vec();
                 let code_hash = to.poseidon_code_hash;
                 let code_hash = if code_hash.is_zero() {
+                    log::warn!(
+                        "why codehash can be zero..?, tx.from: {:?}",
+                        execution_result.from
+                    );
                     CodeDB::hash(&bytecode)
                 } else {
                     code_hash
@@ -108,6 +115,7 @@ pub fn collect_codes(
                             &mut codes,
                             code_hash,
                             callee_code.unwrap_or_default(),
+                            step,
                             Some(addr),
                             sdb,
                         );
@@ -118,7 +126,7 @@ pub fn collect_codes(
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
-                        trace_code(&mut codes, None, code.unwrap(), None, sdb);
+                        trace_code(&mut codes, None, code.unwrap(), step, None, sdb);
                     }
 
                     _ => {}
@@ -135,6 +143,7 @@ fn trace_code(
     codes: &mut Vec<(H256, Vec<u8>)>,
     code_hash: Option<H256>,
     code: Bytes,
+    step: &ExecStep,
     addr: Option<Address>,
     // sdb is used to read codehash if available without recomputing
     sdb: Option<&StateDB>,
@@ -154,8 +163,9 @@ fn trace_code(
         _ => {
             let hash = CodeDB::hash(&code);
             log::debug!(
-                "hash_code done: addr {addr:?}, size {}, hash {hash:?}",
-                &code.len()
+                "hash_code done: addr {addr:?}, size {}, hash {hash:?}, step {:?}",
+                &code.len(),
+                step.op,
             );
             hash
         }
