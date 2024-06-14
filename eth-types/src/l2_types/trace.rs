@@ -106,6 +106,7 @@ pub fn collect_codes(
                             step,
                             Some(addr),
                             sdb,
+                            block,
                         );
                     }
                     OpcodeId::EXTCODECOPY => {
@@ -115,7 +116,7 @@ pub fn collect_codes(
                             continue;
                         }
                         log::info!("trace extcodecopy! block {:?}", block.header.number);
-                        trace_code(&mut codes, code.unwrap(), step, None, sdb);
+                        trace_code(&mut codes, code.unwrap(), step, None, sdb, block);
                     }
 
                     _ => {}
@@ -135,6 +136,7 @@ fn trace_code(
     addr: Option<Address>,
     // sdb is used to read codehash if available without recomputing
     sdb: Option<&StateDB>,
+    block: &BlockTrace,
 ) {
     let code_hash = addr.and_then(|addr| {
         sdb.and_then(|sdb| {
@@ -151,9 +153,11 @@ fn trace_code(
         _ => {
             let hash = CodeDB::hash(&code);
             log::debug!(
-                "hash_code done: addr {addr:?}, size {}, hash {hash:?}, step {:?}",
+                "hash_code done: addr {addr:?}, size {}, hash {hash:?}, step {:?}, gas.left {:?}, block {:?}",
                 &code.len(),
                 step.op,
+                step.gas,
+                block.header.number,
             );
             hash
         }
