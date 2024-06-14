@@ -35,17 +35,10 @@ pub fn collect_codes(
                 // Not contract deployment
                 let bytecode = decode_bytecode(bytecode)?.to_vec();
                 let code_hash = to.poseidon_code_hash;
-                let code_hash = if code_hash.is_zero() {
-                    log::warn!(
-                        "why codehash can be zero..?, tx.from: {:?}, block {:?}",
-                        execution_result.from,
-                        block.header.number
-                    );
-                    CodeDB::hash(&bytecode)
-                } else {
-                    code_hash
-                };
-                codes.push((code_hash, bytecode));
+                // code hash 0 means non-existed account
+                if !code_hash.is_zero() {
+                    codes.push((code_hash, bytecode));
+                }
                 //log::debug!("inserted tx bytecode {:?} {:?}", code_hash, hash);
             }
         }
@@ -109,7 +102,10 @@ pub fn collect_codes(
                         let code_hash = match step.op {
                             OpcodeId::CALL | OpcodeId::CALLCODE => data.get_code_hash_at(1),
                             OpcodeId::STATICCALL => data.get_code_hash_at(0),
-                            _ => None,
+                            _ => {
+                                log::warn!("delegate call will require code hashing, block num {:?}", block.header.number);
+                                None
+                            }
                         };
                         let addr = call.to.unwrap();
                         trace_code(
