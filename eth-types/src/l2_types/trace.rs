@@ -62,7 +62,7 @@ pub fn collect_codes(
             if step.op.is_create() {
                 continue;
             }
-            let call = if step.op.is_call_or_create() {
+            let call = if step.op.is_call() {
                 // filter call to empty/precompile/!precheck_ok
                 if let Some(next_step) = execution_result.exec_steps.get(idx + 1) {
                     // the call doesn't have inner steps, it could be:
@@ -85,6 +85,13 @@ pub fn collect_codes(
                 None
             };
 
+            match step.op {
+                OpcodeId::EXTCODECOPY => {
+                    log::info!("trace extcodecopy! block {:?}", block.header.number);
+                }
+                _ => {}
+            }
+            
             if let Some(data) = &step.extra_data {
                 match step.op {
                     OpcodeId::CALL
