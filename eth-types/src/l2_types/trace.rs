@@ -37,8 +37,9 @@ pub fn collect_codes(
                 let code_hash = to.poseidon_code_hash;
                 let code_hash = if code_hash.is_zero() {
                     log::warn!(
-                        "why codehash can be zero..?, tx.from: {:?}",
-                        execution_result.from
+                        "why codehash can be zero..?, tx.from: {:?}, block {:?}",
+                        execution_result.from,
+                        block.header.number
                     );
                     CodeDB::hash(&bytecode)
                 } else {
