@@ -35,25 +35,10 @@ pub fn deserialize_fr_matrix(l3_buf: Vec<Vec<Vec<u8>>>) -> Vec<Vec<Fr>> {
     l3_buf.into_iter().map(deserialize_fr_vec).collect()
 }
 
-pub fn serialize_fr_tensor(t: &[Vec<Vec<Fr>>]) -> Vec<Vec<Vec<Vec<u8>>>> {
-    t.iter()
-        .map(|m| serialize_fr_matrix(m.as_slice()))
-        .collect()
-}
-
-pub fn deserialize_fr_tensor(l4_buf: Vec<Vec<Vec<Vec<u8>>>>) -> Vec<Vec<Vec<Fr>>> {
-    l4_buf.into_iter().map(deserialize_fr_matrix).collect()
-}
-
 pub fn serialize_instance(instance: &[Vec<Fr>]) -> Vec<u8> {
     let instances_for_serde = serialize_fr_matrix(instance);
 
     serde_json::to_vec(&instances_for_serde).unwrap()
-}
-
-pub fn load_instance(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
-    let instances: Vec<Vec<Vec<Vec<u8>>>> = serde_json::from_reader(buf).unwrap();
-    deserialize_fr_tensor(instances)
 }
 
 pub fn read_all(filename: &str) -> Vec<u8> {
@@ -156,8 +141,10 @@ pub fn serialize_verify_circuit_final_pair(pair: &(G1Affine, G1Affine, Vec<Fr>))
 }
 
 pub fn write_snark(file_path: &str, snark: &Snark) {
+    log::debug!("write_snark to {file_path}");
     let mut fd = std::fs::File::create(file_path).unwrap();
-    serde_json::to_writer(&mut fd, snark).unwrap()
+    serde_json::to_writer(&mut fd, snark).unwrap();
+    log::debug!("write_snark to {file_path} done");
 }
 
 pub fn load_snark(file_path: &str) -> anyhow::Result<Option<Snark>> {

@@ -1,16 +1,13 @@
+#![allow(deprecated)]
 use crate::{
     types::BlockTraceJsonRpcResult,
-    zkevm::circuit::{block_traces_to_witness_block, check_batch_capacity},
+    zkevm::circuit::{block_traces_to_witness_block, print_chunk_stats},
 };
 use anyhow::{bail, Result};
 use chrono::Utc;
-use eth_types::{l2_types::BlockTrace, Address};
+use eth_types::l2_types::BlockTrace;
 use git_version::git_version;
-use halo2_proofs::{
-    halo2curves::bn256::{Bn256, Fr},
-    poly::kzg::commitment::ParamsKZG,
-    SerdeFormat,
-};
+use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG, SerdeFormat};
 use log::LevelFilter;
 use log4rs::{
     append::{
@@ -21,6 +18,7 @@ use log4rs::{
 };
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use std::fmt::Debug;
 use std::{
     fs::{self, metadata, File},
     io::{BufReader, Read},
@@ -85,29 +83,12 @@ pub fn load_params(
     Ok(p)
 }
 
-/// get a block-result from file
-pub fn get_block_trace_from_file<P: AsRef<Path>>(path: P) -> BlockTrace {
-    let mut buffer = Vec::new();
-    let mut f = File::open(&path).unwrap();
-    f.read_to_end(&mut buffer).unwrap();
-
-    let mut trace = serde_json::from_slice::<BlockTrace>(&buffer).unwrap_or_else(|e1| {
-        serde_json::from_slice::<BlockTraceJsonRpcResult>(&buffer)
-            .map_err(|e2| {
-                panic!(
-                    "unable to load BlockTrace from {:?}, {:?}, {:?}",
-                    path.as_ref(),
-                    e1,
-                    e2
-                )
-            })
-            .unwrap()
-            .result
-    });
+#[deprecated]
+fn post_process_tx_storage_proof(trace: &mut BlockTrace) {
     // fill intrinsicStorageProofs into tx storage proof
     let addrs = vec![
-        Address::from_str("0x5300000000000000000000000000000000000000").unwrap(),
-        Address::from_str("0x5300000000000000000000000000000000000002").unwrap(),
+        *bus_mapping::l2_predeployed::message_queue::ADDRESS,
+        *bus_mapping::l2_predeployed::l1_gas_price_oracle::ADDRESS,
     ];
     for tx_storage_trace in &mut trace.tx_storage_trace {
         if let Some(proof) = tx_storage_trace.proofs.as_mut() {
@@ -129,39 +110,59 @@ pub fn get_block_trace_from_file<P: AsRef<Path>>(path: P) -> BlockTrace {
                 .insert(*addr, trace.storage_trace.storage_proofs[addr].clone());
         }
     }
+}
 
+/// get a block-result from file
+pub fn get_block_trace_from_file<P: AsRef<Path>>(path: P) -> BlockTrace {
+    let mut buffer = Vec::new();
+    let mut f = File::open(&path).unwrap();
+    f.read_to_end(&mut buffer).unwrap();
+
+    let mut trace = serde_json::from_slice::<BlockTrace>(&buffer).unwrap_or_else(|e1| {
+        serde_json::from_slice::<BlockTraceJsonRpcResult>(&buffer)
+            .map_err(|e2| {
+                panic!(
+                    "unable to load BlockTrace from {:?}, {:?}, {:?}",
+                    path.as_ref(),
+                    e1,
+                    e2
+                )
+            })
+            .unwrap()
+            .result
+    });
+    post_process_tx_storage_proof(&mut trace);
     trace
 }
 
-pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
-    std::env::var(var_name)
+pub fn read_env_var<T: Debug + Clone + FromStr>(var_name: &'static str, default: T) -> T {
+    let r = std::env::var(var_name)
         .map(|s| s.parse::<T>().unwrap_or_else(|_| default.clone()))
-        .unwrap_or(default)
+        .unwrap_or(default);
+    log::debug!("read env var {var_name}, result: {r:?}");
+    r
 }
 
 #[derive(Debug)]
-pub struct BatchMetric {
+pub struct ChunkMetric {
     pub num_block: usize,
     pub num_tx: usize,
     pub num_step: usize,
 }
 
-pub fn metric_of_witness_block(block: &Block<Fr>) -> BatchMetric {
-    BatchMetric {
+pub fn metric_of_witness_block(block: &Block) -> ChunkMetric {
+    ChunkMetric {
         num_block: block.context.ctxs.len(),
         num_tx: block.txs.len(),
         num_step: block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>(),
     }
 }
 
-pub fn chunk_trace_to_witness_block(mut chunk_trace: Vec<BlockTrace>) -> Result<Block<Fr>> {
+pub fn chunk_trace_to_witness_block(chunk_trace: Vec<BlockTrace>) -> Result<Block> {
     if chunk_trace.is_empty() {
         bail!("Empty chunk trace");
     }
-
-    // Check if the trace exceeds the circuit capacity.
-    check_batch_capacity(&mut chunk_trace)?;
-
+    print_chunk_stats(&chunk_trace);
     block_traces_to_witness_block(chunk_trace)
 }
 
@@ -204,15 +205,9 @@ pub fn init_env_and_log(id: &str) -> String {
 }
 
 fn create_output_dir(id: &str) -> String {
-    let mode = read_env_var("MODE", "multi".to_string());
     let output = read_env_var(
         "OUTPUT_DIR",
-        format!(
-            "{}_output_{}_{}",
-            id,
-            mode,
-            Utc::now().format("%Y%m%d_%H%M%S")
-        ),
+        format!("outputs/{}_{}", id, Utc::now().format("%Y%m%d_%H%M%S")),
     );
 
     let output_dir = PathBuf::from_str(&output).unwrap();

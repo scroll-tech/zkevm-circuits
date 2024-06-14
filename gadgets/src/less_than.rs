@@ -1,6 +1,6 @@
 //! Lt chip can be used to compare LT for two expressions LHS and RHS.
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
@@ -44,13 +44,12 @@ pub struct LtConfig<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> LtConfig<F, N_BYTES> {
     /// Returns an expression that denotes whether lhs < rhs, or not.
-    pub fn is_lt(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
-        meta.query_advice(self.lt, rotation.unwrap_or_else(Rotation::cur))
+    pub fn is_lt(&self, meta: &mut VirtualCells<F>, rotation: Rotation) -> Expression<F> {
+        meta.query_advice(self.lt, rotation)
     }
 
     /// Returns an expression representing the difference between LHS and RHS.
-    pub fn diff(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
-        let rotation = rotation.unwrap_or_else(Rotation::cur);
+    pub fn diff(&self, meta: &mut VirtualCells<F>, rotation: Rotation) -> Expression<F> {
         sum::expr(self.diff.iter().map(|c| meta.query_advice(*c, rotation)))
     }
 }
@@ -189,7 +188,7 @@ impl<F: Field, const N_BYTES: usize> Chip<F> for LtChip<F, N_BYTES> {
 #[cfg(test)]
 mod test {
     use super::{LtChip, LtConfig, LtInstruction};
-    use eth_types::Field;
+    use crate::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
@@ -288,7 +287,7 @@ mod test {
                     // This verifies lt(value::cur, value::next) is calculated correctly
                     let check = meta.query_advice(config.check, Rotation::cur());
 
-                    vec![q_enable * (config.lt.is_lt(meta, None) - check)]
+                    vec![q_enable * (config.lt.is_lt(meta, Rotation::cur()) - check)]
                 });
 
                 config
@@ -413,7 +412,7 @@ mod test {
                     // This verifies lt(lhs, rhs) is calculated correctly
                     let check = meta.query_advice(config.check, Rotation::cur());
 
-                    vec![q_enable * (config.lt.is_lt(meta, None) - check)]
+                    vec![q_enable * (config.lt.is_lt(meta, Rotation::cur()) - check)]
                 });
 
                 config

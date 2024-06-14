@@ -2,7 +2,7 @@
 //! Monotone gadget helps to check if an advice column is monotonically
 //! increasing within a range. With strict enabled, it disallows equality of two
 //! cell.
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -108,7 +108,7 @@ impl<F: Field, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip<F>
 #[cfg(test)]
 mod test {
     use super::{MonotoneChip, MonotoneConfig, Value};
-    use eth_types::Field;
+    use crate::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{

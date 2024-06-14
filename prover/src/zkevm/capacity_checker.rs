@@ -1,12 +1,4 @@
-use super::circuit::{
-    MAX_BYTECODE, MAX_CALLDATA, MAX_EXP_STEPS, MAX_KECCAK_ROWS, MAX_MPT_ROWS, MAX_POSEIDON_ROWS,
-    MAX_RWS, MAX_VERTICAL_ROWS,
-};
-
-use super::circuit::{
-    block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_witness_block,
-    get_super_circuit_params,
-};
+use super::circuit::{calculate_row_usage_of_witness_block, finalize_builder};
 use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
 use eth_types::{
     l2_types::BlockTrace,
@@ -16,12 +8,11 @@ use eth_types::{
 use itertools::Itertools;
 use mpt_zktrie::state::ZktrieState;
 use serde_derive::{Deserialize, Serialize};
+use zkevm_circuits::super_circuit::params::{
+    get_sub_circuit_limit_and_confidence, get_super_circuit_params,
+};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SubCircuitRowUsage {
-    pub name: String,
-    pub row_number: usize,
-}
+pub use super::SubCircuitRowUsage;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RowUsage {
@@ -48,24 +39,10 @@ impl RowUsage {
     }
     // We treat 1M as 100%
     pub fn normalize(&self) -> Self {
-        let real_available_rows = [
-            (MAX_RWS, 0.95),           // evm
-            (MAX_RWS, 0.95),           // state
-            (MAX_BYTECODE, 0.95),      // bytecode
-            (MAX_RWS, 0.95),           // copy
-            (MAX_KECCAK_ROWS, 0.95),   // keccak
-            (MAX_KECCAK_ROWS, 0.95),   // sha256
-            (MAX_VERTICAL_ROWS, 0.95), // tx
-            (MAX_CALLDATA, 0.95),      // rlp
-            (7 * MAX_EXP_STEPS, 0.95), // exp
-            (MAX_KECCAK_ROWS, 0.95),   // modexp
-            (MAX_RWS, 0.95),           // pi
-            (MAX_POSEIDON_ROWS, 0.95), // poseidon
-            (MAX_VERTICAL_ROWS, 0.95), // sig
-            (MAX_VERTICAL_ROWS, 1.0),  // ecc
-            (MAX_MPT_ROWS, 0.95),      // mpt
-        ]
-        .map(|(limit, confidence)| (limit as f32 * confidence) as usize);
+        let real_available_rows: Vec<_> = get_sub_circuit_limit_and_confidence()
+            .into_iter()
+            .map(|(limit, confidence)| (limit as f64 * confidence) as usize)
+            .collect();
         let details = self
             .row_usage_details
             .iter()
@@ -170,8 +147,7 @@ impl CircuitCapacityChecker {
                 // notice the prev_root in current builder may be not invalid (since the state has
                 // changed but we may not update it in light mode)
                 let mut builder_block =
-                    circuit_input_builder::Block::from_headers(&[], get_super_circuit_params());
-                builder_block.chain_id = trace.chain_id;
+                    circuit_input_builder::Blocks::init(trace.chain_id, get_super_circuit_params());
                 builder_block.start_l1_queue_index = trace.start_l1_queue_index;
                 builder_block.prev_state_root = mpt_state
                     .as_ref()
@@ -192,21 +168,19 @@ impl CircuitCapacityChecker {
                 } else {
                     CircuitInputBuilder::new(sdb, CodeDB::new(), &builder_block)
                 };
-                builder.add_more_l2_trace(trace, false)?;
+                builder.add_more_l2_trace(trace)?;
                 (builder, Some(code_db))
             } else {
                 (
                     CircuitInputBuilder::new_from_l2_trace(
                         get_super_circuit_params(),
                         trace,
-                        false,
                         self.light_mode,
                     )?,
                     None,
                 )
             };
-        let witness_block =
-            block_traces_to_witness_block_with_updated_state(vec![], &mut estimate_builder)?;
+        let witness_block = finalize_builder(&mut estimate_builder)?;
         let mut rows = calculate_row_usage_of_witness_block(&witness_block)?;
 
         let mut code_db = codedb_prev.unwrap_or_else(CodeDB::new);
@@ -217,20 +191,12 @@ impl CircuitCapacityChecker {
             // code for current run has been evaluated in previous
             if code_db.0.insert(hash, bytes).is_some() {
                 assert_eq!(rows[2].name, "bytecode");
-                rows[2].row_num_real -= bytes_len + 1;
+                rows[2].row_number -= bytes_len + 1;
                 assert_eq!(rows[11].name, "poseidon");
-                rows[11].row_num_real -= bytes_len / (31 * 2) * 9;
+                rows[11].row_number -= bytes_len / (31 * 2) * 9;
             }
         }
-
-        let row_usage_details: Vec<SubCircuitRowUsage> = rows
-            .into_iter()
-            .map(|x| SubCircuitRowUsage {
-                name: x.name,
-                row_number: x.row_num_real,
-            })
-            .collect_vec();
-        let tx_row_usage = RowUsage::from_row_usage_details(row_usage_details);
+        let tx_row_usage = RowUsage::from_row_usage_details(rows);
         self.row_usages.push(tx_row_usage.clone());
         self.acc_row_usage.add(&tx_row_usage);
 

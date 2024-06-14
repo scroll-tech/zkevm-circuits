@@ -1,7 +1,7 @@
 //! CircuitInput builder tooling module.
 
 use super::{
-    get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
+    get_call_memory_offset_length, get_create_init_code, BlockContext, Blocks, Call, CallContext,
     CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, PrecompileEvent, Transaction,
     TransactionContext,
 };
@@ -45,7 +45,7 @@ pub struct CircuitInputStateRef<'a> {
     /// CodeDB
     pub code_db: &'a mut CodeDB,
     /// Block
-    pub block: &'a mut Block,
+    pub block: &'a mut Blocks,
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
     /// Transaction
@@ -1654,7 +1654,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         if let Some(error) = step.error {
-            return Ok(Some(get_step_reported_error(&step.op, error)));
+            return Ok(Some(get_step_reported_error(&step.op, error)?));
         }
 
         let call = self.call()?;

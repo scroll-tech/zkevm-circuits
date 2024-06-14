@@ -289,7 +289,7 @@ pub struct Transaction {
     pub rlp_bytes: Vec<u8>,
     /// RLP unsigned bytes
     pub rlp_unsigned_bytes: Vec<u8>,
-
+    // TODO: add rlp_signed_bytes as well ?
     /// Transaction hash
     pub hash: H256,
 }
@@ -385,7 +385,7 @@ impl Transaction {
 }
 
 /// GethData is a type that contains all the information of a Ethereum block
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct GethData {
     /// chain id
     pub chain_id: u64,

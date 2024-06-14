@@ -8,7 +8,8 @@ use bus_mapping::{
     circuit_input_builder::{EcAddOp, EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
     precompile::PrecompileCalls,
 };
-use eth_types::{ToLittleEndian, ToScalar, U256};
+use eth_types::{ToLittleEndian, U256};
+use gadgets::ToScalar;
 use halo2_base::{
     gates::{GateInstructions, RangeInstructions},
     utils::{decompose_bigint_option, fe_to_biguint, modulus},
@@ -1316,7 +1317,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
     type Config = EccCircuitConfig<F>;
 
-    fn new_from_block(block: &Block<F>) -> Self {
+    fn new_from_block(block: &Block) -> Self {
         Self {
             max_add_ops: block.circuits_params.max_ec_ops.ec_add,
             max_mul_ops: block.circuits_params.max_ec_ops.ec_mul,
@@ -1352,7 +1353,7 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         Ok(())
     }
 
-    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &Block) -> (usize, usize) {
         let row_num = if block.circuits_params.max_vertical_circuit_rows == 0 {
             Self::min_num_rows()
         } else {

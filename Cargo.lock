@@ -40,13 +40,18 @@ dependencies = [
 
 [[package]]
 name = "aggregator"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "ark-std 0.3.0",
+ "bitstream-io",
  "c-kzg",
+ "csv",
+ "ctor",
+ "encoder",
  "env_logger",
  "eth-types",
  "ethers-core",
+ "gadgets",
  "halo2-base",
  "halo2-ecc",
  "halo2_proofs 1.1.0",
@@ -62,6 +67,8 @@ dependencies = [
  "serde_json",
  "snark-verifier",
  "snark-verifier-sdk",
+ "strum 0.25.0",
+ "strum_macros 0.25.3",
  "zkevm-circuits",
 ]
 
@@ -94,9 +101,9 @@ checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
 
 [[package]]
 name = "alloy-primitives"
-version = "0.7.0"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99bbad0a6b588ef4aec1b5ddbbfdacd9ef04e00b979617765b03174318ee1f3a"
+checksum = "db8aa973e647ec336810a9356af8aea787249c9d00b1525359f3db29a68d231b"
 dependencies = [
  "alloy-rlp",
  "bytes",
@@ -482,6 +489,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf4b9d6a944f767f8e5e0db018570623c85f3d925ac718db4e06d0187adb21c1"
 
 [[package]]
+name = "bitstream-io"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06c9989a51171e2e81038ab168b6ae22886fe9ded214430dbb4f41c28cf176da"
+
+[[package]]
 name = "bitvec"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -581,7 +594,7 @@ checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
 
 [[package]]
 name = "bus-mapping"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "ctor",
  "env_logger",
@@ -655,9 +668,9 @@ dependencies = [
 
 [[package]]
 name = "c-kzg"
-version = "1.0.0"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3130f3d8717cc02e668a896af24984d5d5d4e8bf12e278e982e0f1bd88a0f9af"
+checksum = "cdf100c4cea8f207e883ff91ca886d621d8a166cb04971dfaa9bb8fd99ed95df"
 dependencies = [
  "blst",
  "cc",
@@ -747,7 +760,7 @@ dependencies = [
 
 [[package]]
 name = "circuit-benchmarks"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "ark-std 0.3.0",
  "bus-mapping",
@@ -1298,6 +1311,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
+name = "encoder"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/da-codec.git?tag=v0.1.0#5a28b752d4504bf0966734fe4a6a5433981c74c2"
+dependencies = [
+ "zstd 0.13.0",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1388,7 +1409,7 @@ dependencies = [
 
 [[package]]
 name = "eth-types"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "base64 0.13.1",
  "ethers-core",
@@ -1405,6 +1426,7 @@ dependencies = [
  "revm-primitives",
  "serde",
  "serde_json",
+ "serde_stacker",
  "serde_with",
  "sha3 0.10.8",
  "strum 0.25.0",
@@ -1699,7 +1721,7 @@ dependencies = [
 
 [[package]]
 name = "external-tracer"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "eth-types",
  "geth-utils",
@@ -1936,10 +1958,11 @@ dependencies = [
 
 [[package]]
 name = "gadgets"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "eth-types",
  "halo2_proofs 1.1.0",
+ "poseidon-base",
  "rand",
  "rand_xorshift",
  "sha3 0.10.8",
@@ -1959,7 +1982,7 @@ dependencies = [
 
 [[package]]
 name = "geth-utils"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "env_logger",
  "gobuild",
@@ -2135,7 +2158,7 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "1.1.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#7179a60e4b4b1dafff084deac7b4bea235eecf5f"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#6c5e9eec5088dc8b4a23edcdd1eaf8705b5fc7dc"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -2175,7 +2198,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "1.1.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#7179a60e4b4b1dafff084deac7b4bea235eecf5f"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#6c5e9eec5088dc8b4a23edcdd1eaf8705b5fc7dc"
 dependencies = [
  "ark-std 0.3.0",
  "blake2b_simd",
@@ -2519,7 +2542,7 @@ dependencies = [
 
 [[package]]
 name = "integration-tests"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "bus-mapping",
  "env_logger",
@@ -2827,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "mock"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "eth-types",
  "ethers-core",
@@ -2841,7 +2864,7 @@ dependencies = [
 
 [[package]]
 name = "mpt-zktrie"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "env_logger",
  "eth-types",
@@ -3515,7 +3538,7 @@ dependencies = [
 
 [[package]]
 name = "prover"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "aggregator",
  "anyhow",
@@ -3750,7 +3773,7 @@ dependencies = [
 
 [[package]]
 name = "revm-precompile"
-version = "6.0.0"
+version = "7.0.0"
 source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/feat/v35/sp1#96f022f50d95cf9134683c1df42e8f775657547e"
 dependencies = [
  "aurora-engine-modexp",
@@ -3759,14 +3782,14 @@ dependencies = [
  "once_cell",
  "revm-primitives",
  "ripemd",
- "secp256k1 0.28.2",
+ "secp256k1 0.29.0",
  "sha2",
  "substrate-bn",
 ]
 
 [[package]]
 name = "revm-primitives"
-version = "3.1.1"
+version = "4.0.0"
 source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/feat/v35/sp1#96f022f50d95cf9134683c1df42e8f775657547e"
 dependencies = [
  "alloy-primitives",
@@ -4114,12 +4137,12 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.28.2"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d24b59d129cdadea20aea4fb2352fa053712e5d713eee47d700cd4b2bc002f10"
+checksum = "0e0cc0f1cf93f4969faf3ea1c7d8a9faed25918d96affa959720823dfe86d4f3"
 dependencies = [
  "rand",
- "secp256k1-sys 0.9.2",
+ "secp256k1-sys 0.10.0",
 ]
 
 [[package]]
@@ -4133,9 +4156,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.9.2"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5d1746aae42c19d583c3c1a8c646bfad910498e2051c551a7f2e3c0c9fbb7eb"
+checksum = "1433bd67156263443f14d603720b082dd3121779323fce20cba2aa07b874bc1b"
 dependencies = [
  "cc",
 ]
@@ -4360,7 +4383,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#114cea6cd025f7daf66b8f0038126a796653e207"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#fe1f8906041ad323034881fbd808908250d44829"
 dependencies = [
  "bytes",
  "ethereum-types",
@@ -4383,7 +4406,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#114cea6cd025f7daf66b8f0038126a796653e207"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#fe1f8906041ad323034881fbd808908250d44829"
 dependencies = [
  "bincode",
  "ethereum-types",
@@ -4661,7 +4684,7 @@ dependencies = [
 
 [[package]]
 name = "testool"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "bus-mapping",
@@ -5533,12 +5556,12 @@ dependencies = [
  "pbkdf2 0.11.0",
  "sha1",
  "time",
- "zstd",
+ "zstd 0.11.2+zstd.1.5.2",
 ]
 
 [[package]]
 name = "zkevm-circuits"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "array-init",
  "bus-mapping",
@@ -5610,7 +5633,15 @@ version = "0.11.2+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20cc960326ece64f010d2d2107537f26dc589a6573a316bd5b1dba685fa5fde4"
 dependencies = [
- "zstd-safe",
+ "zstd-safe 5.0.2+zstd.1.5.2",
+]
+
+[[package]]
+name = "zstd"
+version = "0.13.0"
+source = "git+https://github.com/scroll-tech/zstd-rs?branch=hack/mul-block#5c0892b6567dab31394d701477183ce9d6a32aca"
+dependencies = [
+ "zstd-safe 7.0.0",
 ]
 
 [[package]]
@@ -5620,7 +5651,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d2a5585e04f9eea4b2a3d1eca508c4dee9592a89ef6f450c11719da0726f4db"
 dependencies = [
  "libc",
- "zstd-sys",
+ "zstd-sys 2.0.10+zstd.1.5.6",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.0.0"
+source = "git+https://github.com/scroll-tech/zstd-rs?branch=hack/mul-block#5c0892b6567dab31394d701477183ce9d6a32aca"
+dependencies = [
+ "zstd-sys 2.0.9+zstd.1.5.5",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.9+zstd.1.5.5"
+source = "git+https://github.com/scroll-tech/zstd-rs?branch=hack/mul-block#5c0892b6567dab31394d701477183ce9d6a32aca"
+dependencies = [
+ "cc",
+ "pkg-config",
 ]
 
 [[package]]

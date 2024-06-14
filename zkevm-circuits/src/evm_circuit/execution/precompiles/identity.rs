@@ -1,7 +1,8 @@
 use crate::util::Field;
 use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
 use gadgets::util::{select, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -114,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

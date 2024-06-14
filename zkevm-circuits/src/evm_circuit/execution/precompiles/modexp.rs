@@ -2,8 +2,9 @@ use crate::util::Field;
 use bus_mapping::precompile::{
     PrecompileAuxData, PrecompileCalls, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT,
 };
-use eth_types::{evm_types::GasCost, ToBigEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToBigEndian, U256};
 use gadgets::util::{self, not, select, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -887,7 +888,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

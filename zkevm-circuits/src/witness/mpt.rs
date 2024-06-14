@@ -3,7 +3,8 @@ use crate::{
     table::AccountFieldTag,
     util::Field,
 };
-use eth_types::{Address, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, ToLittleEndian, Word, U256};
+use gadgets::ToScalar;
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 use mpt_circuits::{serde::SMTTrace, MPTProofType};
@@ -132,7 +133,10 @@ impl MptUpdates {
     }
 
     /// initialize a mock witness generator that is consistent with the old values of self.updates
-    pub(crate) fn mock_fill_state_roots(&mut self) {
+    /// Update 2024.05.22: since we implemented "retrace" feature, this method is no longer useful
+    /// https://github.com/scroll-tech/zkevm-circuits/pull/1260
+    #[deprecated]
+    pub(crate) fn build_prestate_trie(&mut self) {
         init_hash_scheme();
         let temp_trie = ZktrieState::default();
         let mut wit_gen = WitnessGenerator::from(&temp_trie);
@@ -165,7 +169,7 @@ impl MptUpdates {
         }
         self.old_root = U256::from_big_endian(wit_gen.root().as_bytes());
         self.fill_state_roots_from_generator(wit_gen);
-        log::debug!("mocking fill_state_roots done");
+        log::debug!("build_prestate_trie done");
         self.pretty_print();
     }
 

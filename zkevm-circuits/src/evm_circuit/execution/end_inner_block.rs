@@ -78,15 +78,15 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
 
         // Depending on whether or not this is the final inner block, we must constrain
         // the next step's block number.
-        let next_step_end_block = cb.next.execution_state_selector([ExecutionState::EndBlock]);
-        cb.condition(next_step_end_block.clone(), |cb| {
+        let next_step_padding = cb.next.execution_state_selector([ExecutionState::Padding]);
+        cb.condition(next_step_padding.clone(), |cb| {
             cb.require_equal(
                 "block number does not change if this is the last inner block",
                 cb.next.state.block_number.expr(),
                 cb.curr.state.block_number.expr(),
             );
         });
-        cb.condition(not::expr(next_step_end_block), |cb| {
+        cb.condition(not::expr(next_step_padding), |cb| {
             cb.require_equal(
                 "block number increments if there are more inner blocks",
                 cb.next.state.block_number.expr(),
@@ -115,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         tx: &Transaction,
         _: &Call,
         step: &ExecStep,

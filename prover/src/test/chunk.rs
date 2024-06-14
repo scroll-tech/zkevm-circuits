@@ -1,76 +1,45 @@
 use crate::{
-    common::{Prover, Verifier},
-    config::{LayerId, ZKEVM_DEGREES},
     utils::read_env_var,
-    ChunkHash, ChunkProof, CompressionCircuit, WitnessBlock,
+    zkevm::{Prover, Verifier},
+    ChunkProof, ChunkProvingTask,
 };
-use std::{
-    env,
-    sync::{LazyLock, Mutex},
-};
+use std::sync::{LazyLock, Mutex};
 
 static CHUNK_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
     let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
-    let prover = Prover::from_params_dir(&params_dir, &ZKEVM_DEGREES);
+    let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
+    let prover = Prover::from_dirs(&params_dir, &assets_dir);
     log::info!("Constructed chunk-prover");
 
     Mutex::new(prover)
 });
 
-static CHUNK_VERIFIER: LazyLock<Mutex<Verifier<CompressionCircuit>>> = LazyLock::new(|| {
-    env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
+static CHUNK_VERIFIER: LazyLock<Mutex<Verifier>> = LazyLock::new(|| {
+    let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
+    let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
 
-    let mut prover = CHUNK_PROVER.lock().expect("poisoned chunk-prover");
-    let params = prover.params(LayerId::Layer2.degree()).clone();
-
-    let pk = prover
-        .pk(LayerId::Layer2.id())
-        .expect("Failed to get chunk-prove PK");
-    let vk = pk.get_vk().clone();
-
-    let verifier = Verifier::new(params, vk);
+    let verifier = Verifier::from_dirs(&params_dir, &assets_dir);
     log::info!("Constructed chunk-verifier");
 
     Mutex::new(verifier)
 });
 
-pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
-    log::info!("{test}: chunk-prove BEGIN");
+pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
+    log::info!("{desc}: chunk-prove BEGIN");
 
     let mut prover = CHUNK_PROVER.lock().expect("poisoned chunk-prover");
-    let inner_id = read_env_var("INNER_LAYER_ID", LayerId::Inner.id().to_string());
-    let inner_id_changed = prover.pk(&inner_id).is_none();
 
-    // Clear previous PKs if inner-layer ID changed.
-    if inner_id_changed {
-        prover.clear_pks();
-    }
+    let proof = prover
+        .gen_chunk_proof(chunk, None, None, None)
+        .unwrap_or_else(|err| panic!("{desc}: failed to generate chunk snark: {err}"));
+    log::info!("{desc}: generated chunk proof");
 
-    let snark = prover
-        .load_or_gen_final_chunk_snark(test, witness_block, Some(&inner_id), None)
-        .unwrap_or_else(|err| panic!("{test}: failed to generate chunk snark: {err}"));
-    log::info!("{test}: generated chunk snark");
+    let verifier = CHUNK_VERIFIER.lock().expect("poisoned chunk-verifier");
 
-    let mut verifier = CHUNK_VERIFIER.lock().expect("poisoned chunk-verifier");
+    let verified = verifier.verify_chunk_proof(proof.clone());
+    assert!(verified, "{desc}: failed to verify chunk snark");
 
-    // Reset VK if inner-layer ID changed.
-    if inner_id_changed {
-        let pk = prover
-            .pk(LayerId::Layer2.id())
-            .unwrap_or_else(|| panic!("{test}: failed to get inner-prove PK"));
-        let vk = pk.get_vk().clone();
-        verifier.set_vk(vk);
-    }
+    log::info!("{desc}: chunk-prove END");
 
-    let verified = verifier.verify_snark(snark.clone());
-    assert!(verified, "{test}: failed to verify chunk snark");
-
-    log::info!("{test}: chunk-prove END");
-
-    ChunkProof::new(
-        snark,
-        prover.pk(LayerId::Layer2.id()),
-        Some(ChunkHash::from_witness_block(witness_block, false)),
-    )
-    .unwrap_or_else(|err| panic!("{test}: failed to crate chunk proof: {err}"))
+    proof
 }

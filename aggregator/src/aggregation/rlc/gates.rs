@@ -7,7 +7,8 @@ use halo2_proofs::{
 };
 use zkevm_circuits::util::Challenges;
 
-use crate::{constants::LOG_DEGREE, util::assert_equal, MAX_AGG_SNARKS};
+// TODO: remove MAX_AGG_SNARKS and make this generic over N_SNARKS
+use crate::{DIGEST_LEN, MAX_AGG_SNARKS};
 
 use super::RlcConfig;
 
@@ -97,7 +98,7 @@ impl RlcConfig {
             )?;
             offset += 1;
         }
-        assert_eq!(offset, FIXED_OFFSET_EMPTY_KECCAK + 32);
+        assert_eq!(offset, FIXED_OFFSET_EMPTY_KECCAK + DIGEST_LEN);
 
         Ok(())
     }
@@ -121,37 +122,10 @@ impl RlcConfig {
     }
 
     #[inline]
-    pub(crate) fn two_cell(&self, region_index: RegionIndex) -> Cell {
+    pub(crate) fn four_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
-            row_offset: 2,
-            column: self.fixed.into(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn five_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: 5,
-            column: self.fixed.into(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn nine_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: 9,
-            column: self.fixed.into(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn thirteen_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: 13,
+            row_offset: 4,
             column: self.fixed.into(),
         }
     }
@@ -166,42 +140,6 @@ impl RlcConfig {
         Cell {
             region_index,
             row_offset: index,
-            column: self.fixed.into(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: FIXED_OFFSET_32,
-            column: self.fixed.into(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn one_hundred_and_sixty_eight_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: FIXED_OFFSET_168,
-            column: self.fixed.into(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn two_hundred_and_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: FIXED_OFFSET_232,
-            column: self.fixed.into(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn two_to_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: FIXED_OFFSET_2_POW_32,
             column: self.fixed.into(),
         }
     }
@@ -308,7 +246,6 @@ impl RlcConfig {
     }
 
     /// Enforce res = a + b
-    #[allow(dead_code)]
     pub(crate) fn add(
         &self,
         region: &mut Region<Fr>,
@@ -471,7 +408,6 @@ impl RlcConfig {
     }
 
     // Returns inputs[0] + challenge * inputs[1] + ... + challenge^k * inputs[k]
-    #[allow(dead_code)]
     pub(crate) fn rlc(
         &self,
         region: &mut Region<Fr>,
@@ -505,117 +441,6 @@ impl RlcConfig {
         Ok(acc)
     }
 
-    // padded the columns
-    #[allow(dead_code)]
-    pub(crate) fn pad(&self, region: &mut Region<Fr>, offset: &usize) -> Result<(), Error> {
-        for index in *offset..(1 << LOG_DEGREE) - 1 {
-            region.assign_advice(
-                || "pad",
-                self.phase_2_column,
-                index,
-                || Value::known(Fr::zero()),
-            )?;
-        }
-        Ok(())
-    }
-
-    // decompose a field element into log_size bits of boolean cells
-    // require the input to be less than 2^log_size
-    // require log_size < 254
-    pub(crate) fn decomposition(
-        &self,
-        region: &mut Region<Fr>,
-        input: &AssignedCell<Fr, Fr>,
-        log_size: usize,
-        offset: &mut usize,
-    ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
-        let mut input_element = Fr::default();
-        input.value().map(|&x| input_element = x);
-
-        let bits = input_element
-            .to_bytes()
-            .iter()
-            .flat_map(byte_to_bits_le)
-            .take(log_size)
-            .collect::<Vec<_>>();
-        // sanity check
-        {
-            let mut reconstructed = Fr::zero();
-            bits.iter().rev().for_each(|bit| {
-                reconstructed *= Fr::from(2);
-                reconstructed += Fr::from(*bit as u64);
-            });
-            assert_eq!(reconstructed, input_element);
-        }
-
-        let bit_cells = bits
-            .iter()
-            .map(|&bit| {
-                let cell = self.load_private(region, &Fr::from(bit as u64), offset)?;
-                self.enforce_binary(region, &cell, offset)?;
-                Ok(cell)
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        let mut acc = {
-            let zero = self.load_private(region, &Fr::from(0), offset)?;
-            let zero_cell = self.zero_cell(zero.cell().region_index);
-            region.constrain_equal(zero_cell, zero.cell())?;
-            zero
-        };
-
-        let two = {
-            let two = self.load_private(region, &Fr::from(2), offset)?;
-            let two_cell = self.two_cell(two.cell().region_index);
-            region.constrain_equal(two_cell, two.cell())?;
-            two
-        };
-
-        for bit in bit_cells.iter().rev() {
-            acc = self.mul_add(region, &acc, &two, bit, offset)?;
-        }
-
-        // sanity check
-        assert_equal(
-            &acc,
-            input,
-            format!(
-                "acc does not match input: {:?} {:?}",
-                &acc.value(),
-                &input.value(),
-            )
-            .as_str(),
-        )?;
-
-        region.constrain_equal(acc.cell(), input.cell())?;
-
-        Ok(bit_cells)
-    }
-
-    // return a boolean if a is smaller than b
-    // requires that both a and b are less than 32 bits
-    pub(crate) fn is_smaller_than(
-        &self,
-        region: &mut Region<Fr>,
-        a: &AssignedCell<Fr, Fr>,
-        b: &AssignedCell<Fr, Fr>,
-        offset: &mut usize,
-    ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        // when a and b are both small (as in our use case)
-        // if a >= b, c = 2^32 + (a-b) will be >= 2^32
-        // we bit decompose c and check the 33-th bit
-        let two_to_thirty_two = self.load_private(region, &Fr::from(1 << 32), offset)?;
-        let two_to_thirty_two_cell =
-            self.two_to_thirty_two_cell(two_to_thirty_two.cell().region_index);
-        region.constrain_equal(two_to_thirty_two_cell, two_to_thirty_two.cell())?;
-
-        let ca = self.add(region, &two_to_thirty_two, a, offset)?;
-        let c = self.sub(region, &ca, b, offset)?;
-        let bits = self.decomposition(region, &c, 33, offset)?;
-        let res = self.not(region, &bits[32], offset)?;
-        Ok(res)
-    }
-
     pub(crate) fn inner_product(
         &self,
         region: &mut Region<Fr>,
@@ -635,7 +460,6 @@ impl RlcConfig {
     }
 
     // return a boolean if a ?= 0
-    #[allow(dead_code)]
     pub(crate) fn is_zero(
         &self,
         region: &mut Region<Fr>,
@@ -693,27 +517,33 @@ impl RlcConfig {
         Ok(res_cell)
     }
 
-    // return a boolean if a ?= b
-    #[allow(dead_code)]
-    pub(crate) fn is_equal(
+    // lookup the input and output rlcs from the lookup table
+    pub(crate) fn lookup_keccak_rlcs(
         &self,
         region: &mut Region<Fr>,
-        a: &AssignedCell<Fr, Fr>,
-        b: &AssignedCell<Fr, Fr>,
+        input_rlcs: &AssignedCell<Fr, Fr>,
+        output_rlcs: &AssignedCell<Fr, Fr>,
+        data_len: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
-    ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        let diff = self.sub(region, a, b, offset)?;
-        self.is_zero(region, &diff, offset)
-    }
-}
+    ) -> Result<(), Error> {
+        self.lookup_gate_selector.enable(region, *offset)?;
+        let _input_rlcs_copied =
+            input_rlcs.copy_advice(|| "lookup input rlc", region, self.phase_2_column, *offset)?;
+        let _output_rlcs_copied = output_rlcs.copy_advice(
+            || "lookup output rlc",
+            region,
+            self.phase_2_column,
+            *offset + 1,
+        )?;
+        let _data_len = data_len.copy_advice(
+            || "lookup data len",
+            region,
+            self.phase_2_column,
+            *offset + 2,
+        )?;
 
-#[inline]
-fn byte_to_bits_le(byte: &u8) -> Vec<u8> {
-    let mut res = vec![];
-    let mut t = *byte;
-    for _ in 0..8 {
-        res.push(t & 1);
-        t >>= 1;
+        *offset += 3;
+
+        Ok(())
     }
-    res
 }

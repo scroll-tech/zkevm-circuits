@@ -1,7 +1,7 @@
 use crate::{
     common,
     config::{LAYER4_CONFIG_PATH, LAYER4_DEGREE},
-    consts::{AGG_VK_FILENAME, DEPLOYMENT_CODE_FILENAME},
+    consts::{agg_vk_filename, DEPLOYMENT_CODE_FILENAME},
     io::force_to_read,
     BatchProof,
 };
@@ -36,7 +36,7 @@ impl Verifier {
     }
 
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        let raw_vk = force_to_read(assets_dir, &AGG_VK_FILENAME);
+        let raw_vk = force_to_read(assets_dir, &agg_vk_filename());
         let deployment_code = force_to_read(assets_dir, &DEPLOYMENT_CODE_FILENAME);
 
         env::set_var("COMPRESSION_CONFIG", &*LAYER4_CONFIG_PATH);

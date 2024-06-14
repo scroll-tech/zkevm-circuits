@@ -6,7 +6,8 @@ use crate::{
     },
     util::{Expr, Field},
 };
-use eth_types::{ToLittleEndian, ToScalar, Word};
+use eth_types::{ToLittleEndian, Word};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Construction of 2 256-bit words addition and result, which is useful for

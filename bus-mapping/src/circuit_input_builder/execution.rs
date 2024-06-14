@@ -15,7 +15,7 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    Address, Field, GethExecStep, ToLittleEndian, Word, H256, U256,
+    Address, GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
@@ -153,6 +153,8 @@ pub enum ExecState {
     EndTx,
     /// Virtual step End Block
     EndBlock,
+    /// Virtual step Padding
+    Padding,
 }
 
 impl ExecState {

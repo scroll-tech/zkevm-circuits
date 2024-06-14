@@ -23,7 +23,7 @@ use crate::{
 #[ignore = "it takes too much time"]
 #[test]
 fn test_mock_compression() {
-    env_logger::init();
+    // env_logger::init();
 
     if std::path::Path::new("data").is_dir() {
         println!("data folder already exists\n");

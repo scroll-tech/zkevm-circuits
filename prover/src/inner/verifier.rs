@@ -23,7 +23,7 @@ impl<C: TargetCircuit> Verifier<C> {
 
         let vk = raw_vk.map_or_else(
             || {
-                let dummy_circuit = C::dummy_inner_circuit();
+                let dummy_circuit = C::dummy_inner_circuit().expect("gen dummy circuit");
                 keygen_vk(&params, &dummy_circuit).unwrap()
             },
             deserialize_vk::<C::Inner>,

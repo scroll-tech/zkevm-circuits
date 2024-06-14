@@ -1,7 +1,7 @@
 use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
-use crate::types::base64;
-use aggregator::ChunkHash;
-use anyhow::Result;
+use crate::{types::base64, zkevm::SubCircuitRowUsage};
+use aggregator::ChunkInfo;
+use anyhow::{bail, Result};
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
 use snark_verifier::Protocol;
@@ -13,15 +13,50 @@ pub struct ChunkProof {
     pub protocol: Vec<u8>,
     #[serde(flatten)]
     pub proof: Proof,
-    #[serde(rename = "chunk_info")]
-    pub chunk_hash: Option<ChunkHash>,
+    pub chunk_info: ChunkInfo,
+    #[serde(default)]
+    pub row_usages: Vec<SubCircuitRowUsage>,
+}
+
+macro_rules! compare_field {
+    ($desc:expr, $field:ident, $lhs:ident, $rhs:ident) => {
+        if $lhs.$field != $rhs.$field {
+            bail!(
+                "{} chunk different {}: {} != {}",
+                $desc,
+                stringify!($field),
+                $lhs.$field,
+                $rhs.$field
+            );
+        }
+    };
+}
+
+/// Check chunk info is consistent with chunk info embedded inside proof
+pub fn compare_chunk_info(name: &str, lhs: &ChunkInfo, rhs: &ChunkInfo) -> Result<()> {
+    compare_field!(name, chain_id, lhs, rhs);
+    compare_field!(name, prev_state_root, lhs, rhs);
+    compare_field!(name, post_state_root, lhs, rhs);
+    compare_field!(name, withdraw_root, lhs, rhs);
+    compare_field!(name, data_hash, lhs, rhs);
+    if lhs.tx_bytes != rhs.tx_bytes {
+        bail!(
+            "{} chunk different {}: {} != {}",
+            name,
+            "tx_bytes",
+            hex::encode(&lhs.tx_bytes),
+            hex::encode(&rhs.tx_bytes)
+        );
+    }
+    Ok(())
 }
 
 impl ChunkProof {
     pub fn new(
         snark: Snark,
         pk: Option<&ProvingKey<G1Affine>>,
-        chunk_hash: Option<ChunkHash>,
+        chunk_info: ChunkInfo,
+        row_usages: Vec<SubCircuitRowUsage>,
     ) -> Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
         let proof = Proof::new(snark.proof, &snark.instances, pk);
@@ -29,7 +64,8 @@ impl ChunkProof {
         Ok(Self {
             protocol,
             proof,
-            chunk_hash,
+            chunk_info,
+            row_usages,
         })
     }
 

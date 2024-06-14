@@ -1,7 +1,8 @@
 use crate::util::Field;
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, ToLittleEndian};
 use gadgets::util::{not, select, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -199,7 +200,7 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

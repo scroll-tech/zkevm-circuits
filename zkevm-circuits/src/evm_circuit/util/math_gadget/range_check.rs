@@ -56,6 +56,7 @@ mod tests {
     use crate::util::Field;
     use eth_types::*;
     use gadgets::util::Expr;
+    use gadgets::ToScalar;
     use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]

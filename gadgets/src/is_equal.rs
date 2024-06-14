@@ -1,9 +1,9 @@
 //! IsEqual chip can be used to check equality of two expressions.
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
-    plonk::{ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
@@ -58,6 +58,24 @@ pub struct IsEqualChip<F> {
 }
 
 impl<F: Field> IsEqualChip<F> {
+    /// Configure the IsEqual chip with value_inv column.
+    pub fn configure_with_value_inv(
+        meta: &mut ConstraintSystem<F>,
+        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        lhs: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        rhs: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        value_inv: impl FnOnce(&mut ConstraintSystem<F>) -> Column<Advice>,
+    ) -> IsEqualConfig<F> {
+        let value = |meta: &mut VirtualCells<F>| lhs(meta) - rhs(meta);
+        let value_inv = value_inv(meta);
+        let is_zero_config = IsZeroChip::configure(meta, q_enable, value, value_inv);
+        let is_equal_expression = is_zero_config.expr();
+        IsEqualConfig {
+            is_zero_config,
+            is_equal_expression,
+        }
+    }
+
     /// Configure the IsEqual chip.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -65,16 +83,7 @@ impl<F: Field> IsEqualChip<F> {
         lhs: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         rhs: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
     ) -> IsEqualConfig<F> {
-        let value = |meta: &mut VirtualCells<F>| lhs(meta) - rhs(meta);
-        let value_inv = meta.advice_column();
-
-        let is_zero_config = IsZeroChip::configure(meta, q_enable, value, value_inv);
-        let is_equal_expression = is_zero_config.expr();
-
-        IsEqualConfig {
-            is_zero_config,
-            is_equal_expression,
-        }
+        Self::configure_with_value_inv(meta, q_enable, lhs, rhs, |meta| meta.advice_column())
     }
 
     /// Construct an IsEqual chip given a config.
@@ -118,7 +127,7 @@ impl<F: Field> Chip<F> for IsEqualChip<F> {
 mod tests {
     use std::marker::PhantomData;
 
-    use eth_types::Field;
+    use crate::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,

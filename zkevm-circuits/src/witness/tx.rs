@@ -22,13 +22,13 @@ use eth_types::{
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
-    AccessList, Address, Error, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word,
-    H256,
+    AccessList, Address, Error, Signature, ToBigEndian, ToLittleEndian, ToWord, Word, H256,
 };
 use ethers_core::{
     types::TransactionRequest,
     utils::{keccak256, rlp::Encodable},
 };
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     halo2curves::{group::ff::PrimeField, secp256k1},
@@ -1319,12 +1319,13 @@ pub(super) fn tx_convert(
 mod tests {
     use crate::witness::{tx::Challenges, RlpTag, Tag, Transaction};
     use eth_types::{
-        evm_types::gas_utils::tx_data_gas_cost, geth_types::TxType, Address, ToBigEndian, ToScalar,
+        evm_types::gas_utils::tx_data_gas_cost, geth_types::TxType, Address, ToBigEndian,
     };
     use ethers_core::{
         types::{Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
     };
+    use gadgets::ToScalar;
     use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
 
     fn rlc(be_bytes: &[u8], rand: Fr) -> Fr {

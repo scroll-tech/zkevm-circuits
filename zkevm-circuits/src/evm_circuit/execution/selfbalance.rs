@@ -13,7 +13,7 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::ToScalar;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -61,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,

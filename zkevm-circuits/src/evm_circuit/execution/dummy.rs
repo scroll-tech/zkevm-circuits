@@ -45,7 +45,7 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

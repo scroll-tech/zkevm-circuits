@@ -1,7 +1,8 @@
 use crate::util::Field;
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{evm_types::GasCost, word, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, word, ToLittleEndian, U256};
 use gadgets::util::{and, not, or, select, sum, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -334,7 +335,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

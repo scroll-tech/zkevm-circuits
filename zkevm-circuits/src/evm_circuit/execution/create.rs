@@ -29,10 +29,11 @@ use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{
     evm_types::{GasCost, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE},
     state_db::CodeDB,
-    ToBigEndian, ToLittleEndian, ToScalar, ToWord, H256, KECCAK_CODE_HASH_EMPTY, U256,
+    ToBigEndian, ToLittleEndian, ToWord, H256, KECCAK_CODE_HASH_EMPTY, U256,
 };
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::iter::once;
@@ -570,7 +571,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        block: &Block,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

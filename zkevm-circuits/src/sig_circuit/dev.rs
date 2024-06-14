@@ -1,11 +1,10 @@
 use super::*;
 
 //#[cfg(not(feature = "onephase"))]
-use crate::util::Challenges;
+use crate::{util::Challenges, witness::keccak::keccak_inputs_sign_verify};
 //#[cfg(feature = "onephase")]
 //use crate::util::MockChallenges as Challenges;
 
-use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// SigCircuitTesterConfig

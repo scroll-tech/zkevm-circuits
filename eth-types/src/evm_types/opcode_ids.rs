@@ -1138,6 +1138,8 @@ impl FromStr for OpcodeId {
             "PC" => OpcodeId::PC,
             "MSIZE" => OpcodeId::MSIZE,
             "JUMPDEST" => OpcodeId::JUMPDEST,
+            // tmp hack before reverting https://github.com/scroll-tech/go-ethereum/pull/737/files
+            "opcode 0x5e not defined" => OpcodeId::MCOPY,
             "MCOPY" => OpcodeId::MCOPY,
             "PUSH0" => OpcodeId::PUSH0,
             "PUSH1" => OpcodeId::PUSH1,
@@ -1245,10 +1247,13 @@ impl FromStr for OpcodeId {
             #[cfg(not(feature = "scroll"))]
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
+            "opcode 0x48 not defined" => OpcodeId::BASEFEE,
             "BASEFEE" => OpcodeId::BASEFEE,
             "BLOBHASH" => OpcodeId::INVALID(0x49),
             "BLOBBASEFEE" => OpcodeId::INVALID(0x4a),
+            "opcode 0x5c not defined" => OpcodeId::TLOAD,
             "TLOAD" => OpcodeId::TLOAD,
+            "opcode 0x5d not defined" => OpcodeId::TSTORE,
             "TSTORE" => OpcodeId::TSTORE,
             _ => {
                 // Parse an invalid opcode value as reported by geth

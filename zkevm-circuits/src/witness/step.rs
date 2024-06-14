@@ -239,6 +239,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::EndBlock => ExecutionState::EndBlock,
+            circuit_input_builder::ExecState::Padding => ExecutionState::Padding,
         }
     }
 }
