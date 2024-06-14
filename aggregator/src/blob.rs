@@ -363,7 +363,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         // metadata bytes.
         let bytes = self.to_metadata_bytes();
 
-        // accumulators represent the runnin linear combination of bytes.
+        // accumulators represent the running linear combination of bytes.
         let accumulators_iter = self
             .num_valid_chunks
             .to_be_bytes()

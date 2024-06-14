@@ -239,7 +239,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
         // since there is a bug in the prestate
         // tracer: https://github.com/ethereum/go-ethereum/issues/28439
         // which may also act as the data source for our statedb,
-        // we have to relax the constarint a bit and fix it silently
+        // we have to relax the constraint a bit and fix it silently
         if account_code_hash_is_empty_or_zero && callee_account.nonce == 1.into() {
             log::warn!(
                 "fix deployment nonce for {:?} silently for the prestate tracer",

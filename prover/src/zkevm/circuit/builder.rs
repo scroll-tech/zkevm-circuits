@@ -177,7 +177,7 @@ pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block> {
             witness_block.apply_mpt_updates(state);
             log::debug!("apply_mpt_updates done");
         } else {
-            // Empty state root means circuit capcity checking, or dummy witness block for key gen?
+            // Empty state root means circuit capacity checking, or dummy witness block for key gen?
             log::info!("empty state root, skip apply_mpt_updates");
         }
 

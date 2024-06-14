@@ -878,14 +878,14 @@ mod test {
     }
 
     fn creator_bytecode(
-        get_initcode: Bytecode,
+        initcode: Bytecode,
         value: Word,
         is_create2: bool,
         is_persistent: bool,
     ) -> Bytecode {
-        let initialization_bytes = get_initcode.code();
+        let initcode_bytes = initcode.code();
         let mut code = bytecode! {
-            PUSH32(Word::from_big_endian(&initialization_bytes))
+            PUSH32(Word::from_big_endian(&initcode_bytes))
             PUSH1(0)
             MSTORE
         };
@@ -893,8 +893,8 @@ mod test {
             code.append(&bytecode! {PUSH1(45)}); // salt;
         }
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // length
-            PUSH1(32 - initialization_bytes.len()) // offset
+            PUSH1(initcode_bytes.len()) // length
+            PUSH1(32 - initcode_bytes.len()) // offset
             PUSH2(value) // value
         });
         code.write_op(if is_create2 {
@@ -923,18 +923,18 @@ mod test {
         code
     }
 
-    fn creater_bytecode_address_collision(get_initcode: Bytecode) -> Bytecode {
-        let initialization_bytes = get_initcode.code();
+    fn creator_bytecode_address_collision(initcode: Bytecode) -> Bytecode {
+        let initcode_bytes = initcode.code();
         let mut code = bytecode! {
-            PUSH32(Word::from_big_endian(&initialization_bytes))
+            PUSH32(Word::from_big_endian(&initcode_bytes))
             PUSH1(0)
             MSTORE
         };
 
         code.append(&bytecode! {PUSH1(45)}); // salt;
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH1(initcode_bytes.len()) // size
+            PUSH1(32 - initcode_bytes.len()) // length
             PUSH2(23414) // value
         });
         code.write_op(OpcodeId::CREATE2);
@@ -943,8 +943,8 @@ mod test {
         code.append(&bytecode! {PUSH1(45)}); // salt;
 
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH1(initcode_bytes.len()) // size
+            PUSH1(32 - initcode_bytes.len()) // length
             PUSH2(23414) // value
         });
         code.write_op(OpcodeId::CREATE2);
@@ -984,8 +984,8 @@ mod test {
             .cartesian_product(&[true, false])
             .cartesian_product(&[true, false])
         {
-            let init_code = get_initcode(*is_success);
-            let root_code = creator_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
+            let initcode = get_initcode(*is_success);
+            let root_code = creator_bytecode(initcode, 23414.into(), *is_create2, *is_persistent);
 
             let caller = Account {
                 address: *CALLER_ADDRESS,
@@ -1053,7 +1053,7 @@ mod test {
     #[test]
     fn test_create_address_collision_error() {
         let initcode = get_initcode(false);
-        let root_code = creater_bytecode_address_collision(initcode);
+        let root_code = creator_bytecode_address_collision(initcode);
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),

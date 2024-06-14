@@ -159,7 +159,7 @@ mod test {
                 txs[0]
                     .from(accs[2].address)
                     .to(accs[0].address)
-                    // gas just over tx baisc gas(21000) + push gas(3), so oog for
+                    // gas just over tx basic gas(21000) + push gas(3), so oog for
                     // selfdestruct_opcode in normal geth, but treat as
                     // invalidcode with scroll feature
                     .gas(21003.into());

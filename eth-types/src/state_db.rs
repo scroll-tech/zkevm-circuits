@@ -187,7 +187,7 @@ impl StateDB {
 
     /// Even though this addr is still empty, an Account Rw {value_prev: 0x0, value:
     /// empty_code_hash}
-    // has already been applied. So furthur Account Write Rw is allowed.
+    // has already been applied. So further Account Write Rw is allowed.
     pub fn set_touched(&mut self, addr: &Address) -> bool {
         self.touched_account.insert(*addr)
     }

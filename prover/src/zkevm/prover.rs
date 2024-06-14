@@ -59,7 +59,7 @@ impl Prover {
     ///     into this dir.
     ///   chunk_identifier:
     ///     used to distinguish different chunk files located in output_dir.
-    ///     If it is not set, default vallue(first block number of this chuk) will be used.
+    ///     If it is not set, default value(first block number of this chuk) will be used.
     ///   id:
     ///     TODO(zzhang). clean this. I think it can only be None or Some(0)...
     pub fn gen_chunk_proof(

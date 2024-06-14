@@ -94,7 +94,7 @@ Sometimes there are some files or specific tests that we want to disable at all.
 When the command line parameter `--report` is defined, it automatically: 
 
 - After the execution, a two files are created in the `report` folder. They are
-   - `<timestamp>-<git_commit>.hml` with the browseable results of the execution.
+   - `<timestamp>-<git_commit>.hml` with the browsable results of the execution.
    - `<timestamp>-<git_commit>.csv` with the raw results of the execution
 - The HTML file also contains the diff with the previous result. The previous result file is the more recent csv file with different commit from the current one
 

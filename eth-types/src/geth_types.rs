@@ -263,7 +263,7 @@ pub struct Transaction {
     pub nonce: Word,
     /// Gas Limit / Supplied gas
     pub gas_limit: Word,
-    /// Transfered value
+    /// Transferred value
     pub value: Word,
     /// Gas Price
     pub gas_price: Option<Word>,
@@ -390,7 +390,7 @@ pub struct GethData {
     /// chain id
     pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: Block<crate::Transaction>,

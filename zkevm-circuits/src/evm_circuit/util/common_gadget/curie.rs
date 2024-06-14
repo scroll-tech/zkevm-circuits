@@ -39,7 +39,7 @@ impl<F: Field> CurieGadget<F> {
         );
 
         // TODO: refactor
-        // is_scoll_chain means (chain_id - 534352) * (chain_id - 222222) == 0
+        // is_scroll_chain means (chain_id - 534352) * (chain_id - 222222) == 0
         let is_scroll_chain = IsZeroGadget::construct(
             cb,
             (chain_id.expr() - SCROLL_MAINNET_CHAIN_ID.expr())

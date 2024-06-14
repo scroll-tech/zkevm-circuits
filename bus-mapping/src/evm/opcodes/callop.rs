@@ -82,7 +82,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.parse_call(geth_step)?
         } else {
             // if precheck not ok, the call won't appear in call trace since it never happens
-            // we need to increase the offset and mannually set the is_success
+            // we need to increase the offset and manually set the is_success
             state.tx_ctx.call_is_success_offset += 1;
             let mut call = state.parse_call_partial(geth_step)?;
             call.is_success = false;
@@ -185,7 +185,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
         // indeed larger than transfer value. for call opcode, it does in
-        // tranfer gadget implicitly.
+        // transfer gadget implicitly.
         state.account_read(
             &mut exec_step,
             callee_call.caller_address,

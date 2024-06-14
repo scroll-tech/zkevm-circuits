@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn test_muladd_unexpect() {
+    fn test_muladd_unexpected() {
         // 10 * 1 + 1 != 3
         try_test!(
             MulAddGadgetContainer<Fr>,

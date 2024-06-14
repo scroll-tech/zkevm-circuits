@@ -73,7 +73,7 @@ impl BatchProof {
         dump_as_json(dir, &filename, &self)
     }
 
-    // Recover a `Proof` which follows halo2 sematic of "proof" and "instance",
+    // Recover a `Proof` which follows halo2 semantic of "proof" and "instance",
     // where "accumulators" are instance instead of proof, not like "onchain proof".
     pub fn proof_to_verify(self) -> Proof {
         // raw.proof is accumulator + proof

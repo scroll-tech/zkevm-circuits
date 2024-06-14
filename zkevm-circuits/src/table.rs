@@ -2883,7 +2883,7 @@ impl ModExpTable {
         ret
     }
 
-    /// helper for devide a U256 into 3 108bit limbs
+    /// helper for divide a U256 into 3 108bit limbs
     pub fn split_u256_108bit_limbs(word: &Word) -> [u128; 3] {
         let bit108 = 1u128 << 108;
         let (next, limb0) = word.div_mod(U256::from(bit108));
