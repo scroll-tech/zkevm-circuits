@@ -923,7 +923,7 @@ mod test {
         code
     }
 
-    fn creater_bytecode_address_collision(initialization_bytecode: Bytecode) -> Bytecode {
+    fn creator_bytecode_address_collision(initialization_bytecode: Bytecode) -> Bytecode {
         let initialization_bytes = initialization_bytecode.code();
         let mut code = bytecode! {
             PUSH32(Word::from_big_endian(&initialization_bytes))
@@ -1054,7 +1054,7 @@ mod test {
     #[test]
     fn test_create_address_collision_error() {
         let initialization_code = initialization_bytecode(false);
-        let root_code = creater_bytecode_address_collision(initialization_code);
+        let root_code = creator_bytecode_address_collision(initialization_code);
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),

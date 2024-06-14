@@ -100,7 +100,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             *map.entry(k).or_insert(0) += 1;
         };
         for smt_trace in &block.mpt_updates.smt_traces {
-            // for a smt trace there are mutiple sources for hashes:
+            // for a smt trace there are multiple sources for hashes:
             // + account path, each layer (include the root) cost 1 hashes
             insert(&mut path_hash_counter, smt_trace.account_path[0].root.0);
             for node in &smt_trace.account_path[0].path {

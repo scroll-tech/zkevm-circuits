@@ -68,9 +68,9 @@ impl ZktrieState {
     /// switch to another root state (trie snapshot)
     /// return true if the switch success, or false if db have not contain
     /// corresponding root yet
-    /// notice the cached key would not be clean if we can successfully swith to
+    /// notice the cached key would not be clean if we can successfully switch to
     /// new snapshot since we consider it is not need to send more nodes data
-    /// from storage trace for the updated leafs
+    /// from storage trace for the updated leaves
     pub fn switch_to(&mut self, new_root: ZkTrieHash) -> bool {
         let test_trie = self.zk_db.borrow_mut().new_trie(&new_root);
         if test_trie.is_none() {

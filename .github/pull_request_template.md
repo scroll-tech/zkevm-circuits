@@ -35,7 +35,7 @@ The target readers could be future developers, reviewers, and auditors. By readi
 
 MUST: Reference the issue to resolve
 
-### Single responsability
+### Single responsibility
 
 Is RECOMMENDED to create single responsibility commits, but not mandatory.
 

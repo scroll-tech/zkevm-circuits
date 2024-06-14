@@ -119,7 +119,7 @@ impl<'a> JsonStateTestBuilder<'a> {
         Self { compiler }
     }
 
-    /// generates `StateTest` vectors from a ethereum josn test specification
+    /// generates `StateTest` vectors from a ethereum json test specification
     pub fn load_json(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         let mut state_tests = Vec::new();
         let tests: HashMap<String, JsonStateTest> = serde_json::from_str(source).unwrap();

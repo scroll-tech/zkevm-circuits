@@ -512,7 +512,7 @@ impl Rw {
         }
     }
 
-    // At this moment is a helper for the EVM circuit until EVM challange API is
+    // At this moment is a helper for the EVM circuit until EVM challenge API is
     // applied
     pub(crate) fn table_assignment_aux<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {

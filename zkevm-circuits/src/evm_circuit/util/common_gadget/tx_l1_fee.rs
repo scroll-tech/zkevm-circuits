@@ -232,7 +232,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         // l1 blob baseFee
         // commit scalar
         // blob scalar
-        // TODO: we could optimze the "overhead" and "scalar" for curie
+        // TODO: we could optimize the "overhead" and "scalar" for curie
         3.expr() + is_curie.expr() * 3.expr()
     }
 

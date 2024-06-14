@@ -49,7 +49,7 @@ pub(crate) fn rlc_be_bytes<F: Field>(bytes: &[u8], rand: Value<F>) -> Value<F> {
 }
 
 /// Wrap multiple challenges:
-/// `construct`: the default consturct route to provide all challenges used in `SuperCircuit`.
+/// `construct`: the default construct route to provide all challenges used in `SuperCircuit`.
 /// `construct_p1`: construct challenge up to second phase
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {

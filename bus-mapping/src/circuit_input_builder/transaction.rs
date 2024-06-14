@@ -17,7 +17,7 @@ use ethers_core::utils::get_contract_address;
 
 /// Precision of transaction L1 fee
 pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
-/// Extra cost as the bytes of rlped tx commited to L1 (assume to non-zero, overestimated a bit)
+/// Extra cost as the bytes of rlped tx committed to L1 (assume to non-zero, overestimated a bit)
 pub const TX_L1_COMMIT_EXTRA_COST: u64 = 64;
 
 #[derive(Debug, Default)]

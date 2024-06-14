@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn test_minmax_unexpect_min_a() {
+    fn test_minmax_unexpected_min_a() {
         // min == b, max == a
         try_test!(
             MinMaxTestContainer<Fr, 1, true>,

@@ -260,7 +260,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ConstantDivisionGadget::construct(cb, tx_call_data_length.expr() + 31.expr(), 32);
 
         // Use intrinsic gas
-        // TODO2: contrain calling precompile directly
+        // TODO2: constrain calling precompile directly
 
         let intrinsic_gas_cost = cb.query_cell();
         cb.condition(not::expr(is_precompile.expr()), |cb| {
@@ -543,7 +543,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Notice we need an additional copy event like we have done in the `CallOp` step
 
             We simply drop any checks to the output bytes which precompile would return,
-            since they are ommited as the return data from a transaction.
+            since they are omitted as the return data from a transaction.
         */
         let (precompile_gadget, precompile_input_bytes_rlc) =
             cb.condition(is_precompile.expr(), |cb| {
@@ -1254,7 +1254,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .context
             .ctxs
             .get(&tx.block_number)
-            .expect("cound not find block with number = {tx.block_number}")
+            .expect("could not find block with number = {tx.block_number}")
             .base_fee;
         self.tx_eip1559.assign(
             region,

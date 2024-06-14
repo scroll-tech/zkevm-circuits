@@ -62,7 +62,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let n = cb.query_word_rlc();
         let r = cb.query_word_rlc();
 
-        // auxiliar witness
+        // auxiliary witness
         let k = cb.query_word_rlc();
         let a_reduced = cb.query_word_rlc();
         let d = cb.query_word_rlc();
@@ -155,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
             .map(|idx| step.rw_indices[idx])
             .map(|idx| block.rws[idx].stack_value());
 
-        // assing a,b & n stack values
+        // assign a,b & n stack values
         self.a.assign(region, offset, Some(a.to_le_bytes()))?;
         self.b.assign(region, offset, Some(b.to_le_bytes()))?;
         self.n.assign(region, offset, Some(n.to_le_bytes()))?;

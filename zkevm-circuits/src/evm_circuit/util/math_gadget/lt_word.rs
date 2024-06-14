@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ltword_unexpect() {
+    fn test_ltword_unexpected() {
         try_test!(
             LtWordTestContainer<Fr>,
             [Word::from(1), Word::from(0)],

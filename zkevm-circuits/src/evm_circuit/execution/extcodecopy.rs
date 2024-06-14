@@ -111,7 +111,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(memory_address.has_length(), |cb| {
-            // Set source start to the minimun value of code offset and code size.
+            // Set source start to the minimum value of code offset and code size.
             let src_addr = select::expr(
                 code_offset.lt_cap(),
                 code_offset.valid_value(),
