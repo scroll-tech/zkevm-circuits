@@ -20,6 +20,6 @@ pub fn hardfork_heights() -> Vec<(HardforkId, u64, u64)> {
     vec![
         (HardforkId::Curie, SCROLL_DEVNET_CHAIN_ID, 5), // devnet
         (HardforkId::Curie, SCROLL_TESTNET_CHAIN_ID, 4740239), // testnet
-        (HardforkId::Curie, SCROLL_MAINNET_CHAIN_ID, 6895269), // mainnet
+        (HardforkId::Curie, SCROLL_MAINNET_CHAIN_ID, 6924036), // mainnet
     ]
 }
