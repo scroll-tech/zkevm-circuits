@@ -178,16 +178,16 @@ mod test {
         code
     }
 
-    fn creator_bytecode(get_initcode: Bytecode, is_create2: bool) -> Bytecode {
-        let initialization_bytes = get_initcode.code();
+    fn creator_bytecode(initcode: Bytecode, is_create2: bool) -> Bytecode {
+        let initcode_bytes = initcode.code();
         let mut code = Bytecode::default();
 
         // construct maxcodesize + 1 memory bytes
-        let code_creator: Vec<u8> = initialization_bytes
+        let code_creator: Vec<u8> = initcode_bytes
             .to_vec()
             .iter()
             .cloned()
-            .chain(0u8..((32 - initialization_bytes.len() % 32) as u8))
+            .chain(0u8..((32 - initcode_bytes.len() % 32) as u8))
             .collect();
         for (index, word) in code_creator.chunks(32).enumerate() {
             code.push(32, Word::from_big_endian(word));
@@ -199,7 +199,7 @@ mod test {
             code.append(&bytecode! {PUSH1(45)}); // salt;
         }
         code.append(&bytecode! {
-            PUSH32(initialization_bytes.len()) // size
+            PUSH32(initcode_bytes.len()) // size
             PUSH2(0x00) // offset
             PUSH2(23414) // value
         });
