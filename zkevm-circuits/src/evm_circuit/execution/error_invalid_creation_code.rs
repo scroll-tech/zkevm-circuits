@@ -179,7 +179,7 @@ mod test {
             .run();
     }
 
-    fn initialization_bytecode() -> Bytecode {
+    fn get_initcode() -> Bytecode {
         let memory_bytes = [0xef; 10];
         let memory_value = Word::from_big_endian(&memory_bytes);
 
@@ -197,8 +197,8 @@ mod test {
         code
     }
 
-    fn creator_bytecode(initialization_bytecode: Bytecode, is_create2: bool) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
+    fn creator_bytecode(get_initcode: Bytecode, is_create2: bool) -> Bytecode {
+        let initialization_bytes = get_initcode.code();
         let mut code = Bytecode::default();
 
         // construct maxcodesize + 1 memory bytes
@@ -259,8 +259,8 @@ mod test {
     #[test]
     fn test_invalid_creation_code() {
         for is_create2 in [false, true] {
-            let initialization_code = initialization_bytecode();
-            let root_code = creator_bytecode(initialization_code, is_create2);
+            let initcode = get_initcode();
+            let root_code = creator_bytecode(initcode, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -275,7 +275,7 @@ mod test {
     // add tx deploy case for invalid creation code.
     #[test]
     fn test_tx_deploy_invalid_creation_code() {
-        let code = initialization_bytecode();
+        let code = get_initcode();
 
         let ctx = TestContext::<1, 1>::new(
             None,

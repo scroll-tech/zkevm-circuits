@@ -857,7 +857,7 @@ mod test {
     }
 
     // RETURN or REVERT with data of [0x60; 5]
-    fn initialization_bytecode(is_success: bool) -> Bytecode {
+    fn get_initcode(is_success: bool) -> Bytecode {
         let memory_bytes = [0x60; 10];
         let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
@@ -878,12 +878,12 @@ mod test {
     }
 
     fn creator_bytecode(
-        initialization_bytecode: Bytecode,
+        get_initcode: Bytecode,
         value: Word,
         is_create2: bool,
         is_persistent: bool,
     ) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
+        let initialization_bytes = get_initcode.code();
         let mut code = bytecode! {
             PUSH32(Word::from_big_endian(&initialization_bytes))
             PUSH1(0)
@@ -923,8 +923,8 @@ mod test {
         code
     }
 
-    fn creater_bytecode_address_collision(initialization_bytecode: Bytecode) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
+    fn creater_bytecode_address_collision(get_initcode: Bytecode) -> Bytecode {
+        let initialization_bytes = get_initcode.code();
         let mut code = bytecode! {
             PUSH32(Word::from_big_endian(&initialization_bytes))
             PUSH1(0)
@@ -984,7 +984,7 @@ mod test {
             .cartesian_product(&[true, false])
             .cartesian_product(&[true, false])
         {
-            let init_code = initialization_bytecode(*is_success);
+            let init_code = get_initcode(*is_success);
             let root_code = creator_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
 
             let caller = Account {
@@ -1003,8 +1003,7 @@ mod test {
         for nonce in [0, 1, 127, 128, 255, 256, 0x10000, u64::MAX - 1] {
             let caller = Account {
                 address: *CALLER_ADDRESS,
-                code: creator_bytecode(initialization_bytecode(true), 23414.into(), false, true)
-                    .into(),
+                code: creator_bytecode(get_initcode(true), 23414.into(), false, true).into(),
                 nonce: nonce.into(),
                 balance: eth(10),
                 ..Default::default()
@@ -1053,8 +1052,8 @@ mod test {
 
     #[test]
     fn test_create_address_collision_error() {
-        let initialization_code = initialization_bytecode(false);
-        let root_code = creater_bytecode_address_collision(initialization_code);
+        let initcode = get_initcode(false);
+        let root_code = creater_bytecode_address_collision(initcode);
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),
@@ -1182,8 +1181,7 @@ mod test {
             let caller = Account {
                 address: mock::MOCK_ACCOUNTS[0],
                 nonce: 1.into(),
-                code: creator_bytecode(initialization_bytecode(false), value, is_create2, true)
-                    .into(),
+                code: creator_bytecode(get_initcode(false), value, is_create2, true).into(),
                 balance: value - 1,
                 ..Default::default()
             };
@@ -1238,8 +1236,8 @@ mod test {
 
     #[test]
     fn test_create2_deploy_to_non_zero_balance_address() {
-        let initialization_code = initialization_bytecode(true);
-        let root_code = creator_bytecode(initialization_code, 0.into(), true, true);
+        let initcode = get_initcode(true);
+        let root_code = creator_bytecode(initcode, 0.into(), true, true);
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),

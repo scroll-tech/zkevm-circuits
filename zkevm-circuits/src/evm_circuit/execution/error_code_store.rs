@@ -159,7 +159,7 @@ mod test {
             .run();
     }
 
-    fn initialization_bytecode(is_oog: bool) -> Bytecode {
+    fn get_initcode(is_oog: bool) -> Bytecode {
         let memory_bytes = [0x60; 10];
         let memory_value = Word::from_big_endian(&memory_bytes);
         let code_len = if is_oog { 0 } else { MAXCODESIZE + 1 };
@@ -178,8 +178,8 @@ mod test {
         code
     }
 
-    fn creator_bytecode(initialization_bytecode: Bytecode, is_create2: bool) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
+    fn creator_bytecode(get_initcode: Bytecode, is_create2: bool) -> Bytecode {
+        let initialization_bytes = get_initcode.code();
         let mut code = Bytecode::default();
 
         // construct maxcodesize + 1 memory bytes
@@ -244,8 +244,8 @@ mod test {
     #[test]
     fn test_create_codestore_oog() {
         for is_create2 in [false, true] {
-            let initialization_code = initialization_bytecode(true);
-            let root_code = creator_bytecode(initialization_code, is_create2);
+            let initcode = get_initcode(true);
+            let root_code = creator_bytecode(initcode, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -260,8 +260,8 @@ mod test {
     #[test]
     fn test_create_max_code_size_exceed() {
         for is_create2 in [false, true] {
-            let initialization_code = initialization_bytecode(false);
-            let root_code = creator_bytecode(initialization_code, is_create2);
+            let initcode = get_initcode(false);
+            let root_code = creator_bytecode(initcode, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -275,7 +275,7 @@ mod test {
 
     #[test]
     fn tx_deploy_code_store_oog() {
-        let code = initialization_bytecode(true);
+        let code = get_initcode(true);
 
         let ctx = TestContext::<1, 1>::new(
             None,
@@ -298,7 +298,7 @@ mod test {
 
     #[test]
     fn tx_deploy_max_code_size_exceed() {
-        let code = initialization_bytecode(false);
+        let code = get_initcode(false);
 
         let ctx = TestContext::<1, 1>::new(
             None,

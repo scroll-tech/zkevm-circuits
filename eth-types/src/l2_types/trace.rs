@@ -91,7 +91,7 @@ pub fn collect_codes(
                 }
                 _ => {}
             }
-            
+
             if let Some(data) = &step.extra_data {
                 match step.op {
                     OpcodeId::CALL

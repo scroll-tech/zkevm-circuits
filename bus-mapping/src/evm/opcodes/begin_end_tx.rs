@@ -292,12 +292,12 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
         };
         state.block.sha3_inputs.push(address_preimage);
         // 2. add init code to keccak circuit.
-        let init_code = state.tx.input.clone();
-        let length = init_code.len();
-        state.block.sha3_inputs.push(init_code.clone());
+        let initcode = state.tx.input.clone();
+        let length = initcode.len();
+        state.block.sha3_inputs.push(initcode.clone());
         // 3. add init code to copy circuit.
-        let code_hash = state.code_db.insert(init_code.clone());
-        let bytes = Bytecode::from(init_code)
+        let code_hash = state.code_db.insert(initcode.clone());
+        let bytes = Bytecode::from(initcode)
             .code
             .iter()
             .map(|element| (element.value, element.is_code, false))
