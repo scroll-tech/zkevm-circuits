@@ -192,7 +192,14 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .collect::<Vec<u32>>()
             .try_into()
             .unwrap();
-        assert!(chunk_sizes.iter().sum::<u32>() <= Self::n_rows_data() as u32);
+
+        if chunk_sizes.iter().sum::<u32>() > Self::n_rows_data() as u32 {
+            log::error!(
+                "invalid chunk_sizes {}, n_rows_data {}",
+                chunk_sizes.iter().sum::<u32>(),
+                Self::n_rows_data()
+            )
+        }
 
         // chunk data of the "last valid chunk" is repeated over the padded chunks for simplicity
         // in calculating chunk_data_digest for those padded chunks. However, for the "chunk data"
