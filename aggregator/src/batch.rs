@@ -42,13 +42,26 @@ pub struct BatchHash<const N_SNARKS: usize> {
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
-    pub fn construct(chunks_with_padding: &[ChunkInfo]) -> Self {
-        assert_eq!(
-            chunks_with_padding.len(),
-            N_SNARKS,
-            "input chunk slice does not match N_SNARKS"
-        );
+    pub fn construct(chunks: &[ChunkInfo]) -> Self {
+        assert_ne!(chunks.len(), 0);
+        assert!(chunks.len() <= N_SNARKS);
+        let mut chunks_with_padding = chunks.to_vec();
+        if chunks.len() < N_SNARKS {
+            log::warn!(
+                "chunk len({}) < N_SNARKS({}), padding...",
+                chunks.len(),
+                N_SNARKS
+            );
+            let last_chunk = chunks.last().unwrap();
+            let mut padding_chunk = last_chunk.clone();
+            padding_chunk.is_padding = true;
+            chunks_with_padding
+                .extend(std::iter::repeat(padding_chunk).take(N_SNARKS - chunks.len()));
+        }
 
+        // number_of_valid_chunks may not be equal to chunks.len(),
+        // since chunks can include padding chunks
+        // TODO: use sum or count here?
         let number_of_valid_chunks = match chunks_with_padding
             .iter()
             .enumerate()
@@ -117,7 +130,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
-        let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
+        let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, &chunks_with_padding);
         let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
         let versioned_hash = batch_data.get_versioned_hash();
 

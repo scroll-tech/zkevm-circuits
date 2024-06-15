@@ -276,7 +276,15 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .set_pledged_src_size(Some(batch_data_bytes.len() as u64))
             .expect("infallible");
         encoder.write_all(&batch_data_bytes).expect("infallible");
-        encoder.finish().expect("infallible")
+        let encoded_bytes = encoder.finish().expect("infallible");
+        log::info!(
+            "compress batch data from {} to {}, compression ratio {:.2}, blob usage {:.3}",
+            batch_data_bytes.len(),
+            encoded_bytes.len(),
+            batch_data_bytes.len() as f32 / encoded_bytes.len() as f32,
+            encoded_bytes.len() as f32 / N_BLOB_BYTES as f32
+        );
+        encoded_bytes
     }
 
     /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
