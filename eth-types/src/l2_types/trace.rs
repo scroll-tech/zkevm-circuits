@@ -85,11 +85,8 @@ pub fn collect_codes(
                 None
             };
 
-            match step.op {
-                OpcodeId::EXTCODECOPY => {
-                    log::info!("trace extcodecopy! block {:?}", block.header.number);
-                }
-                _ => {}
+            if step.op == OpcodeId::EXTCODECOPY {
+                log::info!("trace extcodecopy! block {:?}", block.header.number);
             }
 
             if let Some(data) = &step.extra_data {

@@ -1,6 +1,6 @@
 //! This module implements `Chunk` related data types.
 //! A chunk is a list of blocks.
-use eth_types::{base64, ToBigEndian, H256};
+use eth_types::{base64, l2_types::BlockTrace, ToBigEndian, H256};
 use ethers_core::utils::keccak256;
 use serde::{Deserialize, Serialize};
 use std::iter;
@@ -35,6 +35,12 @@ pub struct ChunkInfo {
 }
 
 impl ChunkInfo {
+    /// Construct by block traces
+    pub fn from_block_traces(_traces: &[BlockTrace]) -> Self {
+        // TODO: don't re-run each opcode in bus-mapping
+        // let us directly assmeble the ChunkInfo from traces
+        unimplemented!()
+    }
     /// Construct by a witness block.
     pub fn from_witness_block(block: &Block, is_padding: bool) -> Self {
         // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>
