@@ -269,7 +269,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     }
 
     /// Get the zstd encoded batch data bytes.
-    pub(crate) fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
+    pub fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
         let batch_data_bytes = self.get_batch_data_bytes();
         let mut encoder = init_zstd_encoder(None);
         encoder
