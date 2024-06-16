@@ -17,7 +17,7 @@ macro_rules! layer_0 {
             param
         };
 
-        let pk = gen_pk(&param, &$circuit, None,);
+        let pk = gen_pk(&param, &$circuit, None);
         log::trace!("finished layer 0 pk generation for circuit");
 
         let snark = gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>).unwrap();
@@ -127,7 +127,7 @@ macro_rules! compression_layer_evm {
         );
         log::trace!("finished layer 4 bytecode generation");
 
-        evm_verify(deployment_code, compression_circuit.instances(), proof);
+        evm_verify(deployment_code, compression_circuit.instances(), proof.clone());
         log::trace!("layer 2 evm verification finished");
 
         end_timer!(timer);
@@ -176,4 +176,3 @@ macro_rules! aggregation_layer_snark {
         snark
     }};
 }
-
