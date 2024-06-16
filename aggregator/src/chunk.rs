@@ -36,10 +36,57 @@ pub struct ChunkInfo {
 
 impl ChunkInfo {
     /// Construct by block traces
-    pub fn from_block_traces(_traces: &[BlockTrace]) -> Self {
-        // TODO: don't re-run each opcode in bus-mapping
-        // let us directly assmeble the ChunkInfo from traces
-        unimplemented!()
+    pub fn from_block_traces(traces: &[BlockTrace]) -> Self {
+        let data_bytes = iter::empty()
+            .chain(
+                // header part
+                traces.iter().flat_map(|b| b.da_encode_header()),
+            )
+            .chain(
+                // l1 msg hashes
+                traces.iter().flat_map(|b| {
+                    b.transactions
+                        .iter()
+                        .filter(|tx| tx.is_l1_tx())
+                        .flat_map(|tx| tx.tx_hash.to_fixed_bytes())
+                }),
+            )
+            .collect::<Vec<u8>>();
+
+        let data_hash = H256(keccak256(data_bytes));
+        log::debug!(
+            "chunk-hash: data hash = {}",
+            hex::encode(data_hash.to_fixed_bytes())
+        );
+
+        let tx_bytes = traces
+            .iter()
+            .flat_map(|b| {
+                b.transactions
+                    .iter()
+                    .filter(|tx| !tx.is_l1_tx())
+                    .flat_map(|tx| tx.to_eth_tx(None, None, None, None).rlp().to_vec())
+            })
+            .collect::<Vec<u8>>();
+
+        let post_state_root = traces
+            .last()
+            .expect("at least 1 block needed")
+            .header
+            .state_root;
+        let withdraw_root = traces.last().unwrap().withdraw_trie_root;
+        let chain_id = traces.first().unwrap().chain_id;
+        let prev_state_root = traces.first().unwrap().storage_trace.root_before;
+
+        Self {
+            chain_id,
+            prev_state_root,
+            post_state_root,
+            withdraw_root,
+            data_hash,
+            tx_bytes,
+            is_padding: false,
+        }
     }
     /// Construct by a witness block.
     pub fn from_witness_block(block: &Block, is_padding: bool) -> Self {
@@ -48,7 +95,6 @@ impl ChunkInfo {
         let mut total_l1_popped = block.start_l1_queue_index;
         log::debug!("chunk-hash: start_l1_queue_index = {}", total_l1_popped);
         let data_bytes = iter::empty()
-            // .chain(block_headers.iter().flat_map(|(&block_num, block)| {
             .chain(block.context.ctxs.iter().flat_map(|(b_num, b_ctx)| {
                 let num_l2_txs = block
                     .txs
@@ -75,6 +121,7 @@ impl ChunkInfo {
                     num_txs,
                 );
 
+                // https://github.com/scroll-tech/da-codec/blob/b842a0f961ad9180e16b50121ef667e15e071a26/encoding/codecv2/codecv2.go#L97
                 iter::empty()
                     // Block Values
                     .chain(b_ctx.number.as_u64().to_be_bytes())

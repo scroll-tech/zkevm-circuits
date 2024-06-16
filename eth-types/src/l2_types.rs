@@ -110,6 +110,49 @@ pub struct BlockTrace {
     pub withdraw_trie_root: H256,
 }
 
+impl BlockTrace {
+    /// Get number of l2 txs
+    pub fn num_l2_txs(&self) -> u64 {
+        // 0x7e is l1 tx
+        self.transactions.iter().filter(|tx| !tx.is_l1_tx()).count() as u64
+    }
+    /// Get number of l1 txs. L1 txs can be skipped, so just counting is not enough
+    pub fn num_l1_txs(&self) -> u64 {
+        // 0x7e is l1 tx
+        match self
+            .transactions
+            .iter()
+            .filter(|tx| tx.is_l1_tx())
+            // tx.nonce for l1 tx is the l1 queue index, which is a globally index,
+            // not per user as suggested by the name...
+            .map(|tx| tx.nonce)
+            .max()
+        {
+            None => 0, // not l1 tx in this block
+            Some(end_l1_queue_index) => end_l1_queue_index - self.start_l1_queue_index + 1,
+        }
+    }
+    /// Header encoding used for chunk hashing
+    pub fn da_encode_header(&self) -> Vec<u8> {
+        // https://github.com/scroll-tech/da-codec/blob/b842a0f961ad9180e16b50121ef667e15e071a26/encoding/codecv2/codecv2.go#L97
+        let num_txs = (self.num_l1_txs() + self.num_l2_txs()) as u16;
+        std::iter::empty()
+            // Block Values
+            .chain(self.header.number.unwrap().as_u64().to_be_bytes())
+            .chain(self.header.timestamp.as_u64().to_be_bytes())
+            .chain(
+                self.header
+                    .base_fee_per_gas
+                    .unwrap_or_default()
+                    .to_be_bytes(),
+            )
+            .chain(self.header.gas_limit.as_u64().to_be_bytes())
+            .chain(num_txs.to_be_bytes())
+            .collect_vec()
+        // the `num_l1_txs` is not used for chunk hashing yet.
+    }
+}
+
 impl From<BlockTrace> for EthBlock {
     fn from(b: BlockTrace) -> Self {
         let mut txs = Vec::new();
@@ -249,6 +292,10 @@ pub struct TransactionTrace {
 }
 
 impl TransactionTrace {
+    /// Check whether it is layer1 tx
+    pub fn is_l1_tx(&self) -> bool {
+        self.type_ == 0x7e
+    }
     /// transfer to eth type tx
     pub fn to_eth_tx(
         &self,
@@ -282,6 +329,7 @@ impl TransactionTrace {
             v: self.v,
             r: self.r,
             s: self.s,
+            // FIXME: is this correct? None for legacy?
             transaction_type: Some(U64::from(self.type_ as u64)),
             access_list: self.access_list.as_ref().map(|al| AccessList(al.clone())),
             max_priority_fee_per_gas: self.gas_tip_cap,
