@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::iter;
 use zkevm_circuits::witness::Block;
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 /// A chunk is a set of continuous blocks.
 /// ChunkInfo is metadata of chunk, with following fields:
 /// - state root before this chunk
