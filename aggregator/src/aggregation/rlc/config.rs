@@ -1,8 +1,8 @@
 use aggregator_snark_verifier::halo2_base::halo2_proofs::{
-    halo2curves::bn256::Fr,
     plonk::{Advice, Column, ConstraintSystem, Fixed, SecondPhase, Selector},
     poly::Rotation,
 };
+use halo2curves::bn256::Fr;
 
 #[cfg(test)]
 use aggregator_snark_verifier::halo2_base::halo2_proofs::plonk::FirstPhase;

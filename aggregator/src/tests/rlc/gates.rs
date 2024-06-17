@@ -3,9 +3,9 @@
 use aggregator_snark_verifier::halo2_base::halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
-    halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use halo2curves::bn256::Fr;
 use zkevm_circuits::{table::KeccakTable, util::Challenges};
 
 use crate::{aggregation::RlcConfig, util::rlc};

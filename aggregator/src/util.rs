@@ -1,11 +1,12 @@
 use aggregator_snark_verifier::{
     halo2_base::{
-        halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error},
+        halo2_proofs::{circuit::AssignedCell, plonk::Error},
         AssignedValue,
     },
     loader::native::NativeLoader,
     pcs::kzg::KzgAccumulator,
 };
+use halo2curves::bn256::Fr;
 use eth_types::Field;
 use halo2curves::bn256::G1Affine;
 

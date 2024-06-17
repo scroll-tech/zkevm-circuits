@@ -1,9 +1,9 @@
 use aggregator_snark_verifier::halo2_base::halo2_proofs::{
     arithmetic::Field,
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
-    halo2curves::bn256::Fr,
     plonk::Error,
 };
+use halo2curves::bn256::Fr;
 use ethers_core::utils::keccak256;
 use zkevm_circuits::util::Challenges;
 
