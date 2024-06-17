@@ -194,7 +194,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .unwrap();
 
         if chunk_sizes.iter().sum::<u32>() > Self::n_rows_data() as u32 {
-            log::error!(
+            panic!(
                 "invalid chunk_sizes {}, n_rows_data {}",
                 chunk_sizes.iter().sum::<u32>(),
                 Self::n_rows_data()

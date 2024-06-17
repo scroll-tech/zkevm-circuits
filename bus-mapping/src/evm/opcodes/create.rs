@@ -243,7 +243,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 log::trace!("create2 caller {:?}", caller.address);
                 assert_eq!(
                     address,
-                    get_create2_address(caller.address, salt.to_be_bytes(), initcode.clone(),)
+                    get_create2_address(caller.address, salt.to_be_bytes(), initcode.clone())
                 );
                 std::iter::once(0xffu8)
                     .chain(caller.address.to_fixed_bytes())
