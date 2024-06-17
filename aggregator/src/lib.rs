@@ -1,5 +1,6 @@
 #![feature(lazy_cell)]
-
+/// Config to recursive aggregate multiple aggregations
+mod recursion;
 /// proof aggregation
 mod aggregation;
 /// This module implements `Batch` related data types.
