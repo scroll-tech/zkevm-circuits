@@ -100,7 +100,7 @@ An API layer `constraint_builder` is developed on top of the backend proof syste
 - rw_lookup
 - ...
 ### split_expression (used to split high degree expression to deg 2)
-### store_expression (store those splitted expressions)
+### store_expression (store those split expressions)
 ### build
 - constraints
     - curr step constraints

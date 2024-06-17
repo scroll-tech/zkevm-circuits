@@ -141,8 +141,8 @@ macro_rules! define_mul_assign_variants {
 /// Define Range indexing ops for the given type converting the ranges
 /// internally.
 macro_rules! define_range_index_variants {
-    (IN_RANGE = $inner_range:ty, OUT_RANGE = $out_range:ty, STRUCT_CONTAINER = $struc:ty, INDEX_OUTPUT = $output:ty) => {
-        impl core::ops::Index<core::ops::Range<$out_range>> for $struc {
+    (IN_RANGE = $inner_range:ty, OUT_RANGE = $out_range:ty, STRUCT_CONTAINER = $struct_container:ty, INDEX_OUTPUT = $output:ty) => {
+        impl core::ops::Index<core::ops::Range<$out_range>> for $struct_container {
             type Output = $output;
 
             #[inline]
@@ -151,7 +151,7 @@ macro_rules! define_range_index_variants {
             }
         }
 
-        impl core::ops::Index<core::ops::RangeFull> for $struc {
+        impl core::ops::Index<core::ops::RangeFull> for $struct_container {
             type Output = $output;
 
             #[inline]
@@ -160,7 +160,7 @@ macro_rules! define_range_index_variants {
             }
         }
 
-        impl core::ops::Index<core::ops::RangeTo<$out_range>> for $struc {
+        impl core::ops::Index<core::ops::RangeTo<$out_range>> for $struct_container {
             type Output = $output;
 
             #[inline]
@@ -169,7 +169,7 @@ macro_rules! define_range_index_variants {
             }
         }
 
-        impl core::ops::Index<core::ops::RangeFrom<$out_range>> for $struc {
+        impl core::ops::Index<core::ops::RangeFrom<$out_range>> for $struct_container {
             type Output = $output;
 
             #[inline]
@@ -178,7 +178,7 @@ macro_rules! define_range_index_variants {
             }
         }
 
-        impl core::ops::Index<core::ops::RangeToInclusive<$out_range>> for $struc {
+        impl core::ops::Index<core::ops::RangeToInclusive<$out_range>> for $struct_container {
             type Output = $output;
 
             #[inline]

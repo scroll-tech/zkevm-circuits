@@ -193,7 +193,7 @@ pub fn recover_pk2(
     ct_option_ok_or(Secp256k1Affine::from_xy(x, y), Error::Signature)
 }
 
-/// Secp256k1 Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
+/// Secp256k1 Curve Scalar.  Reference: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
 /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
 pub static SECP256K1_Q: LazyLock<BigUint> =
     LazyLock::new(|| BigUint::from_bytes_le(&(Fq::zero() - Fq::one()).to_repr()) + 1u64);

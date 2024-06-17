@@ -67,8 +67,8 @@ stateDiagram
     Claim --> Proof
     SMTTrace --> address_hash_traces
     address_hash_traces --> Proof
-    SMTTrace --> Leafs
-    Leafs --> Proof
+    SMTTrace --> Leaves
+    Leaves --> Proof
     SMTTrace --> old_account_hash_traces
     old_account_hash_traces --> Proof
     SMTTrace --> new_account_hash_traces
@@ -102,7 +102,7 @@ In more detail, each `Proof` consists of the following components
         -  `sibling`: `Fr` field element, sibling node's hash
         -  `is_open_padding`: bool, true if this node is empty for old path 
         -  `is_close_padding`: bool, true if this node is empty for new path 
-    - `leafs`: `[LeafNode; 2]`, for old and new path
+    - `leaves`: `[LeafNode; 2]`, for old and new path
         - `LeafNode`
             - `key`
             - `value_hash`
@@ -232,7 +232,7 @@ There are 2 cases to constrain based on the path directed by the provided non-ex
 In this case, due to our construction of the old and new paths of `SMTTrace`, the old path (when inserting)/new path (when deleting) must be directed to this leaf node. The prefix key provided by the old/new path must end at a bit position <i>before</i> the last bit of the leaf key that is to be proved non-exist. So we constrain that the non-existing account/storage must have its key that is not equal to the key at this leaf node. Circuit columns `other_key`, `other_key_hash`, `other_leafnode_hash` and an IsEqualGadget `key_equals_other_key` are used to provide witness to these constraints and to constrain.
 
 - <b>Type 2 non-existence proof</b> (insert to fill/delete from fill): the path ended at an empty node. The illustration figure shown below:
-![AccounNotExist_Empty](https://i.imgur.com/FLxg11Q.png)
+![AccountNotExist_Empty](https://i.imgur.com/FLxg11Q.png)
 In this case, due to our construction of the old and new paths of `SMTTrace`, the old path (when inserting)/new path (when deleting) must be directed to this empty node. So we constrain the emptiness of these nodes. Circuit provides two IsZeroGadgets `old_hash_is_zero` and`new_hash_is_zero` to constrain this case.
 
 
@@ -330,7 +330,7 @@ on rows with `MPTProofType::NonceChanged`:
     - `AccountLeaf1 -> AccountLeaf2`
     - `AccountLeaf2 -> AccountLeaf3`
     - `AccountLeaf3 -> Start`
-- Constraints correspond to specific `SegumentType` for the particular row
+- Constraints correspond to specific `SegmentType` for the particular row
     -  `AccountLeaf0`
         - `direction==1`
     -  `AccountLeaf1`
@@ -377,7 +377,7 @@ on rows with `MPTProofType::PoisedonCodehashExists`:
 ### MPTProofType::CodehashExists
 
 on rows with `MPTProofType::CodehashExists`:
-- Constraints correspond to specific SegumentType for the particular row
+- Constraints correspond to specific SegmentType for the particular row
     - `Start`, `AccountTrie`
         - no constraint
     - `AccountLeaf0`
@@ -413,7 +413,7 @@ In this case, the non-existence account to be proved shall have 0 value both bef
 
 ### MPTProofType::StorageChanged
 on rows with `MPTProofType::StorageChanged`:
-- Constraints correspond to specific SegumentType for the particular row
+- Constraints correspond to specific SegmentType for the particular row
     - `Start`, `AccountTrie`, 
         - no constraint 
     - `AccountLeaf0`
@@ -451,7 +451,7 @@ On rows with `MPTProofType::StorageDoesNotExist`:
     - for type 1 non-existence:
         - `other_key_hash=poisedon(1, other_key)`
         - `old_hash == new_hash == poisedon(other_key_hash, other_leaf_data_hash)` 
-- Constraints correspond to specific SegumentType for the particular row
+- Constraints correspond to specific SegmentType for the particular row
     - `AccountLeaf0`
         - `direction==1`
     - `AccountLeaf1`

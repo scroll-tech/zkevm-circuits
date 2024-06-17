@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         cb.stack_pop(code_offset.original_word());
         cb.stack_pop(size.expr());
 
-        // Construct memory address in the destionation (memory) to which we copy code.
+        // Construct memory address in the destination (memory) to which we copy code.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_memory_offset, size);
 
         // Fetch the hash of bytecode running in current environment.
@@ -88,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
-            // Set source start to the minimun value of code offset and code size.
+            // Set source start to the minimum value of code offset and code size.
             let src_addr = select::expr(
                 code_offset.lt_cap(),
                 code_offset.valid_value(),

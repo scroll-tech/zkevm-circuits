@@ -10,7 +10,7 @@ clippy: ## Run clippy checks over all workspace members
 doc: ## Generate and tests docs including private items
 	@cargo doc --no-deps --all --document-private-items
 
-fmt: ## Check whether the code is formated correctly
+fmt: ## Check whether the code is formatted correctly
 	@cargo check --all-features
 	@cargo fmt --all -- --check
 

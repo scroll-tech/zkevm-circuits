@@ -1,4 +1,4 @@
-//! Mock types and functions to generate Test enviroments for ZKEVM tests
+//! Mock types and functions to generate Test environments for ZKEVM tests
 
 use crate::{eth, MockAccount, MockBlock, MockTransaction, MOCK_WALLETS};
 #[cfg(feature = "scroll")]
@@ -89,7 +89,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// Account list
     pub accounts: [Account; NACC],
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,

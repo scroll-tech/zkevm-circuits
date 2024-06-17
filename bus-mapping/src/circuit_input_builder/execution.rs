@@ -868,7 +868,7 @@ impl From<(Word, Word, Word)> for ExpStep {
     }
 }
 
-/// Event representating an exponentiation `a ^ b == d (mod 2^256)`.
+/// Event representing an exponentiation `a ^ b == d (mod 2^256)`.
 #[derive(Clone, Debug)]
 pub struct ExpEvent {
     /// Base `a` for the exponentiation.
@@ -1428,7 +1428,7 @@ impl EcPairingOp {
     }
 }
 
-/// Event representating an exponentiation `a ^ b == d (mod m)` in precompile modexp.
+/// Event representing an exponentiation `a ^ b == d (mod m)` in precompile modexp.
 #[derive(Clone, Debug)]
 pub struct BigModExp {
     /// Base `a` for the exponentiation.
@@ -1452,7 +1452,7 @@ impl Default for BigModExp {
     }
 }
 
-/// Event representating an SHA256 hash in precompile sha256.
+/// Event representing an SHA256 hash in precompile sha256.
 #[derive(Clone, Debug, Default)]
 pub struct SHA256 {
     /// input bytes

@@ -41,9 +41,9 @@ impl ResultLevel {
         use ResultLevel::*;
         match self {
             Panic => "💀PANIC",
-            Fail => "🔴FAILD",
-            Ignored => "🟠IGNOR",
-            Success => "🟢SUCCS",
+            Fail => "🔴FAILED",
+            Ignored => "🟠IGNORE",
+            Success => "🟢SUCCESS",
         }
         .to_string()
     }

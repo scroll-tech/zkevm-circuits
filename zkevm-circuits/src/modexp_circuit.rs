@@ -159,7 +159,7 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
                 event_limit,
             );
             exp_events.resize(event_limit, Default::default());
-            log::info!("modexp circuit work with maxium {} entries", event_limit);
+            log::info!("modexp circuit work with maximum {} entries", event_limit);
         }
 
         Self(exp_events, Default::default())

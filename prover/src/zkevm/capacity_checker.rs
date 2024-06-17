@@ -52,8 +52,8 @@ impl RowUsage {
                 row_number: (1_000_000u64 * (x.row_number as u64) / (*limit as u64)) as usize,
             })
             .collect_vec();
-        log::debug!(
-            "normalize row usage, before {:#?}\nafter {:#?}",
+        log::trace!(
+            "normalize row usage, before {:?}\nafter {:?}",
             self.row_usage_details,
             details
         );

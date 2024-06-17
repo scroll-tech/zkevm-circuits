@@ -6,7 +6,7 @@ This is the zkEVM circuits used in Scroll Mainnet. It was forked from PSE zkevm-
 2. RLP circuit / MPT circuit / Poseidon circuit
 3. multi block chunking
 4. proof aggregation
-5. [>99.5% compatiblity](https://circuit-release.s3.us-west-2.amazonaws.com/testool/nightly.1695216104.47e2015.html) with [official EVM test vector](https://github.com/ethereum/tests)
+5. [>99.5% compatibility](https://circuit-release.s3.us-west-2.amazonaws.com/testool/nightly.1695216104.47e2015.html) with [official EVM test vector](https://github.com/ethereum/tests)
 6. Many optimizations like read/write memory in word instead of byte
 
 ## Docs

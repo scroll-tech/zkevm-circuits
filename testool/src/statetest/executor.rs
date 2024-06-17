@@ -46,7 +46,7 @@ pub enum StateTestError {
     NonceMismatch { expected: U256, found: U256 },
     #[error("CodeMismatch(expected: {expected:?}, found:{found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
-    #[error("StorgeMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
+    #[error("StorageMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
     StorageMismatch {
         slot: U256,
         expected: U256,
@@ -634,7 +634,7 @@ pub fn run_test(
 
         // TODO: these codes are too difficult to maintain.
         // The correct way is to dump trace files,
-        // and use seperate tools to test trace files.
+        // and use separate tools to test trace files.
         #[cfg(feature = "inner-prove")]
         {
             eth_types::constants::set_env_coinbase(&st.env.current_coinbase);

@@ -117,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             lt
         });
 
-        // Merge contraints
+        // Merge constraints
         let shf_lo_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
         let shf_lo_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
         let shf_lo_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());

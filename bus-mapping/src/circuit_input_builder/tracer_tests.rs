@@ -352,7 +352,7 @@ fn tracer_call_success() {
 
 #[test]
 fn tracer_err_address_collision() {
-    // We do CREATE2 twice with the same parameters, with a code_creater
+    // We do CREATE2 twice with the same parameters, with a code_creator
     // that outputs the same, which will lead to the same new
     // contract address.
     let code_creator = bytecode! {
@@ -480,7 +480,7 @@ fn tracer_err_address_collision() {
 
 #[test]
 fn tracer_create_collision_free() {
-    // We do CREATE twice with the same parameters, with a code_creater
+    // We do CREATE twice with the same parameters, with a code_creator
     // that outputs not the same, which will lead to the different new
     // contract address.
     let code_creator = bytecode! {

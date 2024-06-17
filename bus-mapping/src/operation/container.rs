@@ -16,7 +16,7 @@ use itertools::Itertools;
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 ///
 /// Finally, the container also provides the capability of retrieving all of the
-/// `Stack`, `Memory` or `Storage` operations ordered according to the criterias
+/// `Stack`, `Memory` or `Storage` operations ordered according to the criteria
 /// they have specified.
 /// That serves as a way to get an input with which is easy to work with in
 /// order to construct the State proof.
