@@ -16,7 +16,7 @@ use crate::{
 /// - the last (#N_SNARKS-k) chunks are from empty traces
 /// A BatchHash consists of 2 hashes.
 /// - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
-///   chunk_k-1.withdraw_root || batch_data_hash)
+///   chunk_k-1.withdraw_root || batch_data_hash || z || y || versioned_hash)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
 pub struct BatchHash<const N_SNARKS: usize> {
     /// Chain ID of the network.
@@ -30,7 +30,7 @@ pub struct BatchHash<const N_SNARKS: usize> {
     pub(crate) data_hash: H256,
     /// The public input hash, as calculated on-chain:
     /// - keccak256( chain_id || prev_state_root || next_state_root || withdraw_trie_root ||
-    ///   batch_data_hash || z || y )
+    ///   batch_data_hash || z || y || versioned_hash)
     pub(crate) public_input_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
@@ -41,6 +41,26 @@ pub struct BatchHash<const N_SNARKS: usize> {
 }
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
+    /// Build Batch hash from an ordered list of chunks. Will pad if needed
+    pub fn construct_with_unpadded(chunks: &[ChunkInfo]) -> Self {
+        assert_ne!(chunks.len(), 0);
+        assert!(chunks.len() <= N_SNARKS);
+        let mut chunks_with_padding = chunks.to_vec();
+        if chunks.len() < N_SNARKS {
+            log::warn!(
+                "chunk len({}) < N_SNARKS({}), padding...",
+                chunks.len(),
+                N_SNARKS
+            );
+            let last_chunk = chunks.last().unwrap();
+            let mut padding_chunk = last_chunk.clone();
+            padding_chunk.is_padding = true;
+            chunks_with_padding
+                .extend(std::iter::repeat(padding_chunk).take(N_SNARKS - chunks.len()));
+        }
+        Self::construct(&chunks_with_padding)
+    }
+
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
     pub fn construct(chunks_with_padding: &[ChunkInfo]) -> Self {
         assert_eq!(

@@ -342,44 +342,35 @@ impl<'a> CircuitInputBuilder {
         Ok(())
     }
 
-    fn check_post_state(&self, post_states: &[eth_types::l2_types::AccountProofWrapper]) {
+    fn check_post_state(&self, post_states: &[eth_types::l2_types::AccountTrace]) {
         for account_post_state in post_states {
-            let account_post_state = account_post_state.clone();
-            if let Some(address) = account_post_state.address {
-                let local_acc = self.sdb.get_account(&address).1;
-                log::trace!("local acc {local_acc:?}, trace acc {account_post_state:?}");
-                if local_acc.balance != account_post_state.balance.unwrap() {
-                    log::error!("incorrect balance")
+            let address = account_post_state.address;
+            let local_acc = self.sdb.get_account(&address).1;
+            log::trace!("local acc {local_acc:?}, trace acc {account_post_state:?}");
+            if local_acc.balance != account_post_state.balance {
+                log::error!("incorrect balance")
+            }
+            if local_acc.nonce != account_post_state.nonce.into() {
+                log::error!("incorrect nonce")
+            }
+            let p_hash = account_post_state.poseidon_code_hash;
+            if p_hash.is_zero() {
+                if !local_acc.is_empty() {
+                    log::error!("incorrect poseidon_code_hash")
                 }
-                if local_acc.nonce != account_post_state.nonce.unwrap().into() {
-                    log::error!("incorrect nonce")
+            } else {
+                if local_acc.code_hash != p_hash {
+                    log::error!("incorrect poseidon_code_hash")
                 }
-                let p_hash = account_post_state.poseidon_code_hash.unwrap();
-                if p_hash.is_zero() {
-                    if !local_acc.is_empty() {
-                        log::error!("incorrect poseidon_code_hash")
-                    }
-                } else {
-                    if local_acc.code_hash != p_hash {
-                        log::error!("incorrect poseidon_code_hash")
-                    }
+            }
+            let k_hash = account_post_state.keccak_code_hash;
+            if k_hash.is_zero() {
+                if !local_acc.is_empty() {
+                    log::error!("incorrect keccak_code_hash")
                 }
-                let k_hash = account_post_state.keccak_code_hash.unwrap();
-                if k_hash.is_zero() {
-                    if !local_acc.is_empty() {
-                        log::error!("incorrect keccak_code_hash")
-                    }
-                } else {
-                    if local_acc.keccak_code_hash != k_hash {
-                        log::error!("incorrect keccak_code_hash")
-                    }
-                }
-                if let Some(storage) = account_post_state.storage {
-                    let k = storage.key.unwrap();
-                    let local_v = self.sdb.get_storage(&address, &k).1;
-                    if *local_v != storage.value.unwrap() {
-                        log::error!("incorrect storage for k = {k}");
-                    }
+            } else {
+                if local_acc.keccak_code_hash != k_hash {
+                    log::error!("incorrect keccak_code_hash")
                 }
             }
         }
@@ -591,16 +582,13 @@ impl<'a> CircuitInputBuilder {
             } else {
                 GasCost(tx.gas - geth_trace.struct_logs[0].gas.0)
             };
-            // EIP2930 not implemented
-            if tx.access_list.is_none() {
-                debug_assert_eq!(
-                    steps_gas_cost,
-                    real_gas_cost.as_u64(),
-                    "begin step cost {:?}, precompile step cost {:?}",
-                    begin_tx_steps[0].gas_cost,
-                    begin_tx_steps.get(1).map(|st| st.gas_cost),
-                );
-            }
+            debug_assert_eq!(
+                steps_gas_cost,
+                real_gas_cost.as_u64(),
+                "begin step cost {:?}, next step cost {:?}",
+                begin_tx_steps[0].gas_cost,
+                begin_tx_steps.get(1).map(|st| st.gas_cost),
+            );
         }
 
         tx.steps_mut().extend(begin_tx_steps);

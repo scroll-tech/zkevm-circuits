@@ -708,7 +708,7 @@ impl OpcodeId {
         let (min_stack_ptr, max_stack_ptr): (u32, u32) = match self {
             // `min_stack_pointer` 0 means stack overflow never happen, for example, `OpcodeId::ADD`
             // can only encounter underflow error, but never encounter overflow error.
-            // `max_stack_pointer` means max stack poniter for op code normally run. for example,
+            // `max_stack_pointer` means max stack pointer for op code normally run. for example,
             // `OpcodeId::ADD` 's max stack pointer is 1022, when actual sp > 1022, will
             // encounter underflow error.
             OpcodeId::STOP => (0, 1024),

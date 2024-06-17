@@ -55,7 +55,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.parse_call(geth_step)?
         } else {
             // if precheck not ok, the call won't appear in call trace since it never happens
-            // we need to increase the offset and mannually set the is_success
+            // we need to increase the offset and manually set the is_success
             state.tx_ctx.call_is_success_offset += 1;
             let mut call = state.parse_call_partial(geth_step)?;
             call.is_success = false;
@@ -225,7 +225,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
         }
 
-        let (initialization_code, keccak_code_hash, code_hash) = if is_precheck_ok && length > 0 {
+        let (initcode, keccak_code_hash, code_hash) = if is_precheck_ok && length > 0 {
             handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
         } else {
             (vec![], H256(keccak256([])), CodeDB::empty_code_hash())
@@ -237,17 +237,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // successful contract creation
         if is_precheck_ok {
             // handle keccak_table_lookup
-            let keccak_input = if IS_CREATE2 {
+            let address_preimage = if IS_CREATE2 {
                 let salt = stack_inputs[3];
-                log::trace!("create2 initcode {}", hex::encode(&initialization_code));
+                log::trace!("create2 initcode {}", hex::encode(&initcode));
                 log::trace!("create2 caller {:?}", caller.address);
                 assert_eq!(
                     address,
-                    get_create2_address(
-                        caller.address,
-                        salt.to_be_bytes(),
-                        initialization_code.clone(),
-                    )
+                    get_create2_address(caller.address, salt.to_be_bytes(), initcode.clone())
                 );
                 std::iter::once(0xffu8)
                     .chain(caller.address.to_fixed_bytes())
@@ -263,11 +259,12 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             };
             assert_eq!(
                 address,
-                H160(keccak256(&keccak_input)[12..].try_into().unwrap())
+                H160(keccak256(&address_preimage)[12..].try_into().unwrap())
             );
 
-            state.block.sha3_inputs.push(keccak_input);
-            state.block.sha3_inputs.push(initialization_code);
+            state.block.sha3_inputs.push(address_preimage);
+            // TODO: for scroll mode, initcode don't need to be keccak-ed.
+            state.block.sha3_inputs.push(initcode);
         }
         if is_precheck_ok && !is_address_collision {
             // Transfer function will skip transfer if the value is zero
@@ -356,10 +353,11 @@ fn handle_copy(
     let call_ctx = state.call_ctx_mut()?;
     let memory: &Memory = &mut call_ctx.memory;
 
-    let initialization_bytes = memory.0[offset..offset + length].to_vec();
-    let keccak_code_hash = H256(keccak256(&initialization_bytes));
-    let code_hash = CodeDB::hash(&initialization_bytes);
-    let bytes = Bytecode::from(initialization_bytes.clone()).code;
+    let initcode = memory.0[offset..offset + length].to_vec();
+    let keccak_code_hash = H256(keccak256(&initcode));
+    // TODO: we could avoid this hashing, since parse_call already hashed it.
+    let code_hash = CodeDB::hash(&initcode);
+    let bytes = Bytecode::from(initcode.clone()).code;
 
     let dst_range = MemoryWordRange::align_range(offset, length);
     let mem_read = memory.read_chunk(dst_range);
@@ -402,7 +400,7 @@ fn handle_copy(
         },
     );
 
-    Ok((initialization_bytes, keccak_code_hash, code_hash))
+    Ok((initcode, keccak_code_hash, code_hash))
 }
 
 #[cfg(test)]

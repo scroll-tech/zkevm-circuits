@@ -227,7 +227,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         )?;
 
         // assign fixed range tables only as they are the only tables referred by a
-        // specfic math gadget -- ConstantDivisionGadget.
+        // specific math gadget -- ConstantDivisionGadget.
         layouter.assign_region(
             || "fixed table",
             |mut region| {

@@ -64,7 +64,7 @@ Besides the above transaction data, some metadata are also available for the tx 
 
 In the Tx Circuit, there are two pieces of tx related data that will be applied to the Keccak256 hash. They both correspond to some tx_tag fields ([`TxFieldTag`]):
 - (`TxHashLength`, `TxHashRLC`, `TxHash`): signed tx's data = `[Nonce, Gas, GasPrice, To, Value, CallData, v, r, s]`. `TxHashLength` stands for the length in bytes of `RLP([signed tx's data])`; `TxHashRLC` stands for the RLC in bytes of signed tx's data and `TxHash=Keccak256(RLP(signed tx's data))`. `TxHash` becomes the `hash` data field in tx data; 
-- (`TxSignLength`, `TxSignRLC`, `TxSignHash`): tx's data that needs to be signed = `[Nonce, Gas, GasPrice, To, Value, ChainID, CallData]`. `TxSignLenth` stands for the length in bytes of `RLP(tx's data that needs to be signed)`; `TxSignRLC` stands for the RLC in bytes of `RLP(tx's data that needs to be signed)` and  `TxSignHash=Keccak256(RLP(tx's data that needs to be signed))`. `TxSignHash` is the same as the `msg_hash` data field that will be used to obtain the tx sender's signature `(v,r,s)`.
+- (`TxSignLength`, `TxSignRLC`, `TxSignHash`): tx's data that needs to be signed = `[Nonce, Gas, GasPrice, To, Value, ChainID, CallData]`. `TxSignLength` stands for the length in bytes of `RLP(tx's data that needs to be signed)`; `TxSignRLC` stands for the RLC in bytes of `RLP(tx's data that needs to be signed)` and  `TxSignHash=Keccak256(RLP(tx's data that needs to be signed))`. `TxSignHash` is the same as the `msg_hash` data field that will be used to obtain the tx sender's signature `(v,r,s)`.
 
 According to the [EllipticCurveDigitalSignatureAlgorithm] (ECDSA), the signatures `(r,s)` are calculated via ECDSA from `msg_hash` and a `public_key`. In the case of an ethereum tx, the scheme looks as follows
 
@@ -130,7 +130,7 @@ This chip helps to check the correct decomposition of a binary number into an ar
 
 This chip helps to check if a value is zero. It uses one advice column to store this value and another advice column for its inverse. In Tx Circuit, this chip is applied to the following sub-configurations as `IsZeroConfig`:
 - `tx_id_is_zero`: this is used to check if `tx_id` is zero;
-- `value_is_zero`: this is used to check if the `value` field for the current tx_tag is zero. This is applied when tx_tag is CallerAddress (if CallerAddress is zero, then skip sign verify); or is CallDataLenngth (if CallDataLength is zero, then skip lookup to tx table for call data); or is CallData (if CallData byte is zero, then gas cost is 4 otherwise 16).
+- `value_is_zero`: this is used to check if the `value` field for the current tx_tag is zero. This is applied when tx_tag is CallerAddress (if CallerAddress is zero, then skip sign verify); or is CallDataLength (if CallDataLength is zero, then skip lookup to tx table for call data); or is CallData (if CallData byte is zero, then gas cost is 4 otherwise 16).
 
 #### IsEqualChip
 This chip helps to check the equality of two values by storing their difference into `IsZeroChip`. In Tx Circuit, this chip is applied to the following sub-configurations as `IsEqualConfig`:

@@ -48,9 +48,7 @@ impl CircuitInputBuilder {
             &eth_block,
         )?;
         // override zeroed minder field with additional "coinbase" field in blocktrace
-        if let Some(address) = block_trace.coinbase.address {
-            block.coinbase = address;
-        }
+        block.coinbase = block_trace.coinbase.address;
         let block_num = block.number.as_u64();
         // TODO: should be check the block number is in sequence?
         self.block.add_block(block);

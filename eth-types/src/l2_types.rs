@@ -31,7 +31,7 @@ pub struct BlockTraceV2 {
     #[serde(rename = "chainID", default)]
     pub chain_id: u64,
     /// coinbase's status AFTER execution
-    pub coinbase: AccountProofWrapper,
+    pub coinbase: AccountTrace,
     /// block
     pub header: EthBlock,
     /// txs
@@ -86,7 +86,7 @@ pub struct BlockTrace {
     #[serde(rename = "chainID", default)]
     pub chain_id: u64,
     /// coinbase's status AFTER execution
-    pub coinbase: AccountProofWrapper,
+    pub coinbase: AccountTrace,
     /// block
     pub header: EthBlock,
     /// txs
@@ -106,6 +106,51 @@ pub struct BlockTrace {
     /// l1 tx queue
     #[serde(rename = "startL1QueueIndex", default)]
     pub start_l1_queue_index: u64,
+    /// Withdraw root
+    pub withdraw_trie_root: H256,
+}
+
+impl BlockTrace {
+    /// Get number of l2 txs
+    pub fn num_l2_txs(&self) -> u64 {
+        // 0x7e is l1 tx
+        self.transactions.iter().filter(|tx| !tx.is_l1_tx()).count() as u64
+    }
+    /// Get number of l1 txs. L1 txs can be skipped, so just counting is not enough
+    pub fn num_l1_txs(&self) -> u64 {
+        // 0x7e is l1 tx
+        match self
+            .transactions
+            .iter()
+            .filter(|tx| tx.is_l1_tx())
+            // tx.nonce for l1 tx is the l1 queue index, which is a globally index,
+            // not per user as suggested by the name...
+            .map(|tx| tx.nonce)
+            .max()
+        {
+            None => 0, // not l1 tx in this block
+            Some(end_l1_queue_index) => end_l1_queue_index - self.start_l1_queue_index + 1,
+        }
+    }
+    /// Header encoding used for chunk hashing
+    pub fn da_encode_header(&self) -> Vec<u8> {
+        // https://github.com/scroll-tech/da-codec/blob/b842a0f961ad9180e16b50121ef667e15e071a26/encoding/codecv2/codecv2.go#L97
+        let num_txs = (self.num_l1_txs() + self.num_l2_txs()) as u16;
+        std::iter::empty()
+            // Block Values
+            .chain(self.header.number.unwrap().as_u64().to_be_bytes())
+            .chain(self.header.timestamp.as_u64().to_be_bytes())
+            .chain(
+                self.header
+                    .base_fee_per_gas
+                    .unwrap_or_default()
+                    .to_be_bytes(),
+            )
+            .chain(self.header.gas_limit.as_u64().to_be_bytes())
+            .chain(num_txs.to_be_bytes())
+            .collect_vec()
+        // the `num_l1_txs` is not used for chunk hashing yet.
+    }
 }
 
 impl From<BlockTrace> for EthBlock {
@@ -154,7 +199,7 @@ impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
     fn from(block: &BlockTraceV2) -> Self {
         revm_primitives::BlockEnv {
             number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
-            coinbase: block.coinbase.address.unwrap().0.into(),
+            coinbase: block.coinbase.address.0.into(),
             timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
             gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
             basefee: revm_primitives::U256::from_be_bytes(
@@ -178,7 +223,7 @@ impl From<&BlockTrace> for revm_primitives::BlockEnv {
     fn from(block: &BlockTrace) -> Self {
         revm_primitives::BlockEnv {
             number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
-            coinbase: block.coinbase.address.unwrap().0.into(),
+            coinbase: block.coinbase.address.0.into(),
             timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
             gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
             basefee: revm_primitives::U256::from_be_bytes(
@@ -247,6 +292,10 @@ pub struct TransactionTrace {
 }
 
 impl TransactionTrace {
+    /// Check whether it is layer1 tx
+    pub fn is_l1_tx(&self) -> bool {
+        self.type_ == 0x7e
+    }
     /// transfer to eth type tx
     pub fn to_eth_tx(
         &self,
@@ -280,6 +329,7 @@ impl TransactionTrace {
             v: self.v,
             r: self.r,
             s: self.s,
+            // FIXME: is this correct? None for legacy?
             transaction_type: Some(U64::from(self.type_ as u64)),
             access_list: self.access_list.as_ref().map(|al| AccessList(al.clone())),
             max_priority_fee_per_gas: self.gas_tip_cap,
@@ -369,15 +419,18 @@ pub struct ExecutionResult {
     #[serde(rename = "returnValue", default)]
     pub return_value: String,
     /// Status of from account AFTER execution
-    pub from: Option<AccountProofWrapper>,
+    /// TODO: delete this
+    pub from: Option<AccountTrace>,
     /// Status of to account AFTER execution
-    pub to: Option<AccountProofWrapper>,
+    /// TODO: delete this after curie upgrade
+    pub to: Option<AccountTrace>,
     #[serde(rename = "accountAfter", default)]
     /// List of accounts' (coinbase etc) status AFTER execution
-    pub account_after: Vec<AccountProofWrapper>,
+    pub account_after: Vec<AccountTrace>,
     #[serde(rename = "accountCreated")]
     /// Status of created account AFTER execution
-    pub account_created: Option<AccountProofWrapper>,
+    /// TODO: delete this
+    pub account_created: Option<AccountTrace>,
     #[serde(rename = "poseidonCodeHash")]
     /// code hash of called
     pub code_hash: Option<Hash>,
@@ -460,46 +513,27 @@ impl From<ExecStep> for GethExecStep {
 pub struct ExtraData {
     #[serde(rename = "codeList")]
     pub code_list: Option<Vec<Bytes>>,
-    #[serde(rename = "proofList")]
-    pub proof_list: Option<Vec<AccountProofWrapper>>,
 }
 
 impl ExtraData {
     pub fn get_code_at(&self, i: usize) -> Option<Bytes> {
         self.code_list.as_ref().and_then(|c| c.get(i)).cloned()
     }
-
-    pub fn get_code_hash_at(&self, i: usize) -> Option<H256> {
-        self.get_proof_at(i).and_then(|a| a.poseidon_code_hash)
-    }
-
-    pub fn get_proof_at(&self, i: usize) -> Option<AccountProofWrapper> {
-        self.proof_list.as_ref().and_then(|p| p.get(i)).cloned()
-    }
 }
 
 /// account wrapper for account status
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
 #[doc(hidden)]
-pub struct AccountProofWrapper {
-    pub address: Option<Address>,
-    pub nonce: Option<u64>,
-    pub balance: Option<U256>,
+pub struct AccountTrace {
+    pub address: Address,
+    pub nonce: u64,
+    pub balance: U256,
     #[serde(rename = "keccakCodeHash")]
-    pub keccak_code_hash: Option<H256>,
+    pub keccak_code_hash: H256,
     #[serde(rename = "poseidonCodeHash")]
-    pub poseidon_code_hash: Option<H256>,
+    pub poseidon_code_hash: H256,
     #[serde(rename = "codeSize")]
     pub code_size: u64,
-    pub storage: Option<StorageProofWrapper>,
-}
-
-/// storage wrapper for storage status
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[doc(hidden)]
-pub struct StorageProofWrapper {
-    pub key: Option<U256>,
-    pub value: Option<U256>,
 }
 
 #[ignore]

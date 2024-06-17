@@ -50,7 +50,7 @@ impl<'a> YamlStateTestBuilder<'a> {
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
     pub fn load_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
-        // Shoule be false for stEIP1153-transientStorage,
+        // Should be false for stEIP1153-transientStorage,
         // due to this bug https://github.com/ethereum/tests/issues/1369
         if path.contains("stEIP1153-transientStorage") {
             abi::ENABLE_NORMALIZE.with_borrow_mut(|b| *b = false)

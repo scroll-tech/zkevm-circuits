@@ -173,7 +173,8 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         N_BATCH_BYTES + Self::n_rows_digest()
     }
 
-    pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkInfo]) -> Self {
+    /// Construct BatchData from chunks
+    pub fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkInfo]) -> Self {
         assert!(num_valid_chunks > 0);
         assert!(num_valid_chunks <= N_SNARKS);
 
@@ -191,7 +192,14 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .collect::<Vec<u32>>()
             .try_into()
             .unwrap();
-        assert!(chunk_sizes.iter().sum::<u32>() <= Self::n_rows_data() as u32);
+
+        if chunk_sizes.iter().sum::<u32>() > Self::n_rows_data() as u32 {
+            panic!(
+                "invalid chunk_sizes {}, n_rows_data {}",
+                chunk_sizes.iter().sum::<u32>(),
+                Self::n_rows_data()
+            )
+        }
 
         // chunk data of the "last valid chunk" is repeated over the padded chunks for simplicity
         // in calculating chunk_data_digest for those padded chunks. However, for the "chunk data"
@@ -269,14 +277,22 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     }
 
     /// Get the zstd encoded batch data bytes.
-    pub(crate) fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
+    pub fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
         let batch_data_bytes = self.get_batch_data_bytes();
         let mut encoder = init_zstd_encoder(None);
         encoder
             .set_pledged_src_size(Some(batch_data_bytes.len() as u64))
             .expect("infallible");
         encoder.write_all(&batch_data_bytes).expect("infallible");
-        encoder.finish().expect("infallible")
+        let encoded_bytes = encoder.finish().expect("infallible");
+        log::info!(
+            "compress batch data from {} to {}, compression ratio {:.2}, blob usage {:.3}",
+            batch_data_bytes.len(),
+            encoded_bytes.len(),
+            batch_data_bytes.len() as f32 / encoded_bytes.len() as f32,
+            encoded_bytes.len() as f32 / N_BLOB_BYTES as f32
+        );
+        encoded_bytes
     }
 
     /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
@@ -363,7 +379,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         // metadata bytes.
         let bytes = self.to_metadata_bytes();
 
-        // accumulators represent the runnin linear combination of bytes.
+        // accumulators represent the running linear combination of bytes.
         let accumulators_iter = self
             .num_valid_chunks
             .to_be_bytes()

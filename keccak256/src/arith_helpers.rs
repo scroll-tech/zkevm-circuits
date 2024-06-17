@@ -109,7 +109,7 @@ pub fn convert_b2_to_b9(a: u64) -> Lane9 {
 /// Maps a sum of 12 bits to the XOR result of 12 bits.
 ///
 /// The input `x` is a chunk of a base 13 number and it represents the
-/// arithmatic sum of 12 bits. Asking the result of the 12 bits XORed together
+/// arithmetic sum of 12 bits. Asking the result of the 12 bits XORed together
 /// is equivalent of asking if `x` being an odd number.
 ///
 /// For example, if we have 5 bits set and 7 bits unset, then we have `x` as 5
@@ -119,10 +119,10 @@ pub fn convert_b13_coef(x: u8) -> u8 {
     x & 1
 }
 
-/// Maps the arithmatic result `2*a + b + 3*c + 2*d` to the bit operation result
+/// Maps the arithmetic result `2*a + b + 3*c + 2*d` to the bit operation result
 /// `a ^ (~b & c) ^ d`
 ///
-/// The input `x` is a chunk of a base 9 number and it represents the arithmatic
+/// The input `x` is a chunk of a base 9 number and it represents the arithmetic
 /// result of `2*a + b + 3*c + 2*d`, where `a`, `b`, `c`, and `d` each is a bit.
 pub fn convert_b9_coef(x: u8) -> u8 {
     debug_assert!(x < 9);

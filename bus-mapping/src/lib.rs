@@ -180,7 +180,7 @@
 //! | `key`  | `val`         | `rw`    | `gc` | Note                                     |
 //! |:------:| ------------- | ------- | ---- | ---------------------------------------- |
 //! | `0x40` | `0`           | `Write` |      | Init                                     |
-//! | `0x40` | `0x80`        | `Write` | 0    | Assume written at the begining of `code` |
+//! | `0x40` | `0x80`        | `Write` | 0    | Assume written at the beginning of `code`|
 //! | `0x40` | `0x80`        | `Read`  | 4    | `56 MLOAD`                               |
 //! |   -    |               |         |      |                                          |
 //! | `0x80` | `0`           | `Write` |      | Init                                     |

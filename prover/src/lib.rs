@@ -8,7 +8,7 @@
 ///   layer4: compression circuit of "layer3". Final layer circuit currently.
 ///
 // TODO: don't always use "pub mod".
-// We need to define which types and methods shoud be public carefully.
+// We need to define which types and methods should be public carefully.
 pub mod aggregator;
 pub mod common;
 pub mod config;
@@ -22,7 +22,7 @@ pub mod types;
 pub mod utils;
 pub mod zkevm;
 
-pub use aggregator::{check_chunk_hashes, BatchHash, MAX_AGG_SNARKS};
+pub use aggregator::{check_chunk_hashes, BatchData, BatchHash, MAX_AGG_SNARKS};
 pub use common::{ChunkInfo, CompressionCircuit};
 pub use eth_types;
 pub use eth_types::l2_types::BlockTrace;

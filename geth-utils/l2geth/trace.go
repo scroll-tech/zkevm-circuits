@@ -54,7 +54,7 @@ type TraceConfig struct {
 	ChainID           uint64 `json:"chain_id"`
 	StartL1QueueIndex uint64 `json:"l1_queue_index"`
 	// HistoryHashes contains most recent 256 block hashes in history,
-	// where the lastest one is at HistoryHashes[len(HistoryHashes)-1].
+	// where the latest one is at HistoryHashes[len(HistoryHashes)-1].
 	HistoryHashes []*hexutil.Big             `json:"history_hashes"`
 	Block         Block                      `json:"block_constants"`
 	Accounts      map[common.Address]Account `json:"accounts"`

@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
     ) -> Result<(), Error> {
         let origin = block.rws[step.rw_indices[1]].stack_value();
 
-        // Assing TxId.
+        // Assign TxId.
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 

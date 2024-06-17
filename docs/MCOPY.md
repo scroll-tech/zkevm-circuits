@@ -13,7 +13,7 @@ below describle three parts that implementation involves.
 ## buss mapping
   - generates stack read operations to get above mentioned parameters. `dst_offset`, `src_offset`, `length`.
 
-  - generates copy event in helper `gen_copy_steps_for_memory_to_memory` because it is a dynamic copy case. the copy steps generating follows all read steps + all wrtie steps pattern while normal existing copy steps follows read step + write step + read step + write step... pattern. this is to avoid copy range overlaps issue(destination copy range overlaps source copy range in the same memory context). copy event's `src_type` and `dst_type` are the same `CopyDataType::Memory`, copy event's `src_id` and `dst_id` are also the same since source and destination copy happens in one call context.
+  - generates copy event in helper `gen_copy_steps_for_memory_to_memory` because it is a dynamic copy case. the copy steps generating follows all read steps + all write steps pattern while normal existing copy steps follows read step + write step + read step + write step... pattern. this is to avoid copy range overlaps issue(destination copy range overlaps source copy range in the same memory context). copy event's `src_type` and `dst_type` are the same `CopyDataType::Memory`, copy event's `src_id` and `dst_id` are also the same since source and destination copy happens in one call context.
 
   - rw_counter of write steps start from half of total memory word count.
 
@@ -34,14 +34,14 @@ below describle three parts that implementation involves.
 
 
   - error cases:
-    mcopy may encouter the following two error cases:
+    mcopy may encounter the following two error cases:
     - stack underflow:
-      - if stack has less than three element will encounter this error. existing `ErrorStackGadget` gadget handles it. have setted correct stack info for mcopy in helper `valid_stack_ptr_range`, which `ErrorStackGadget` takes use of it to do the constraint.
+      - if stack has less than three element will encounter this error. existing `ErrorStackGadget` gadget handles it. have set correct stack info for mcopy in helper `valid_stack_ptr_range`, which `ErrorStackGadget` takes use of it to do the constraint.
 
     - OOG memory copy:
       - there are two cases which result in this error: 1) remain gas left is indeed not sufficient. 2) source address(`src_add`) or destination address (`dst_address`) is u64 overflow.
 
-      - `ErrorOOGMemoryCopyGadget` gadget is reponsible for memory copy OOG cases, make OOG mcopy also take adantage of this gadget. 
+      - `ErrorOOGMemoryCopyGadget` gadget is responsible for memory copy OOG cases, make OOG mcopy also take adantage of this gadget. 
 
       - specially for mcopy, besdies existing constraints in `ErrorOOGMemoryCopyGadget` gadget. added source address(`src_add`) overflow case for mcopy in OOG condition constraint.
 

@@ -8,6 +8,8 @@ use crate::{
 use ethers_core::types::Bytes;
 use itertools::Itertools;
 
+use super::ExecStep;
+
 /// Update codedb from statedb and trace
 pub fn collect_codes(
     block: &BlockTrace,
@@ -29,20 +31,16 @@ pub fn collect_codes(
     let mut codes = Vec::new();
     for (er_idx, execution_result) in block.execution_results.iter().enumerate() {
         if let Some(bytecode) = &execution_result.byte_code {
-            let bytecode = decode_bytecode(bytecode)?.to_vec();
-
-            let code_hash = execution_result
-                .to
-                .as_ref()
-                .and_then(|t| t.poseidon_code_hash)
-                .unwrap_or_else(|| CodeDB::hash(&bytecode));
-            let code_hash = if code_hash.is_zero() {
-                CodeDB::hash(&bytecode)
-            } else {
-                code_hash
-            };
-            codes.push((code_hash, bytecode));
-            //log::debug!("inserted tx bytecode {:?} {:?}", code_hash, hash);
+            if let Some(to) = &execution_result.to {
+                // Not contract deployment
+                let bytecode = decode_bytecode(bytecode)?.to_vec();
+                let code_hash = to.poseidon_code_hash;
+                // code hash 0 means non-existed account
+                if !code_hash.is_zero() {
+                    codes.push((code_hash, bytecode));
+                }
+                //log::debug!("inserted tx bytecode {:?} {:?}", code_hash, hash);
+            }
         }
 
         // filter all precompile calls, empty calls and create
@@ -64,7 +62,7 @@ pub fn collect_codes(
             if step.op.is_create() {
                 continue;
             }
-            let call = if step.op.is_call_or_create() {
+            let call = if step.op.is_call() {
                 // filter call to empty/precompile/!precheck_ok
                 if let Some(next_step) = execution_result.exec_steps.get(idx + 1) {
                     // the call doesn't have inner steps, it could be:
@@ -101,18 +99,14 @@ pub fn collect_codes(
                             1
                         };
                         let callee_code = data.get_code_at(code_idx);
-                        let code_hash = match step.op {
-                            OpcodeId::CALL | OpcodeId::CALLCODE => data.get_code_hash_at(1),
-                            OpcodeId::STATICCALL => data.get_code_hash_at(0),
-                            _ => None,
-                        };
                         let addr = call.to.unwrap();
                         trace_code(
                             &mut codes,
-                            code_hash,
                             callee_code.unwrap_or_default(),
+                            step,
                             Some(addr),
                             sdb,
+                            block,
                         );
                     }
                     OpcodeId::EXTCODECOPY => {
@@ -121,7 +115,8 @@ pub fn collect_codes(
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
-                        trace_code(&mut codes, None, code.unwrap(), None, sdb);
+                        log::info!("trace extcodecopy! block {:?}", block.header.number);
+                        trace_code(&mut codes, code.unwrap(), step, None, sdb, block);
                     }
 
                     _ => {}
@@ -136,29 +131,33 @@ pub fn collect_codes(
 
 fn trace_code(
     codes: &mut Vec<(H256, Vec<u8>)>,
-    code_hash: Option<H256>,
     code: Bytes,
+    step: &ExecStep,
     addr: Option<Address>,
     // sdb is used to read codehash if available without recomputing
     sdb: Option<&StateDB>,
+    block: &BlockTrace,
 ) {
-    let code_hash = code_hash.or_else(|| {
-        let addr = addr?;
-        let sdb = sdb.as_ref()?;
-        let (_existed, acc_data) = sdb.get_account(&addr);
-        if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
-            Some(acc_data.code_hash)
-        } else {
-            None
-        }
+    let code_hash = addr.and_then(|addr| {
+        sdb.and_then(|sdb| {
+            let (_existed, acc_data) = sdb.get_account(&addr);
+            if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
+                Some(acc_data.code_hash)
+            } else {
+                None
+            }
+        })
     });
     let code_hash = match code_hash {
         Some(code_hash) if !code_hash.is_zero() => code_hash,
         _ => {
             let hash = CodeDB::hash(&code);
             log::debug!(
-                "hash_code done: addr {addr:?}, size {}, hash {hash:?}",
-                &code.len()
+                "hash_code done: addr {addr:?}, size {}, hash {hash:?}, step {:?}, gas.left {:?}, block {:?}",
+                &code.len(),
+                step.op,
+                step.gas,
+                block.header.number,
             );
             hash
         }

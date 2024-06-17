@@ -86,7 +86,7 @@ impl<F: Field> SHA256Circuit<F> {
             let inputs = self.0.len();
             let expected_rows = self.expected_rows();
             log::info!(
-                "sha256 circuit work with {} input ({} bytes), set with maxium {} rows",
+                "sha256 circuit work with {} input ({} bytes), set with maximum {} rows",
                 inputs,
                 totalbytes,
                 row_limit
