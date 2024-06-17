@@ -14,17 +14,18 @@ Currently `n` is hard coded to `10`.
 
 ## Chunk
 
-A __chunk__ is a list of continuous blocks. It consists of 4 hashes:
+A __chunk__ is a list of continuous blocks. It consists of 5 hashes:
 - state root before this chunk
 - state root after this chunk
 - the withdraw root of this chunk
 - the data hash of this chunk
+- the tx data hash of this chunk
 
-Those 4 hashes are obtained from the caller.
+Those 5 hashes are obtained from the caller.
 
 The chunk's public input hash is 
 ```
-chunk_pi_hash := keccak(chain_id || prev_state_root || post_state_root || withdraw_root ||  chunk_data_hash)
+chunk_pi_hash := keccak(chain_id || prev_state_root || post_state_root || withdraw_root ||  chunk_data_hash || chunk_txdata_hash)
 ```
 
 ## Continuous chunks
@@ -42,6 +43,7 @@ If $k< n$, $(n-k)$ padded chunks are padded to the list. A padded chunk has the 
 - state root after this chunk: `c_{k}.post_state_root`
 - the withdraw root of this chunk: `c_{k}.withdraw_root`
 - the data hash of this chunk: `c_{k}.data_hash`
+- the tx data hash of this chunk: `c_{k}.txdata_hash`
 
 ## Batch
 
@@ -86,7 +88,7 @@ For snarks $s_1,\dots,s_k,\dots, s_n$ the aggregation circuit argues the followi
 
 2. batch_pi_hash used same roots as chunk_pi_hash. __Static__.
 ```
-batch_pi_hash   := keccak(chain_id || chunk_1.prev_state_root || chunk_n.post_state_root || chunk_n.withdraw_root || batch_data_hash)
+batch_pi_hash   := keccak(chain_id || chunk_1.prev_state_root || chunk_n.post_state_root || chunk_n.withdraw_root || batch_data_hash || z || y || versioned_hash)
 ```
 and `batch_pi_hash` matches public input.
 
@@ -94,7 +96,7 @@ and `batch_pi_hash` matches public input.
 
 ```
 for i in 1 ... n
-    chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
+    chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash || chunk_txdata_hash)
 ```
 
 This is done by computing the RLCs of chunk[i]'s data_hash for `i=0..k`, and then check the RLC matches the one from the keccak table.
@@ -120,7 +122,8 @@ for i in 1 ... n:
 ```
 This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
 7. the hash input length is correct
-- first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+- hashes[0] has 200 bytes
+- hashes[1..N_SNARKS+1] has 168 bytes input
 - batch's data_hash length is 32 * number_of_valid_snarks
 8. batch data hash is correct w.r.t. its RLCs
 9. is_final_cells are set correctly

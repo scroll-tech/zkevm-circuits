@@ -241,7 +241,7 @@ pub(crate) fn print_circuit_stats_by_states(
             assert_eq!(ExecState::Op(opcode), step.exec_state);
             let height = fn_height(&builder.block, state, step_index);
 
-            // Substract 1 to step_index to remove the `BeginTx` step, which doesn't appear
+            // Subtract 1 to step_index to remove the `BeginTx` step, which doesn't appear
             // in the geth trace.
             let geth_step = &block.geth_traces[0].struct_logs[step_index - 1];
             assert_eq!(opcode, geth_step.op);

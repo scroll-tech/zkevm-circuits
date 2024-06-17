@@ -5590,7 +5590,7 @@ mod tests {
                 .set_pledged_src_size(Some(raw.len() as u64))
                 .expect("Encoder src_size: raw.len()");
 
-            encoder.write_all(&raw).expect("Encoder wirte_all");
+            encoder.write_all(&raw).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5626,7 +5626,7 @@ mod tests {
                 .expect("Encoder src_size: raw.len()");
             // include the content size to know at decode time the expected size of decoded data.
 
-            encoder.write_all(&raw).expect("Encoder wirte_all");
+            encoder.write_all(&raw).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5672,7 +5672,7 @@ mod tests {
                 .set_pledged_src_size(Some(batch_data.len() as u64))
                 .expect("Encoder src_size: raw.len()");
 
-            encoder.write_all(&batch_data).expect("Encoder wirte_all");
+            encoder.write_all(&batch_data).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5716,7 +5716,7 @@ mod tests {
                 .set_pledged_src_size(Some(raw.len() as u64))
                 .expect("Encoder src_size: raw.len()");
 
-            encoder.write_all(&raw).expect("Encoder wirte_all");
+            encoder.write_all(&raw).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5759,7 +5759,7 @@ mod tests {
 
             encoder
                 .write_all(&multi_batch_data)
-                .expect("Encoder wirte_all");
+                .expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 

@@ -132,7 +132,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             },
         );
 
-        // Set source start to the minimun value of data offset and call data length.
+        // Set source start to the minimum value of data offset and call data length.
         let src_addr = call_data_offset.expr()
             + select::expr(
                 data_offset.lt_cap(),

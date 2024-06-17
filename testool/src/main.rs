@@ -169,7 +169,7 @@ fn go() -> Result<()> {
     let config = Config::load()?;
 
     log::info!("Using suite '{}'", args.suite);
-    log::info!("Parsing and compliling tests...");
+    log::info!("Parsing and compiling tests...");
     let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
     let suite = config.suite(&args.suite)?.clone();
     let mut state_tests = load_statetests_suite(&suite, config, compiler)?;

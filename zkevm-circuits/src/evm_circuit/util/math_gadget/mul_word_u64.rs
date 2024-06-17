@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mulwordu64_unexpect() {
+    fn test_mulwordu64_unexpected() {
         try_test!(
             MulWordByU64TestContainer<Fr>,
             [Word::MAX, Word::from(1), Word::from(1)],

@@ -15,7 +15,7 @@ type BlockState = <Table16Chip as Sha256Instructions<Fr>>::State;
 /// u32 size for SHA256 digit
 pub const DIGEST_SIZE: usize = 8;
 
-/// the defination for a sha256 table
+/// the definition for a sha256 table
 pub trait SHA256Table {
     /// the cols has layout [s_enable, input_bytes, input_len, hashes, effect]
     fn cols(&self) -> [Column<Any>; 5];
@@ -27,21 +27,21 @@ pub trait SHA256Table {
             .try_into()
             .expect("must provide cols as expected layout")
     }
-    /// input_rlc show the RLC for input bytes, the first byte is multipled with R^(n-1)
+    /// input_rlc show the RLC for input bytes, the first byte is multiplied with R^(n-1)
     /// in which n is the length of bytes and R is random
     fn input_rlc(&self) -> Column<Advice> {
         self.cols()[1]
             .try_into()
             .expect("must provide cols as expected layout")
     }
-    /// input_len show the accumulated lengh for input bytes
+    /// input_len show the accumulated length for input bytes
     fn input_len(&self) -> Column<Advice> {
         self.cols()[2]
             .try_into()
             .expect("must provide cols as expected layout")
     }
     /// hashes_rlc show the RLC for the 32-bytes digest of input bytes, the first byte
-    /// is multipled with R^31
+    /// is multiplied with R^31
     fn hashes_rlc(&self) -> Column<Advice> {
         self.cols()[3]
             .try_into()
@@ -477,25 +477,25 @@ impl CircuitConfig {
             || "sha256 input",
             |mut region| {
                 prev_block.s_final.copy_advice(
-                    || "inheirt s_final",
+                    || "inherit s_final",
                     &mut region,
                     self.s_final_block,
                     0,
                 )?;
                 prev_block.s_padding.copy_advice(
-                    || "inheirt padding",
+                    || "inherit padding",
                     &mut region,
                     self.s_padding,
                     0,
                 )?;
                 prev_block.bytes_rlc.copy_advice(
-                    || "inheirt bytes rlc",
+                    || "inherit bytes rlc",
                     &mut region,
                     self.bytes_rlc,
                     0,
                 )?;
                 prev_block.byte_counter.copy_advice(
-                    || "inheirt byte counter",
+                    || "inherit byte counter",
                     &mut region,
                     self.byte_counter,
                     0,
@@ -668,7 +668,7 @@ impl CircuitConfig {
             || "sha256 digest",
             |mut region| {
                 input_block.s_final.copy_advice(
-                    || "inheirt s_final",
+                    || "inherit s_final",
                     &mut region,
                     self.s_final_block,
                     0,

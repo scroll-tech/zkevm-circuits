@@ -558,7 +558,7 @@ pub fn block_convert(
             );
         }
     } else {
-        log::error!("withdraw root is not avaliable");
+        log::error!("withdraw root is not available");
     }
 
     let block = Block {

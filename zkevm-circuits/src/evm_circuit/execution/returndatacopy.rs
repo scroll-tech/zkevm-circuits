@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let return_data_size: Cell<F> = cb.query_cell();
 
         let size: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> = cb.query_word_rlc();
-        // enusre no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
+        // ensure no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
         // state
         let check_overflow_gadget =
             CommonReturnDataCopyGadget::construct(cb, return_data_size.expr(), false.expr());

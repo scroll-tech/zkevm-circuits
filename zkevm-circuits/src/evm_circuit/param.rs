@@ -117,7 +117,7 @@ pub(crate) const N_BITS_U8: usize = 8;
 pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 
 // Number of bytes that will be used of the memory address and size.
-// If any of the other more signficant bytes are used it will always result in
+// If any of the other more significant bytes are used it will always result in
 // an out-of-gas error.
 pub(crate) const N_BYTES_MEMORY_ADDRESS: usize = 5;
 pub(crate) const N_BYTES_MEMORY_WORD_SIZE: usize = 4;

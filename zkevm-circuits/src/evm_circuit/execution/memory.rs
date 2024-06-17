@@ -30,7 +30,7 @@ pub(crate) struct MemoryGadget<F> {
     address: MemoryWordAddress<F>,
     mask: MemoryMask<F>,
     // consider move to MemoryWordAddress ?
-    /// The value poped from or pushed to the stack.
+    /// The value popped from or pushed to the stack.
     value: Word<F>,
     /// The left memory word read or written.
     value_left: Word<F>,

@@ -1,0 +1,28 @@
+[files]
+ignore-files = true
+ignore-hidden = false
+extend-exclude = [
+    ".git/",
+    "go.mod",
+    "go.sum",
+    "go.work.sum",
+]
+
+
+[default]
+extend-ignore-re=[
+    '[Dd]atas',
+    # DUPn SWAPn
+    "Pn",
+    "[Aa]dvices",
+    "ABD",
+    "cafeb0ba",    
+    # ./zkevm-circuits/src/table.rs:1789:19 that is a TODO to remove value_wrod_rlc
+    "wrod",
+    
+]
+check-filename = true
+
+
+
+

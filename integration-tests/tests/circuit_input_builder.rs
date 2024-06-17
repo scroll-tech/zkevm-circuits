@@ -73,7 +73,7 @@ macro_rules! declare_tests {
 }
 
 // This test builds the complete circuit inputs for the block where 1 ETH is
-// transfered.
+// transferred.
 declare_tests!(test_circuit_input_builder_block_transfer_0, "Transfer 0");
 // This test builds the complete circuit inputs for the block where the Greeter
 // contract is deployed.

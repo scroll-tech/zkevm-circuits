@@ -256,7 +256,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
 
         let transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
-        // change instace to slice
+        // change instance to slice
         let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
         let proof = test_gen_proof(

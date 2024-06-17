@@ -538,7 +538,7 @@ impl<F: Field> ExecutionConfig<F> {
                 // the gadget value before being copied to the box is freed immediately after
                 // the boxed gadget is returned.
                 // We put each gadget in a box so that they stay in the heap to keep
-                // ExecutionConfig at a managable size.
+                // ExecutionConfig at a manageable size.
                 (|| {
                     Box::new(Self::configure_gadget(
                         meta,
