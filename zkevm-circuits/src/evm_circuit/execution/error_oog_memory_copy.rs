@@ -756,7 +756,7 @@ mod tests {
     // test for mcopy case, do constrain: src_address length == dst_address length
     // so expect specified error.
     #[test]
-    fn test_invlaid_src_offset_length() {
+    fn test_invalid_src_offset_length() {
         // test is_mcopy = true
         let witnesses = [0x1, 0x20, 0x30, 0x10].map(U256::from);
 
@@ -776,7 +776,7 @@ mod tests {
     // test for non mcopy case, do not constrain: src_address length == dst_address length
     // so expect test pass.
     #[test]
-    fn test_invlaid_src_offset_length_nonmcopy() {
+    fn test_invalid_src_offset_length_nonmcopy() {
         // test is_mcopy = false
         let witnesses = [0x0, 0x20, 0x30, 0x10].map(U256::from);
 
