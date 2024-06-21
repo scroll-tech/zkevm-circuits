@@ -126,33 +126,33 @@ pub struct SeqInstTable<F: Field> {
     ref_offset_1_is_zero: IsZeroConfig<F>,
 }
 
-// impl<F: Field> LookupTable<F> for SeqInstTable<F> {
-//     fn columns(&self) -> Vec<Column<Any>> {
-//         vec![
-//             self.q_enabled.into(),
-//             self.block_index.into(),
-//             self.n_seq.into(),
-//             self.s_beginning.column.into(),
-//             self.seq_index.into(),
-//             self.literal_len.into(),
-//             self.match_offset.into(),
-//             self.match_len.into(),
-//         ]
-//     }
+impl<F: Field> LookupTable<F> for SeqInstTable<F> {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enabled.into(),
+            self.block_index.into(),
+            self.n_seq.into(),
+            self.s_beginning.column.into(),
+            self.seq_index.into(),
+            self.literal_len.into(),
+            self.match_offset.into(),
+            self.match_len.into(),
+        ]
+    }
 
-//     fn annotations(&self) -> Vec<String> {
-//         vec![
-//             String::from("q_enabled"),
-//             String::from("n_seq"),
-//             String::from("block_index"),
-//             String::from("s_beginning"),
-//             String::from("seq_index"),
-//             String::from("literal_len"),
-//             String::from("match_offset"),
-//             String::from("match_len"),
-//         ]
-//     }
-// }
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enabled"),
+            String::from("n_seq"),
+            String::from("block_index"),
+            String::from("s_beginning"),
+            String::from("seq_index"),
+            String::from("literal_len"),
+            String::from("match_offset"),
+            String::from("match_len"),
+        ]
+    }
+}
 
 #[derive(Clone, Debug)]
 struct ChipContext<F: Field> {

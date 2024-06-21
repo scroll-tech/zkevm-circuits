@@ -80,29 +80,36 @@ ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
-halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "v0.1.0" }
+halo2curves = { path = "../halo2curves" }
 # halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
 # halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
+
 [patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
 poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "main" }
 
 [patch."https://github.com/privacy-scaling-explorations/bls12_381"]
 bls12_381 = { git = "https://github.com/scroll-tech/bls12_381", branch = "feat/impl_scalar_field" }
 
-[patch."https://github.com/axiom-crypto/halo2-lib.git"]
-halo2-base = { path = "../halo2-lib/halo2-base" }
-halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
+# [patch."https://github.com/axiom-crypto/halo2-lib.git"]
+# halo2-base = { path = "../halo2-lib/halo2-base" }
+# halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
 # halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
 # halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
 
-[patch."https://github.com/scroll-tech/halo2-lib.git"]
-halo2-base = { path = "../halo2-lib/halo2-base" }
-halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
+# [patch."https://github.com/scroll-tech/halo2-lib.git"]
+# halo2-base = { path = "../halo2-lib/halo2-base" }
+# halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
 # halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition" }
 # halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "community-edition" }
+
+# [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
+# halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
+
+# [replace]
+# "halo2_proofs:0.3.0" = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]

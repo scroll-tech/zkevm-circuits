@@ -6,9 +6,8 @@ use aggregator_snark_verifier::{
     loader::native::NativeLoader,
     pcs::kzg::KzgAccumulator,
 };
-use halo2curves::bn256::Fr;
 use eth_types::Field;
-use halo2curves::bn256::G1Affine;
+use halo2curves::bn256::{Fr, G1Affine};
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -116,6 +115,9 @@ pub fn flatten_accumulator<'a>(
     accumulator: KzgAccumulator<G1Affine, NativeLoader>,
 ) -> Vec<AssignedValue<Fr>> {
     let KzgAccumulator { lhs, rhs } = accumulator;
+
+    // TODO: this prevents compilation???
+    // figure out what to copy paste here.....
     let lhs = lhs.into_assigned();
     let rhs = rhs.into_assigned();
 

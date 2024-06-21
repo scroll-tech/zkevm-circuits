@@ -237,12 +237,14 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     // - new accumulator to be verified on chain
                     //
                     log::debug!("aggregation: assigning aggregation");
-                    let (assigned_aggregation_instances, acc) = aggregate::<KzgAs<Bn256, Bdfg21>>(
+                    let assigned_aggregation_instances = aggregate::<KzgAs<Bn256, Bdfg21>>(
                         &self.svk,
                         &loader,
                         &self.snarks_with_padding,
                         self.as_proof(),
                     );
+                    let assigned_aggregation_instances = aggregation_witness.previous_instances;
+                    let acc = aggregation_witness.accumulator;
                     for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
                         log::trace!("{}-th instance: {:?}", i, e.value)
                     }
@@ -383,7 +385,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
                         region.constrain_equal(
                             chunk_pi_hash_digests[i][j].cell(),
-                            snark_inputs[i * DIGEST_LEN + j].cell(),
+                            snark_inputs[i * DIGEST_LEN + j].cell,
                         )?;
                     }
                 }

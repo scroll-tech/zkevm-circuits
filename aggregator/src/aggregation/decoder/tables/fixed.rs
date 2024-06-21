@@ -3,7 +3,7 @@ use aggregator_snark_verifier::halo2_base::halo2_proofs::{
     plonk::{Any, Column, ConstraintSystem, Error, Expression, Fixed},
 };
 use eth_types::Field;
-// use gadgets::impl_expr;
+use gadgets::impl_expr;
 use halo2curves::bn256::Fr;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
@@ -61,7 +61,7 @@ pub enum FixedLookupTag {
     VariableBitPacking,
 }
 
-// impl_expr!(FixedLookupTag);
+impl_expr!(FixedLookupTag);
 
 impl FixedLookupTag {
     fn values(&self) -> Vec<[Value<Fr>; 7]> {
@@ -130,28 +130,28 @@ impl FixedTable {
     }
 }
 
-// impl LookupTable<Fr> for FixedTable {
-//     fn columns(&self) -> Vec<Column<Any>> {
-//         vec![
-//             self.lookup_tag.into(),
-//             self.fixed1.into(),
-//             self.fixed2.into(),
-//             self.fixed3.into(),
-//             self.fixed4.into(),
-//             self.fixed5.into(),
-//             self.fixed6.into(),
-//         ]
-//     }
+impl LookupTable<Fr> for FixedTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.lookup_tag.into(),
+            self.fixed1.into(),
+            self.fixed2.into(),
+            self.fixed3.into(),
+            self.fixed4.into(),
+            self.fixed5.into(),
+            self.fixed6.into(),
+        ]
+    }
 
-//     fn annotations(&self) -> Vec<String> {
-//         vec![
-//             String::from("lookup_tag"),
-//             String::from("fixed1"),
-//             String::from("fixed2"),
-//             String::from("fixed3"),
-//             String::from("fixed4"),
-//             String::from("fixed5"),
-//             String::from("fixed6"),
-//         ]
-//     }
-// }
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("lookup_tag"),
+            String::from("fixed1"),
+            String::from("fixed2"),
+            String::from("fixed3"),
+            String::from("fixed4"),
+            String::from("fixed5"),
+            String::from("fixed6"),
+        ]
+    }
+}

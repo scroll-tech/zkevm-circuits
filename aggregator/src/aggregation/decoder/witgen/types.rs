@@ -4,7 +4,7 @@ use crate::aggregation::decoder::Expression;
 use aggregator_snark_verifier::halo2_base::halo2_proofs::circuit::Value;
 use bitstream_io::{BitRead, BitReader, LittleEndian};
 use eth_types::Field;
-// use gadgets::impl_expr;
+use gadgets::impl_expr;
 use itertools::Itertools;
 use std::collections::HashMap;
 use strum_macros::EnumIter;
@@ -92,7 +92,7 @@ impl From<usize> for LstreamNum {
     }
 }
 
-// impl_expr!(LstreamNum);
+impl_expr!(LstreamNum);
 
 /// Various tags that we can decode from a zstd encoded data.
 #[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, Hash)]
@@ -166,7 +166,7 @@ impl ZstdTag {
     }
 }
 
-// impl_expr!(ZstdTag);
+impl_expr!(ZstdTag);
 
 impl From<ZstdTag> for usize {
     fn from(value: ZstdTag) -> Self {
@@ -186,7 +186,7 @@ pub enum FseTableKind {
     MLT,
 }
 
-// impl_expr!(FseTableKind);
+impl_expr!(FseTableKind);
 
 impl ToString for ZstdTag {
     fn to_string(&self) -> String {

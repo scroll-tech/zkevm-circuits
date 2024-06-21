@@ -1820,32 +1820,32 @@ impl FseSortedStatesTable {
     }
 }
 
-// impl LookupTable<Fr> for FseSortedStatesTable {
-//     fn columns(&self) -> Vec<Column<Any>> {
-//         vec![
-//             self.block_idx.into(),
-//             self.table_kind.into(),
-//             self.table_size.into(),
-//             self.symbol.into(),
-//             self.symbol_count.into(),
-//             self.state.into(),
-//             self.baseline.into(),
-//             self.nb.into(),
-//             self.is_padding.column.into(),
-//         ]
-//     }
+impl LookupTable<Fr> for FseSortedStatesTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.block_idx.into(),
+            self.table_kind.into(),
+            self.table_size.into(),
+            self.symbol.into(),
+            self.symbol_count.into(),
+            self.state.into(),
+            self.baseline.into(),
+            self.nb.into(),
+            self.is_padding.column.into(),
+        ]
+    }
 
-//     fn annotations(&self) -> Vec<String> {
-//         vec![
-//             String::from("block_idx"),
-//             String::from("table_kind"),
-//             String::from("table_size"),
-//             String::from("symbol"),
-//             String::from("symbol_count"),
-//             String::from("state"),
-//             String::from("baseline"),
-//             String::from("nb"),
-//             String::from("is_padding"),
-//         ]
-//     }
-// }
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("block_idx"),
+            String::from("table_kind"),
+            String::from("table_size"),
+            String::from("symbol"),
+            String::from("symbol_count"),
+            String::from("state"),
+            String::from("baseline"),
+            String::from("nb"),
+            String::from("is_padding"),
+        ]
+    }
+}

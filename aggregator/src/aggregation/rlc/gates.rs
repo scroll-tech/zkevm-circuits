@@ -1,10 +1,10 @@
-use aggregator_snark_verifier::halo2_base::halo2_proofs::{
+use ethers_core::utils::keccak256;
+use halo2_proofs::{
     arithmetic::Field,
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
     plonk::Error,
 };
 use halo2curves::bn256::Fr;
-use ethers_core::utils::keccak256;
 use zkevm_circuits::util::Challenges;
 
 // TODO: remove MAX_AGG_SNARKS and make this generic over N_SNARKS

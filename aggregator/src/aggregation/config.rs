@@ -177,12 +177,12 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
 
     /// Range gate configuration
     pub fn range(&self) -> &RangeConfig<Fr> {
-        &self.base_field_config.range
+        &self.base_field_config
     }
 
     /// Flex gate configuration
     pub fn flex_gate(&self) -> &FlexGateConfig<Fr> {
-        &self.base_field_config.range.gate
+        &self.base_field_config.gate
     }
 
     /// Ecc gate configuration

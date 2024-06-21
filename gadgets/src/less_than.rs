@@ -251,6 +251,7 @@ mod test {
         }
 
         impl<F: Field> Circuit<F> for TestCircuit<F> {
+            type Params = ();
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
             #[cfg(feature = "circuit-params")]
@@ -375,6 +376,7 @@ mod test {
         }
 
         impl<F: Field> Circuit<F> for TestCircuit<F> {
+            type Params = ();
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
             #[cfg(feature = "circuit-params")]

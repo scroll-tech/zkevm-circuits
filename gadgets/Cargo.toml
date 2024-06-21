@@ -13,3 +13,6 @@ strum.workspace = true
 [dev-dependencies]
 rand_xorshift.workspace = true
 rand.workspace = true
+
+[features]
+circuit-params = []

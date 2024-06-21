@@ -172,6 +172,7 @@ mod tests {
         }
 
         impl<F: Field> Circuit<F> for MyCircuit<F> {
+            type Params = ();
             // Introduce an additional instance column here to test lookups
             // with public inputs. This is analogous to the bus mapping
             // commitment which will be provided as public inputs.

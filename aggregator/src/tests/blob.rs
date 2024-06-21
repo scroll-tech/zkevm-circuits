@@ -121,7 +121,7 @@ impl Circuit<Fr> for BlobCircuit {
                     return Ok(AssignedBarycentricEvaluationConfig::default());
                 }
 
-                let gate = &config.barycentric.scalar.range.gate;
+                let gate = &config.barycentric.scalar.gate;
 
                 // TODO: check correctness of this!
                 let core_manager = MultiPhaseCoreManager::new(false);

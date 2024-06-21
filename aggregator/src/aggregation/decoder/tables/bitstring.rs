@@ -702,40 +702,40 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
     }
 }
 
-// impl<const N_BYTES: usize> LookupTable<Fr> for BitstringTable<N_BYTES> {
-//     fn columns(&self) -> Vec<Column<Any>> {
-//         vec![
-//             self.byte_idx_1.into(),
-//             self.byte_idx_2.into(),
-//             self.byte_idx_3.into(),
-//             self.byte_1.into(),
-//             self.byte_2.into(),
-//             self.byte_3.into(),
-//             self.bitstring_value.into(),
-//             self.bitstring_len.into(),
-//             self.bit_index.into(),
-//             self.from_start.column.into(),
-//             self.until_end.column.into(),
-//             self.is_reverse.column.into(),
-//             self.is_padding.column.into(),
-//         ]
-//     }
+impl<const N_BYTES: usize> LookupTable<Fr> for BitstringTable<N_BYTES> {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.byte_idx_1.into(),
+            self.byte_idx_2.into(),
+            self.byte_idx_3.into(),
+            self.byte_1.into(),
+            self.byte_2.into(),
+            self.byte_3.into(),
+            self.bitstring_value.into(),
+            self.bitstring_len.into(),
+            self.bit_index.into(),
+            self.from_start.column.into(),
+            self.until_end.column.into(),
+            self.is_reverse.column.into(),
+            self.is_padding.column.into(),
+        ]
+    }
 
-//     fn annotations(&self) -> Vec<String> {
-//         vec![
-//             String::from("byte_idx_1"),
-//             String::from("byte_idx_2"),
-//             String::from("byte_idx_3"),
-//             String::from("byte_1"),
-//             String::from("byte_2"),
-//             String::from("byte_3"),
-//             String::from("bitstring_value"),
-//             String::from("bitstring_len"),
-//             String::from("bit_index"),
-//             String::from("from_start"),
-//             String::from("until_end"),
-//             String::from("is_reverse"),
-//             String::from("is_padding"),
-//         ]
-//     }
-// }
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("byte_idx_1"),
+            String::from("byte_idx_2"),
+            String::from("byte_idx_3"),
+            String::from("byte_1"),
+            String::from("byte_2"),
+            String::from("byte_3"),
+            String::from("bitstring_value"),
+            String::from("bitstring_len"),
+            String::from("bit_index"),
+            String::from("from_start"),
+            String::from("until_end"),
+            String::from("is_reverse"),
+            String::from("is_padding"),
+        ]
+    }
+}

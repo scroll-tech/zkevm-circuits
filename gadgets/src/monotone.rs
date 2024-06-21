@@ -136,6 +136,7 @@ mod test {
     impl<F: Field, const RANGE: usize, const INCR: bool, const STRICT: bool> Circuit<F>
         for TestCircuit<F, RANGE, INCR, STRICT>
     {
+        type Params = ();
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
         #[cfg(feature = "circuit-params")]

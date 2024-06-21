@@ -52,7 +52,8 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "gadgets",
- "halo2curves 0.1.0",
+ "halo2_proofs",
+ "halo2curves",
  "hex",
  "itertools 0.11.0",
  "log",
@@ -655,7 +656,7 @@ dependencies = [
  "ethers-signers",
  "external-tracer",
  "gadgets",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "hex",
  "itertools 0.11.0",
  "log",
@@ -845,7 +846,7 @@ dependencies = [
  "eth-types",
  "ethers",
  "ethers-signers",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "itertools 0.11.0",
  "log",
  "mock",
@@ -1549,7 +1550,7 @@ dependencies = [
  "base64 0.13.1",
  "ethers-core",
  "ethers-signers",
- "halo2curves 0.1.0",
+ "halo2curves",
  "hex",
  "itertools 0.11.0",
  "log",
@@ -2085,7 +2086,7 @@ name = "gadgets"
 version = "0.11.0"
 dependencies = [
  "eth-types",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "rand",
  "rand_xorshift",
  "sha3 0.10.8",
@@ -2219,18 +2220,31 @@ dependencies = [
 
 [[package]]
 name = "halo2-base"
+version = "0.2.2"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+dependencies = [
+ "ff",
+ "halo2_proofs",
+ "itertools 0.10.5",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand_chacha",
+ "rustc-hash",
+]
+
+[[package]]
+name = "halo2-base"
 version = "0.4.1"
 dependencies = [
- "ark-std 0.3.0",
  "getset",
- "halo2_proofs 0.3.0",
+ "halo2_proofs",
  "itertools 0.11.0",
  "log",
  "num-bigint",
  "num-integer",
  "num-traits",
  "poseidon-primitives",
- "rand",
  "rand_chacha",
  "rayon",
  "rustc-hash",
@@ -2240,9 +2254,28 @@ dependencies = [
 
 [[package]]
 name = "halo2-ecc"
+version = "0.2.2"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+dependencies = [
+ "ff",
+ "group",
+ "halo2-base 0.2.2",
+ "itertools 0.10.5",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "rand_chacha",
+ "rand_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "halo2-ecc"
 version = "0.4.1"
 dependencies = [
- "halo2-base",
+ "halo2-base 0.4.1",
  "itertools 0.11.0",
  "num-bigint",
  "num-integer",
@@ -2261,7 +2294,7 @@ name = "halo2-gate-generator"
 version = "0.1.0"
 source = "git+https://github.com/scroll-tech/halo2gategen?branch=scroll#2fa5c39aa67d0f97d660f37954daa9e897d0a4c1"
 dependencies = [
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "lazy_static",
  "num-bigint",
  "rand",
@@ -2278,7 +2311,7 @@ version = "0.1.0"
 source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.7#daa3a06e2e96d00337188280ac43fa879e722804"
 dependencies = [
  "ethers-core",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "hex",
  "itertools 0.10.5",
  "lazy_static",
@@ -2304,28 +2337,12 @@ dependencies = [
  "bitvec",
  "ff",
  "group",
- "halo2_proofs 1.1.0",
- "halo2curves 0.1.0",
+ "halo2_proofs",
+ "halo2curves",
  "lazy_static",
  "rand",
  "subtle",
  "uint",
-]
-
-[[package]]
-name = "halo2_proofs"
-version = "0.3.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v0.3.0#73408a140737d8336490452193b21f5a7a94e7de"
-dependencies = [
- "blake2b_simd",
- "ff",
- "group",
- "halo2curves 0.6.1",
- "rand_chacha",
- "rand_core",
- "rayon",
- "sha3 0.9.1",
- "tracing",
 ]
 
 [[package]]
@@ -2339,7 +2356,7 @@ dependencies = [
  "crossbeam",
  "ff",
  "group",
- "halo2curves 0.1.0",
+ "halo2curves",
  "log",
  "maybe-rayon",
  "num-bigint",
@@ -2356,7 +2373,6 @@ dependencies = [
 [[package]]
 name = "halo2curves"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2curves?branch=v0.1.0#112f5b9bf27f6b1708ba7d1c2fc14cb3c6e55604"
 dependencies = [
  "blake2b_simd",
  "bls12_381",
@@ -2366,35 +2382,11 @@ dependencies = [
  "maybe-rayon",
  "num-bigint",
  "num-traits",
- "pasta_curves",
- "paste",
- "rand",
- "rand_core",
- "serde",
- "serde_arrays",
- "static_assertions",
- "subtle",
-]
-
-[[package]]
-name = "halo2curves"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db81d01d0bbfec9f624d7590fc6929ee2537a64ec1e080d8f8c9e2d2da291405"
-dependencies = [
- "blake2b_simd",
- "ff",
- "group",
- "hex",
- "lazy_static",
- "num-bigint",
- "num-traits",
  "pairing",
  "pasta_curves",
  "paste",
  "rand",
  "rand_core",
- "rayon",
  "serde",
  "serde_arrays",
  "static_assertions",
@@ -2472,9 +2464,6 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "hex-literal"
@@ -2524,9 +2513,9 @@ dependencies = [
 
 [[package]]
 name = "httparse"
-version = "1.9.3"
+version = "1.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0e7a4dd27b9476dc40cb050d3632d3bba3a70ddbff012285f7f8559a1e7e545"
+checksum = "0fcc0b4a115bf80b728eb8ea024ad5bd707b615bfed49e0665b6e0f86fd082d9"
 
 [[package]]
 name = "httpdate"
@@ -2828,7 +2817,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "hex",
  "log",
  "mock",
@@ -3128,9 +3117,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87dfd01fe195c66b572b37921ad8803d010623c0aca821bea2302239d155cdae"
+checksum = "b8a240ddb74feaf34a79a7add65a741f3167852fba007066dcac1ca548d89c08"
 dependencies = [
  "adler",
 ]
@@ -3152,7 +3141,7 @@ version = "0.1.0"
 source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=main#dcb5018d84e8a9adec59cd33f5348a3971cec194"
 dependencies = [
  "halo2-gate-generator",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "num-bigint",
  "rand",
  "serde",
@@ -3182,7 +3171,7 @@ version = "0.11.0"
 dependencies = [
  "env_logger",
  "eth-types",
- "halo2curves 0.1.0",
+ "halo2curves",
  "hex",
  "log",
  "num-bigint",
@@ -3476,10 +3465,8 @@ dependencies = [
  "blake2b_simd",
  "ff",
  "group",
- "hex",
  "lazy_static",
  "rand",
- "serde",
  "static_assertions",
  "subtle",
 ]
@@ -3699,7 +3686,7 @@ name = "poseidon"
 version = "0.2.0"
 source = "git+https://github.com/scroll-tech/poseidon.git?branch=main#5787dd3d2ce7a9e9601a035c396ac0c03449b54d"
 dependencies = [
- "halo2curves 0.1.0",
+ "halo2curves",
  "subtle",
 ]
 
@@ -3709,7 +3696,7 @@ version = "0.1.0"
 source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#7b96835c6201afdbfaf3d13d641efbaaf5db2d20"
 dependencies = [
  "bitvec",
- "halo2curves 0.1.0",
+ "halo2curves",
  "lazy_static",
 ]
 
@@ -3719,7 +3706,7 @@ version = "0.1.0"
 source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#7b96835c6201afdbfaf3d13d641efbaaf5db2d20"
 dependencies = [
  "ff",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "log",
  "poseidon-base",
  "rand",
@@ -3894,7 +3881,7 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "git-version",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "hex",
  "itertools 0.11.0",
  "log",
@@ -4200,7 +4187,7 @@ dependencies = [
  "derive_more",
  "dyn-clone",
  "enumn",
- "halo2curves 0.1.0",
+ "halo2curves",
  "hashbrown 0.14.5",
  "hex",
  "once_cell",
@@ -4837,8 +4824,8 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "ethereum-types",
- "halo2-base",
- "halo2-ecc",
+ "halo2-base 0.2.2",
+ "halo2-ecc 0.2.2",
  "hex",
  "itertools 0.12.1",
  "num-bigint",
@@ -4857,8 +4844,8 @@ dependencies = [
 name = "snark-verifier"
 version = "0.1.8"
 dependencies = [
- "halo2-base",
- "halo2-ecc",
+ "halo2-base 0.4.1",
+ "halo2-ecc 0.4.1",
  "hex",
  "itertools 0.11.0",
  "lazy_static",
@@ -4880,7 +4867,7 @@ dependencies = [
  "bincode",
  "ethereum-types",
  "ff",
- "halo2-base",
+ "halo2-base 0.2.2",
  "hex",
  "itertools 0.12.1",
  "log",
@@ -4901,7 +4888,7 @@ dependencies = [
  "bincode",
  "ethereum-types",
  "getset",
- "halo2-base",
+ "halo2-base 0.4.1",
  "hex",
  "itertools 0.11.0",
  "lazy_static",
@@ -5237,7 +5224,7 @@ dependencies = [
  "ethers-signers",
  "external-tracer",
  "glob",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "handlebars",
  "hex",
  "itertools 0.11.0",
@@ -6224,11 +6211,11 @@ dependencies = [
  "ethers-signers",
  "ff",
  "gadgets",
- "halo2-base",
- "halo2-ecc",
+ "halo2-base 0.2.2",
+ "halo2-ecc 0.2.2",
  "halo2-mpt-circuits",
  "halo2_gadgets",
- "halo2_proofs 1.1.0",
+ "halo2_proofs",
  "hex",
  "itertools 0.11.0",
  "log",
@@ -6301,7 +6288,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d2a5585e04f9eea4b2a3d1eca508c4dee9592a89ef6f450c11719da0726f4db"
 dependencies = [
  "libc",
- "zstd-sys 2.0.10+zstd.1.5.6",
+ "zstd-sys 2.0.11+zstd.1.5.6",
 ]
 
 [[package]]
@@ -6323,9 +6310,9 @@ dependencies = [
 
 [[package]]
 name = "zstd-sys"
-version = "2.0.10+zstd.1.5.6"
+version = "2.0.11+zstd.1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c253a4914af5bafc8fa8c86ee400827e83cf6ec01195ec1f1ed8441bf00d65aa"
+checksum = "75652c55c0b6f3e6f12eb786fe1bc960396bf05a1eb3bf1f3691c3610ac2e6d4"
 dependencies = [
  "cc",
  "pkg-config",

@@ -1,21 +1,13 @@
 use std::iter::repeat;
 
 use aggregator_snark_verifier::{
-    halo2_base::halo2_proofs::{
-        circuit::{AssignedCell, Layouter, Region, Value},
-        halo2curves::{
-            bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
-            pairing::Engine,
-        },
-        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-    },
     loader::native::NativeLoader,
     pcs::{
         kzg::{Bdfg21, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
     },
     util::arithmetic::fe_to_limbs,
-    Error,
+    Error as SnarkVerifierError,
 };
 use aggregator_snark_verifier_sdk::{
     halo2::{PoseidonTranscript, POSEIDON_SPEC},
@@ -23,6 +15,15 @@ use aggregator_snark_verifier_sdk::{
 };
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter, Region, Value},
+    halo2curves::{
+        bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
+        pairing::Engine,
+    },
+    plonk::Error,
+    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+};
 use itertools::Itertools;
 use rand::Rng;
 use zkevm_circuits::{
@@ -48,7 +49,7 @@ pub(crate) fn extract_accumulators_and_proof(
     rng: impl Rng + Send,
     g2: &G2Affine,
     s_g2: &G2Affine,
-) -> Result<(KzgAccumulator<G1Affine, NativeLoader>, Vec<u8>), Error> {
+) -> Result<(KzgAccumulator<G1Affine, NativeLoader>, Vec<u8>), SnarkVerifierError> {
     let svk = params.get_g()[0].into();
 
     let mut transcript_read =
@@ -77,7 +78,7 @@ pub(crate) fn extract_accumulators_and_proof(
             log::trace!("acc extraction {}-th acc check: left {:?}", i, left);
             log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
             if left != right {
-                return Err(Error::AssertionFailure(format!(
+                return Err(SnarkVerifierError::AssertionFailure(format!(
                     "accumulator check failed {left:?} {right:?}, index {i}",
                 )));
             }
@@ -109,7 +110,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
     params: &ParamsKZG<Bn256>,
     snarks: &[Snark],
     rng: impl Rng + Send,
-) -> Result<(Vec<u8>, Vec<Fr>), Error> {
+) -> Result<(Vec<u8>, Vec<Fr>), SnarkVerifierError> {
     // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
     let (accumulator, as_proof) =
         extract_accumulators_and_proof(params, snarks, rng, &params.g2(), &params.s_g2())?;
@@ -130,7 +131,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
         log::trace!("circuit acc check: right {:?}", right);
 
         if left != right {
-            return Err(Error::AssertionFailure(format!(
+            return Err(SnarkVerifierError::AssertionFailure(format!(
                 "accumulator check failed {left:?} {right:?}",
             )));
         }
@@ -355,7 +356,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-) -> Result<AssignedBatchHash, Error> {
+) -> Result<AssignedBatchHash, SnarkVerifierError> {
     // assign the hash table
     assign_keccak_table(keccak_config, layouter, challenges, preimages)?;
 
@@ -410,7 +411,7 @@ pub(crate) fn assign_keccak_table(
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     preimages: &[Vec<u8>],
-) -> Result<(), Error> {
+) -> Result<(), SnarkVerifierError> {
     let keccak_capacity = KeccakCircuit::<Fr>::capacity_for_row(1 << LOG_DEGREE);
 
     let timer = start_timer!(|| ("multi keccak").to_string());
@@ -428,8 +429,9 @@ pub(crate) fn assign_keccak_table(
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
-    let witness = multi_keccak(preimages, challenges, keccak_capacity)
-        .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
+    let witness = multi_keccak(preimages, challenges, keccak_capacity).map_err(|e| {
+        SnarkVerifierError::AssertionFailure(format!("multi keccak assignment failed: {e:?}"))
+    })?;
     end_timer!(timer);
 
     layouter
@@ -445,7 +447,7 @@ pub(crate) fn assign_keccak_table(
                 Ok(())
             },
         )
-        .map_err(|e| Error::AssertionFailure(format!("assign keccak rows: {e}")))?;
+        .map_err(|e| SnarkVerifierError::AssertionFailure(format!("assign keccak rows: {e}")))?;
     Ok(())
 }
 
@@ -458,7 +460,7 @@ pub(crate) fn assign_keccak_table(
 fn copy_constraints<const N_SNARKS: usize>(
     layouter: &mut impl Layouter<Fr>,
     hash_input_cells: &[Vec<AssignedCell<Fr, Fr>>],
-) -> Result<(), Error> {
+) -> Result<(), SnarkVerifierError> {
     let mut is_first_time = true;
 
     layouter
@@ -587,7 +589,7 @@ fn copy_constraints<const N_SNARKS: usize>(
                 Ok(())
             },
         )
-        .map_err(|e| Error::AssertionFailure(format!("assign keccak rows: {e}")))?;
+        .map_err(|e| SnarkVerifierError::AssertionFailure(format!("assign keccak rows: {e}")))?;
     Ok(())
 }
 
@@ -612,7 +614,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-) -> Result<ExtractedHashCells<N_SNARKS>, Error> {
+) -> Result<ExtractedHashCells<N_SNARKS>, SnarkVerifierError> {
     layouter
         .assign_region(
             || "rlc conditional constraints",
@@ -857,7 +859,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 Ok(assigned_hash_cells)
             },
         )
-        .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))
+        .map_err(|e| SnarkVerifierError::AssertionFailure(format!("aggregation: {e}")))
 }
 
 /// Input a list of flags whether the snark is valid

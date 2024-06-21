@@ -39,6 +39,8 @@ impl<F: Field> SigCircuitTesterConfig<F> {
 impl<F: Field> Circuit<F> for SigCircuit<F> {
     type Config = SigCircuitTesterConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

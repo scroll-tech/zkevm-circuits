@@ -23,8 +23,7 @@ macro_rules! layer_0 {
         );
         log::trace!("finished layer 0 pk generation for circuit");
 
-        let snark =
-            gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>).unwrap();
+        let snark = gen_snark_shplonk(&param, &pk, $circuit.clone(), None::<String>);
         log::trace!("finished layer 0 snark generation for circuit");
 
         // assert!(verify_snark_shplonk::<$circuit_type>(
@@ -73,10 +72,8 @@ macro_rules! compression_layer_snark {
             &param,
             &pk,
             compression_circuit.clone(),
-            &mut rng,
             None::<String>, // Some(&$path.join(Path::new("layer_1.snark"))),
-        )
-        .unwrap();
+        );
         log::trace!(
             "finished layer {} snark generation for circuit",
             $layer_index
@@ -114,13 +111,8 @@ macro_rules! compression_layer_evm {
 
         let pk = gen_pk(&$param, &compression_circuit, None);
         // build the snark for next layer
-        let proof = gen_evm_proof_shplonk(
-            &param,
-            &pk,
-            compression_circuit.clone(),
-            instances.clone(),
-            &mut rng,
-        );
+        let proof =
+            gen_evm_proof_shplonk(&param, &pk, compression_circuit.clone(), instances.clone());
 
         log::trace!("finished layer 4 aggregation generation");
         log::trace!("proof size: {}", proof.len());
@@ -172,7 +164,6 @@ macro_rules! aggregation_layer_snark {
             &param,
             &pk,
             aggregation_circuit.clone(),
-            &mut rng,
             None::<String>, // Some(&$path.join(Path::new("layer_3.snark"))),
         );
         log::trace!(

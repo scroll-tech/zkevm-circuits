@@ -277,31 +277,31 @@ impl LiteralsHeaderTable {
     }
 }
 
-// impl LookupTable<Fr> for LiteralsHeaderTable {
-//     fn columns(&self) -> Vec<Column<Any>> {
-//         vec![
-//             self.block_idx.into(),
-//             self.byte0.into(),
-//             self.byte1.into(),
-//             self.byte2.into(),
-//             self.size_format_bit0.into(),
-//             self.size_format_bit1.into(),
-//             self.regen_size.into(),
-//             self.is_padding.column.into(),
-//         ]
-//     }
+impl LookupTable<Fr> for LiteralsHeaderTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.block_idx.into(),
+            self.byte0.into(),
+            self.byte1.into(),
+            self.byte2.into(),
+            self.size_format_bit0.into(),
+            self.size_format_bit1.into(),
+            self.regen_size.into(),
+            self.is_padding.column.into(),
+        ]
+    }
 
-//     fn annotations(&self) -> Vec<String> {
-//         vec![
-//             String::from("block_idx"),
-//             String::from("byte_offset"),
-//             String::from("byte0"),
-//             String::from("byte1"),
-//             String::from("byte2"),
-//             String::from("size_format_bit0"),
-//             String::from("size_format_bit1"),
-//             String::from("regen_size"),
-//             String::from("is_padding"),
-//         ]
-//     }
-// }
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("block_idx"),
+            String::from("byte_offset"),
+            String::from("byte0"),
+            String::from("byte1"),
+            String::from("byte2"),
+            String::from("size_format_bit0"),
+            String::from("size_format_bit1"),
+            String::from("regen_size"),
+            String::from("is_padding"),
+        ]
+    }
+}
