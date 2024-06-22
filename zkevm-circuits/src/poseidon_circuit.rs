@@ -173,8 +173,9 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         log::debug!("poseidon circuit row num: {mpt_row_num}(mpt) + {byte_row_num}(bytecode) = {total_row_num}");
         let mpt_circuit_rows = 3 * 32 * block.mpt_updates.len();
         let poseidon_mpt_ratio = mpt_row_num as f64 / mpt_circuit_rows as f64;
+        let avg_trie_depth = after_dedup_size / block.mpt_updates.len();
         log::debug!(
-            "poseidon_mpt_ratio {poseidon_mpt_ratio:.3}, 12x naive poseidon rows {}",
+            "avg_trie_depth {avg_trie_depth}, poseidon_mpt_ratio {poseidon_mpt_ratio:.3}, 12x naive poseidon rows {}",
             12 * mpt_circuit_rows
         );
         (
