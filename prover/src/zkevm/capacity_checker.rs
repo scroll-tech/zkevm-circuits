@@ -5,11 +5,13 @@ use eth_types::{
     state_db::{CodeDB, StateDB},
     ToWord, H256,
 };
+use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use mpt_zktrie::state::ZktrieState;
 use serde_derive::{Deserialize, Serialize};
-use zkevm_circuits::super_circuit::params::{
-    get_sub_circuit_limit_and_confidence, get_super_circuit_params,
+use zkevm_circuits::{
+    poseidon_circuit::{Hashable, HASH_BLOCK_STEP_SIZE},
+    super_circuit::params::{get_sub_circuit_limit_and_confidence, get_super_circuit_params},
 };
 
 pub use super::SubCircuitRowUsage;
@@ -193,7 +195,7 @@ impl CircuitCapacityChecker {
                 assert_eq!(rows[2].name, "bytecode");
                 rows[2].row_number -= bytes_len + 1;
                 assert_eq!(rows[11].name, "poseidon");
-                rows[11].row_number -= bytes_len / (31 * 2) * 9;
+                rows[11].row_number -= bytes_len / HASH_BLOCK_STEP_SIZE * Fr::hash_block_size();
             }
         }
         let tx_row_usage = RowUsage::from_row_usage_details(rows);

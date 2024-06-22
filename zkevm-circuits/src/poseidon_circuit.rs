@@ -9,7 +9,8 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use hash_circuit::hash::{Hashable, PoseidonHashChip, PoseidonHashConfig, PoseidonHashTable};
+pub use hash_circuit::hash::Hashable;
+use hash_circuit::hash::{PoseidonHashChip, PoseidonHashConfig, PoseidonHashTable};
 
 /// re-wrapping for mpt circuit
 #[derive(Default, Clone, Debug)]
@@ -25,7 +26,8 @@ pub struct PoseidonCircuitConfigArgs {
 #[derive(Debug, Clone)]
 pub struct PoseidonCircuitConfig<F: Field>(pub(crate) PoseidonHashConfig<F>);
 
-const HASH_BLOCK_STEP_SIZE: usize = HASHBLOCK_BYTES_IN_FIELD * PoseidonTable::INPUT_WIDTH;
+/// How many bytes a poseidon round can consume.
+pub const HASH_BLOCK_STEP_SIZE: usize = HASHBLOCK_BYTES_IN_FIELD * PoseidonTable::INPUT_WIDTH;
 
 impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
     type ConfigArgs = PoseidonCircuitConfigArgs;
