@@ -172,7 +172,10 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         let total_row_num = mpt_row_num + byte_row_num;
         log::debug!("poseidon circuit row num: {mpt_row_num}(mpt) + {byte_row_num}(bytecode) = {total_row_num}");
         let avg_trie_depth = after_dedup_size / block.mpt_updates.len();
-        log::debug!("avg_trie_depth {avg_trie_depth}");
+        log::debug!(
+            "avg_trie_depth {avg_trie_depth}, hash num {after_dedup_size}, mpt update num {}",
+            block.mpt_updates.len()
+        );
         (
             total_row_num,
             block.circuits_params.max_poseidon_rows.max(total_row_num),
