@@ -12,6 +12,7 @@ import (
 	"github.com/scroll-tech/go-ethereum/core/state"
 	"github.com/scroll-tech/go-ethereum/core/types"
 	"github.com/scroll-tech/go-ethereum/core/vm"
+	"github.com/scroll-tech/go-ethereum/eth/tracers/logger"
 	"github.com/scroll-tech/go-ethereum/params"
 	"github.com/scroll-tech/go-ethereum/rollup/tracing"
 	"github.com/scroll-tech/go-ethereum/trie"
@@ -59,7 +60,7 @@ type TraceConfig struct {
 	Block         Block                      `json:"block_constants"`
 	Accounts      map[common.Address]Account `json:"accounts"`
 	Transactions  []Transaction              `json:"transactions"`
-	LoggerConfig  *vm.LogConfig              `json:"logger_config"`
+	LoggerConfig  *logger.Config             `json:"logger_config"`
 	ChainConfig   *params.ChainConfig        `json:"chain_config"`
 }
 
@@ -154,7 +155,6 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		DAOForkBlock:        big.NewInt(0),
 		DAOForkSupport:      true,
 		EIP150Block:         big.NewInt(0),
-		EIP150Hash:          common.Hash{},
 		EIP155Block:         big.NewInt(0),
 		EIP158Block:         big.NewInt(0),
 		ByzantiumBlock:      big.NewInt(0),
@@ -164,7 +164,6 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
-		ShanghaiBlock:       big.NewInt(0),
 
 		TerminalTotalDifficulty: big.NewInt(0),
 
@@ -198,6 +197,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 
 	// For opcode PREVRANDAO
 	randao := common.BigToHash(toBigInt(config.Block.Difficulty)) // TODO: fix
+	blockNumber := toBigInt(config.Block.Number)
 
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
@@ -211,8 +211,8 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 			return common.Hash{}
 		},
 		Coinbase:    config.Block.Coinbase,
-		BlockNumber: toBigInt(config.Block.Number),
-		Time:        toBigInt(config.Block.Timestamp),
+		BlockNumber: blockNumber,
+		Time:        toBigInt(config.Block.Timestamp).Uint64(),
 		Difficulty:  toBigInt(config.Block.Difficulty),
 		//		Random:      &randao,
 		BaseFee:  toBigInt(config.Block.BaseFee),
@@ -236,7 +236,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 	}
 	block := types.NewBlockWithHeader(header).WithBody(txs, nil)
 
-	trieCfg := &trie.Config{Zktrie: true}
+	trieCfg := &trie.Config{IsUsingZktrie: true}
 	// Setup state db with accounts from argument
 	stateDB, _ := state.New(
 		common.Hash{},
@@ -253,7 +253,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		}
 	}
 
-	rootBefore, err := stateDB.Commit(true)
+	rootBefore, err := stateDB.Commit(blockNumber.Uint64(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +275,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		return nil, err
 	}
 
-	rootAfter, err := stateDB.Commit(true)
+	rootAfter, err := stateDB.Commit(blockNumber.Uint64(), true)
 	if err != nil {
 		return nil, err
 	}
