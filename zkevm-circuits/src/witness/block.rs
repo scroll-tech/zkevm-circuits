@@ -18,7 +18,7 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{sign_types::SignData, Address, ToBigEndian, ToLittleEndian, Word, H256, U256};
+use eth_types::{sign_types::SignData, Address, ToLittleEndian, Word, H256, U256};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
@@ -56,7 +56,7 @@ pub struct Block {
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
-    pub prev_state_root: Word, // TODO: Make this H256
+    pub prev_state_root: H256,
     /// Withdraw root
     pub withdraw_root: Word,
     /// Withdraw roof of the previous block
@@ -95,13 +95,13 @@ impl Block {
     }
     /// The state root after this chunk
     pub fn post_state_root(&self) -> H256 {
-        let post_state_root_in_trie = H256(self.mpt_updates.new_root().to_be_bytes());
+        let post_state_root_in_trie = self.mpt_updates.new_root();
         let post_state_root_in_header = self
             .context
             .ctxs
             .last_key_value()
             .map(|(_, blk)| blk.state_root)
-            .unwrap_or(H256(self.prev_state_root.to_be_bytes()));
+            .unwrap_or(self.prev_state_root);
         if post_state_root_in_trie != post_state_root_in_header {
             log::error!(
                 "replayed root {:?} != block head root {:?}",
@@ -525,7 +525,7 @@ pub fn block_convert(
         block.circuits_params.max_rws
     };
 
-    let mpt_updates = MptUpdates::from_unsorted_rws_with_mock_state_roots(
+    let mpt_updates = MptUpdates::from_unsorted_rws_with_state_roots(
         &rws.table_assignments_unsorted(),
         block.prev_state_root,
         block.end_state_root(),

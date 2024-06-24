@@ -3,7 +3,7 @@ use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
 use eth_types::{
     l2_types::BlockTrace,
     state_db::{CodeDB, StateDB},
-    ToWord, H256,
+    H256,
 };
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
@@ -155,8 +155,7 @@ impl CircuitCapacityChecker {
                     .as_ref()
                     .map(|state| state.root())
                     .map(|root| H256(*root))
-                    .unwrap_or(trace.header.state_root)
-                    .to_word();
+                    .unwrap_or(trace.header.state_root);
                 // notice the trace has included all code required for builidng witness block,
                 // so we do not need to pick them from previous one, but we still keep the
                 // old codedb in previous run for some dedup work
