@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 eth-types = { path = "../eth-types" }
-external-tracer = { path="../external-tracer" }
 gadgets = { path = "../gadgets" }
 mpt-zktrie = {path = "../zktrie"}
 mock = { path = "../mock", optional = true }
@@ -30,16 +29,17 @@ strum_macros.workspace = true
 revm-precompile.workspace = true
 
 [dev-dependencies]
+mock = { path = "../mock" }
+external-tracer = { path="../external-tracer" }
+
 hex.workspace = true
 pretty_assertions.workspace = true
 tokio.workspace = true
 url.workspace = true
 ctor.workspace = true
 env_logger.workspace = true
-mock = { path = "../mock" }
 rand.workspace = true
 rayon.workspace = true
-
 [features]
 default = ["test"]
 test = ["mock", "rand"]
