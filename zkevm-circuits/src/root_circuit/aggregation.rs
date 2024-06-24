@@ -151,7 +151,7 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
     }
 }
 
-/// Aggregation circuit configuration.
+/// Aggregation configuration.
 #[derive(Clone)]
 pub struct AggregationConfig {
     /// MainGateConfig
@@ -373,7 +373,7 @@ where
     Ok(accumulator_limbs)
 }
 
-/// Batch circuit for testing purpose.
+/// Aggregation circuit for testing purpose.
 #[derive(Clone)]
 pub struct TestAggregationCircuit<'a, M: MultiMillerLoop> {
     svk: KzgSvk<M>,
@@ -386,7 +386,7 @@ where
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
 {
-    /// Create a batch circuit with aggregated accumulator computed.
+    /// Create an Aggregation circuit with aggregated accumulator computed.
     /// Returns `None` if any given snark is invalid.
     pub fn new(
         params: &ParamsKZG<M>,
