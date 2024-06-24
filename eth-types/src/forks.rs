@@ -1,5 +1,7 @@
 //! Hardfork related codes for Scroll networks
 
+use crate::constants::read_env_var;
+
 /// Hardfork ID for scroll networks
 #[derive(Debug, PartialEq, Eq)]
 pub enum HardforkId {
@@ -20,6 +22,10 @@ pub fn hardfork_heights() -> Vec<(HardforkId, u64, u64)> {
     vec![
         (HardforkId::Curie, SCROLL_DEVNET_CHAIN_ID, 5), // devnet
         (HardforkId::Curie, SCROLL_TESTNET_CHAIN_ID, 4740239), // testnet
-        (HardforkId::Curie, SCROLL_MAINNET_CHAIN_ID, 6924036), // mainnet
+        (
+            HardforkId::Curie,
+            SCROLL_MAINNET_CHAIN_ID,
+            read_env_var("SCROLL_MAINNET_CURIE_BLOCK", 7096836),
+        ), // mainnet
     ]
 }
