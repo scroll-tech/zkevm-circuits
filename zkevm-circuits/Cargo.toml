@@ -11,7 +11,7 @@ halo2_proofs.workspace = true
 num.workspace = true
 sha3.workspace = true
 array-init = "2.0.0"
-bus-mapping = { path = "../bus-mapping" }
+bus-mapping = { path = "../bus-mapping", default-features=false }
 either = "1.9"
 eth-types = { path = "../eth-types" }
 ff.workspace = true
