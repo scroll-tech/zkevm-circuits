@@ -1142,7 +1142,6 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     }
 }
 
-
 #[cfg(any(feature = "test", test))]
 impl From<mock::MockTransaction> for Transaction {
     fn from(mock_tx: mock::MockTransaction) -> Self {
