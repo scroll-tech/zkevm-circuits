@@ -32,7 +32,7 @@ ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "
 ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"
 ff = "0.13"
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1", features = ["circuit-params"] }
 halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
 poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
@@ -56,13 +56,10 @@ serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_stacker = "0.1"
 sha3 = "0.10"
-snark-verifier = { path = "../scroll-snark-verifier/snark-verifier" }
-snark-verifier-sdk = { path = "../scroll-snark-verifier/snark-verifier-sdk", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
-# aggregator-snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier", branch = "community-edition", package = "snark-verifier", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"] }
-# aggregator-snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier", branch = "community-edition", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"], package = "snark-verifier-sdk" }
-
-aggregator-snark-verifier = { path = "../snark-verifier/snark-verifier", package = "snark-verifier", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"] }
-aggregator-snark-verifier-sdk = { path = "../snark-verifier/snark-verifier-sdk", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"], package = "snark-verifier-sdk" }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "feat/circuit_params" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "feat/circuit_params", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+aggregator-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "axiom-community-edition", package = "snark-verifier", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"] }
+aggregator-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "axiom-community-edition", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"], package = "snark-verifier-sdk" }
 
 strum = "0.25"
 strum_macros = "0.25"
@@ -80,9 +77,7 @@ ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
-halo2curves = { path = "../halo2curves" }
-# halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
-# halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
+halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "use_pairing" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
@@ -92,24 +87,6 @@ poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "main
 
 [patch."https://github.com/privacy-scaling-explorations/bls12_381"]
 bls12_381 = { git = "https://github.com/scroll-tech/bls12_381", branch = "feat/impl_scalar_field" }
-
-# [patch."https://github.com/axiom-crypto/halo2-lib.git"]
-# halo2-base = { path = "../halo2-lib/halo2-base" }
-# halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
-# halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
-# halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop" }
-
-# [patch."https://github.com/scroll-tech/halo2-lib.git"]
-# halo2-base = { path = "../halo2-lib/halo2-base" }
-# halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
-# halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition" }
-# halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "community-edition" }
-
-# [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-# halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
-
-# [replace]
-# "halo2_proofs:0.3.0" = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]

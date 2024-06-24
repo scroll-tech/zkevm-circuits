@@ -1,8 +1,12 @@
 use aggregator_snark_verifier::{
     halo2_base::{
-        gates::{range::RangeConfig, GateInstructions},
+        gates::{
+            circuit::BaseCircuitBuilder,
+            range::{RangeChip, RangeConfig},
+            GateInstructions,
+        },
         halo2_proofs::circuit::Value,
-        utils::{fe_to_biguint, modulus},
+        utils::{decompose_biguint, fe_to_biguint, modulus},
         AssignedValue, QuantumCell,
     },
     halo2_ecc::{
@@ -17,7 +21,8 @@ use aggregator_snark_verifier::{
 use eth_types::{ToLittleEndian, U256};
 use halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField};
 use itertools::Itertools;
-use num_bigint::{BigInt, Sign};
+use num_bigint::{BigInt, BigUint, Sign};
+use snark_verifier::loader::halo2::IntegerInstructions;
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
@@ -78,23 +83,17 @@ impl BarycentricEvaluationConfig {
     fn load_u256(&self, ctx: &mut Context<Fr>, a: U256) -> CRTInteger<Fr> {
         // borrowed from halo2-ecc/src/fields/fp.rs
         // similar to FpChip.load_private without range check.
-
-        let a_val = Value::known(BigInt::from_bytes_le(Sign::Plus, &a.to_le_bytes()));
-        let a_vec = decompose_bigint_option::<Fr>(a_val.as_ref(), LIMBS, BITS);
+        let a = BigUint::from_bytes_le(&a.to_le_bytes());
+        let a_vec = decompose_biguint::<Fr>(&a, LIMBS, BITS);
         let limbs = ctx.assign_witnesses(a_vec);
 
-        let a_native = OverflowInteger::<Fr>::evaluate(
-            &fp_chip,
-            ctx,
-            &limbs,
-            self.scalar.limb_bases.iter().cloned(),
-        );
+        // TODO: probably this will panic because it's not fully built.
+        let builder = BaseCircuitBuilder::default();
+        let fp_chip = FpChip::<Fr, Scalar>::new(&builder.range_chip(), BITS, LIMBS);
+        let a_native =
+            OverflowInteger::<Fr>::evaluate_native(ctx, fp_chip.gate(), limbs, &fp_chip.limb_bases);
 
-        CRTInteger::construct(
-            OverflowInteger::construct(limbs, self.scalar.limb_bits),
-            a_native,
-            a_val,
-        )
+        CRTInteger::new(OverflowInteger::new(limbs, BITS), a_native, a.into())
     }
 
     pub fn assign(
@@ -105,10 +104,12 @@ impl BarycentricEvaluationConfig {
         evaluation: U256,
     ) -> AssignedBarycentricEvaluationConfig {
         // some constants for later use.
-        let fp_chip = FpChip::<Fr, Fp>::new(&self.scalar, BITS, LIMBS);
+        let builder = BaseCircuitBuilder::default();
+        let fp_chip = FpChip::<Fr, Scalar>::new(&builder.range_chip(), BITS, LIMBS);
 
-        let one = fp_chip.load_constant(ctx, fe_to_biguint(&Fr::one()));
-        let blob_width = fp_chip.load_constant(ctx, fe_to_biguint(&Fr::from(BLOB_WIDTH as u64)));
+        let one = fp_chip.load_constant(ctx, Scalar::one());
+        let blob_width =
+            fp_chip.load_constant(ctx, Scalar::from(u64::try_from(BLOB_WIDTH).unwrap()));
 
         let powers_of_256 =
             std::iter::successors(Some(Fr::one()), |coeff| Some(Fr::from(256) * coeff))
@@ -118,7 +119,7 @@ impl BarycentricEvaluationConfig {
 
         let roots_of_unity = ROOTS_OF_UNITY
             .iter()
-            .map(|x| fp_chip.load_constant(ctx, fe_to_biguint(x)))
+            .map(|&x| fp_chip.load_constant(ctx, x))
             .collect::<Vec<_>>();
 
         ////////////////////////////////////////////////////////////////////////////////////////
@@ -129,16 +130,10 @@ impl BarycentricEvaluationConfig {
         let challenge_scalar = Scalar::from_raw(challenge.0);
 
         let challenge_digest_crt = self.load_u256(ctx, challenge_digest);
-        let challenge_le = fp_chip.gate().assign_witnesses(
-            ctx,
-            challenge
-                .to_le_bytes()
-                .iter()
-                .map(|&x| Value::known(Fr::from(x as u64))),
-        );
+        let challenge_le =
+            ctx.assign_witnesses(challenge.to_le_bytes().iter().map(|&x| Fr::from(x as u64)));
         let challenge_digest_mod = fp_chip.carry_mod(ctx, &challenge_digest_crt);
-        let challenge_crt =
-            fp_chip.load_private(ctx, Value::known(fe_to_biguint(&challenge_scalar).into()));
+        let challenge_crt = fp_chip.load_private(ctx, challenge_scalar);
         fp_chip.assert_equal(ctx, &challenge_digest_mod, &challenge_crt);
         let challenge_limb1 = fp_chip.gate().inner_product(
             ctx,
@@ -161,21 +156,9 @@ impl BarycentricEvaluationConfig {
                 .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[0..11].to_vec(),
         );
-        fp_chip.assert_equal(
-            ctx,
-            QuantumCell::Existing(challenge_limb1),
-            QuantumCell::Existing(challenge_crt.truncation.limbs[0]),
-        );
-        fp_chip.assert_equal(
-            ctx,
-            QuantumCell::Existing(challenge_limb2),
-            QuantumCell::Existing(challenge_crt.truncation.limbs[1]),
-        );
-        fp_chip.assert_equal(
-            ctx,
-            QuantumCell::Existing(challenge_limb3),
-            QuantumCell::Existing(challenge_crt.truncation.limbs[2]),
-        );
+        fp_chip.assert_equal(ctx, challenge_limb1, challenge_crt.truncation.limbs[0]);
+        fp_chip.assert_equal(ctx, challenge_limb2, challenge_crt.truncation.limbs[1]);
+        fp_chip.assert_equal(ctx, challenge_limb3, challenge_crt.truncation.limbs[2]);
 
         ////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// PRECHECKS y /////////////////////////////////////////
@@ -184,26 +167,26 @@ impl BarycentricEvaluationConfig {
             evaluation
                 .to_le_bytes()
                 .iter()
-                .map(|&x| Value::known(Fr::from(x as u64))),
+                .map(|&x| Fr::from(u64::from(x))),
         );
         let evaluation_scalar = Scalar::from_raw(evaluation.0);
         let evaluation_crt =
             fp_chip.load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
-        let evaluation_limb1 = fp_chip.inner_product(
+        let evaluation_limb1 = fp_chip.gate().inner_product(
             ctx,
             evaluation_le[0..11]
                 .iter()
                 .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[0..11].to_vec(),
         );
-        let evaluation_limb2 = fp_chip.inner_product(
+        let evaluation_limb2 = fp_chip.gate().inner_product(
             ctx,
             evaluation_le[11..22]
                 .iter()
                 .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[0..11].to_vec(),
         );
-        let evaluation_limb3 = fp_chip.inner_product(
+        let evaluation_limb3 = fp_chip.gate().inner_product(
             ctx,
             evaluation_le[22..32]
                 .iter()
@@ -220,63 +203,56 @@ impl BarycentricEvaluationConfig {
             QuantumCell::Existing(evaluation_limb2),
             QuantumCell::Existing(evaluation_crt.truncation.limbs[1]),
         );
-        fp_chip.assert_equal(
+        fp_chip.gate().assert_equal(
             ctx,
             QuantumCell::Existing(evaluation_limb3),
             QuantumCell::Existing(evaluation_crt.truncation.limbs[2]),
         );
+        for (a, b) in evaluation_crt.limbs().into_iter().zip_eq([
+            evaluation_limb1,
+            evaluation_limb2,
+            evaluation_limb3,
+        ]) {
+            fp_chip.gate().assert_equal(ctx, blob_limb, expected_limb);
+        }
 
         ////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////// BARYCENTRIC EVALUATION //////////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////////////
         let mut blob_crts = Vec::with_capacity(BLOB_WIDTH);
-        let mut evaluation_computed = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::zero()));
+        let mut evaluation_computed = fp_chip.load_constant(ctx, Scalar::zero());
         blob.iter()
             .zip_eq(roots_of_unity.iter())
             .for_each(|(blob_i, root_i_crt)| {
                 // assign LE-bytes of blob scalar field element.
-                let blob_i_le = ctx.assign_witnesses(
-                    blob_i
-                        .to_le_bytes()
-                        .iter()
-                        .map(|&x| Value::known(Fr::from(x as u64))),
-                );
+                let blob_i_le = ctx
+                    .assign_witnesses(blob_i.to_le_bytes().iter().map(|&x| Fr::from(u64::from(x))));
                 let blob_i_scalar = Scalar::from_raw(blob_i.0);
-                let blob_i_crt = self
-                    .scalar
-                    .load_private(ctx, Value::known(fe_to_biguint(&blob_i_scalar).into()));
+                let blob_i_crt =
+                    fp_chip.load_private(ctx, Value::known(fe_to_biguint(&blob_i_scalar).into()));
 
                 // compute the limbs for blob scalar field element.
-                let limb1 = fp_chip.inner_product(
+                let limb1 = fp_chip.gate().inner_product(
                     ctx,
                     blob_i_le[0..11].iter().map(|&x| QuantumCell::Existing(x)),
                     powers_of_256[0..11].to_vec(),
                 );
-                let limb2 = fp_chip.inner_product(
+                let limb2 = fp_chip.gate().inner_product(
                     ctx,
                     blob_i_le[11..22].iter().map(|&x| QuantumCell::Existing(x)),
                     powers_of_256[0..11].to_vec(),
                 );
-                let limb3 = fp_chip.inner_product(
+                let limb3 = fp_chip.gate().inner_product(
                     ctx,
                     blob_i_le[22..32].iter().map(|&x| QuantumCell::Existing(x)),
                     powers_of_256[0..11].to_vec(),
                 );
-                fp_chip.assert_equal(
-                    ctx,
-                    QuantumCell::Existing(limb1),
-                    QuantumCell::Existing(blob_i_crt.truncation.limbs[0]),
-                );
-                fp_chip.assert_equal(
-                    ctx,
-                    QuantumCell::Existing(limb2),
-                    QuantumCell::Existing(blob_i_crt.truncation.limbs[1]),
-                );
-                fp_chip.assert_equal(
-                    ctx,
-                    QuantumCell::Existing(limb3),
-                    QuantumCell::Existing(blob_i_crt.truncation.limbs[2]),
-                );
+
+                for (blob_limb, expected_limb) in
+                    blob_i_crt.limbs().into_iter().zip_eq([limb1, limb2, limb3])
+                {
+                    fp_chip.gate().assert_equal(ctx, blob_limb, expected_limb);
+                }
 
                 // the most-significant byte of blob scalar field element is 0 as we expect this
                 // representation to be in its canonical form.
@@ -287,33 +263,29 @@ impl BarycentricEvaluationConfig {
                 );
 
                 // a = int(polynomial[i]) * int(roots_of_unity_brp[i]) % BLS_MODULUS
-                let a = self.scalar.mul(ctx, &blob_i_crt, root_i_crt);
+                let a = fp_chip.mul(ctx, &blob_i_crt, root_i_crt);
 
                 // b = (int(BLS_MODULUS) + int(z) - int(roots_of_unity_brp[i])) % BLS_MODULUS
-                let b = self.scalar.sub_no_carry(ctx, &challenge_crt, root_i_crt);
-                let b = self.scalar.carry_mod(ctx, &b);
+                let b = fp_chip.sub_no_carry(ctx, &challenge_crt, root_i_crt);
+                let b = fp_chip.carry_mod(ctx, b);
 
                 // y += int(div(a, b) % BLS_MODULUS)
-                let a_by_b = self.scalar.divide(ctx, &a, &b);
-                evaluation_computed = self.scalar.add_no_carry(ctx, &evaluation_computed, &a_by_b);
-                evaluation_computed = self.scalar.carry_mod(ctx, &evaluation_computed);
+                let a_by_b = fp_chip.divide(ctx, &a, &b);
+                let add_no_carry = fp_chip.add_no_carry(ctx, &evaluation_computed, &a_by_b);
+                evaluation_computed = fp_chip.carry_mod(ctx, add_no_carry);
                 blob_crts.push(blob_i_crt);
             });
 
-        let z_to_blob_width = (0..LOG_BLOB_WIDTH).fold(challenge_crt.clone(), |acc, _| {
-            self.scalar.mul(ctx, &acc, &acc)
-        });
-        let z_to_blob_width_minus_one = self.scalar.sub_no_carry(ctx, &z_to_blob_width, &one);
-        let z_to_blob_width_minus_one = self.scalar.carry_mod(ctx, &z_to_blob_width_minus_one);
-        let factor = self
-            .scalar
-            .divide(ctx, &z_to_blob_width_minus_one, &blob_width);
-        evaluation_computed = self.scalar.mul(ctx, &evaluation_computed, &factor);
-        evaluation_computed = self.scalar.carry_mod(ctx, &evaluation_computed);
+        let z_to_blob_width =
+            (0..LOG_BLOB_WIDTH).fold(challenge_crt.clone(), |acc, _| fp_chip.mul(ctx, &acc, &acc));
+        let z_to_blob_width_minus_one = fp_chip.sub_no_carry(ctx, &z_to_blob_width, &one);
+        let z_to_blob_width_minus_one = fp_chip.carry_mod(ctx, z_to_blob_width_minus_one);
+        let factor = fp_chip.divide(ctx, &z_to_blob_width_minus_one, &blob_width);
+        evaluation_computed = fp_chip.mul(ctx, &evaluation_computed, &factor);
+        evaluation_computed = fp_chip.carry_mod(ctx, evaluation_computed.into());
 
         // computed evaluation matches the expected evaluation.
-        self.scalar
-            .assert_equal(ctx, &evaluation_computed, &evaluation_crt);
+        fp_chip.assert_equal(ctx, &evaluation_computed, &evaluation_crt);
 
         ////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////////// EXPORT //////////////////////////////////////////
@@ -321,7 +293,7 @@ impl BarycentricEvaluationConfig {
         AssignedBarycentricEvaluationConfig {
             barycentric_assignments: blob_crts
                 .into_iter()
-                .chain(std::iter::once(challenge_digest_crt))
+                .chain(std::iter::once(ProperCrtUint::from(challenge_digest_crt)))
                 .collect(),
             z_le: challenge_le,
             y_le: evaluation_le,
@@ -338,6 +310,29 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
             .map(|(root, f)| f * root * (z - root).invert().unwrap())
             .sum::<Scalar>()
         * Scalar::from(blob_width).invert().unwrap()
+}
+
+fn assert_le_bytes_equal_crt(
+    gate: &GateChip<Fr>,
+    le_bytes: [AssignedValue<Fr>; 32],
+    crt: &CRTInteger<Fr>,
+    powers_of_256: [QuantumCell<Fr>; 11],
+) {
+    for (limb_le_bytes, limb) in [
+        le_bytes[0..11].iter(),
+        le_bytes[11..22].iter(),
+        le_bytes[22..32].iter(),
+    ]
+    .iter()
+    .zip_eq(crt.limbs())
+    {
+        let limb_from_le_bytes = gate.inner_product(
+            ctx,
+            limb_le_bytes.map(|&x| QuantumCell::Existing(x)),
+            &powers_of_256[..limb_le_bytes.len()],
+        );
+        gate.assert_equal(ctx, limb, limb_from_le_bytes);
+    }
 }
 
 #[cfg(test)]

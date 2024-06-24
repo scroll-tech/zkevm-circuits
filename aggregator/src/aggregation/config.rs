@@ -182,12 +182,12 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
 
     /// Flex gate configuration
     pub fn flex_gate(&self) -> &FlexGateConfig<Fr> {
-        &self.base_field_config.gate
+        self.ecc_chip().gate()
     }
 
     /// Ecc gate configuration
     pub fn ecc_chip(&self) -> BaseFieldEccChip<G1Affine> {
-        EccChip::construct(self.base_field_config.clone())
+        EccChip::new(&self.base_field_config)
     }
 }
 
