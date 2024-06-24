@@ -20,7 +20,7 @@ use crate::{
         EvmCircuit,
     },
     keccak_circuit::KeccakCircuit,
-    sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
+    sig_circuit::{ecdsa::ecdsa_verify_no_pubkey_check, utils::*},
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, Field, SubCircuit, SubCircuitConfig},
 };
