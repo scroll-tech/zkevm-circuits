@@ -6,7 +6,6 @@ use eth_types::{
     Address, EthBlock, GethExecTrace, ToWord, Word, H256, KECCAK_CODE_HASH_EMPTY,
 };
 use ethers_providers::JsonRpcClient;
-use external_tracer::TraceConfig;
 use hex::decode_to_slice;
 
 use super::{AccessSet, Block, Blocks, CircuitInputBuilder, CircuitsParams};
@@ -331,6 +330,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     }
 
     /// Perform all the steps to generate the circuit inputs
+    #[allow(unused_mut)]
+    #[allow(unused_variables)]
     pub async fn gen_inputs(
         &self,
         block_num: u64,
@@ -344,13 +345,16 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
 
-        let builder = if cfg!(feature = "retrace-tx") {
+        #[cfg(feature = "retrace-tx")]
+        let builder = {
             let trace_config = self
                 .get_trace_config(&eth_block, geth_traces.iter(), false)
                 .await?;
 
             self.trace_to_builder(&eth_block, &trace_config)?
-        } else {
+        };
+        #[cfg(not(feature = "retrace-tx"))]
+        let builder = {
             let (proofs, codes) = self.get_pre_state(geth_traces.iter())?;
             let proofs = self.complete_prestate(&eth_block, proofs).await?;
             let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
@@ -450,12 +454,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         Ok(builder)
     }
 
+    #[cfg(feature = "retrace-tx")]
     async fn get_trace_config(
         &self,
         eth_block: &EthBlock,
         geth_traces: impl Iterator<Item = &GethExecTrace>,
         complete_prestate: bool,
-    ) -> Result<TraceConfig, Error> {
+    ) -> Result<external_tracer::TraceConfig, Error> {
         let (proofs, codes) = self.get_pre_state(geth_traces)?;
         let proofs = if complete_prestate {
             self.complete_prestate(eth_block, proofs).await?
@@ -469,7 +474,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         //let difficulty = eth_block.difficulty;
         let difficulty = Word::zero();
 
-        Ok(TraceConfig {
+        Ok(external_tracer::TraceConfig {
             chain_id: self.chain_id,
             history_hashes: vec![eth_block.parent_hash.to_word()],
             block_constants: BlockConstants {
@@ -517,7 +522,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     fn trace_to_builder(
         &self,
         _eth_block: &EthBlock,
-        trace_config: &TraceConfig,
+        trace_config: &external_tracer::TraceConfig,
     ) -> Result<CircuitInputBuilder, Error> {
         let block_trace = external_tracer::l2trace(trace_config)?;
         let mut builder =
