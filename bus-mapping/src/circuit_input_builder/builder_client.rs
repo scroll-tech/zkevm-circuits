@@ -424,13 +424,16 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         eth_block.transactions = vec![tx.clone()];
 
-        let builder = if cfg!(feature = "retrace-tx") {
+        #[cfg(feature = "retrace-tx")]
+        let builder = {
             let trace_config = self
                 .get_trace_config(&eth_block, iter::once(&geth_trace), true)
                 .await?;
 
             self.trace_to_builder(&eth_block, &trace_config)?
-        } else {
+        };
+        #[cfg(not(feature = "retrace-tx"))]
+        let builder = {
             let (proofs, codes) = self.get_pre_state(iter::once(&geth_trace))?;
             let proofs = self.complete_prestate(&eth_block, proofs).await?;
             let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
@@ -510,7 +513,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         })
     }
 
-    #[cfg(feature = "scroll")]
+    #[cfg(feature = "retrace-tx")]
     fn trace_to_builder(
         &self,
         _eth_block: &EthBlock,
@@ -525,7 +528,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         Ok(builder)
     }
 
-    #[cfg(not(feature = "scroll"))]
+    /*
+    // Seems useless?
     fn trace_to_builder(
         &self,
         eth_block: &EthBlock,
@@ -545,4 +549,5 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         builder.handle_block(eth_block, &geth_traces)?;
         Ok(builder)
     }
+    */
 }

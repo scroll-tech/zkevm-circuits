@@ -8,6 +8,7 @@ license.workspace = true
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
 mpt-zktrie = {path = "../zktrie"}
+external-tracer = { path="../external-tracer", optional = true }
 mock = { path = "../mock", optional = true }
 
 ethers-core.workspace = true
@@ -40,6 +41,7 @@ ctor.workspace = true
 env_logger.workspace = true
 rand.workspace = true
 rayon.workspace = true
+
 [features]
 default = ["test"]
 test = ["mock", "rand"]
@@ -54,4 +56,4 @@ rpc-legacy-tracer = []
 # For the trace obtained from erigon node, refund field is missed
 # and must be rebuild
 fix-refund = ["rpc-legacy-tracer"]
-retrace-tx = []
+retrace-tx = ["scroll", "external-tracer"]
