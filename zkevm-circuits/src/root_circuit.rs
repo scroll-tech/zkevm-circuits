@@ -19,13 +19,13 @@ mod test;
 pub use self::RootCircuit as TestRootCircuit;
 
 pub use aggregation::{
-    aggregate, AggregationConfig, EccChip, Halo2Loader, KzgAs, KzgDk, KzgSvk,
+    aggregate, BatchCircuitConfig, EccChip, Halo2Loader, KzgAs, KzgDk, KzgSvk,
     PlonkSuccinctVerifier, PlonkVerifier, PoseidonTranscript, Snark, SnarkWitness, BITS, LIMBS,
 };
 pub use snark_verifier::system::halo2::{compile, Config};
 
 #[cfg(any(feature = "test", test))]
-pub use aggregation::TestAggregationCircuit;
+pub use aggregation::TestBatchCircuit;
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
 #[derive(Clone)]
@@ -103,7 +103,7 @@ where
 }
 
 impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
-    type Config = AggregationConfig;
+    type Config = BatchCircuitConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -115,7 +115,7 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
     }
 
     fn configure(meta: &mut ConstraintSystem<M::Scalar>) -> Self::Config {
-        AggregationConfig::configure::<M::G1Affine>(meta)
+        BatchCircuitConfig::configure::<M::G1Affine>(meta)
     }
 
     fn synthesize(
@@ -142,4 +142,3 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
         Ok(())
     }
 }
-                max_inner_blocks: 64,

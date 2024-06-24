@@ -34,7 +34,7 @@ use snark_verifier::{
 };
 use rand::Rng;
 use itertools::Itertools;
-use crate::param::ConfigParams as AggregationConfigParams;
+use crate::param::ConfigParams as BatchCircuitConfigParams;
 use common::*;
 
 pub trait CircuitExt<F: Field>: Circuit<F> {

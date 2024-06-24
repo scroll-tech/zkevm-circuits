@@ -151,16 +151,16 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
     }
 }
 
-/// Aggregation configuration.
+/// Batch circuit configuration.
 #[derive(Clone)]
-pub struct AggregationConfig {
+pub struct BatchCircuitConfig {
     /// MainGateConfig
     pub main_gate_config: MainGateConfig,
     /// RangeConfig
     pub range_config: RangeConfig,
 }
 
-impl AggregationConfig {
+impl BatchCircuitConfig {
     /// Configure for `MainGate` and `RangeChip` with corresponding fixed lookup
     /// table.
     pub fn configure<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
@@ -373,20 +373,20 @@ where
     Ok(accumulator_limbs)
 }
 
-/// Aggregation circuit for testing purpose.
+/// Batch circuit for testing purpose.
 #[derive(Clone)]
-pub struct TestAggregationCircuit<'a, M: MultiMillerLoop> {
+pub struct TestBatchCircuit<'a, M: MultiMillerLoop> {
     svk: KzgSvk<M>,
     snarks: Vec<SnarkWitness<'a, M::G1Affine>>,
     instances: Vec<M::Scalar>,
 }
 
-impl<'a, M: MultiMillerLoop> TestAggregationCircuit<'a, M>
+impl<'a, M: MultiMillerLoop> TestBatchCircuit<'a, M>
 where
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
 {
-    /// Create an Aggregation circuit with aggregated accumulator computed.
+    /// Create a batch circuit with aggregated accumulator computed.
     /// Returns `None` if any given snark is invalid.
     pub fn new(
         params: &ParamsKZG<M>,
@@ -434,8 +434,8 @@ where
     }
 }
 
-impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M> {
-    type Config = AggregationConfig;
+impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestBatchCircuit<'a, M> {
+    type Config = BatchCircuitConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -451,7 +451,7 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M
     }
 
     fn configure(meta: &mut ConstraintSystem<M::Scalar>) -> Self::Config {
-        AggregationConfig::configure::<M::G1Affine>(meta)
+        BatchCircuitConfig::configure::<M::G1Affine>(meta)
     }
 
     fn synthesize(
@@ -479,11 +479,11 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M
     }
 }
 
-/// Contains TestAggregationCircuit to test whether aggregation is working for
+/// Contains TestBatchCircuit to test whether batching is working for
 /// any given inputs.
 #[cfg(test)]
 pub mod test {
-    use crate::root_circuit::{PoseidonTranscript, Snark, TestAggregationCircuit};
+    use crate::root_circuit::{PoseidonTranscript, Snark, TestBatchCircuit};
     use halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{floor_planner::V1, Layouter, Value},
@@ -684,17 +684,17 @@ pub mod test {
 
     #[ignore = "not supported with QUERY_INSTANCE enabled in halo2_proofs"]
     #[test]
-    fn test_standard_plonk_aggregation() {
+    fn test_standard_plonk_batching() {
         let params = ParamsKZG::<Bn256>::setup(8, OsRng);
 
-        // Create Aggregation circuit and compute aggregated accumulator
+        // Create Batch circuit and compute aggregated accumulator
         let snarks = rand_standard_plonk_snarks(&params, 2);
-        let aggregation =
-            TestAggregationCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
+        let batching =
+            TestBatchCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
                 .unwrap();
-        let instances = aggregation.instances();
+        let instances = batching.instances();
         assert_eq!(
-            MockProver::run(21, &aggregation, instances)
+            MockProver::run(21, &batching, instances)
                 .unwrap()
                 .verify_par(),
             Ok(())
@@ -703,20 +703,20 @@ pub mod test {
 
     #[ignore = "not supported with QUERY_INSTANCE enabled in halo2_proofs"]
     #[test]
-    fn test_standard_plonk_aggregation_unmatched_instance() {
+    fn test_standard_plonk_batching_unmatched_instance() {
         let params = ParamsKZG::<Bn256>::setup(8, OsRng);
 
-        // Create Aggregation circuit and compute aggregated accumulator
+        // Create Batch circuit and compute aggregated accumulator
         let snarks = rand_standard_plonk_snarks(&params, 2);
-        let aggregation =
-            TestAggregationCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
+        let batching =
+            TestBatchCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
                 .unwrap();
-        let mut instances = aggregation.instances();
+        let mut instances = batching.instances();
         // Change the propagated inner snark's instance
         instances[0][0] += Fr::one();
         // Then expect the verification to fail
         assert_eq!(
-            MockProver::run(21, &aggregation, instances)
+            MockProver::run(21, &batching, instances)
                 .unwrap()
                 .verify_par(),
             Err(vec![

@@ -17,17 +17,14 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    constants::{BITS, LIMBS},
-    param::ConfigParams,
-    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs,
-    RlcConfig,
+    constants::{BITS, LIMBS}, param::ConfigParams, BarycentricEvaluationConfig, BatchCircuit, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs, RlcConfig
 };
 
 #[derive(Debug, Clone)]
 #[rustfmt::skip]
-/// Configurations for aggregation circuit.
+/// Configurations for batch circuit.
 /// This config is hard coded for BN256 curve.
-pub struct AggregationConfig<const N_SNARKS: usize> {
+pub struct BatchCircuitConfig<const N_SNARKS: usize> {
     /// Non-native field chip configurations
     pub base_field_config: FpConfig<Fr, Fq>,
     /// Keccak circuit configurations
@@ -49,7 +46,7 @@ pub struct AggregationConfig<const N_SNARKS: usize> {
     pub instance: Column<Instance>,
 }
 
-impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
+impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
     /// Build a configuration from parameters.
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
@@ -61,7 +58,7 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
             "For now we fix limb_bits = {BITS}, otherwise change code",
         );
 
-        // hash configuration for aggregation circuit
+        // hash configuration for batch circuit
         let (keccak_table, keccak_circuit_config) = {
             let keccak_table = KeccakTable::construct(meta);
 
@@ -80,7 +77,7 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
         // RLC configuration
         let rlc_config = RlcConfig::configure(meta, &keccak_table, challenges);
 
-        // base field configuration for aggregation circuit
+        // base field configuration for batch circuit
         let base_field_config = FpConfig::configure(
             meta,
             params.strategy.clone(),
@@ -192,7 +189,7 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
 }
 
 #[test]
-fn aggregation_circuit_degree() {
+fn batch_circuit_degree() {
     use halo2_ecc::fields::fp::FpStrategy;
     let mut cs = ConstraintSystem::<Fr>::default();
     let param = ConfigParams {
@@ -206,7 +203,7 @@ fn aggregation_circuit_degree() {
         num_limbs: 3,
     };
     let challenges = Challenges::construct_p1(&mut cs);
-    AggregationConfig::<{ crate::constants::MAX_AGG_SNARKS }>::configure(
+    BatchCircuitConfig::<{ crate::constants::MAX_AGG_SNARKS }>::configure(
         &mut cs, &param, challenges,
     );
     cs = cs.chunk_lookups();

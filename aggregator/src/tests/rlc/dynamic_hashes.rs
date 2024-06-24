@@ -43,7 +43,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
         let challenges = Challenges::construct_p1(meta);
 
         // hash config
-        // hash configuration for aggregation circuit
+        // hash configuration for batch circuit
         let keccak_circuit_config = {
             let keccak_table = KeccakTable::construct(meta);
             let challenges_exprs = challenges.exprs(meta);

@@ -35,11 +35,11 @@ use crate::{
     AssignedBarycentricEvaluationConfig, ConfigParams,
 };
 
-use super::AggregationConfig;
+use super::BatchCircuitConfig;
 
-/// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
+/// Batch circuit that does not re-expose any public inputs from aggregated snarks
 #[derive(Clone)]
-pub struct AggregationCircuit<const N_SNARKS: usize> {
+pub struct BatchCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
@@ -55,7 +55,7 @@ pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub batch_hash: BatchHash<N_SNARKS>,
 }
 
-impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
     pub fn new(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
@@ -119,8 +119,8 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
-    type Config = (AggregationConfig<N_SNARKS>, Challenges);
+impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
+    type Config = (BatchCircuitConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
         unimplemented!()
@@ -138,7 +138,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         );
 
         let challenges = Challenges::construct_p1(meta);
-        let config = AggregationConfig::configure(meta, &params, challenges);
+        let config = BatchCircuitConfig::configure(meta, &params, challenges);
         log::info!(
             "aggregation circuit configured with k = {} and {:?} advice columns",
             params.degree,
@@ -266,10 +266,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                             .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                     );
 
-                    loader.ctx_mut().print_stats(&["snark aggregation"]);
+                    loader.ctx_mut().print_stats(&["snark aggregation [chunks -> batch]"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
-                    log::debug!("aggregation: assigning barycentric");
+                    log::debug!("batching: assigning barycentric");
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
                         &self.batch_hash.point_evaluation_assignments.coefficients,
@@ -292,7 +292,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         };
         end_timer!(timer);
         // ==============================================
-        // step 2: public input aggregation circuit
+        // step 2: public input batch circuit
         // ==============================================
         // extract all the hashes and load them to the hash table
         let challenges = challenge.values(&layouter);
@@ -489,7 +489,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 address_table_arr,
                 sequence_exec_info_arr,
                 &challenges,
-                LOG_DEGREE, // TODO: configure k for aggregation circuit instead of hard-coded here.
+                LOG_DEGREE, // TODO: configure k for batch circuit instead of hard-coded here.
             )?;
 
             layouter.assign_region(
@@ -571,7 +571,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> CircuitExt<Fr> for AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> CircuitExt<Fr> for BatchCircuit<N_SNARKS> {
     fn num_instance(&self) -> Vec<usize> {
         // 12 elements from accumulator
         // 32 elements from batch's public_input_hash

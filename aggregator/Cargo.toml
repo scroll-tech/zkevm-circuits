@@ -46,5 +46,5 @@ csv = "1.1"
 [features]
 default = ["revm-precompile/c-kzg"]
 print-trace = ["ark-std/print-trace"]
-# This feature is useful for unit tests where we check the SAT of pi aggregation circuit
+# This feature is useful for unit tests where we check the SAT of pi batch circuit
 disable_proof_aggregation = []

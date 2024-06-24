@@ -311,7 +311,7 @@ impl Circuit<Fr> for RecursionCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let path = std::env::var("VERIFY_CONFIG")
             .unwrap_or_else(|_| "configs/verify_circuit.config".to_owned());
-        let params: AggregationConfigParams = serde_json::from_reader(
+        let params: BatchCircuitConfigParamsParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|err| panic!("{err:?}")),
         )
         .unwrap();
@@ -551,7 +551,7 @@ fn test() {
     use sv_halo2_base::utils::fs::gen_srs;
     
     let app_params = gen_srs(3);
-    let recursion_config: AggregationConfigParams =
+    let recursion_config: BatchCircuitConfigParamsParams =
         serde_json::from_reader(fs::File::open("configs/verify_circuit.config").unwrap()).unwrap();
     let k = recursion_config.degree;
     let recursion_params = gen_srs(k);
