@@ -8,7 +8,7 @@ license.workspace = true
 halo2_proofs.workspace = true
 
 aggregator = { path = "../aggregator" }
-bus-mapping = { path = "../bus-mapping" }
+bus-mapping = { path = "../bus-mapping", default-features = false }
 eth-types = { path = "../eth-types" }
 mpt-zktrie = { path = "../zktrie" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
