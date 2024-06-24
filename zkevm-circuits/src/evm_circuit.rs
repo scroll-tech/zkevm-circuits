@@ -278,6 +278,11 @@ impl<F: Field> EvmCircuit<F> {
         num_rows += 1;
         num_rows
     }
+
+    pub fn get_test_cicuit_from_block(block: Block) -> Self {
+        let fixed_table_tags = detect_fixed_table_tags(&block);
+        EvmCircuit::<F>::new_dev(block, fixed_table_tags)
+    }
 }
 
 const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3659;

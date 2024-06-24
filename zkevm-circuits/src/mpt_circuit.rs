@@ -86,7 +86,6 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
 impl SubCircuit<Fr> for MptCircuit<Fr> {
     type Config = MptCircuitConfig<Fr>;
 

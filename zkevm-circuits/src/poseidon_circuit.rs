@@ -52,7 +52,6 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
 impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     type Config = PoseidonCircuitConfig<F>;
 
