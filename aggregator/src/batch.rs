@@ -6,7 +6,7 @@ use ethers_core::utils::keccak256;
 use gadgets::Field;
 
 use crate::{
-    blob::{BatchData, PointEvaluationAssignments},
+    blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
     chunk::ChunkInfo,
 };
 
@@ -25,6 +25,16 @@ pub struct BatchHash<const N_SNARKS: usize> {
     /// - the first [0..number_of_valid_chunks) are real ones
     /// - the last [number_of_valid_chunks, N_SNARKS) are padding
     pub(crate) chunks_with_padding: Vec<ChunkInfo>,
+    /// the state root of the parent batch
+    pub(crate) parent_state_root: H256,
+    /// the batch hash of the parent batch
+    pub(crate) parent_batch_hash: H256,
+    /// the state root of the current batch
+    pub(crate) current_state_root: H256,
+    /// the batch hash of the current batch
+    pub(crate) current_batch_hash: H256,
+    /// the withdraw root of the current batch
+    pub(crate) current_withdraw_root: H256,
     /// The batch data hash:
     /// - keccak256([chunk.hash for chunk in batch])
     pub(crate) data_hash: H256,
@@ -62,7 +72,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     }
 
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
-    pub fn construct(chunks_with_padding: &[ChunkInfo]) -> Self {
+    pub fn construct(chunks_with_padding: &[ChunkInfo], parent_state_root: H256, parent_batch_hash: H256) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
             N_SNARKS,
@@ -183,6 +193,8 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         Self {
             chain_id: chunks_with_padding[0].chain_id,
             chunks_with_padding: chunks_with_padding.to_vec(),
+            parent_state_root,
+            parent_batch_hash,
             data_hash: batch_data_hash.into(),
             public_input_hash,
             number_of_valid_chunks,
@@ -277,14 +289,33 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         res
     }
 
-    /// Compute the public inputs for this circuit, excluding the accumulator.
-    /// Content: the public_input_hash
+    /// Compute the public inputs for this circuit:
+    /// chain_id
+    /// parent_state_root
+    /// parent_batch_hash
+    /// current_state_root
+    /// current_batch_hash
+    /// current_withdraw_hash
     pub(crate) fn instances_exclude_acc<F: Field>(&self) -> Vec<Vec<F>> {
-        vec![self
-            .public_input_hash
-            .as_bytes()
-            .iter()
-            .map(|&x| F::from(x as u64))
-            .collect()]
+        let mut res: Vec<F> = vec![];
+        res.push(F::from(self.chain_id as u64));
+
+        let frs = [
+            self.parent_state_root,
+            self.parent_batch_hash,
+            self.current_state_root,
+            self.current_batch_hash,
+            self.current_withdraw_root,
+        ]
+        .map(|h| {
+            h.as_bytes().chunks(N_BYTES_U256/2).map(|chunk| {
+                F::from(chunk.iter().enumerate().fold(0u64, |acc, (i, &byte)| {
+                    acc | ((byte as u64) << (i * 8))
+                }))
+            }).collect::<Vec<F>>().as_slice()
+        }).concat();
+
+        res.extend_from_slice(frs.as_slice());
+        vec![res]
     }
 }

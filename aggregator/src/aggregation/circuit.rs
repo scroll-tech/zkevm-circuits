@@ -44,9 +44,14 @@ pub struct BatchCircuit<const N_SNARKS: usize> {
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
     pub snarks_with_padding: Vec<SnarkWitness>,
+    // batch_circuit_debug:
     // the public instance for this circuit consists of
-    // - an accumulator (12 elements)
-    // - the batch's public_input_hash (32 elements)
+    // - chain id (1 element)
+    // - parent_state_root (2 elements, split hi_lo)
+    // - parent_batch_hash (2 elements)
+    // - current_state_root (2 elements)
+    // - current_batch_hash (2 elements)
+    // - current_withdraw_root (2 elements)
     pub flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
     pub as_proof: Value<Vec<u8>>,
@@ -92,17 +97,18 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
 
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
-        let (as_proof, acc_instances) =
+        let (as_proof, _acc_instances) =
             extract_proof_and_instances_with_pairing_check(params, snarks_with_padding, rng)?;
 
-        // extract batch's public input hash
-        let public_input_hash = &batch_hash.instances_exclude_acc()[0];
-
+        // batch_circuit_debug
         // the public instance for this circuit consists of
-        // - an accumulator (12 elements)
-        // - the batch's public_input_hash (32 elements)
-        let flattened_instances: Vec<Fr> =
-            [acc_instances.as_slice(), public_input_hash.as_slice()].concat();
+        // - chain id (1 element)
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - current_withdraw_root (2 elements)
+        let flattened_instances: Vec<Fr> = batch_hash.instances_exclude_acc::<Fr>()[0];
 
         end_timer!(timer);
         Ok(Self {
@@ -578,7 +584,7 @@ impl<const N_SNARKS: usize> CircuitExt<Fr> for BatchCircuit<N_SNARKS> {
         vec![ACC_LEN + DIGEST_LEN]
     }
 
-    // 12 elements from accumulator
+    // 1 element from chain id
     // 32 elements from batch's public_input_hash
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
