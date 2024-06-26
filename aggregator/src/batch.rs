@@ -171,9 +171,32 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
+        // Check against context in batch header
+        assert_eq!(batch_data_hash, batch_header.data_hash.as_bytes(), "chunk-derived data hash is the same as field in batch header");
+
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
         let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
+
+        // Check against context in batch header
+        assert_eq!(
+            point_evaluation_assignments.challenge.to_be_bytes(),
+            batch_header.blob_data_proof[0].as_bytes(),
+            "chunk-derived z is the same as field in batch header"
+        );
+        assert_eq!(
+            point_evaluation_assignments.evaluation.to_be_bytes(),
+            batch_header.blob_data_proof[1].as_bytes(),
+            "chunk-derived y is the same as field in batch header"
+        );
+
         let versioned_hash = batch_data.get_versioned_hash();
+
+        // Check against context in batch header
+        assert_eq!(
+            versioned_hash,
+            batch_header.blob_versioned_hash,
+            "chunk-derived versioned hash is the same as field in batch header"
+        );
 
         // the current batch hash is build as
         // keccak256( 
@@ -207,7 +230,6 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
                 .as_ref(),
         ].concat();
         let current_batch_hash: H256 = keccak256(batch_hash_preimage).into();
-
 
         log::info!(
             "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
