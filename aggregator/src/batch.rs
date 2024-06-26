@@ -1,6 +1,7 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
+use bitstream_io::Primitive;
 use eth_types::{ToBigEndian, H256};
 use ethers_core::utils::keccak256;
 use gadgets::Field;
@@ -9,6 +10,26 @@ use crate::{
     blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
     chunk::ChunkInfo,
 };
+
+#[derive(Default, Debug, Clone)]
+/// Batch header provides additional fields from the context (within recursion)
+/// for constructing the preimage of the batch hash.
+pub struct BatchHeader {
+    /// the batch version
+    pub(crate) version: u8,
+    /// the index of the batch
+    pub(crate) batch_index: u64,
+    /// Number of L1 messages popped in the batch
+    pub(crate) l1_message_popped: u64,
+    /// Number of total L1 messages popped after the batch
+    pub(crate) total_l1_message_popped: u64,
+    /// The parent batch hash
+    pub(crate) parent_batch_hash: H256,
+    /// The timestamp of the last block in this batch
+    pub(crate) last_block_timestamp: u64,
+    /// a bitmap to indicate which L1 messages are skipped in the batch
+    pub(crate) skipped_l1_message_bitmap: Vec<H256>,
+}
 
 #[derive(Default, Debug, Clone)]
 /// A batch is a set of N_SNARKS num of continuous chunks
@@ -27,32 +48,31 @@ pub struct BatchHash<const N_SNARKS: usize> {
     pub(crate) chunks_with_padding: Vec<ChunkInfo>,
     /// the state root of the parent batch
     pub(crate) parent_state_root: H256,
-    /// the batch hash of the parent batch
-    pub(crate) parent_batch_hash: H256,
     /// the state root of the current batch
     pub(crate) current_state_root: H256,
-    /// the batch hash of the current batch
-    pub(crate) current_batch_hash: H256,
     /// the withdraw root of the current batch
     pub(crate) current_withdraw_root: H256,
     /// The batch data hash:
     /// - keccak256([chunk.hash for chunk in batch])
     pub(crate) data_hash: H256,
-    /// The public input hash, as calculated on-chain:
-    /// - keccak256( chain_id || prev_state_root || next_state_root || withdraw_trie_root ||
-    ///   batch_data_hash || z || y || versioned_hash)
-    pub(crate) public_input_hash: H256,
+    /// the current batch hash is calculated as:
+    /// - keccak256( version || batch_index || l1_message_popped || total_l1_message_popped ||
+    ///   batch_data_hash || versioned_hash || parent_batch_hash || last_block_timestamp ||
+    ///   z || y || skipped_l1_message_bitmap)
+    pub(crate) current_batch_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
     /// 4844 point evaluation check related assignments.
     pub(crate) point_evaluation_assignments: PointEvaluationAssignments,
     /// The 4844 versioned hash for the blob.
     pub(crate) versioned_hash: H256,
+    /// The context batch header
+    pub(crate) batch_header: BatchHeader,
 }
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     /// Build Batch hash from an ordered list of chunks. Will pad if needed
-    pub fn construct_with_unpadded(chunks: &[ChunkInfo]) -> Self {
+    pub fn construct_with_unpadded(chunks: &[ChunkInfo], batch_header: BatchHeader) -> Self {
         assert_ne!(chunks.len(), 0);
         assert!(chunks.len() <= N_SNARKS);
         let mut chunks_with_padding = chunks.to_vec();
@@ -68,11 +88,11 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             chunks_with_padding
                 .extend(std::iter::repeat(padding_chunk).take(N_SNARKS - chunks.len()));
         }
-        Self::construct(&chunks_with_padding)
+        Self::construct(&chunks_with_padding, batch_header)
     }
 
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
-    pub fn construct(chunks_with_padding: &[ChunkInfo], parent_state_root: H256, parent_batch_hash: H256) -> Self {
+    pub fn construct(chunks_with_padding: &[ChunkInfo], batch_header: BatchHeader) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
             N_SNARKS,
@@ -151,23 +171,29 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
         let versioned_hash = batch_data.get_versioned_hash();
 
-        // public input hash is build as
-        // keccak(
-        //     chain_id ||
-        //     chunk[0].prev_state_root ||
-        //     chunk[k-1].post_state_root ||
-        //     chunk[k-1].withdraw_root ||
-        //     batch_data_hash ||
+        // the current batch hash is build as
+        // keccak256( 
+        //     version || 
+        //     batch_index || 
+        //     l1_message_popped || 
+        //     total_l1_message_popped ||
+        //     batch_data_hash || 
+        //     versioned_hash || 
+        //     parent_batch_hash || 
+        //     last_block_timestamp ||
         //     z ||
-        //     y ||
-        //     versioned_hash
+        //     y || 
+        //     skipped_l1_message_bitmap
         // )
-        let preimage = [
-            chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
-            chunks_with_padding[0].prev_state_root.as_bytes(),
-            chunks_with_padding[N_SNARKS - 1].post_state_root.as_bytes(),
-            chunks_with_padding[N_SNARKS - 1].withdraw_root.as_bytes(),
+        let batch_hash_preimage = [
+            vec![batch_header.version].as_slice(),
+            batch_header.batch_index.to_be_bytes().as_ref(),
+            batch_header.l1_message_popped.to_be_bytes().as_ref(),
+            batch_header.total_l1_message_popped.to_be_bytes().as_ref(),
             batch_data_hash.as_slice(),
+            versioned_hash.as_bytes(),
+            batch_header.parent_batch_hash.as_bytes(),
+            batch_header.last_block_timestamp.to_be_bytes().as_ref(),
             point_evaluation_assignments
                 .challenge
                 .to_be_bytes()
@@ -176,14 +202,14 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
                 .evaluation
                 .to_be_bytes()
                 .as_ref(),
-            versioned_hash.as_bytes(),
-        ]
-        .concat();
-        let public_input_hash: H256 = keccak256(preimage).into();
+            // batch_circuit_debug: deal with skippedL1MessageBitmap
+        ].concat();
+        let current_batch_hash: H256 = keccak256(batch_hash_preimage).into();
+
 
         log::info!(
-            "batch pi hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
-            public_input_hash,
+            "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
+            current_batch_hash,
             hex::encode(batch_data_hash),
             hex::encode(point_evaluation_assignments.challenge.to_be_bytes()),
             hex::encode(point_evaluation_assignments.evaluation.to_be_bytes()),
@@ -193,13 +219,15 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         Self {
             chain_id: chunks_with_padding[0].chain_id,
             chunks_with_padding: chunks_with_padding.to_vec(),
-            parent_state_root,
-            parent_batch_hash,
+            parent_state_root: chunks_with_padding[0].prev_state_root,
+            current_state_root: chunks_with_padding[N_SNARKS - 1].post_state_root,
+            current_withdraw_root: chunks_with_padding[N_SNARKS - 1].withdraw_root,
             data_hash: batch_data_hash.into(),
-            public_input_hash,
+            current_batch_hash,
             number_of_valid_chunks,
-            point_evaluation_assignments,
+            point_evaluation_assignments,            
             versioned_hash,
+            batch_header,
         }
     }
 
@@ -302,7 +330,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
 
         let frs = [
             self.parent_state_root,
-            self.parent_batch_hash,
+            self.batch_header.parent_batch_hash,
             self.current_state_root,
             self.current_batch_hash,
             self.current_withdraw_root,
