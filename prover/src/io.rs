@@ -140,3 +140,15 @@ pub fn load_instances(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
         })
         .collect()
 }
+
+#[ignore]
+#[test]
+fn test_block_trace_convert() {
+    let trace_v1: eth_types::l2_types::BlockTrace =
+        from_json_file("src/testdata/trace_v1_5224657.json").expect("should load");
+    let trace_v2: eth_types::l2_types::BlockTraceV2 = trace_v1.into();
+    let mut fd = std::fs::File::create("src/testdata/trace_v2_5224657.json").unwrap();
+    serde_json::to_writer_pretty(&mut fd, &trace_v2).unwrap();
+    // then we can use this command to compare the traces:
+    // vimdiff <(jq -S "del(.executionResults)|del(.txStorageTraces)" src/testdata/trace_v1_5224657.json) <(jq -S . src/testdata/trace_v2_5224657.json)
+}

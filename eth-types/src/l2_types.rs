@@ -536,15 +536,3 @@ pub struct AccountTrace {
     #[serde(rename = "codeSize")]
     pub code_size: u64,
 }
-
-#[ignore]
-#[test]
-fn test_block_trace_convert() {
-    let trace_v1: BlockTrace =
-        crate::utils::from_json_file("src/testdata/trace_v1_5224657.json").expect("should load");
-    let trace_v2: BlockTraceV2 = trace_v1.into();
-    let mut fd = std::fs::File::create("src/testdata/trace_v2_5224657.json").unwrap();
-    serde_json::to_writer_pretty(&mut fd, &trace_v2).unwrap();
-    // then we can use this command to compare the traces:
-    // vimdiff <(jq -S "del(.executionResults)|del(.txStorageTraces)" src/testdata/trace_v1_5224657.json) <(jq -S . src/testdata/trace_v2_5224657.json)
-}
