@@ -40,7 +40,7 @@ impl BlockData {
         let mut block = Blocks::init(self.chain_id, Default::default());
         block.blocks.insert(header.number.as_u64(), header);
         // FIXME: better fetch a real state root instead of a mock one
-        block.prev_state_root = MOCK_OLD_STATE_ROOT.into();
+        block.prev_state_root = H256::from_low_u64_be(MOCK_OLD_STATE_ROOT);
         block.circuits_params = self.circuits_params;
         CircuitInputBuilder::new(self.sdb.clone(), self.code_db.clone(), &block)
     }

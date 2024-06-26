@@ -2785,6 +2785,13 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     ]),
                 );
 
+                // The FSE table kind remains the same.
+                cb.require_equal(
+                    "table_kind remains the same for trailing bits in tag=FseCode",
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::prev()),
+                );
+
                 cb.gate(condition)
             },
         );

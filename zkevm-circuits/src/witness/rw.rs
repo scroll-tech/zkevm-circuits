@@ -99,14 +99,11 @@ impl RwMap {
     }
 
     /// Check value in the same way like StateCircuit
+    #[deprecated]
     pub fn check_value_strict(&self) {
         let mock_rand = Fr::from(0x1000u64);
         let rows = self.table_assignments();
-        let updates = MptUpdates::from_rws_with_mock_state_roots(
-            &rows,
-            0xcafeu64.into(),
-            0xdeadbeefu64.into(),
-        );
+        let updates = MptUpdates::mock_from(&rows);
         let mut errs = Vec::new();
         for idx in 1..rows.len() {
             let row = &rows[idx];

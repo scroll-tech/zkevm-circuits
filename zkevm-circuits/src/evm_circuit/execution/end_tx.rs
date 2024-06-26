@@ -120,22 +120,24 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.block_lookup(tag.expr(), cb.curr.state.block_number.expr(), value);
         }
         let effective_tip = cb.query_word_rlc();
-        let sub_gas_price_by_base_fee =
-            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price.clone());
 
-        let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
-            MulWordByU64Gadget::construct(
-                cb,
-                if cfg!(feature = "scroll") {
-                    // For Scroll mode, basefee will not be burned.
-                    // It will also be sent to coinbase(fee_valut)
-                    tx_gas_price
-                } else {
-                    effective_tip.clone()
-                },
-                gas_used.clone() - effective_refund.min(),
-            )
-        });
+        let (mul_effective_tip_by_gas_used, sub_gas_price_by_base_fee) =
+            cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+                (
+                    MulWordByU64Gadget::construct(
+                        cb,
+                        if cfg!(feature = "scroll") {
+                            // For Scroll mode, basefee will not be burned.
+                            // It will also be sent to coinbase(fee_valut)
+                            tx_gas_price.clone()
+                        } else {
+                            effective_tip.clone()
+                        },
+                        gas_used.clone() - effective_refund.min(),
+                    ),
+                    AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price),
+                )
+            });
 
         let effective_fee = cb.query_word_rlc();
 
@@ -371,10 +373,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         } else {
             tx.gas_price - context.base_fee
         };
+        let addend = tx.gas_price.overflowing_sub(context.base_fee).0;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
-            [tx.gas_price - context.base_fee, context.base_fee],
+            [addend, context.base_fee],
             tx.gas_price,
         )?;
         let coinbase_reward = if tx.tx_type.is_l1_msg() {

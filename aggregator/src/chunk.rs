@@ -156,11 +156,11 @@ impl ChunkInfo {
             .ctxs
             .last_key_value()
             .map(|(_, b_ctx)| b_ctx.state_root)
-            .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
+            .unwrap_or(block.prev_state_root);
 
         Self {
             chain_id: block.chain_id,
-            prev_state_root: H256(block.prev_state_root.to_be_bytes()),
+            prev_state_root: block.prev_state_root,
             post_state_root,
             withdraw_root: H256(block.withdraw_root.to_be_bytes()),
             data_hash,

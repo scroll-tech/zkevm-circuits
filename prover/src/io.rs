@@ -1,10 +1,9 @@
 use anyhow;
 use halo2_proofs::{
-    halo2curves::bn256::{Fq, Fr, G1Affine},
+    halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, VerifyingKey},
     SerdeFormat,
 };
-use num_bigint::BigUint;
 use snark_verifier::util::arithmetic::PrimeField;
 use snark_verifier_sdk::Snark;
 use std::{
@@ -93,53 +92,6 @@ pub fn deserialize_vk<C: Circuit<Fr>>(raw_vk: &[u8]) -> VerifyingKey<G1Affine> {
         .unwrap()
 }
 
-pub fn write_verify_circuit_vk(folder: &mut PathBuf, verify_circuit_vk: &[u8]) {
-    folder.push("verify_circuit.vkey");
-    let mut fd = std::fs::File::create(folder.as_path()).unwrap();
-    folder.pop();
-    fd.write_all(verify_circuit_vk).unwrap()
-}
-
-pub fn field_to_bn(f: &Fq) -> BigUint {
-    BigUint::from_bytes_le(&f.to_bytes())
-}
-
-pub fn serialize_commitments(buf: &[Vec<G1Affine>]) -> Vec<u8> {
-    let mut result = Vec::<u8>::new();
-    let mut fd = Cursor::new(&mut result);
-    let to_bytes_be = |x: &BigUint| {
-        let mut buf = x.to_bytes_le();
-        buf.resize(32, 0u8);
-        buf.reverse();
-        buf
-    };
-    for v in buf {
-        for commitment in v {
-            let x = field_to_bn(&commitment.x);
-            let y = field_to_bn(&commitment.y);
-            let be = to_bytes_be(&x)
-                .into_iter()
-                .chain(to_bytes_be(&y).into_iter())
-                .collect::<Vec<_>>();
-            fd.write_all(&be).unwrap()
-        }
-    }
-    result
-}
-
-pub fn serialize_verify_circuit_final_pair(pair: &(G1Affine, G1Affine, Vec<Fr>)) -> Vec<u8> {
-    let mut result = Vec::<u8>::new();
-    let mut fd = Cursor::new(&mut result);
-    fd.write_all(&pair.0.x.to_bytes()).unwrap();
-    fd.write_all(&pair.0.y.to_bytes()).unwrap();
-    fd.write_all(&pair.1.x.to_bytes()).unwrap();
-    fd.write_all(&pair.1.y.to_bytes()).unwrap();
-    pair.2.iter().for_each(|scalar| {
-        fd.write_all(&scalar.to_bytes()).unwrap();
-    });
-    result
-}
-
 pub fn write_snark(file_path: &str, snark: &Snark) {
     log::debug!("write_snark to {file_path}");
     let mut fd = std::fs::File::create(file_path).unwrap();
@@ -174,16 +126,4 @@ pub fn load_instances(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
                 .collect()
         })
         .collect()
-}
-
-pub fn load_instances_flat(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
-    let mut ret = vec![];
-    let cursor = &mut std::io::Cursor::new(buf);
-    let mut scalar_bytes = <Fr as PrimeField>::Repr::default();
-
-    while cursor.read_exact(scalar_bytes.as_mut()).is_ok() {
-        ret.push(Fr::from_bytes(&scalar_bytes).unwrap());
-    }
-
-    vec![vec![ret]]
 }

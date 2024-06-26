@@ -33,7 +33,6 @@ use halo2_proofs::{
     circuit::Value,
     halo2curves::{group::ff::PrimeField, secp256k1},
 };
-use mock::MockTransaction;
 use num::Integer;
 use num_bigint::BigUint;
 use std::{cmp::Ordering, collections::BTreeMap};
@@ -1143,8 +1142,9 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     }
 }
 
-impl From<MockTransaction> for Transaction {
-    fn from(mock_tx: MockTransaction) -> Self {
+#[cfg(any(feature = "test", test))]
+impl From<mock::MockTransaction> for Transaction {
+    fn from(mock_tx: mock::MockTransaction) -> Self {
         let is_create = mock_tx.to.is_none();
         let sig = Signature {
             r: mock_tx.r.expect("tx expected to be signed"),

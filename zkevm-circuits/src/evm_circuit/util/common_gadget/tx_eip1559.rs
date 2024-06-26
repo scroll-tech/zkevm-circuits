@@ -182,7 +182,11 @@ impl<F: Field> TxEip1559Gadget<F> {
             offset,
             Some(tx.max_priority_fee_per_gas.to_le_bytes()),
         )?;
-        let diff_gas_base_fee = tx.max_fee_per_gas - base_fee;
+        let diff_gas_base_fee = if tx.max_fee_per_gas >= base_fee {
+            tx.max_fee_per_gas - base_fee
+        } else {
+            0u64.into()
+        };
         let priority_fee_per_gas = tx.max_priority_fee_per_gas.min(diff_gas_base_fee);
         self.gas_sub_base_fee.assign(
             region,

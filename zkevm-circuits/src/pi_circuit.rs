@@ -1777,8 +1777,8 @@ impl<F: Field> PiCircuit<F> {
         block: &Block,
     ) -> Self {
         let chain_id = block.chain_id;
-        let prev_state_root_in_trie = H256(block.mpt_updates.old_root().to_be_bytes());
-        let prev_state_root_in_header = H256(block.prev_state_root.to_be_bytes());
+        let prev_state_root_in_trie = block.mpt_updates.old_root();
+        let prev_state_root_in_header = block.prev_state_root;
         assert_eq!(prev_state_root_in_trie, prev_state_root_in_header);
         let public_data = PublicData {
             max_txs,
