@@ -8,17 +8,33 @@ mod common;
 mod circuit;
 /// Config for recursion circuit
 mod config;
+pub mod util;
 
-use ark_std::{end_timer, start_timer};
-use halo2_base::halo2_proofs;
+pub(crate) use common::dynamic_verify;
+pub use util::*;
+
+// define the halo2base importing from snark_verifier;
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base as sv_halo2_base;
+use sv_halo2_base::halo2_proofs;
+// fix the circuit on Bn256
 use halo2_proofs::{
     halo2curves::{
         bn256::{Bn256, Fq, Fr, G1Affine},
         group::ff::Field,
     },
-    circuit::{Layouter, Value},
     plonk::{Selector, Circuit, Error, ConstraintSystem, ProvingKey, VerifyingKey},
 };
+// exports Snark and specs for F-S scheme
+use snark_verifier_sdk::{
+    types::{PoseidonTranscript, POSEIDON_SPEC},
+    Snark, CircuitExt,
+};
+
+use crate::{
+    param::ConfigParams as AggregationConfigParams,
+    constants::{LIMBS, BITS},
+};
+
 use snark_verifier::{
     loader::{
         native::NativeLoader,
@@ -34,28 +50,17 @@ use snark_verifier::{
 };
 use rand::Rng;
 use itertools::Itertools;
-use crate::param::ConfigParams as AggregationConfigParams;
-use common::*;
 
-pub trait CircuitExt<F: Field>: Circuit<F> {
-    fn num_instance() -> Vec<usize>;
+pub trait StateTransition : Sized{
+    type Input: Default;
 
-    fn instances(&self) -> Vec<Vec<F>>;
+    fn new(state: Self::Input) -> Self;
 
-    fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
-        None
-    }
+    fn state_transition(&self) -> Self::Input;
 
-    /// Output the simple selector columns (before selector compression) of the circuit
-    fn selectors(_: &Self::Config) -> Vec<Selector> {
-        vec![]
+    fn next(&self) -> Self {
+        Self::new(self.state_transition())
     }
 }
 
-pub trait StateTransition {
-    type Input;
-
-    fn new(state: Fr) -> Self;
-
-    fn state_transition(&self, input: Self::Input) -> Fr;
-}
+pub use circuit::RecursionCircuit;

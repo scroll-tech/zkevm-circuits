@@ -10,6 +10,7 @@
 // TODO: don't always use "pub mod".
 // We need to define which types and methods should be public carefully.
 pub mod aggregator;
+pub mod recursion;
 pub mod common;
 pub mod config;
 pub mod consts;
