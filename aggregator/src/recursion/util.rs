@@ -20,7 +20,7 @@ use snark_verifier::{
         arithmetic::{fe_to_fe, fe_from_limbs, fe_to_limbs},
         transcript::{Transcript, TranscriptWrite, TranscriptRead},
     },
-    pcs::{kzg::{Gwc19, Kzg}},
+    pcs::{kzg::{Bdfg21, Kzg}},
 };
 
 mod dummy_circuit {
@@ -93,7 +93,7 @@ where
 
     use std::iter;
     use snark_verifier::cost::CostEstimation;
-    type Pcs = Kzg<Bn256, Gwc19>;
+    type Pcs = Kzg<Bn256, Bdfg21>;
 
     let protocol = compile(
         params,

@@ -106,6 +106,9 @@ fn test_recursive_last() {
     end_timer!(pk_time);
 
     let mut rng = test_rng();
+    let init_state = [Fr::from(2u64)];
+    let app = Square::new(init_state);
+    let next_state = app.state_transition();
     let app_snark = gen_snark_shplonk(
         &app_params, 
         &app_pk, 
@@ -118,17 +121,17 @@ fn test_recursive_last() {
         &recursion_pk.get_vk(), 
         &mut test_rng,
     );
-
+    
     let recursion = RecursionCircuit::new(
         &recursion_params,
         app_snark,
         init_snark,
         test_rng(),
-        [Fr::from(4u64)],
-        [Fr::from(2u64)],
+        init_state,
+        next_state,
         0,
     );    
-    let pf_time = start_timer!(|| "Generate full recursive snark");
+    let pf_time = start_timer!(|| "Generate first recursive snark");
 
     let snark = gen_snark_shplonk(
         &recursion_params, 
@@ -141,14 +144,48 @@ fn test_recursive_last() {
     end_timer!(pf_time);
     //assert_eq!(final_state, Fr::from(2u64).pow(&[1 << num_round, 0, 0, 0]));
 
-    let accept = {
-        use snark_verifier::pcs::kzg::{Gwc19, Kzg};
-        type Pcs = Kzg<Bn256, Gwc19>;
-        let svk = recursion_params.get_g()[0].into();
-        let dk = (recursion_params.g2(), recursion_params.s_g2()).into();
-        let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
-        let proof = Plonk::<Pcs>::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript);
-        Plonk::verify(&svk, &dk, &snark.protocol, &snark.instances, &proof)
-    };
-    assert!(accept)
+    assert!(verify_snark_shplonk::<RecursionCircuit<1>>(
+        &recursion_params,
+        snark.clone(),
+        recursion_pk.get_vk()
+    ));
+
+    let app = Square::new(next_state);
+    let next_state = app.state_transition();
+    let app_snark = gen_snark_shplonk(
+        &app_params, 
+        &app_pk, 
+        app, 
+        &mut rng, 
+        None::<String>,
+    ).unwrap();
+    
+    let recursion = RecursionCircuit::new(
+        &recursion_params,
+        app_snark,
+        snark,
+        test_rng(),
+        init_state,
+        next_state,
+        1,
+    );
+ 
+    let pf_time = start_timer!(|| "Generate next recursive snark");
+
+    let snark = gen_snark_shplonk(
+        &recursion_params, 
+        &recursion_pk, 
+        recursion, 
+        &mut rng, 
+        None::<String>,
+    ).unwrap();
+
+    end_timer!(pf_time);
+
+    assert!(verify_snark_shplonk::<RecursionCircuit<1>>(
+        &recursion_params,
+        snark,
+        recursion_pk.get_vk()
+    ));
+
 }

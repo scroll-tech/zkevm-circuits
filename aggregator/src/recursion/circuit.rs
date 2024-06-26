@@ -7,7 +7,7 @@ use snark_verifier::{
         EccInstructions, IntegerInstructions,
     },
     pcs::{
-        kzg::{Gwc19, Kzg, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding},
+        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding},
         PolynomialCommitmentScheme, AccumulationScheme, AccumulationSchemeProver,
     },
     util::{
@@ -40,7 +40,7 @@ use snark_verifier_sdk::{
 
 use std::{rc::Rc, fs::File, iter};
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
-type Pcs = Kzg<Bn256, Gwc19>;
+type Pcs = Kzg<Bn256, Bdfg21>;
 
 type As = KzgAs<Pcs>;
 
@@ -349,9 +349,22 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                 ]).collect::<Vec<_>>();
 
                 // Verify current state is same as the current application snark
-                let verify_state = state.iter()
-                .zip_eq(app_instances[..ST].iter())
+                let verify_app_state = state.iter()
+                .zip_eq(app_instances[ST..].iter())
                 .map(|(&st, &app_inst)|(st, app_inst)).collect::<Vec<_>>();
+
+                // Verify previous state is same as the current application snark
+                let verify_app_init_state = 
+                previous_instances[Self::STATE_ROW..Self::ROUND_ROW].iter()
+                .zip_eq(app_instances[..ST].iter())
+                .map(|(&st, &app_inst)|(
+                    main_gate.mul(
+                        &mut ctx,
+                        Existing(app_inst),
+                        Existing(not_first_round),
+                    ),
+                    st,
+                )).collect::<Vec<_>>();
 
                 for (lhs, rhs) in [
                     // Propagate preprocessed_digest
@@ -363,15 +376,15 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                         ),
                         previous_instances[Self::PREPROCESSED_DIGEST_ROW],
                     ),
-                    // Verify previous state is same as the current application snark
-                    (
-                        main_gate.mul(
-                            &mut ctx,
-                            Existing(app_instances[0]),
-                            Existing(not_first_round),
-                        ),
-                        previous_instances[Self::STATE_ROW],
-                    ),
+                    // // Verify previous state is same as the current application snark
+                    // (
+                    //     main_gate.mul(
+                    //         &mut ctx,
+                    //         Existing(app_instances[0]),
+                    //         Existing(not_first_round),
+                    //     ),
+                    //     previous_instances[Self::STATE_ROW],
+                    // ),
                     // Verify round is increased by 1 when not at first round
                     (
                         round,
@@ -383,7 +396,8 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                     ),
                 ].into_iter()
                 .chain(initial_state_propagate)
-                .chain(verify_state)
+                .chain(verify_app_state)
+                .chain(verify_app_init_state)
                  {
                     ctx.region.constrain_equal(lhs.cell(), rhs.cell())?;
                 }

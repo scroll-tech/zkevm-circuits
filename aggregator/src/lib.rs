@@ -27,6 +27,7 @@ mod tests;
 
 pub use self::core::extract_proof_and_instances_with_pairing_check;
 pub use aggregation::*;
+pub use recursion::*;
 pub use batch::BatchHash;
 pub use blob::BatchData;
 pub use chunk::ChunkInfo;
