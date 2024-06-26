@@ -172,7 +172,7 @@ impl CircuitInputBuilder {
         }
 
         let mut builder_block = circuit_input_builder::Blocks::init(chain_id, circuits_params);
-        builder_block.prev_state_root = old_root.to_word();
+        builder_block.prev_state_root = old_root;
         builder_block.start_l1_queue_index = l2_trace.start_l1_queue_index;
         let mut builder = Self {
             sdb,

@@ -8,7 +8,7 @@ license.workspace = true
 
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-zkevm-circuits = { path = "../zkevm-circuits" }
+zkevm-circuits = { path = "../zkevm-circuits", default-features=false, features = ["debug-annotations", "parallel_syn"] }
 
 ark-std.workspace = true
 ctor.workspace = true

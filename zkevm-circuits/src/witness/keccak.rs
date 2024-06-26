@@ -31,7 +31,7 @@ pub fn keccak_inputs(block: &Block) -> Result<Vec<Vec<u8>>, Error> {
     keccak_inputs.extend(keccak_inputs_pi_circuit(
         block.chain_id,
         block.start_l1_queue_index,
-        block.prev_state_root,
+        block.prev_state_root.to_word(),
         block.post_state_root().to_word(),
         block.withdraw_root,
         &block.context,

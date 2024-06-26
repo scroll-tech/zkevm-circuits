@@ -348,7 +348,7 @@ fn update_keccak_code_hash_existing() {
             address,
             field_tag: AccountFieldTag::KeccakCodeHash,
         },
-        new_value: U256([u64::MAX; 4]),
+        new_value: eth_types::U256([u64::MAX; 4]),
         ..Default::default()
     };
     updates.insert(update);

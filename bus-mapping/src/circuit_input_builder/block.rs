@@ -9,7 +9,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{Address, ToWord, Word, H256};
+use eth_types::{Address, Word, H256};
 use std::collections::{BTreeMap, HashMap};
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -155,7 +155,7 @@ pub struct Blocks {
     /// Blocks inside this chunk
     pub blocks: BTreeMap<u64, Block>,
     /// State root of the previous block
-    pub prev_state_root: Word,
+    pub prev_state_root: H256,
     /// Withdraw root
     pub withdraw_root: Word,
     /// Withdraw roof of the previous block
@@ -237,10 +237,10 @@ impl Blocks {
     }
 
     /// State root after all blocks in this chunk
-    pub fn end_state_root(&self) -> Word {
+    pub fn end_state_root(&self) -> H256 {
         self.blocks
             .last_key_value()
-            .map(|(_, blk)| blk.state_root.to_word())
+            .map(|(_, blk)| blk.state_root)
             .unwrap_or(self.prev_state_root)
     }
 

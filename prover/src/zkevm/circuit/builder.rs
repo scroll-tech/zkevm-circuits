@@ -25,19 +25,20 @@ pub fn calculate_row_usage_of_witness_block(
     if witness_block.mpt_updates.smt_traces.is_empty() {
         assert_eq!(rows[11].name, "poseidon");
         assert_eq!(rows[14].name, "mpt");
-        // We collected real metrics from Scroll mainnet, and here is the graph
-        // https://ibb.co/gVfvW7h
-        // 6 is already very very conservative. Besides, considering a chunk consists of many txs,
-        // using this number is safe.
-        let poseidon_estimate_ratio = if witness_block.txs.len() > 1 {
-            // follower ccc
-            6
-        } else {
-            // singer ccc or single tx block follower ccc,
-            // even i think 6 is safe, here we still keep the old value
-            12
-        };
-        let mpt_poseidon_rows = rows[14].row_num_real * poseidon_estimate_ratio;
+
+        // TODO: make this a function parameter?
+        let is_follower = witness_block.txs.len() > 1;
+
+        // For a storage access, avg account trie depth + storage trie depth
+        // These 2 numbers are very very conservative now.
+        let avg_trie_depth = if is_follower { 64 } else { 128 };
+
+        // Fr::hash_block_size()
+        let poseidon_round_rows = 9;
+        // 96 is 3 word lookup. See comments of MptCircuit::min_num_rows_block
+        let mpt_updates_num = rows[14].row_num_real / 96;
+        let mpt_poseidon_rows = mpt_updates_num * avg_trie_depth * poseidon_round_rows;
+
         rows[11].row_num_real += mpt_poseidon_rows;
         log::debug!("calculate_row_usage_of_witness_block light mode, adding {mpt_poseidon_rows} poseidon rows");
     } else {

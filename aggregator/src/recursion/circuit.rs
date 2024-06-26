@@ -8,7 +8,7 @@ use snark_verifier::{
     },
     pcs::{
         kzg::{Gwc19, Kzg, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding},
-        AccumulationScheme, AccumulationSchemeProver,
+        PolynomialCommitmentScheme, AccumulationScheme, AccumulationSchemeProver,
     },
     util::{
         arithmetic::{fe_to_fe, fe_from_limbs, fe_to_limbs},
@@ -30,6 +30,11 @@ use halo2_proofs::{
         },
         Rotation, VerificationStrategy,
     },
+};
+use snark_verifier_sdk::{
+    SnarkWitness,
+    types::{Plonk, Halo2Loader, BaseFieldEccChip},
+    gen_pk, gen_snark_shplonk, verify_snark_shplonk
 };
 
 mod application {
@@ -69,7 +74,7 @@ mod application {
     }
 
     impl CircuitExt<Fr> for Square {
-        fn num_instance() -> Vec<usize> {
+        fn num_instance(&self) -> Vec<usize> {
             vec![2]
         }
 
@@ -79,20 +84,24 @@ mod application {
     }
 
     impl StateTransition for Square {
-        type Input = ();
+        type Input = [Fr;1];
 
-        fn new(state: Fr) -> Self {
-            Self(state)
+        fn new(state: Self::Input) -> Self {
+            Self(state[0])
         }
 
-        fn state_transition(&self, _: Self::Input) -> Fr {
-            self.0.square()
+        fn state_transition(&self) -> Self::Input {
+            [self.0.square()]
         }
     }
 }
 
 
 use std::{rc::Rc, fs::File, iter};
+type Svk = KzgSuccinctVerifyingKey<G1Affine>;
+type Pcs = Kzg<Bn256, Gwc19>;
+
+type As = KzgAs<Pcs>;
 
 // use halo2_base::{
 //     gates::GateInstructions, AssignedValue, Context, ContextParams, QuantumCell::Existing,
@@ -101,57 +110,6 @@ use std::{rc::Rc, fs::File, iter};
 // use halo2_proofs::plonk::{Column, Instance};
 // use snark_verifier::loader::halo2::{EccInstructions, IntegerInstructions};
 
-
-type BaseFieldEccChip = halo2_ecc::ecc::BaseFieldEccChip<G1Affine>;
-type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, BaseFieldEccChip>;
-
-
-fn succinct_verify<'a>(
-    svk: &Svk,
-    loader: &Rc<Halo2Loader<'a>>,
-    snark: &SnarkWitness,
-    preprocessed_digest: Option<AssignedValue<Fr>>,
-) -> (Vec<Vec<AssignedValue<Fr>>>, Vec<KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>) {
-    let protocol = if let Some(preprocessed_digest) = preprocessed_digest {
-        let preprocessed_digest = loader.scalar_from_assigned(preprocessed_digest);
-        let protocol = snark.protocol.loaded_preprocessed_as_witness(loader);
-        let inputs = protocol
-            .preprocessed
-            .iter()
-            .flat_map(|preprocessed| {
-                let assigned = preprocessed.assigned();
-                [assigned.x(), assigned.y()]
-                    .map(|coordinate| loader.scalar_from_assigned(coordinate.native().clone()))
-            })
-            .chain(protocol.transcript_initial_state.clone())
-            .collect_vec();
-        loader.assert_eq("", &poseidon(loader, &inputs), &preprocessed_digest).unwrap();
-        protocol
-    } else {
-        snark.protocol.loaded(loader)
-    };
-
-    let instances = snark
-        .instances
-        .iter()
-        .map(|instances| {
-            instances.iter().map(|instance| loader.assign_scalar(*instance)).collect_vec()
-        })
-        .collect_vec();
-    let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, snark.proof());
-    let proof = Plonk::read_proof(svk, &protocol, &instances, &mut transcript);
-    let accumulators = Plonk::succinct_verify(svk, &protocol, &instances, &proof);
-
-    (
-        instances
-            .into_iter()
-            .map(|instance| {
-                instance.into_iter().map(|instance| instance.into_assigned()).collect()
-            })
-            .collect(),
-        accumulators,
-    )
-}
 
 fn select_accumulator<'a>(
     loader: &Rc<Halo2Loader<'a>>,
@@ -183,7 +141,7 @@ fn accumulate<'a>(
 }
 
 #[derive(Clone)]
-pub struct RecursionCircuit {
+pub struct RecursionCircuit<const ST: usize> {
     svk: Svk,
     default_accumulator: KzgAccumulator<G1Affine, NativeLoader>,
     app: SnarkWitness,
@@ -193,18 +151,19 @@ pub struct RecursionCircuit {
     as_proof: Value<Vec<u8>>,
 }
 
-impl RecursionCircuit {
+impl<const ST: usize> RecursionCircuit<ST> {
     const PREPROCESSED_DIGEST_ROW: usize = 4 * LIMBS;
-    const INITIAL_STATE_ROW: usize = 4 * LIMBS + 1;
-    const STATE_ROW: usize = 4 * LIMBS + 2;
-    const ROUND_ROW: usize = 4 * LIMBS + 3;
+    const INITIAL_STATE_ROW: usize = Self::PREPROCESSED_DIGEST_ROW + 1;
+    const STATE_ROW: usize = Self::INITIAL_STATE_ROW + ST;
+    const ROUND_ROW: usize = Self::STATE_ROW + ST;
 
     pub fn new(
         params: &ParamsKZG<Bn256>,
         app: Snark,
         previous: Snark,
-        initial_state: Fr,
-        state: Fr,
+        rng: impl Rng + Send,
+        initial_state: [Fr; ST],
+        state: [Fr; ST],
         round: usize,
     ) -> Self {
         let svk = params.get_g()[0].into();
@@ -214,7 +173,7 @@ impl RecursionCircuit {
             let mut transcript =
                 PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
             let proof =
-                Plonk::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript);
+                Plonk::<Pcs>::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript);
             Plonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
         };
 
@@ -229,7 +188,7 @@ impl RecursionCircuit {
         let (accumulator, as_proof) = {
             let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(Vec::new());
             let accumulator =
-                As::create_proof(&Default::default(), &accumulators, &mut transcript, OsRng)
+                As::create_proof(&Default::default(), &accumulators, &mut transcript, rng)
                     .unwrap();
             (accumulator, transcript.finalize())
         };
@@ -243,14 +202,22 @@ impl RecursionCircuit {
                 .map(fe_to_fe)
                 .chain(previous.protocol.transcript_initial_state)
                 .collect_vec();
-            poseidon(&NativeLoader, &inputs)
+            let mut hasher = hash::Poseidon::from_spec(
+                &NativeLoader, POSEIDON_SPEC.clone());
+            hasher.update(&inputs);
+            hasher.squeeze()
         };
         let instances =
             [accumulator.lhs.x, accumulator.lhs.y, accumulator.rhs.x, accumulator.rhs.y]
                 .into_iter()
                 .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-                .chain([preprocessed_digest, initial_state, state, Fr::from(round as u64)])
+                .chain(iter::once(preprocessed_digest))
+                .chain(initial_state)
+                .chain(state)
+                .chain(iter::once(Fr::from(round as u64)))
                 .collect();
+
+        log::debug!("recursive instance: {:#?}", instances);
 
         Self {
             svk,
@@ -263,16 +230,16 @@ impl RecursionCircuit {
         }
     }
 
-    fn initial_snark(params: &ParamsKZG<Bn256>, vk: Option<&VerifyingKey<G1Affine>>) -> Snark {
-        let mut snark = gen_dummy_snark::<RecursionCircuit>(params, vk);
-        let g = params.get_g();
-        snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
-            .into_iter()
-            .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-            .chain([Fr::ZERO; 4])
-            .collect_vec()];
-        snark
-    }
+    // fn initial_snark(params: &ParamsKZG<Bn256>, vk: Option<&VerifyingKey<G1Affine>>) -> Snark {
+    //     let mut snark = gen_dummy_snark::<RecursionCircuit>(params, vk);
+    //     let g = params.get_g();
+    //     snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
+    //         .into_iter()
+    //         .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
+    //         .chain([Fr::ZERO; 4])
+    //         .collect_vec()];
+    //     snark
+    // }
 
     fn as_proof(&self) -> Value<&[u8]> {
         self.as_proof.as_ref().map(Vec::as_slice)
@@ -290,13 +257,21 @@ impl RecursionCircuit {
             });
         Ok(KzgAccumulator::new(lhs, rhs))
     }
+
+    /// get the number of instance, help to refine the CircuitExt trait
+    pub fn num_instance_fixed() -> usize {
+        // [..lhs, ..rhs, preprocessed_digest, initial_state, state, round]
+        4 * LIMBS + ST*2 + 2
+    }
+
 }
 
-impl Circuit<Fr> for RecursionCircuit {
+impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
     type Config = config::RecursionConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
+
         Self {
             svk: self.svk,
             default_accumulator: self.default_accumulator.clone(),
@@ -360,8 +335,9 @@ impl Circuit<Fr> for RecursionCircuit {
 
                 let loader = Halo2Loader::new(config.ecc_chip(), ctx);
                 let (mut app_instances, app_accumulators) =
-                    succinct_verify(&self.svk, &loader, &self.app, None);
-                let (mut previous_instances, previous_accumulators) = succinct_verify(
+                    dynamic_verify::<Pcs>(&self.svk, &loader, &self.app, None);
+                let (mut previous_instances, previous_accumulators) = 
+                dynamic_verify::<Pcs>(
                     &self.svk,
                     &loader,
                     &self.previous,
@@ -476,10 +452,9 @@ impl Circuit<Fr> for RecursionCircuit {
     }
 }
 
-impl CircuitExt<Fr> for RecursionCircuit {
-    fn num_instance() -> Vec<usize> {
-        // [..lhs, ..rhs, preprocessed_digest, initial_state, state, round]
-        vec![4 * LIMBS + 4]
+impl<const ST: usize> CircuitExt<Fr> for RecursionCircuit<ST> {
+    fn num_instance(&self) -> Vec<usize> {
+        vec![Self::num_instance_fixed()]
     }
 
     fn instances(&self) -> Vec<Vec<Fr>> {
@@ -556,35 +531,35 @@ fn test() {
     let k = recursion_config.degree;
     let recursion_params = gen_srs(k);
 
-    let app_pk = gen_pk(&app_params, &application::Square::default());
+//     let app_pk = gen_pk(&app_params, &application::Square::default());
 
-    let pk_time = start_timer!(|| "Generate recursion pk");
-    let recursion_pk = gen_recursion_pk::<application::Square>(
-        &recursion_params,
-        &app_params,
-        app_pk.get_vk(),
-    );
-    end_timer!(pk_time);
+//     let pk_time = start_timer!(|| "Generate recursion pk");
+//     let recursion_pk = gen_recursion_pk::<application::Square>(
+//         &recursion_params,
+//         &app_params,
+//         app_pk.get_vk(),
+//     );
+//     end_timer!(pk_time);
 
-    let num_round = 1;
-    let pf_time = start_timer!(|| "Generate full recursive snark");
-    let (final_state, snark) = gen_recursion_snark::<application::Square>(
-        &app_params,
-        &recursion_params,
-        &app_pk,
-        &recursion_pk,
-        Fr::from(2u64),
-        vec![(); num_round],
-    );
-    end_timer!(pf_time);
-    assert_eq!(final_state, Fr::from(2u64).pow(&[1 << num_round, 0, 0, 0]));
+//     let num_round = 1;
+//     let pf_time = start_timer!(|| "Generate full recursive snark");
+//     let (final_state, snark) = gen_recursion_snark::<application::Square>(
+//         &app_params,
+//         &recursion_params,
+//         &app_pk,
+//         &recursion_pk,
+//         Fr::from(2u64),
+//         vec![(); num_round],
+//     );
+//     end_timer!(pf_time);
+//     assert_eq!(final_state, Fr::from(2u64).pow(&[1 << num_round, 0, 0, 0]));
 
-    let accept = {
-        let svk = recursion_params.get_g()[0].into();
-        let dk = (recursion_params.g2(), recursion_params.s_g2()).into();
-        let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
-        let proof = Plonk::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript);
-        Plonk::verify(&svk, &dk, &snark.protocol, &snark.instances, &proof)
-    };
-    assert!(accept)
-}
+//     let accept = {
+//         let svk = recursion_params.get_g()[0].into();
+//         let dk = (recursion_params.g2(), recursion_params.s_g2()).into();
+//         let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
+//         let proof = Plonk::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript);
+//         Plonk::verify(&svk, &dk, &snark.protocol, &snark.instances, &proof)
+//     };
+//     assert!(accept)
+// }

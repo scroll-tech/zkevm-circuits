@@ -104,7 +104,7 @@ pub const HASH_RLC_OFFSET: usize = 20;
 // CHUNK_TXBYTES_BLOB_LIMIT =
 //      (BLOB_WIDTH * N_BYTES_31) - (N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES)
 // N_ROWS_CHUNK_SIZES = MAX_AGG_SNARKS * 4
-const CHUNK_TXBYTES_BLOB_LIMIT: usize = (4096 * 31) - (2 + 15 * 4);
+const CHUNK_TXBYTES_BLOB_LIMIT: usize = (4096 * 31) - (2 + 45 * 4);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {

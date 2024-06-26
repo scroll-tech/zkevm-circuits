@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/imdario/mergo v0.3.16
-	github.com/scroll-tech/go-ethereum v1.10.14-0.20240603142403-9ec83a509ac7
+	github.com/scroll-tech/go-ethereum v1.10.14-0.20240621133406-517e5b4b0764
 )
 
 require (
@@ -52,10 +52,10 @@ require (
 	github.com/tklauser/numcpus v0.8.0 // indirect
 	github.com/tyler-smith/go-bip39 v1.0.1-0.20181017060643-dbb3b84ba2ef // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/crypto v0.23.0 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.20.0 // indirect
-	golang.org/x/text v0.15.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )

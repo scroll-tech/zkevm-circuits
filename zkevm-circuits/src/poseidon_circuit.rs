@@ -9,7 +9,8 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use hash_circuit::hash::{Hashable, PoseidonHashChip, PoseidonHashConfig, PoseidonHashTable};
+pub use hash_circuit::hash::Hashable;
+use hash_circuit::hash::{PoseidonHashChip, PoseidonHashConfig, PoseidonHashTable};
 
 /// re-wrapping for mpt circuit
 #[derive(Default, Clone, Debug)]
@@ -25,7 +26,8 @@ pub struct PoseidonCircuitConfigArgs {
 #[derive(Debug, Clone)]
 pub struct PoseidonCircuitConfig<F: Field>(pub(crate) PoseidonHashConfig<F>);
 
-const HASH_BLOCK_STEP_SIZE: usize = HASHBLOCK_BYTES_IN_FIELD * PoseidonTable::INPUT_WIDTH;
+/// How many bytes a poseidon round can consume.
+pub const HASH_BLOCK_STEP_SIZE: usize = HASHBLOCK_BYTES_IN_FIELD * PoseidonTable::INPUT_WIDTH;
 
 impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
     type ConfigArgs = PoseidonCircuitConfigArgs;
@@ -50,7 +52,6 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
 impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     type Config = PoseidonCircuitConfig<F>;
 
@@ -169,11 +170,10 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             * F::hash_block_size();
         let total_row_num = mpt_row_num + byte_row_num;
         log::debug!("poseidon circuit row num: {mpt_row_num}(mpt) + {byte_row_num}(bytecode) = {total_row_num}");
-        let mpt_circuit_rows = 3 * 32 * block.mpt_updates.len();
-        let poseidon_mpt_ratio = mpt_row_num as f64 / mpt_circuit_rows as f64;
+        let avg_trie_depth = after_dedup_size / block.mpt_updates.len();
         log::debug!(
-            "poseidon_mpt_ratio {poseidon_mpt_ratio:.3}, 12x naive poseidon rows {}",
-            12 * mpt_circuit_rows
+            "avg_trie_depth {avg_trie_depth}, hash num {after_dedup_size}, mpt update num {}",
+            block.mpt_updates.len()
         );
         (
             total_row_num,
