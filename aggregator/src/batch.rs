@@ -27,8 +27,6 @@ pub struct BatchHeader {
     pub(crate) parent_batch_hash: H256,
     /// The timestamp of the last block in this batch
     pub(crate) last_block_timestamp: u64,
-    /// a bitmap to indicate which L1 messages are skipped in the batch
-    pub(crate) skipped_l1_message_bitmap: Vec<H256>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -58,7 +56,7 @@ pub struct BatchHash<const N_SNARKS: usize> {
     /// the current batch hash is calculated as:
     /// - keccak256( version || batch_index || l1_message_popped || total_l1_message_popped ||
     ///   batch_data_hash || versioned_hash || parent_batch_hash || last_block_timestamp ||
-    ///   z || y || skipped_l1_message_bitmap)
+    ///   z || y)
     pub(crate) current_batch_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
@@ -182,8 +180,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         //     parent_batch_hash || 
         //     last_block_timestamp ||
         //     z ||
-        //     y || 
-        //     skipped_l1_message_bitmap
+        //     y
         // )
         let batch_hash_preimage = [
             vec![batch_header.version].as_slice(),
@@ -202,7 +199,6 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
                 .evaluation
                 .to_be_bytes()
                 .as_ref(),
-            // batch_circuit_debug: deal with skippedL1MessageBitmap
         ].concat();
         let current_batch_hash: H256 = keccak256(batch_hash_preimage).into();
 
