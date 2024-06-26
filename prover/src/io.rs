@@ -12,6 +12,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub fn from_json_file<'de, P: serde::Deserialize<'de>>(file_path: &str) -> anyhow::Result<P> {
+    if !Path::new(&file_path).exists() {
+        anyhow::bail!("File {file_path} doesn't exist");
+    }
+
+    let fd = File::open(file_path)?;
+    let mut deserializer = serde_json::Deserializer::from_reader(fd);
+    deserializer.disable_recursion_limit();
+    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
+
+    Ok(serde::Deserialize::deserialize(deserializer)?)
+}
+
 pub fn serialize_fr(f: &Fr) -> Vec<u8> {
     f.to_bytes().to_vec()
 }

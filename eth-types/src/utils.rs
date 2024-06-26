@@ -3,8 +3,6 @@
 use crate::Address;
 use revm_precompile::Precompiles;
 
-mod io;
-pub use io::*;
 mod codehash;
 pub use codehash::*;
 
