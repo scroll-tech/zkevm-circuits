@@ -8,10 +8,10 @@ mod common;
 mod circuit;
 /// Config for recursion circuit
 mod config;
-pub mod util;
+mod util;
 
 pub(crate) use common::dynamic_verify;
-pub use util::*;
+pub use util::{initial_recursion_snark, gen_recursion_pk};
 
 // define the halo2base importing from snark_verifier;
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base as sv_halo2_base;
@@ -64,3 +64,17 @@ pub trait StateTransition : Sized{
 }
 
 pub use circuit::RecursionCircuit;
+
+use crate::aggregation::AggregationCircuit;
+
+// impl<const N_SNARKS: usize> StateTransition for AggregationCircuit<N_SNARKS> {
+//     type Input = [Fr; 8];
+
+//     fn new(state: Self::Input) -> Self{
+
+//     }
+
+//     fn state_transition(&self) -> Self::Input {
+
+//     }
+// }

@@ -7,7 +7,7 @@ use snark_verifier::{
         EccInstructions, IntegerInstructions,
     },
     pcs::{
-        kzg::{Gwc19, Kzg, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding},
+        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding},
         PolynomialCommitmentScheme, AccumulationScheme, AccumulationSchemeProver,
     },
     util::{
@@ -37,69 +37,10 @@ use snark_verifier_sdk::{
     gen_pk, gen_snark_shplonk, verify_snark_shplonk
 };
 
-mod application {
-    use super::*;
-
-    #[derive(Clone, Default)]
-    pub struct Square(Fr);
-
-    impl Circuit<Fr> for Square {
-        type Config = Selector;
-        type FloorPlanner = SimpleFloorPlanner;
-        #[cfg(feature = "circuit-params")]
-        type Params = ();
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let q = meta.selector();
-            let i = meta.instance_column();
-            meta.create_gate("square", |meta| {
-                let q = meta.query_selector(q);
-                let [i, i_w] = [0, 1].map(|rotation| meta.query_instance(i, Rotation(rotation)));
-                Some(q * (i.clone() * i - i_w))
-            });
-            q
-        }
-
-        fn synthesize(
-            &self,
-            q: Self::Config,
-            mut layouter: impl Layouter<Fr>,
-        ) -> Result<(), Error> {
-            layouter.assign_region(|| "", |mut region| q.enable(&mut region, 0))
-        }
-    }
-
-    impl CircuitExt<Fr> for Square {
-        fn num_instance(&self) -> Vec<usize> {
-            vec![2]
-        }
-
-        fn instances(&self) -> Vec<Vec<Fr>> {
-            vec![vec![self.0, self.0.square()]]
-        }
-    }
-
-    impl StateTransition for Square {
-        type Input = [Fr;1];
-
-        fn new(state: Self::Input) -> Self {
-            Self(state[0])
-        }
-
-        fn state_transition(&self) -> Self::Input {
-            [self.0.square()]
-        }
-    }
-}
-
 
 use std::{rc::Rc, fs::File, iter};
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
-type Pcs = Kzg<Bn256, Gwc19>;
+type Pcs = Kzg<Bn256, Bdfg21>;
 
 type As = KzgAs<Pcs>;
 
@@ -321,15 +262,24 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                     },
                 );
 
-                let [preprocessed_digest, initial_state, state, round] = [
+                let [preprocessed_digest, round] = [
                     self.instances[Self::PREPROCESSED_DIGEST_ROW],
-                    self.instances[Self::INITIAL_STATE_ROW],
-                    self.instances[Self::STATE_ROW],
                     self.instances[Self::ROUND_ROW],
                 ]
                 .map(|instance| {
                     main_gate.assign_integer(&mut ctx, Value::known(instance)).unwrap()
                 });
+
+                let initial_state = self.instances[Self::INITIAL_STATE_ROW..Self::STATE_ROW]
+                .iter().map(|&instance| {
+                    main_gate.assign_integer(&mut ctx, Value::known(instance)).unwrap()
+                }).collect::<Vec<_>>();
+
+                let state = self.instances[Self::STATE_ROW..Self::ROUND_ROW]
+                .iter().map(|&instance| {
+                    main_gate.assign_integer(&mut ctx, Value::known(instance)).unwrap()
+                }).collect::<Vec<_>>();
+                               
                 let first_round = main_gate.is_zero(&mut ctx, &round);
                 let not_first_round = main_gate.not(&mut ctx, Existing(first_round));
 
@@ -369,59 +319,86 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                 let previous_instances = previous_instances.pop().unwrap();
 
                 let mut ctx = loader.ctx_mut();
+                let initial_state_propagate = 
+                    initial_state.iter()
+                    .zip_eq(previous_instances[Self::INITIAL_STATE_ROW..Self::STATE_ROW].iter())
+                    .zip_eq(app_instances[..ST].iter())
+                    .flat_map(|((&st, &previous_st), &app_inst)|[
+                    // Propagate initial_state
+                    (
+                        main_gate.mul(
+                            &mut ctx,
+                            Existing(st),
+                            Existing(not_first_round),
+                        ),
+                        previous_st,
+                    ),
+                    // Verify initial_state is same as the first application snark
+                    (
+                        main_gate.mul(
+                            &mut ctx,
+                            Existing(st),
+                            Existing(first_round),
+                        ),
+                        main_gate.mul(
+                            &mut ctx,
+                            Existing(app_inst),
+                            Existing(first_round),
+                        ),
+                    ),
+                ]).collect::<Vec<_>>();
+
+                // Verify current state is same as the current application snark
+                let verify_app_state = state.iter()
+                .zip_eq(app_instances[ST..].iter())
+                .map(|(&st, &app_inst)|(st, app_inst)).collect::<Vec<_>>();
+
+                // Verify previous state is same as the current application snark
+                let verify_app_init_state = 
+                previous_instances[Self::STATE_ROW..Self::ROUND_ROW].iter()
+                .zip_eq(app_instances[..ST].iter())
+                .map(|(&st, &app_inst)|(
+                    main_gate.mul(
+                        &mut ctx,
+                        Existing(app_inst),
+                        Existing(not_first_round),
+                    ),
+                    st,
+                )).collect::<Vec<_>>();
+
                 for (lhs, rhs) in [
                     // Propagate preprocessed_digest
                     (
-                        &main_gate.mul(
+                        main_gate.mul(
                             &mut ctx,
                             Existing(preprocessed_digest),
                             Existing(not_first_round),
                         ),
-                        &previous_instances[Self::PREPROCESSED_DIGEST_ROW],
+                        previous_instances[Self::PREPROCESSED_DIGEST_ROW],
                     ),
-                    // Propagate initial_state
-                    (
-                        &main_gate.mul(
-                            &mut ctx,
-                            Existing(initial_state),
-                            Existing(not_first_round),
-                        ),
-                        &previous_instances[Self::INITIAL_STATE_ROW],
-                    ),
-                    // Verify initial_state is same as the first application snark
-                    (
-                        &main_gate.mul(
-                            &mut ctx,
-                            Existing(initial_state),
-                            Existing(first_round),
-                        ),
-                        &main_gate.mul(
-                            &mut ctx,
-                            Existing(app_instances[0]),
-                            Existing(first_round),
-                        ),
-                    ),
-                    // Verify current state is same as the current application snark
-                    (&state, &app_instances[1]),
-                    // Verify previous state is same as the current application snark
-                    (
-                        &main_gate.mul(
-                            &mut ctx,
-                            Existing(app_instances[0]),
-                            Existing(not_first_round),
-                        ),
-                        &previous_instances[Self::STATE_ROW],
-                    ),
+                    // // Verify previous state is same as the current application snark
+                    // (
+                    //     main_gate.mul(
+                    //         &mut ctx,
+                    //         Existing(app_instances[0]),
+                    //         Existing(not_first_round),
+                    //     ),
+                    //     previous_instances[Self::STATE_ROW],
+                    // ),
                     // Verify round is increased by 1 when not at first round
                     (
-                        &round,
-                        &main_gate.add(
+                        round,
+                        main_gate.add(
                             &mut ctx,
                             Existing(not_first_round),
                             Existing(previous_instances[Self::ROUND_ROW]),
                         ),
                     ),
-                ] {
+                ].into_iter()
+                .chain(initial_state_propagate)
+                .chain(verify_app_state)
+                .chain(verify_app_init_state)
+                 {
                     ctx.region.constrain_equal(lhs.cell(), rhs.cell())?;
                 }
 
@@ -436,14 +413,17 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                     [lhs.x(), lhs.y(), rhs.x(), rhs.y()]
                         .into_iter()
                         .flat_map(|coordinate| coordinate.limbs())
-                        .chain([preprocessed_digest, initial_state, state, round].iter())
+                        .chain(iter::once(&preprocessed_digest))
+                        .chain(initial_state.iter())
+                        .chain(state.iter())
+                        .chain(iter::once(&round))
                         .map(|assigned| assigned.cell()),
                 );
                 Ok(())
             },
         )?;
 
-        assert_eq!(assigned_instances.len(), 4 * LIMBS + 4);
+        assert_eq!(assigned_instances.len(), self.num_instance()[0]);
         for (row, limb) in assigned_instances.into_iter().enumerate() {
             layouter.constrain_instance(limb, config.instance, row)?;
         }

@@ -3,6 +3,7 @@ mod blob;
 mod compression;
 mod mock_chunk;
 mod rlc;
+mod recursion;
 
 #[macro_export]
 macro_rules! layer_0 {

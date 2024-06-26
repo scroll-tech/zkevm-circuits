@@ -6,6 +6,7 @@ use halo2_proofs::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+mod recursion;
 mod aggregation;
 mod chunk;
 mod compression;
