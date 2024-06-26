@@ -273,33 +273,39 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     pub(crate) fn extract_hash_preimages(&self) -> Vec<Vec<u8>> {
         let mut res = vec![];
 
-        // batchPiHash =
-        //  keccak(
-        //      chain_id ||
-        //      chunk[0].prev_state_root ||
-        //      chunk[k-1].post_state_root ||
-        //      chunk[k-1].withdraw_root ||
-        //      batch_data_hash ||
-        //      z ||
-        //      y ||
-        //      blob_versioned_hash
-        //  )
-        let batch_public_input_hash_preimage = [
-            self.chain_id.to_be_bytes().as_ref(),
-            self.chunks_with_padding[0].prev_state_root.as_bytes(),
-            self.chunks_with_padding[N_SNARKS - 1]
-                .post_state_root
-                .as_bytes(),
-            self.chunks_with_padding[N_SNARKS - 1]
-                .withdraw_root
-                .as_bytes(),
+        // batchHash =
+        //   keccak256( 
+        //     version || 
+        //     batch_index || 
+        //     l1_message_popped || 
+        //     total_l1_message_popped ||
+        //     batch_data_hash || 
+        //     versioned_hash || 
+        //     parent_batch_hash || 
+        //     last_block_timestamp ||
+        //     z ||
+        //     y
+        // )
+        let batch_hash_preimage = [
+            [self.batch_header.version].as_ref(),
+            self.batch_header.batch_index.to_be_bytes().as_ref(),
+            batch_header.l1_message_popped.to_be_bytes().as_ref(),
+            batch_header.total_l1_message_popped.to_be_bytes().as_ref(),
             self.data_hash.as_bytes(),
-            &self.point_evaluation_assignments.challenge.to_be_bytes(),
-            &self.point_evaluation_assignments.evaluation.to_be_bytes(),
             self.versioned_hash.as_bytes(),
+            batch_header.parent_batch_hash.as_bytes(),
+            batch_header.last_block_timestamp.to_be_bytes().as_ref(),
+            point_evaluation_assignments
+                .challenge
+                .to_be_bytes()
+                .as_ref(),
+            point_evaluation_assignments
+                .evaluation
+                .to_be_bytes()
+                .as_ref(),
         ]
         .concat();
-        res.push(batch_public_input_hash_preimage);
+        res.push(batch_hash_preimage);
 
         // compute piHash for each chunk for i in [0..N_SNARKS)
         // chunk[i].piHash =
