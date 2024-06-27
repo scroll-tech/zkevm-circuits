@@ -63,6 +63,10 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
+    halo2curves::{
+        secp256k1::{self, Secp256k1Affine},
+        secp256r1::{self, Secp256r1Affine},
+    },
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -3012,7 +3016,9 @@ impl<F: Field> TxCircuitConfig<F> {
         region: &mut Region<'_, F>,
         offset: &mut usize,
         tx: &Transaction,
-        sign_data: &SignData,
+        sign_data: &SignData<secp256k1::Fq, Secp256k1Affine>,
+        // TODO: refactor method `assign_fixed_rows` to `assign_fixed_rows<Fq, Affine>`
+        // or add more one parameter `assign_fixed_rows_r1`
         next_tx: Option<&Transaction>,
         total_l1_popped_before: u64,
         num_all_txs_acc: u64,
@@ -4165,7 +4171,8 @@ impl<F: Field> TxCircuit<F> {
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
         start_l1_queue_index: u64,
-        sign_datas: Vec<SignData>,
+        sign_datas: Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
+        // TODO: add `sign_datas_r1" ?
         padding_txs: &[Transaction],
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         config.tx_rom_table.load(layouter)?;
@@ -4519,7 +4526,7 @@ pub(crate) fn get_sign_data(
     txs: &[Transaction],
     max_txs: usize,
     chain_id: usize,
-) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
+) -> Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, halo2_proofs::plonk::Error> {
     let padding_txs = (txs.len()..max_txs)
         .map(|i| {
             let mut tx = Transaction::dummy(chain_id as u64);

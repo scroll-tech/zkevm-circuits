@@ -19,6 +19,10 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{sign_types::SignData, Address, ToLittleEndian, Word, H256, U256};
+use halo2_proofs::halo2curves::{
+    secp256k1::{self, Secp256k1Affine},
+    secp256r1::{self, Secp256r1Affine},
+};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
@@ -130,7 +134,10 @@ impl Block {
     }
 
     /// Get signature (witness) from the block for tx signatures and ecRecover calls.
-    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
+    pub(crate) fn get_sign_data(
+        &self,
+        padding: bool,
+    ) -> Vec<SignData<secp256k1::Fq, Secp256k1Affine>> {
         let mut signatures: Vec<SignData> = self
             .txs
             .iter()

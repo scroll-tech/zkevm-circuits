@@ -5,6 +5,10 @@ use eth_types::{
     ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::keccak256;
+use halo2_proofs::halo2curves::{
+    secp256k1::{self, Secp256k1Affine},
+    secp256r1::{self, Secp256r1Affine},
+};
 use itertools::Itertools;
 
 use super::{Block, BlockContexts, Transaction};
@@ -68,7 +72,10 @@ pub fn keccak_inputs(block: &Block) -> Result<Vec<Vec<u8>>, Error> {
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
 /// signature datas.
-pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
+/// TODO: check if need to support p256 SignData type.
+pub fn keccak_inputs_sign_verify(
+    sigs: &[SignData<secp256k1::Fq, Secp256k1Affine>],
+) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
     let dummy_sign_data = SignData::default();
     for sig in sigs.iter().chain(std::iter::once(&dummy_sign_data)) {

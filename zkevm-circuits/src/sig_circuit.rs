@@ -49,7 +49,8 @@ pub(crate) use utils::*;
 
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
+    // secp256k1 curve
+    halo2curves::secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
     // p256 curve
     halo2curves::secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
@@ -125,6 +126,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // - num_limbs: 3
         //
         // TODO: make those parameters tunable from a config file
+        // TODO: rename `ecdsa_config` to `ecdsa_config_k1` and add new `ecdsa_config_r1`
+        // for p256.
         let ecdsa_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
@@ -134,7 +137,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             LOG_TOTAL_NUM_ROWS - 1,
             88,
             3,
-            modulus::<Fp>(),
+            modulus::<Fp_K1>(),
             0,
             LOG_TOTAL_NUM_ROWS, // maximum k of the chip
         );
@@ -213,8 +216,10 @@ impl<F: Field> SigCircuitConfig<F> {
 pub struct SigCircuit<F: Field> {
     /// Max number of verifications
     pub max_verif: usize,
-    /// Without padding
-    pub signatures: Vec<SignData>,
+    /// Without padding Secp256k1 signatures
+    pub signatures_k1: Vec<SignData<Fq_K1, Secp256k1Affine>>,
+    /// Without padding Secp256k1 signatures
+    pub signatures_r1: Vec<SignData<Fq_R1, Secp256r1Affine>>,
     /// Marker
     pub _marker: PhantomData<F>,
 }
@@ -331,7 +336,9 @@ impl<F: Field> SigCircuit<F> {
         &self,
         ctx: &mut Context<F>,
         ecdsa_chip: &FpChip<F>,
-        sign_data: &SignData,
+        sign_data: &SignData<Fq_K1, Secp256k1Affine>,
+        // TODO: refactor method `assign_ecdsa` to `assign_ecdsa<Fq, Affine>`
+        // or add more one parameter `sign_data_r1`
     ) -> Result<AssignedECDSA<F, FpChip<F>>, Error> {
         let gate = ecdsa_chip.gate();
         let zero = gate.load_zero(ctx);
@@ -351,7 +358,8 @@ impl<F: Field> SigCircuit<F> {
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
         // build Fq chip from Fp chip
-        let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
+        // TODO: check if need to add new fq_chip_r
+        let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq_K1>());
         let integer_r =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
@@ -364,7 +372,8 @@ impl<F: Field> SigCircuit<F> {
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
         let (sig_is_valid, pk_is_zero, y_coord) =
-            ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
+            // add new p256 curve `ecdsa_verify_no_pubkey_check`
+            ecdsa_verify_no_pubkey_check::<F, Fp_K1, Fq_K1, Secp256k1Affine>(
                 &ecc_chip.field_chip,
                 ctx,
                 &pk_assigned,
@@ -506,7 +515,9 @@ impl<F: Field> SigCircuit<F> {
         &self,
         ctx: &mut Context<F>,
         ecdsa_chip: &FpChip<F>,
-        sign_data: &SignData,
+        sign_data: &SignData<Fq_K1, Secp256k1Affine>,
+        //TODO: refactor this method to sign_data_decomposition<Fq, Affine>
+        // or just add new parameter `sign_data_r1`
         assigned_data: &AssignedECDSA<F, FpChip<F>>,
     ) -> Result<SignDataDecomposed<F>, Error> {
         // build ecc chip from Fp chip
@@ -651,7 +662,8 @@ impl<F: Field> SigCircuit<F> {
         &self,
         ctx: &mut Context<F>,
         rlc_chip: &RangeConfig<F>,
-        sign_data: &SignData,
+        sign_data: &SignData<Fq_K1, Secp256k1Affine>,
+        // TODO: add sign_data_r1
         sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
         assigned_ecdsa: &AssignedECDSA<F, FpChip<F>>,
@@ -746,7 +758,9 @@ impl<F: Field> SigCircuit<F> {
         &self,
         config: &SigCircuitConfig<F>,
         layouter: &mut impl Layouter<F>,
-        signatures: &[SignData],
+        signatures: &[SignData<Fq_K1, Secp256k1Affine>],
+        // TODO: refactor method `assign` to `assign<Fq, Affine>`
+        // or add more one parameter `sign_data_r1`
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
         if signatures.len() > self.max_verif {

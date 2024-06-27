@@ -1002,8 +1002,8 @@ impl PrecompileEvents {
     pub fn get_p256_verify_events(&self) -> Vec<SignData<Fq_R1, Secp256r1Affine>> {
         self.events
             .iter()
-            .filter_map(|e| {
-                if let PrecompileEvent::Ecrecover(sign_data) = e {
+            .filter_map(|e: &PrecompileEvent| {
+                if let PrecompileEvent::P256Verify(sign_data) = e {
                     Some(sign_data)
                 } else {
                     None
@@ -1018,7 +1018,7 @@ impl PrecompileEvents {
 #[derive(Clone, Debug)]
 pub enum PrecompileEvent {
     /// Represents the I/O from Ecrecover call.
-    Ecrecover(SignData<Fp_K1, Secp256k1Affine>),
+    Ecrecover(SignData<Fq_K1, Secp256k1Affine>),
     /// Represents the I/O from EcAdd call.
     EcAdd(EcAddOp),
     /// Represents the I/O from EcMul call.
