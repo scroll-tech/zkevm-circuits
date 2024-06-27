@@ -130,12 +130,14 @@ where
 }
 
 /// gen a dummy snark for construct the first recursion snark
-pub fn initial_recursion_snark<RNG, const ST: usize>(
+pub fn initial_recursion_snark<ST, RNG>(
     params: &ParamsKZG<Bn256>, 
     recursion_vk: &VerifyingKey<G1Affine>,
     rng: &mut impl FnMut() -> RNG,
 ) -> Snark 
-where RNG: Rng + Send
+where 
+    ST: StateTransition,
+    RNG: Rng + Send
 {
     let mut snark = gen_dummy_snark::<RecursionCircuit<ST>, _>(
         params, 
@@ -155,7 +157,7 @@ where RNG: Rng + Send
 }
 
 /// gen the pk for recursion
-pub fn gen_recursion_pk<AppCircuit, RNG, const ST: usize>(
+pub fn gen_recursion_pk<AppCircuit, RNG>(
     recursion_params: &ParamsKZG<Bn256>,
     app_params: &ParamsKZG<Bn256>,
     app_vk: &VerifyingKey<G1Affine>,
@@ -171,20 +173,22 @@ where
     // generating the snark
     let dummy_vk = keygen_vk(
         recursion_params, 
-        &dummy_circuit::CsProxy::<Fr, RecursionCircuit<ST>>::default()
+        &dummy_circuit::CsProxy::<Fr, RecursionCircuit<AppCircuit>>::default()
     ).unwrap();
-    let recursive_snark = initial_recursion_snark::<_, ST>(recursion_params, &dummy_vk, rng);
+    let recursive_snark = initial_recursion_snark::<AppCircuit, _>(recursion_params, &dummy_vk, rng);
 
-    let dummy_app = AppCircuit::new(Default::default());
-    let recursion = RecursionCircuit::<ST>::new(
+    let recursion = RecursionCircuit::<AppCircuit>::new(
         recursion_params,
         gen_dummy_snark::<AppCircuit, _>(
-            app_params, app_vk, &dummy_app.num_instance(), rng,
+            app_params, 
+            app_vk, 
+            &[<AppCircuit as StateTransition>::num_instance()], 
+            rng,
         ),
         recursive_snark,
         rng(),
-        [Fr::ZERO; ST],
-        [Fr::ZERO; ST],
+        &vec![Fr::ZERO; AppCircuit::num_transition_instance()],
+        &vec![Fr::ZERO; AppCircuit::num_transition_instance() + AppCircuit::num_additional_instance()],
         0,
     );
     gen_pk(recursion_params, &recursion, None)

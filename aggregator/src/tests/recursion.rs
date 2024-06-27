@@ -73,19 +73,21 @@ impl CircuitExt<Fr> for Square {
 }
 
 impl StateTransition for Square {
-    type Input = [Fr;1];
+    type Input = Fr;
 
     fn new(state: Self::Input) -> Self {
-        Self(state[0])
+        Self(state)
     }
 
-    fn state_transition(&self) -> Self::Input {
-        [self.0.square()]
+    fn num_transition_instance() -> usize {1}
+
+    fn state_transition(&self, _: usize) -> Self::Input {
+        self.0.square()
     }
 }
 
 #[test]
-fn test_recursive_last() {
+fn test_recursion_circuit() {
 
     let app_params = gen_srs(3);
     let recursion_config: AggregationConfigParams =
@@ -97,7 +99,7 @@ fn test_recursive_last() {
     let app_pk = gen_pk(&app_params, &app, None);
 
     let pk_time = start_timer!(|| "Generate recursion pk");
-    let recursion_pk = gen_recursion_pk::<Square, _, 1>(
+    let recursion_pk = gen_recursion_pk::<Square, _>(
         &recursion_params,
         &app_params,
         app_pk.get_vk(),
@@ -106,9 +108,9 @@ fn test_recursive_last() {
     end_timer!(pk_time);
 
     let mut rng = test_rng();
-    let init_state = [Fr::from(2u64)];
+    let init_state = Fr::from(2u64);
     let app = Square::new(init_state);
-    let next_state = app.state_transition();
+    let next_state = app.state_transition(0);
     let app_snark = gen_snark_shplonk(
         &app_params, 
         &app_pk, 
@@ -116,19 +118,19 @@ fn test_recursive_last() {
         &mut rng, 
         None::<String>,
     ).unwrap();
-    let init_snark = initial_recursion_snark::<_, 1>(
+    let init_snark = initial_recursion_snark::<Square, _>(
         &recursion_params, 
         &recursion_pk.get_vk(), 
         &mut test_rng,
     );
     
-    let recursion = RecursionCircuit::new(
+    let recursion = RecursionCircuit::<Square>::new(
         &recursion_params,
         app_snark,
         init_snark,
         test_rng(),
-        init_state,
-        next_state,
+        &[init_state],
+        &[next_state],
         0,
     );    
     let pf_time = start_timer!(|| "Generate first recursive snark");
@@ -144,14 +146,14 @@ fn test_recursive_last() {
     end_timer!(pf_time);
     //assert_eq!(final_state, Fr::from(2u64).pow(&[1 << num_round, 0, 0, 0]));
 
-    assert!(verify_snark_shplonk::<RecursionCircuit<1>>(
+    assert!(verify_snark_shplonk::<RecursionCircuit<Square>>(
         &recursion_params,
         snark.clone(),
         recursion_pk.get_vk()
     ));
 
     let app = Square::new(next_state);
-    let next_state = app.state_transition();
+    let next_state = app.state_transition(1);
     let app_snark = gen_snark_shplonk(
         &app_params, 
         &app_pk, 
@@ -160,13 +162,13 @@ fn test_recursive_last() {
         None::<String>,
     ).unwrap();
     
-    let recursion = RecursionCircuit::new(
+    let recursion = RecursionCircuit::<Square>::new(
         &recursion_params,
         app_snark,
         snark,
         test_rng(),
-        init_state,
-        next_state,
+        &[init_state],
+        &[next_state],
         1,
     );
  
@@ -182,7 +184,7 @@ fn test_recursive_last() {
 
     end_timer!(pf_time);
 
-    assert!(verify_snark_shplonk::<RecursionCircuit<1>>(
+    assert!(verify_snark_shplonk::<RecursionCircuit<Square>>(
         &recursion_params,
         snark,
         recursion_pk.get_vk()

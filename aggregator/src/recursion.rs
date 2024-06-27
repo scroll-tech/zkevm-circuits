@@ -51,15 +51,24 @@ use snark_verifier::{
 use rand::Rng;
 use itertools::Itertools;
 
+
 pub trait StateTransition : Sized{
-    type Input: Default;
+    type Input: Clone;
 
     fn new(state: Self::Input) -> Self;
 
-    fn state_transition(&self) -> Self::Input;
+    fn state_transition(&self, round: usize) -> Self::Input;
 
-    fn next(&self) -> Self {
-        Self::new(self.state_transition())
+    // the number of fields should be used for state transition
+    // notice the pi take 2 times of the returned number (before -> after)
+    fn num_transition_instance() -> usize;
+
+    // in case the circuit still require more PI followed by 
+    // state transition
+    fn num_additional_instance() -> usize {0}
+
+    fn num_instance() -> usize {
+        Self::num_transition_instance() * 2 + Self::num_additional_instance()
     }
 }
 

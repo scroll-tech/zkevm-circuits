@@ -38,7 +38,7 @@ use snark_verifier_sdk::{
 };
 
 
-use std::{rc::Rc, fs::File, iter};
+use std::{rc::Rc, fs::File, iter, marker::PhantomData};
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 type Pcs = Kzg<Bn256, Bdfg21>;
 
@@ -82,7 +82,7 @@ fn accumulate<'a>(
 }
 
 #[derive(Clone)]
-pub struct RecursionCircuit<const ST: usize> {
+pub struct RecursionCircuit<ST> {
     svk: Svk,
     default_accumulator: KzgAccumulator<G1Affine, NativeLoader>,
     app: SnarkWitness,
@@ -90,23 +90,27 @@ pub struct RecursionCircuit<const ST: usize> {
     round: usize,
     instances: Vec<Fr>,
     as_proof: Value<Vec<u8>>,
+    _marker: PhantomData<ST>,
 }
 
-impl<const ST: usize> RecursionCircuit<ST> {
+impl<ST: StateTransition> RecursionCircuit<ST> {
     const PREPROCESSED_DIGEST_ROW: usize = 4 * LIMBS;
     const INITIAL_STATE_ROW: usize = Self::PREPROCESSED_DIGEST_ROW + 1;
-    const STATE_ROW: usize = Self::INITIAL_STATE_ROW + ST;
-    const ROUND_ROW: usize = Self::STATE_ROW + ST;
+    //const STATE_ROW: usize = Self::INITIAL_STATE_ROW + ST;
+    //const ROUND_ROW: usize = Self::STATE_ROW + ST;
 
     pub fn new(
         params: &ParamsKZG<Bn256>,
         app: Snark,
         previous: Snark,
         rng: impl Rng + Send,
-        initial_state: [Fr; ST],
-        state: [Fr; ST],
+        initial_state: &[Fr],
+        state: &[Fr],
         round: usize,
     ) -> Self {
+        assert_eq!(initial_state.len(), ST::num_transition_instance());
+        assert_eq!(state.len(), ST::num_transition_instance() + ST::num_additional_instance());
+
         let svk = params.get_g()[0].into();
         let default_accumulator = KzgAccumulator::new(params.get_g()[1], params.get_g()[0]);
 
@@ -153,8 +157,8 @@ impl<const ST: usize> RecursionCircuit<ST> {
                 .into_iter()
                 .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
                 .chain(iter::once(preprocessed_digest))
-                .chain(initial_state)
-                .chain(state)
+                .chain(initial_state.iter().copied())
+                .chain(state.iter().copied())
                 .chain(iter::once(Fr::from(round as u64)))
                 .collect();
 
@@ -168,6 +172,7 @@ impl<const ST: usize> RecursionCircuit<ST> {
             round,
             instances,
             as_proof: Value::known(as_proof),
+            _marker: Default::default(),
         }
     }
 
@@ -202,12 +207,15 @@ impl<const ST: usize> RecursionCircuit<ST> {
     /// get the number of instance, help to refine the CircuitExt trait
     pub fn num_instance_fixed() -> usize {
         // [..lhs, ..rhs, preprocessed_digest, initial_state, state, round]
-        4 * LIMBS + ST*2 + 2
+        4 * LIMBS 
+        + 2 * ST::num_transition_instance() 
+        + ST::num_additional_instance() 
+        + 2
     }
 
 }
 
-impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
+impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
     type Config = config::RecursionConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -221,6 +229,7 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
             round: self.round,
             instances: self.instances.clone(),
             as_proof: Value::unknown(),
+            _marker: Default::default(),
         }
     }
 
@@ -262,20 +271,26 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                     },
                 );
 
+                let init_state_row_beg = Self::INITIAL_STATE_ROW;
+                let state_row_beg = init_state_row_beg + ST::num_transition_instance();
+                let addition_state_beg = state_row_beg + ST::num_transition_instance();
+                let round_row = addition_state_beg + ST::num_additional_instance();
+                log::debug!("state position: init {}|cur {}|add {}", state_row_beg, addition_state_beg, round_row);
+
                 let [preprocessed_digest, round] = [
                     self.instances[Self::PREPROCESSED_DIGEST_ROW],
-                    self.instances[Self::ROUND_ROW],
+                    self.instances[round_row],
                 ]
                 .map(|instance| {
                     main_gate.assign_integer(&mut ctx, Value::known(instance)).unwrap()
                 });
 
-                let initial_state = self.instances[Self::INITIAL_STATE_ROW..Self::STATE_ROW]
+                let initial_state = self.instances[init_state_row_beg..state_row_beg]
                 .iter().map(|&instance| {
                     main_gate.assign_integer(&mut ctx, Value::known(instance)).unwrap()
                 }).collect::<Vec<_>>();
 
-                let state = self.instances[Self::STATE_ROW..Self::ROUND_ROW]
+                let state = self.instances[state_row_beg..round_row]
                 .iter().map(|&instance| {
                     main_gate.assign_integer(&mut ctx, Value::known(instance)).unwrap()
                 }).collect::<Vec<_>>();
@@ -321,8 +336,8 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                 let mut ctx = loader.ctx_mut();
                 let initial_state_propagate = 
                     initial_state.iter()
-                    .zip_eq(previous_instances[Self::INITIAL_STATE_ROW..Self::STATE_ROW].iter())
-                    .zip_eq(app_instances[..ST].iter())
+                    .zip_eq(previous_instances[init_state_row_beg..state_row_beg].iter())
+                    .zip_eq(app_instances[..ST::num_transition_instance()].iter())
                     .flat_map(|((&st, &previous_st), &app_inst)|[
                     // Propagate initial_state
                     (
@@ -350,13 +365,13 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
 
                 // Verify current state is same as the current application snark
                 let verify_app_state = state.iter()
-                .zip_eq(app_instances[ST..].iter())
+                .zip_eq(app_instances[ST::num_transition_instance()..].iter())
                 .map(|(&st, &app_inst)|(st, app_inst)).collect::<Vec<_>>();
 
-                // Verify previous state is same as the current application snark
+                // Verify previous state (additional state not included) is same as the current application snark
                 let verify_app_init_state = 
-                previous_instances[Self::STATE_ROW..Self::ROUND_ROW].iter()
-                .zip_eq(app_instances[..ST].iter())
+                previous_instances[state_row_beg..addition_state_beg].iter()
+                .zip_eq(app_instances[..ST::num_transition_instance()].iter())
                 .map(|(&st, &app_inst)|(
                     main_gate.mul(
                         &mut ctx,
@@ -376,22 +391,13 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
                         ),
                         previous_instances[Self::PREPROCESSED_DIGEST_ROW],
                     ),
-                    // // Verify previous state is same as the current application snark
-                    // (
-                    //     main_gate.mul(
-                    //         &mut ctx,
-                    //         Existing(app_instances[0]),
-                    //         Existing(not_first_round),
-                    //     ),
-                    //     previous_instances[Self::STATE_ROW],
-                    // ),
                     // Verify round is increased by 1 when not at first round
                     (
                         round,
                         main_gate.add(
                             &mut ctx,
                             Existing(not_first_round),
-                            Existing(previous_instances[Self::ROUND_ROW]),
+                            Existing(previous_instances[round_row]),
                         ),
                     ),
                 ].into_iter()
@@ -432,7 +438,7 @@ impl<const ST: usize> Circuit<Fr> for RecursionCircuit<ST> {
     }
 }
 
-impl<const ST: usize> CircuitExt<Fr> for RecursionCircuit<ST> {
+impl<ST: StateTransition> CircuitExt<Fr> for RecursionCircuit<ST> {
     fn num_instance(&self) -> Vec<usize> {
         vec![Self::num_instance_fixed()]
     }
