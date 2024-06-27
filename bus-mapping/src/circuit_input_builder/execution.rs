@@ -28,6 +28,15 @@ use halo2_proofs::{
     plonk::Expression,
 };
 
+use halo2_proofs::halo2curves::{
+    // secp256k1 curve
+    secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
+    // p256 curve
+    secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
+    Coordinates,
+    //CurveAffine,
+};
+
 /// An execution step of the EVM.
 #[derive(Clone, Debug)]
 pub struct ExecStep {
@@ -905,7 +914,7 @@ pub struct PrecompileEvents {
 
 impl PrecompileEvents {
     /// Get all ecrecover events.
-    pub fn get_ecrecover_events(&self) -> Vec<SignData> {
+    pub fn get_ecrecover_events(&self) -> Vec<SignData<Fq_K1, Secp256k1Affine>> {
         self.events
             .iter()
             .filter_map(|e| {
@@ -990,7 +999,7 @@ impl PrecompileEvents {
     }
 
     /// Get all ecrecover events.
-    pub fn get_p256_verify_events(&self) -> Vec<SignData> {
+    pub fn get_p256_verify_events(&self) -> Vec<SignData<Fq_R1, Secp256r1Affine>> {
         self.events
             .iter()
             .filter_map(|e| {
@@ -1009,7 +1018,7 @@ impl PrecompileEvents {
 #[derive(Clone, Debug)]
 pub enum PrecompileEvent {
     /// Represents the I/O from Ecrecover call.
-    Ecrecover(SignData),
+    Ecrecover(SignData<Fp_K1, Secp256k1Affine>),
     /// Represents the I/O from EcAdd call.
     EcAdd(EcAddOp),
     /// Represents the I/O from EcMul call.
@@ -1021,7 +1030,7 @@ pub enum PrecompileEvent {
     /// Represents the I/O from SHA256 call.
     SHA256(SHA256),
     /// Represents the I/O from P256Verify call.
-    Ecrecover(SignData),
+    P256Verify(SignData<Fq_R1, Secp256r1Affine>),
 }
 
 impl Default for PrecompileEvent {

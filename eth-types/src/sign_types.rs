@@ -21,6 +21,7 @@ use halo2curves::{
         prime::PrimeCurveAffine,
         Curve,
     },
+    // secp256k1 curve
     secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
     // p256 curve
     secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
