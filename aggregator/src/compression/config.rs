@@ -7,7 +7,10 @@ use aggregator_snark_verifier::{
         ecc::{BaseFieldEccChip, EccChip},
         fields::fp::FpConfig,
         halo2_base::{
-            gates::{flex_gate::FlexGateConfig, range::RangeConfig},
+            gates::{
+                flex_gate::{FlexGateConfig, FlexGateConfigParams},
+                range::RangeConfig,
+            },
             utils::modulus,
         },
     },
@@ -35,18 +38,18 @@ impl CompressionConfig {
             params.limb_bits == BITS && params.num_limbs == LIMBS,
             "For now we fix limb_bits = {BITS}, otherwise change code",
         );
+
+        let gate_params = FlexGateConfigParams {
+            k: params.degree.try_into().unwrap(),
+            num_fixed: params.num_fixed,
+            num_advice_per_phase: params.num_advice,
+        };
+
         let base_field_config = FpConfig::configure(
             meta,
-            params.strategy,
-            &params.num_advice,
+            gate_params,
             &params.num_lookup_advice,
-            params.num_fixed,
             params.lookup_bits,
-            params.limb_bits,
-            params.num_limbs,
-            modulus::<Fq>(),
-            0,
-            params.degree as usize,
         );
 
         let instance = meta.instance_column();

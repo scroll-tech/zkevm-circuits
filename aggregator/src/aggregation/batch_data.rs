@@ -1,9 +1,13 @@
 use aggregator_snark_verifier::{
-    halo2_base::halo2_proofs::{
-        circuit::{AssignedCell, Layouter, Region, Value},
-        halo2curves::bn256::Fr,
-        plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
-        poly::Rotation,
+    halo2_base::{
+        halo2_proofs::{
+            circuit::{AssignedCell, Layouter, Region, Value},
+            halo2curves::bn256::Fr,
+            plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
+            poly::Rotation,
+        },
+        utils::halo2::constrain_virtual_equals_external,
+        virtual_region::copy_constraints::CopyConstraintManager,
     },
     halo2_ecc::bigint::CRTInteger,
 };
@@ -533,6 +537,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_rows: &[AssignedBatchDataConfig],
+        copy_manager: &mut CopyConstraintManager<Fr>,
     ) -> Result<AssignedBatchDataExport, Error> {
         let n_rows_metadata = BatchData::<N_SNARKS>::n_rows_metadata();
         let n_rows_digest_rlc = BatchData::<N_SNARKS>::n_rows_digest_rlc();
@@ -1000,18 +1005,35 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
             &pows_of_256[0..10],
             &mut rlc_config_offset,
         )?;
-        region.constrain_equal(
-            challenge_digest_limb1.cell(),
-            challenge_digest_crt.truncation.limbs[0].cell(),
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb2.cell(),
-            challenge_digest_crt.truncation.limbs[1].cell(),
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb3.cell(),
-            challenge_digest_crt.truncation.limbs[2].cell(),
-        )?;
+
+        for (external_value, virtual_value) in [
+            challenge_digest_limb1,
+            challenge_digest_limb2,
+            challenge_digest_limb3,
+        ]
+        .into_iter()
+        .zip_eq(challenge_digest_crt.truncation.limbs.into_iter())
+        {
+            constrain_virtual_equals_external(
+                region,
+                virtual_value,
+                external_value.cell(),
+                copy_manager,
+            )
+        }
+
+        // region.constrain_equal(
+        //     challenge_digest_limb1.cell(),
+        //     challenge_digest_crt.truncation.limbs[0].cell(),
+        // )?;
+        // region.constrain_equal(
+        //     challenge_digest_limb2.cell(),
+        //     challenge_digest_crt.truncation.limbs[1].cell(),
+        // )?;
+        // region.constrain_equal(
+        //     challenge_digest_limb3.cell(),
+        //     challenge_digest_crt.truncation.limbs[2].cell(),
+        // )?;
 
         Ok(export)
     }

@@ -2,7 +2,7 @@ use aggregator_snark_verifier::loader::halo2::IntegerInstructions;
 use aggregator_snark_verifier::{
     halo2_base::{
         gates::{
-            circuit::BaseCircuitBuilder,
+            circuit::builder::BaseCircuitBuilder,
             flex_gate::GateChip,
             range::{RangeChip, RangeConfig},
             GateInstructions,
@@ -12,7 +12,7 @@ use aggregator_snark_verifier::{
         AssignedValue, QuantumCell,
     },
     halo2_ecc::{
-        bigint::{CRTInteger, OverflowInteger},
+        bigint::{CRTInteger, OverflowInteger, ProperCrtUint},
         fields::{
             fp::{FpChip, FpConfig},
             FieldChip,
@@ -99,7 +99,7 @@ impl BarycentricEvaluationConfig {
 
     pub fn assign(
         &self,
-        ctx: &mut Context<Fr>,
+        ctx: &mut SinglePhaseCoreManager<Fr>,
         blob: &[U256; BLOB_WIDTH],
         challenge_digest: U256,
         evaluation: U256,
@@ -138,11 +138,11 @@ impl BarycentricEvaluationConfig {
             ctx,
             fp_chip.gate(),
             &challenge_le,
-            &challenge_digest_crt,
+            &challenge_digest_crt.limbs(),
             &powers_of_256,
         );
 
-        let challenge_digest_mod = fp_chip.carry_mod(ctx, &challenge_digest_crt);
+        let challenge_digest_mod = fp_chip.carry_mod(ctx, challenge_digest_crt);
         let challenge_crt = fp_chip.load_private(ctx, challenge_scalar);
         fp_chip.assert_equal(ctx, &challenge_digest_mod, &challenge_crt);
 
@@ -155,16 +155,13 @@ impl BarycentricEvaluationConfig {
                 .iter()
                 .map(|&x| Fr::from(u64::from(x))),
         );
-        let evaluation_crt = fp_chip.load_private(
-            ctx,
-            Value::known(fe_to_biguint(&Scalar::from_raw(evaluation.0)).into()),
-        );
+        let evaluation_crt = fp_chip.load_private(ctx, Scalar::from_raw(evaluation.0));
 
         assert_le_bytes_equal_crt(
             ctx,
             fp_chip.gate(),
             &evaluation_le,
-            &evaluation_crt,
+            &evaluation_crt.limbs(),
             &powers_of_256,
         );
 
@@ -180,19 +177,21 @@ impl BarycentricEvaluationConfig {
                 let blob_i_le = ctx
                     .assign_witnesses(blob_i.to_le_bytes().iter().map(|&x| Fr::from(u64::from(x))));
                 let blob_i_scalar = Scalar::from_raw(blob_i.0);
-                let blob_i_crt = fp_chip.load_private(ctx, fe_to_biguint(&blob_i_scalar));
+                let blob_i_crt = fp_chip.load_private(ctx, blob_i_scalar);
 
                 assert_le_bytes_equal_crt(
                     ctx,
                     fp_chip.gate(),
                     &blob_i_le,
-                    &blob_i_crt,
+                    &blob_i_crt.limbs(),
                     &powers_of_256,
                 );
 
                 // the most-significant byte of blob scalar field element is 0 as we expect this
                 // representation to be in its canonical form.
-                fp_chip.gate().assert_equal(ctx, &blob_i_le[31], Fr::zero());
+                fp_chip
+                    .gate()
+                    .assert_is_const(ctx, &blob_i_le[31], &Fr::zero());
 
                 // a = int(polynomial[i]) * int(roots_of_unity_brp[i]) % BLS_MODULUS
                 let a = fp_chip.mul(ctx, &blob_i_crt, root_i_crt);
@@ -225,7 +224,8 @@ impl BarycentricEvaluationConfig {
         AssignedBarycentricEvaluationConfig {
             barycentric_assignments: blob_crts
                 .into_iter()
-                .chain(std::iter::once(ProperCrtUint::from(challenge_digest_crt)))
+                .map(CRTInteger::from)
+                .chain(std::iter::once(challenge_digest_crt))
                 .collect(),
             z_le: challenge_le,
             y_le: evaluation_le,
@@ -245,10 +245,10 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 }
 
 fn assert_le_bytes_equal_crt(
-    ctx: &mut Context<Fr>,
+    ctx: &mut SinglePhaseCoreManager<Fr>,
     gate: &GateChip<Fr>,
     le_bytes: &[AssignedValue<Fr>],
-    crt: &CRTInteger<Fr>,
+    crt_limbs: &[AssignedValue<Fr>],
     powers_of_256: &[QuantumCell<Fr>],
 ) {
     assert_eq!(le_bytes.len(), 32);
@@ -260,12 +260,12 @@ fn assert_le_bytes_equal_crt(
         le_bytes[22..32].iter(),
     ]
     .iter()
-    .zip_eq(crt.limbs())
+    .zip_eq(crt_limbs)
     {
         let limb_from_le_bytes = gate.inner_product(
             ctx,
             limb_le_bytes.map(|&x| QuantumCell::Existing(x)),
-            &powers_of_256[..limb_le_bytes.len()],
+            powers_of_256[..limb_le_bytes.len()].into_iter().cloned(),
         );
         gate.assert_equal(ctx, limb, &limb_from_le_bytes);
     }

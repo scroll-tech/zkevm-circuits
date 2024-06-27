@@ -159,6 +159,11 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        // let builder = BaseCircuitBuilder
+        // builder.core.copy_manager ....
+
+        let builder = BaseCircuitBuilder::default();
+
         let (config, challenge) = config;
 
         let witness_time = start_timer!(|| "synthesize | Aggregation Circuit");
@@ -277,7 +282,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
                     // ctx.print_stats(&["barycentric"]);
 
-                    config.range().finalize(&mut ctx);
+                    // TODO: figure out where to call this!!!
+                    // config.range().finalize(&mut ctx);
 
                     Ok((accumulator_instances, snark_inputs, barycentric))
                 },
@@ -402,7 +408,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         {
             assert!(accumulator_instances.len() == ACC_LEN);
             for (i, v) in accumulator_instances.iter().enumerate() {
-                layouter.constrain_instance(v.cell(), config.instance, i)?;
+                // let cell: halo2_proofs::circuit::Cell = v.cell();
+                layouter.constrain_instance(v.cell.unwrap(), config.instance, i)?;
             }
         }
 

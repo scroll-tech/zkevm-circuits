@@ -9,6 +9,7 @@ use aggregator_snark_verifier::{
     },
     pcs::kzg::KzgAccumulator,
 };
+// use std::rc::Rc;
 use eth_types::Field;
 use halo2curves::bn256::{Fr, G1Affine};
 

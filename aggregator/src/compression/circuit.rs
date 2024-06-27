@@ -26,6 +26,7 @@ use aggregator_snark_verifier::{
     },
     pcs::kzg::{Bdfg21, KzgAs, KzgSuccinctVerifyingKey},
 };
+use aggregator_snark_verifier_sdk::halo2::aggregation::BaseFieldEccChip;
 use aggregator_snark_verifier_sdk::{
     halo2::aggregation::{aggregate, Svk},
     Snark,
@@ -144,7 +145,7 @@ impl Circuit<Fr> for CompressionCircuit {
                 instances.extend(
                     flatten_accumulator(acc)
                         .iter()
-                        .map(|assigned| assigned.cell()),
+                        .map(|assigned| assigned.cell),
                 );
                 // - if the snark is not a fresh one, assigned_instances already contains an
                 //   accumulator so we want to skip the first 12 elements from the public input
@@ -153,9 +154,10 @@ impl Circuit<Fr> for CompressionCircuit {
                     instance_column.iter().skip(skip).map(|x| x.cell())
                 }));
 
-                config.range().finalize(&mut loader.ctx_mut());
+                // TODO: figure out where to call this!
+                // config.range().finalize(&mut loader.ctx_mut());
 
-                loader.ctx_mut().print_stats(&["Range"]);
+                // loader.ctx_mut().print_stats(&["Range"]);
                 Ok(instances)
             },
         )?;

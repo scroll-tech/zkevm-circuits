@@ -1,11 +1,14 @@
 use std::io::Write;
 
 use aggregator_snark_verifier::{
-    halo2_base::halo2_proofs::{
-        circuit::{AssignedCell, Layouter, Region, Value},
-        halo2curves::bn256::Fr,
-        plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
-        poly::Rotation,
+    halo2_base::{
+        halo2_proofs::{
+            circuit::{AssignedCell, Layouter, Region, Value},
+            halo2curves::bn256::Fr,
+            plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
+            poly::Rotation,
+        },
+        virtual_region::copy_constraints::CopyConstraintManager,
     },
     halo2_ecc::bigint::CRTInteger,
 };
@@ -282,6 +285,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_bytes: &[AssignedCell<Fr, Fr>],
         bytes_len: &AssignedCell<Fr, Fr>,
+        copy_manager: &&mut CopyConstraintManager<Fr>,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         rlc_config.init(region)?;
         let mut rlc_config_offset = 0;
@@ -344,9 +348,9 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                 &pows_of_256[0..9],
                 &mut rlc_config_offset,
             )?;
-            region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell())?;
-            region.constrain_equal(limb2.cell(), blob_crt.truncation.limbs[1].cell())?;
-            region.constrain_equal(limb3.cell(), blob_crt.truncation.limbs[2].cell())?;
+            region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell)?;
+            region.constrain_equal(limb2.cell(), blob_crt.truncation.limbs[1].cell)?;
+            region.constrain_equal(limb3.cell(), blob_crt.truncation.limbs[2].cell)?;
         }
 
         // The zstd decoder (DecoderConfig) exports an encoded length that is 1 more than the
