@@ -444,6 +444,7 @@ pub struct ExecutionResult {
     #[serde(rename = "callTrace")]
     pub call_trace: GethCallTrace,
     /// prestate
+    #[serde(rename = "prestateTrace")]
     pub prestate: HashMap<Address, GethPrestateTrace>,
 }
 
