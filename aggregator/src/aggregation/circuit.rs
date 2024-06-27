@@ -578,20 +578,21 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
 impl<const N_SNARKS: usize> CircuitExt<Fr> for BatchCircuit<N_SNARKS> {
     fn num_instance(&self) -> Vec<usize> {
-        // 12 elements from accumulator
-        // 32 elements from batch's public_input_hash
-        vec![ACC_LEN + DIGEST_LEN]
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - chain id (1 element)
+        // - current_withdraw_root (2 elements)
+        vec![11]
     }
 
-    // 1 element from chain id
-    // 32 elements from batch's public_input_hash
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
     }
 
     fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
-        // the accumulator are the first 12 cells in the instance
-        Some((0..ACC_LEN).map(|idx| (0, idx)).collect())
+        None
     }
 
     fn selectors(config: &Self::Config) -> Vec<Selector> {
