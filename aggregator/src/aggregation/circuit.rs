@@ -313,7 +313,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
             let timer = start_timer!(|| "extract hash");
             // orders:
-            // - batch_public_input_hash
+            // - batch_hash
             // - chunk\[i\].piHash for i in \[0, N_SNARKS)
             // - batch_data_hash_preimage
             // - preimage for blob metadata

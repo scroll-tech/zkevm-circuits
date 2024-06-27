@@ -55,7 +55,7 @@ pub(crate) fn parse_hash_preimage_cells<const N_SNARKS: usize>(
     // each pi hash has INPUT_LEN_PER_ROUND bytes as input
     // keccak will pad the input with another INPUT_LEN_PER_ROUND bytes
     // we extract all those bytes
-    let batch_pi_hash_preimage = &hash_input_cells[0];
+    let batch_hash_preimage = &hash_input_cells[0];
     let mut chunk_pi_hash_preimages = vec![];
     for i in 0..N_SNARKS {
         chunk_pi_hash_preimages.push(&hash_input_cells[i + 1]);

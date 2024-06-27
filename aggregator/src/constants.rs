@@ -34,18 +34,21 @@ pub(crate) const CHUNK_TX_DATA_HASH_INDEX: usize = 136;
 // ================================
 //
 // the preimages are arranged as
-// - chain_id:          8 bytes
-// - prev_state_root    32 bytes
-// - post_state_root    32 bytes
-// - withdraw_root      32 bytes
-// - chunk_data_hash    32 bytes
-// - z                  32 bytes
-// - y                  32 bytes
-// - versioned_hash     32 bytes
+// - version:                  1 byte
+// - batch_index:              8 bytes
+// - l1_message_popped         8 bytes
+// - total_l1_message_popped   8 bytes
+// - data_hash                 32 bytes
+// - blob_versioned_hash       32 bytes
+// - parent_batch_hash         32 bytes
+// - last_block_timestamp      8 bytes
+// - z                         32 bytes
+// - y                         32 bytes
 
-pub(crate) const BATCH_Z_OFFSET: usize = 136;
-pub(crate) const BATCH_Y_OFFSET: usize = 168;
-pub(crate) const BATCH_VH_OFFSET: usize = 200;
+pub(crate) const BATCH_DATA_HASH_OFFSET: usize = 25;
+pub(crate) const BATCH_Z_OFFSET: usize = 129;
+pub(crate) const BATCH_Y_OFFSET: usize = 161;
+pub(crate) const BATCH_VH_OFFSET: usize = 193;
 
 // ================================
 // aggregator parameters
