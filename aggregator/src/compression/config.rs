@@ -60,16 +60,17 @@ impl CompressionConfig {
 
     /// Range gate configuration
     pub fn range(&self) -> &RangeConfig<Fr> {
-        &self.base_field_config.range
+        &self.base_field_config
     }
 
     /// Flex gate configuration
     pub fn gate(&self) -> &FlexGateConfig<Fr> {
-        &self.base_field_config.range.gate
+        &self.base_field_config.gate
     }
 
     /// Ecc gate configuration
     pub fn ecc_chip(&self) -> BaseFieldEccChip<G1Affine> {
-        EccChip::construct(self.base_field_config.clone())
+        unimplemented!()
+        // EccChip::construct(self.base_field_config.clone())
     }
 }

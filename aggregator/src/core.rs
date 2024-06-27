@@ -4,14 +4,14 @@ use aggregator_snark_verifier::{
     loader::native::NativeLoader,
     pcs::{
         kzg::{Bdfg21, KzgAccumulator, KzgAs},
-        AccumulationSchemeProver,
+        AccumulationScheme, AccumulationSchemeProver,
     },
     util::arithmetic::fe_to_limbs,
     Error as SnarkVerifierError,
 };
 use aggregator_snark_verifier_sdk::{
     halo2::{PoseidonTranscript, POSEIDON_SPEC},
-    PlonkVerifier, Snark,
+    PlonkVerifier, Snark, SHPLONK,
 };
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
@@ -40,6 +40,9 @@ use crate::{
     PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
+// type PlonkSuccinctVerifier = PlonkSuccinctVerifier<As, LimbsEncoding<LIMBS, BITS>;
+// type PlonkVerifier = verifier::plonk::PlonkVerifier<As, LimbsEncoding<LIMBS, BITS>>;
+
 /// Subroutine for the witness generations.
 /// Extract the accumulator and proof that from previous snarks.
 /// Uses SHPlonk for accumulation.
@@ -58,7 +61,7 @@ pub(crate) fn extract_accumulators_and_proof(
         .iter()
         .flat_map(|snark| {
             transcript_read.new_stream(snark.proof.as_slice());
-            let proof = KzgAs::read_proof(
+            let proof = PlonkSuccinctVerifier::<SHPLONK>::read_proof(
                 &svk,
                 &snark.protocol,
                 &snark.instances,
@@ -66,9 +69,15 @@ pub(crate) fn extract_accumulators_and_proof(
             );
             // each accumulator has (lhs, rhs) based on Shplonk
             // lhs and rhs are EC points
-            KzgAs::verify(&svk, &snark.protocol, &snark.instances, &proof)
+            PlonkSuccinctVerifier::<SHPLONK>::verify(
+                &svk,
+                &snark.protocol,
+                &snark.instances,
+                &proof,
+            )
         })
         .collect::<Vec<_>>();
+
     // sanity check on the accumulator
     {
         for (i, acc) in accumulators.iter().enumerate() {

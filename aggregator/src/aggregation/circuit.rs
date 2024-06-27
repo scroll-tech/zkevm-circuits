@@ -197,7 +197,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     );
 
                     config.barycentric.scalar.range.finalize(&mut ctx);
-                    ctx.print_stats(&["barycentric evaluation"]);
+                    // ctx.print_stats(&["barycentric evaluation"]);
 
                     Ok(barycentric)
                 },
@@ -262,7 +262,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                             .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                     );
 
-                    loader.ctx_mut().print_stats(&["snark aggregation"]);
+                    // loader.ctx_mut().print_stats(&["snark aggregation"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     log::debug!("aggregation: assigning barycentric");
@@ -275,7 +275,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         self.batch_hash.point_evaluation_assignments.evaluation,
                     );
 
-                    ctx.print_stats(&["barycentric"]);
+                    // ctx.print_stats(&["barycentric"]);
 
                     config.range().finalize(&mut ctx);
 

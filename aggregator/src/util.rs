@@ -3,7 +3,10 @@ use aggregator_snark_verifier::{
         halo2_proofs::{circuit::AssignedCell, plonk::Error},
         AssignedValue,
     },
-    loader::native::NativeLoader,
+    loader::halo2::{
+        halo2_ecc::ecc::{BaseFieldEccChip, EccChip},
+        Halo2Loader,
+    },
     pcs::kzg::KzgAccumulator,
 };
 use eth_types::Field;
@@ -112,7 +115,7 @@ pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
 
 // TODO: does this already exist in snark-verifier?
 pub fn flatten_accumulator<'a>(
-    accumulator: KzgAccumulator<G1Affine, NativeLoader>,
+    accumulator: Rc<KzgAccumulator<G1Affine, Halo2Loader<G1Affine, BaseFieldEccChip<G1Affine>>>>,
 ) -> Vec<AssignedValue<Fr>> {
     let KzgAccumulator { lhs, rhs } = accumulator;
 

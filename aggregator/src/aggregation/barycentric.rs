@@ -1,7 +1,9 @@
+use aggregator_snark_verifier::loader::halo2::IntegerInstructions;
 use aggregator_snark_verifier::{
     halo2_base::{
         gates::{
             circuit::BaseCircuitBuilder,
+            flex_gate::GateChip,
             range::{RangeChip, RangeConfig},
             GateInstructions,
         },
@@ -22,7 +24,6 @@ use eth_types::{ToLittleEndian, U256};
 use halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField};
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint, Sign};
-use snark_verifier::loader::halo2::IntegerInstructions;
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
@@ -104,6 +105,7 @@ impl BarycentricEvaluationConfig {
         evaluation: U256,
     ) -> AssignedBarycentricEvaluationConfig {
         // some constants for later use.
+        // todo: move builder up...
         let builder = BaseCircuitBuilder::default();
         let fp_chip = FpChip::<Fr, Scalar>::new(&builder.range_chip(), BITS, LIMBS);
 
@@ -132,33 +134,17 @@ impl BarycentricEvaluationConfig {
         let challenge_digest_crt = self.load_u256(ctx, challenge_digest);
         let challenge_le =
             ctx.assign_witnesses(challenge.to_le_bytes().iter().map(|&x| Fr::from(x as u64)));
+        assert_le_bytes_equal_crt(
+            ctx,
+            fp_chip.gate(),
+            &challenge_le,
+            &challenge_digest_crt,
+            &powers_of_256,
+        );
+
         let challenge_digest_mod = fp_chip.carry_mod(ctx, &challenge_digest_crt);
         let challenge_crt = fp_chip.load_private(ctx, challenge_scalar);
         fp_chip.assert_equal(ctx, &challenge_digest_mod, &challenge_crt);
-        let challenge_limb1 = fp_chip.gate().inner_product(
-            ctx,
-            challenge_le[0..11]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
-        );
-        let challenge_limb2 = fp_chip.gate.inner_product(
-            ctx,
-            challenge_le[11..22]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
-        );
-        let challenge_limb3 = fp_chip.gate().inner_product(
-            ctx,
-            challenge_le[22..32]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
-        );
-        fp_chip.assert_equal(ctx, challenge_limb1, challenge_crt.truncation.limbs[0]);
-        fp_chip.assert_equal(ctx, challenge_limb2, challenge_crt.truncation.limbs[1]);
-        fp_chip.assert_equal(ctx, challenge_limb3, challenge_crt.truncation.limbs[2]);
 
         ////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// PRECHECKS y /////////////////////////////////////////
@@ -169,52 +155,18 @@ impl BarycentricEvaluationConfig {
                 .iter()
                 .map(|&x| Fr::from(u64::from(x))),
         );
-        let evaluation_scalar = Scalar::from_raw(evaluation.0);
-        let evaluation_crt =
-            fp_chip.load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
-        let evaluation_limb1 = fp_chip.gate().inner_product(
+        let evaluation_crt = fp_chip.load_private(
             ctx,
-            evaluation_le[0..11]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
+            Value::known(fe_to_biguint(&Scalar::from_raw(evaluation.0)).into()),
         );
-        let evaluation_limb2 = fp_chip.gate().inner_product(
+
+        assert_le_bytes_equal_crt(
             ctx,
-            evaluation_le[11..22]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
+            fp_chip.gate(),
+            &evaluation_le,
+            &evaluation_crt,
+            &powers_of_256,
         );
-        let evaluation_limb3 = fp_chip.gate().inner_product(
-            ctx,
-            evaluation_le[22..32]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
-        );
-        fp_chip.assert_equal(
-            ctx,
-            QuantumCell::Existing(evaluation_limb1),
-            QuantumCell::Existing(evaluation_crt.truncation.limbs[0]),
-        );
-        fp_chip.assert_equal(
-            ctx,
-            QuantumCell::Existing(evaluation_limb2),
-            QuantumCell::Existing(evaluation_crt.truncation.limbs[1]),
-        );
-        fp_chip.gate().assert_equal(
-            ctx,
-            QuantumCell::Existing(evaluation_limb3),
-            QuantumCell::Existing(evaluation_crt.truncation.limbs[2]),
-        );
-        for (a, b) in evaluation_crt.limbs().into_iter().zip_eq([
-            evaluation_limb1,
-            evaluation_limb2,
-            evaluation_limb3,
-        ]) {
-            fp_chip.gate().assert_equal(ctx, blob_limb, expected_limb);
-        }
 
         ////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////// BARYCENTRIC EVALUATION //////////////////////////////////
@@ -228,39 +180,19 @@ impl BarycentricEvaluationConfig {
                 let blob_i_le = ctx
                     .assign_witnesses(blob_i.to_le_bytes().iter().map(|&x| Fr::from(u64::from(x))));
                 let blob_i_scalar = Scalar::from_raw(blob_i.0);
-                let blob_i_crt =
-                    fp_chip.load_private(ctx, Value::known(fe_to_biguint(&blob_i_scalar).into()));
+                let blob_i_crt = fp_chip.load_private(ctx, fe_to_biguint(&blob_i_scalar));
 
-                // compute the limbs for blob scalar field element.
-                let limb1 = fp_chip.gate().inner_product(
+                assert_le_bytes_equal_crt(
                     ctx,
-                    blob_i_le[0..11].iter().map(|&x| QuantumCell::Existing(x)),
-                    powers_of_256[0..11].to_vec(),
+                    fp_chip.gate(),
+                    &blob_i_le,
+                    &blob_i_crt,
+                    &powers_of_256,
                 );
-                let limb2 = fp_chip.gate().inner_product(
-                    ctx,
-                    blob_i_le[11..22].iter().map(|&x| QuantumCell::Existing(x)),
-                    powers_of_256[0..11].to_vec(),
-                );
-                let limb3 = fp_chip.gate().inner_product(
-                    ctx,
-                    blob_i_le[22..32].iter().map(|&x| QuantumCell::Existing(x)),
-                    powers_of_256[0..11].to_vec(),
-                );
-
-                for (blob_limb, expected_limb) in
-                    blob_i_crt.limbs().into_iter().zip_eq([limb1, limb2, limb3])
-                {
-                    fp_chip.gate().assert_equal(ctx, blob_limb, expected_limb);
-                }
 
                 // the most-significant byte of blob scalar field element is 0 as we expect this
                 // representation to be in its canonical form.
-                fp_chip.assert_equal(
-                    ctx,
-                    QuantumCell::Existing(blob_i_le[31]),
-                    QuantumCell::Constant(Fr::zero()),
-                );
+                fp_chip.gate().assert_equal(ctx, &blob_i_le[31], Fr::zero());
 
                 // a = int(polynomial[i]) * int(roots_of_unity_brp[i]) % BLS_MODULUS
                 let a = fp_chip.mul(ctx, &blob_i_crt, root_i_crt);
@@ -313,11 +245,15 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 }
 
 fn assert_le_bytes_equal_crt(
+    ctx: &mut Context<Fr>,
     gate: &GateChip<Fr>,
-    le_bytes: [AssignedValue<Fr>; 32],
+    le_bytes: &[AssignedValue<Fr>],
     crt: &CRTInteger<Fr>,
-    powers_of_256: [QuantumCell<Fr>; 11],
+    powers_of_256: &[QuantumCell<Fr>],
 ) {
+    assert_eq!(le_bytes.len(), 32);
+    assert_eq!(powers_of_256.len(), 11);
+
     for (limb_le_bytes, limb) in [
         le_bytes[0..11].iter(),
         le_bytes[11..22].iter(),
@@ -331,7 +267,7 @@ fn assert_le_bytes_equal_crt(
             limb_le_bytes.map(|&x| QuantumCell::Existing(x)),
             &powers_of_256[..limb_le_bytes.len()],
         );
-        gate.assert_equal(ctx, limb, limb_from_le_bytes);
+        gate.assert_equal(ctx, limb, &limb_from_le_bytes);
     }
 }
 

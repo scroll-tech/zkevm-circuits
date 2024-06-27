@@ -135,6 +135,9 @@ impl Circuit<Fr> for CompressionCircuit {
                     self.as_proof(),
                 );
 
+                let acc: KzgAccumulator<G1Affine, Halo2Loader<Bn256, BaseFieldEccChip<G1Affine>>> =
+                    acc;
+
                 // instance of the compression circuit is defined as
                 // - accumulators
                 // - re-export the public input from snark
