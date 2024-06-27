@@ -37,7 +37,7 @@ use crate::{
 
 use super::BatchCircuitConfig;
 
-/// Batch circuit that does not re-expose any public inputs from aggregated snarks
+/// Batch circuit, the chunk aggregation routine below recursion circuit
 #[derive(Clone)]
 pub struct BatchCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
