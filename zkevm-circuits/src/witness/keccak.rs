@@ -193,7 +193,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[Transaction]) -> Result<Vec<Vec<u8>>, Err
         .collect::<Vec<u8>>();
     inputs.push(chunk_txbytes);
 
-    let sign_datas: Vec<SignData> = txs
+    let sign_datas: Vec<SignData<secp256k1::Fq, Secp256k1Affine>> = txs
         .iter()
         .enumerate()
         .filter(|(i, tx)| {

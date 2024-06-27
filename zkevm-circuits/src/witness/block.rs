@@ -138,14 +138,14 @@ impl Block {
         &self,
         padding: bool,
     ) -> Vec<SignData<secp256k1::Fq, Secp256k1Affine>> {
-        let mut signatures: Vec<SignData> = self
+        let mut signatures = self
             .txs
             .iter()
             // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
             .filter(|tx| !tx.tx_type.is_l1_msg())
             .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
-            .collect::<Vec<SignData>>();
+            .collect::<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>>();
         signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
         if padding && self.txs.len() < self.circuits_params.max_txs {
             // padding tx's sign data

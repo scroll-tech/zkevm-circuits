@@ -4038,7 +4038,7 @@ impl<F: Field> TxCircuit<F> {
             .collect::<Vec<Vec<u8>>>();
         inputs.extend_from_slice(&hash_datas);
 
-        let sign_datas: Vec<SignData> = self
+        let sign_datas = self
             .txs
             .iter()
             .chain(iter::once(&padding_tx))
@@ -4053,7 +4053,8 @@ impl<F: Field> TxCircuit<F> {
                     })
                 }
             })
-            .collect::<Result<Vec<SignData>, Error>>()?;
+            //  TODO: add p256 signature here ?
+            .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, Error>>()?;
         // Keccak inputs from SignVerify Chip
         let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
         inputs.extend_from_slice(&sign_verify_inputs);
@@ -4466,7 +4467,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 tx
             })
             .collect::<Vec<Transaction>>();
-        let sign_datas: Vec<SignData> = self
+        let sign_datas = self
             .txs
             .iter()
             .chain(padding_txs.iter())
@@ -4480,7 +4481,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                     })
                 }
             })
-            .collect::<Result<Vec<SignData>, Error>>()?;
+            .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, Error>>()?;
 
         // check if tx.caller_address == recovered_pk
         let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
@@ -4534,7 +4535,7 @@ pub(crate) fn get_sign_data(
             tx
         })
         .collect::<Vec<Transaction>>();
-    let signatures: Vec<SignData> = txs
+    let signatures = txs
         .iter()
         .chain(padding_txs.iter())
         .map(|tx| {
@@ -4549,7 +4550,8 @@ pub(crate) fn get_sign_data(
                 })
             }
         })
-        .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
+        // TODO: add p256 signatures here ?
+        .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, halo2_proofs::plonk::Error>>()?;
     Ok(signatures)
 }
 

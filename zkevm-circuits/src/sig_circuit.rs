@@ -233,7 +233,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         SigCircuit {
             max_verif: MAX_NUM_SIG,
             signatures_k1: block.get_sign_data(true),
-            signatures_r1: block.get_sign_data(true),
+            signatures_r1: block.get_sign_data_p256(true),
             _marker: Default::default(),
         }
     }
