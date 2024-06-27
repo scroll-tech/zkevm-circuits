@@ -80,15 +80,12 @@ mod dummy_circuit {
 // witness and we just skip the output accumulator later
 // it can "mock" any circuit (with vk being provided in argument)
 // specified by ConcreteCircuit
-fn gen_dummy_snark<ConcreteCircuit, RNG>(
+fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
     params: &ParamsKZG<Bn256>,
     vk: &VerifyingKey<G1Affine>,
     num_instance: &[usize],
-    rng: &mut impl FnMut() -> RNG,
+    mut rng: impl Rng + Send,
 ) -> Snark 
-where
-    ConcreteCircuit: CircuitExt<Fr>,
-    RNG: Rng + Send,
 {
 
     use std::iter;
@@ -104,7 +101,7 @@ where
     );
     let instances = num_instance
         .into_iter()
-        .map(|&n| iter::repeat_with(|| Fr::random(rng())).take(n).collect())
+        .map(|&n| iter::repeat_with(|| Fr::random(&mut rng)).take(n).collect())
         .collect();
     let proof = {
         let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(Vec::new());
@@ -114,14 +111,14 @@ where
             .chain(Some(&protocol.quotient.num_chunk()))
             .sum::<usize>()
         {
-            transcript.write_ec_point(G1Affine::random(rng())).unwrap();
+            transcript.write_ec_point(G1Affine::random(&mut rng)).unwrap();
         }
         for _ in 0..protocol.evaluations.len() {
-            transcript.write_scalar(Fr::random(rng())).unwrap();
+            transcript.write_scalar(Fr::random(&mut rng)).unwrap();
         }
         let queries = PlonkProof::<G1Affine, NativeLoader, Pcs>::empty_queries(&protocol);
         for _ in 0..Pcs::estimate_cost(&queries).num_commitment {
-            transcript.write_ec_point(G1Affine::random(rng())).unwrap();
+            transcript.write_ec_point(G1Affine::random(&mut rng)).unwrap();
         }
         transcript.finalize()
     };
@@ -130,20 +127,17 @@ where
 }
 
 /// gen a dummy snark for construct the first recursion snark
-pub fn initial_recursion_snark<ST, RNG>(
+pub fn initial_recursion_snark<ST: StateTransition>(
     params: &ParamsKZG<Bn256>, 
     recursion_vk: &VerifyingKey<G1Affine>,
-    rng: &mut impl FnMut() -> RNG,
+    mut rng: impl Rng + Send,
 ) -> Snark 
-where 
-    ST: StateTransition,
-    RNG: Rng + Send
 {
-    let mut snark = gen_dummy_snark::<RecursionCircuit<ST>, _>(
+    let mut snark = gen_dummy_snark::<RecursionCircuit<ST>>(
         params, 
         recursion_vk,
         &[RecursionCircuit::<ST>::num_instance_fixed()],
-        rng,
+        &mut rng,
     );
     let g = params.get_g();
     // ?why we need random for dummy snark of app but not for recursion
@@ -157,15 +151,12 @@ where
 }
 
 /// gen the pk for recursion
-pub fn gen_recursion_pk<AppCircuit, RNG>(
+pub fn gen_recursion_pk<ST: StateTransition>(
     recursion_params: &ParamsKZG<Bn256>,
     app_params: &ParamsKZG<Bn256>,
     app_vk: &VerifyingKey<G1Affine>,
-    rng: &mut impl FnMut() -> RNG,
+    mut rng: impl Rng + Send,
 ) -> ProvingKey<G1Affine> 
-where
-    AppCircuit: CircuitExt<Fr> + StateTransition,
-    RNG: Rng + Send
 {
     // to generate the pk we need to construct a recursion circuit,
     // which require another snark being build from itself (and so, need
@@ -173,22 +164,23 @@ where
     // generating the snark
     let dummy_vk = keygen_vk(
         recursion_params, 
-        &dummy_circuit::CsProxy::<Fr, RecursionCircuit<AppCircuit>>::default()
+        &dummy_circuit::CsProxy::<Fr, RecursionCircuit<ST>>::default()
     ).unwrap();
-    let recursive_snark = initial_recursion_snark::<AppCircuit, _>(recursion_params, &dummy_vk, rng);
+    let recursive_snark = initial_recursion_snark::<ST>(
+        recursion_params, &dummy_vk, &mut rng);
 
-    let recursion = RecursionCircuit::<AppCircuit>::new(
+    let recursion = RecursionCircuit::<ST>::new(
         recursion_params,
-        gen_dummy_snark::<AppCircuit, _>(
+        gen_dummy_snark::<ST::Circuit>(
             app_params, 
             app_vk, 
-            &[<AppCircuit as StateTransition>::num_instance()], 
-            rng,
+            &[ST::num_instance()], 
+            &mut rng,
         ),
         recursive_snark,
-        rng(),
-        &vec![Fr::ZERO; AppCircuit::num_transition_instance()],
-        &vec![Fr::ZERO; AppCircuit::num_transition_instance() + AppCircuit::num_additional_instance()],
+        &mut rng,
+        &vec![Fr::ZERO; ST::num_transition_instance()],
+        &vec![Fr::ZERO; ST::num_transition_instance() + ST::num_additional_instance()],
         0,
     );
     gen_pk(recursion_params, &recursion, None)

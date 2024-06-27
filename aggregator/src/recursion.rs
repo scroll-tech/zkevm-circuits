@@ -51,9 +51,9 @@ use snark_verifier::{
 use rand::Rng;
 use itertools::Itertools;
 
-
 pub trait StateTransition : Sized{
     type Input: Clone;
+    type Circuit: CircuitExt<Fr>;
 
     fn new(state: Self::Input) -> Self;
 

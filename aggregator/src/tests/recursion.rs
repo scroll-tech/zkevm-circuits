@@ -74,6 +74,7 @@ impl CircuitExt<Fr> for Square {
 
 impl StateTransition for Square {
     type Input = Fr;
+    type Circuit = Self;
 
     fn new(state: Self::Input) -> Self {
         Self(state)
@@ -97,17 +98,18 @@ fn test_recursion_circuit() {
 
     let app = Square::default();
     let app_pk = gen_pk(&app_params, &app, None);
+    let mut rng = test_rng();
 
     let pk_time = start_timer!(|| "Generate recursion pk");
-    let recursion_pk = gen_recursion_pk::<Square, _>(
+    let recursion_pk = gen_recursion_pk::<Square>(
         &recursion_params,
         &app_params,
         app_pk.get_vk(),
-        &mut test_rng,
+        &mut rng,
     );
     end_timer!(pk_time);
 
-    let mut rng = test_rng();
+    
     let init_state = Fr::from(2u64);
     let app = Square::new(init_state);
     let next_state = app.state_transition(0);
@@ -118,10 +120,10 @@ fn test_recursion_circuit() {
         &mut rng, 
         None::<String>,
     ).unwrap();
-    let init_snark = initial_recursion_snark::<Square, _>(
+    let init_snark = initial_recursion_snark::<Square>(
         &recursion_params, 
         &recursion_pk.get_vk(), 
-        &mut test_rng,
+        &mut rng,
     );
     
     let recursion = RecursionCircuit::<Square>::new(
