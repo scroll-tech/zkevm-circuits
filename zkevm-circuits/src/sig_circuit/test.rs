@@ -267,7 +267,7 @@ fn sign_with_rng(
 fn run<F: Field>(
     k: u32,
     max_verif: usize,
-    signatures_k1: Vec<SignData<secp256k1::Fq, Secp256r1Affine>>,
+    signatures_k1: Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
     signatures_r1: Vec<SignData<secp256r1::Fq, Secp256r1Affine>>,
 ) {
     // SignVerifyChip -> ECDSAChip -> MainGate instance column

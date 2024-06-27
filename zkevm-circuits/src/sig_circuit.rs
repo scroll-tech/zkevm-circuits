@@ -232,7 +232,8 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
 
         SigCircuit {
             max_verif: MAX_NUM_SIG,
-            signatures: block.get_sign_data(true),
+            signatures_k1: block.get_sign_data(true),
+            signatures_r1: block.get_sign_data(true),
             _marker: Default::default(),
         }
     }
@@ -257,7 +258,8 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.ecdsa_config.range.load_lookup_table(layouter)?;
-        self.assign(config, layouter, &self.signatures, challenges)?;
+        self.assign(config, layouter, &self.signatures_k1, challenges)?;
+        // TODO: assign signatures_r1
         Ok(())
     }
 
@@ -296,7 +298,8 @@ impl<F: Field> SigCircuit<F> {
     pub fn new(max_verif: usize) -> Self {
         Self {
             max_verif,
-            signatures: Vec::new(),
+            signatures_k1: Vec::new(),
+            signatures_r1: Vec::new(),
             _marker: PhantomData,
         }
     }

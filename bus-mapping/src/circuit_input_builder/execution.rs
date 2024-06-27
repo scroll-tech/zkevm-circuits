@@ -998,7 +998,7 @@ impl PrecompileEvents {
             .collect()
     }
 
-    /// Get all ecrecover events.
+    /// Get all p256 verify events.
     pub fn get_p256_verify_events(&self) -> Vec<SignData<Fq_R1, Secp256r1Affine>> {
         self.events
             .iter()

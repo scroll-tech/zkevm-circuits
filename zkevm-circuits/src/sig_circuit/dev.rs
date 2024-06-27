@@ -57,7 +57,7 @@ impl<F: Field> Circuit<F> for SigCircuit<F> {
         self.synthesize_sub(&config.sign_verify, &challenges, &mut layouter)?;
         config.sign_verify.keccak_table.dev_load(
             &mut layouter,
-            &keccak_inputs_sign_verify(&self.signatures),
+            &keccak_inputs_sign_verify(&self.signatures_k1),
             &challenges,
         )?;
         /*

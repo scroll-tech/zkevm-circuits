@@ -72,7 +72,7 @@ pub fn keccak_inputs(block: &Block) -> Result<Vec<Vec<u8>>, Error> {
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
 /// signature datas.
-/// TODO: check if need to support p256 SignData type.
+/// TODO: check if need to support p256 SignData type later.
 pub fn keccak_inputs_sign_verify(
     sigs: &[SignData<secp256k1::Fq, Secp256k1Affine>],
 ) -> Vec<Vec<u8>> {

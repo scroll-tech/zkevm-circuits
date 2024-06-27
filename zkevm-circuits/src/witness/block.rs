@@ -154,6 +154,14 @@ impl Block {
         signatures
     }
 
+    /// Get signature (witness) from the block's p256Veirfy calls.
+    pub(crate) fn get_sign_data_p256(
+        &self,
+        padding: bool,
+    ) -> Vec<SignData<secp256r1::Fq, Secp256r1Affine>> {
+        self.precompile_events.get_p256_verify_events()
+    }
+
     /// Get EcAdd operations from all precompiled contract calls in this block.
     pub(crate) fn get_ec_add_ops(&self) -> Vec<EcAddOp> {
         self.precompile_events.get_ec_add_events()
