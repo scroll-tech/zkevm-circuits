@@ -9,6 +9,7 @@ use gadgets::Field;
 use crate::{
     blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
     chunk::ChunkInfo,
+    util::hi_lo_from_h256,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -348,32 +349,24 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     }
 
     /// Compute the public inputs for this circuit:
-    /// chain_id
     /// parent_state_root
     /// parent_batch_hash
     /// current_state_root
     /// current_batch_hash
+    /// chain_id
     /// current_withdraw_hash
     pub(crate) fn instances_exclude_acc<F: Field>(&self) -> Vec<Vec<F>> {
-        let mut res: Vec<F> = vec![];
-        res.push(F::from(self.chain_id as u64));
-
-        let frs = [
+        let mut res: Vec<F> = [
             self.parent_state_root,
             self.batch_header.parent_batch_hash,
             self.current_state_root,
             self.current_batch_hash,
-            self.current_withdraw_root,
         ]
-        .map(|h| {
-            h.as_bytes().chunks(N_BYTES_U256/2).map(|chunk| {
-                F::from(chunk.iter().enumerate().fold(0u64, |acc, (i, &byte)| {
-                    acc | ((byte as u64) << (i * 8))
-                }))
-            }).collect::<Vec<F>>().as_slice()
-        }).concat();
-
-        res.extend_from_slice(frs.as_slice());
+        .map(|h| hi_lo_from_h256(h)).concat();
+        
+        res.push(F::from(self.chain_id as u64));
+        res.extend_from_slice(hi_lo_from_h256(self.current_withdraw_root).as_slice());
+        
         vec![res]
     }
 }

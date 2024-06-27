@@ -46,11 +46,11 @@ pub struct BatchCircuit<const N_SNARKS: usize> {
     pub snarks_with_padding: Vec<SnarkWitness>,
     // batch_circuit_debug:
     // the public instance for this circuit consists of
-    // - chain id (1 element)
     // - parent_state_root (2 elements, split hi_lo)
     // - parent_batch_hash (2 elements)
     // - current_state_root (2 elements)
     // - current_batch_hash (2 elements)
+    // - chain id (1 element)
     // - current_withdraw_root (2 elements)
     pub flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
@@ -100,13 +100,12 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
         let (as_proof, _acc_instances) =
             extract_proof_and_instances_with_pairing_check(params, snarks_with_padding, rng)?;
 
-        // batch_circuit_debug
         // the public instance for this circuit consists of
-        // - chain id (1 element)
         // - parent_state_root (2 elements, split hi_lo)
         // - parent_batch_hash (2 elements)
         // - current_state_root (2 elements)
         // - current_batch_hash (2 elements)
+        // - chain id (1 element)
         // - current_withdraw_root (2 elements)
         let flattened_instances: Vec<Fr> = batch_hash.instances_exclude_acc::<Fr>()[0];
 
