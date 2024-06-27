@@ -988,6 +988,21 @@ impl PrecompileEvents {
             .cloned()
             .collect()
     }
+
+    /// Get all ecrecover events.
+    pub fn get_p256_verify_events(&self) -> Vec<SignData> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::Ecrecover(sign_data) = e {
+                    Some(sign_data)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 /// I/O from a precompiled contract call.
@@ -1005,6 +1020,8 @@ pub enum PrecompileEvent {
     ModExp(BigModExp),
     /// Represents the I/O from SHA256 call.
     SHA256(SHA256),
+    /// Represents the I/O from P256Verify call.
+    Ecrecover(SignData),
 }
 
 impl Default for PrecompileEvent {

@@ -1,4 +1,4 @@
-//! Circuit to verify multiple ECDSA secp256k1 signatures.
+//! Circuit to verify multiple ECDSA secp256k1 and secp256r1 signatures.
 //
 // This module uses halo2-ecc's ecdsa chip
 //  - to prove the correctness of secp signatures
@@ -50,6 +50,8 @@ pub(crate) use utils::*;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
+    // p256 curve
+    halo2curves::secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };

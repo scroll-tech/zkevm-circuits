@@ -21,8 +21,11 @@ use halo2curves::{
         prime::PrimeCurveAffine,
         Curve,
     },
-    secp256k1::{Fp, Fq, Secp256k1Affine},
-    Coordinates, CurveAffine,
+    secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
+    // p256 curve
+    secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
+    Coordinates,
+    CurveAffine,
 };
 use num_bigint::BigUint;
 use sha3::digest::generic_array::GenericArray;
@@ -30,8 +33,9 @@ use std::sync::LazyLock;
 use subtle::CtOption;
 
 /// Do a secp256k1 signature with a given randomness value.
-pub fn sign(randomness: Fq, sk: Fq, msg_hash: Fq) -> (Fq, Fq, u8) {
-    let randomness_inv = Option::<Fq>::from(randomness.invert()).expect("cannot invert randomness");
+pub fn sign(randomness: Fq_K1, sk: Fq_K1, msg_hash: Fq_K1) -> (Fq_K1, Fq_K1, u8) {
+    let randomness_inv =
+        Option::<Fq_K1>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Secp256k1Affine::generator();
     let sig_point = generator * randomness;
     let sig_v: bool = sig_point.to_affine().y.is_odd().into();
@@ -43,7 +47,7 @@ pub fn sign(randomness: Fq, sk: Fq, msg_hash: Fq) -> (Fq, Fq, u8) {
     let mut x_bytes = [0u8; 64];
     x_bytes[..32].copy_from_slice(&x.to_bytes());
 
-    let sig_r = Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+    let sig_r = Fq_K1::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
 
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
     (sig_r, sig_s, u8::from(sig_v))
@@ -52,12 +56,13 @@ pub fn sign(randomness: Fq, sk: Fq, msg_hash: Fq) -> (Fq, Fq, u8) {
 /// Signature data required by the SignVerify Chip as input to verify a
 /// signature.
 #[derive(Clone, Debug)]
-pub struct SignData {
+pub struct SignData<Fq, Affine> {
     /// Secp256k1 signature point (r, s, v)
     /// v must be 0 or 1
     pub signature: (Fq, Fq, u8),
-    /// Secp256k1 public key
-    pub pk: Secp256k1Affine,
+    /// Secp256k1 or Secp256r1 public key
+    ///
+    pub pk: Affine,
     /// Message being hashed before signing.
     pub msg: Bytes,
     /// Hash of the message that is being signed
@@ -99,7 +104,7 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
     (tx, sig)
 }
 
-impl SignData {
+impl SignData<Fq_K1, Secp256k1Affine> {
     /// Recover address of the signature
     pub fn get_addr(&self) -> Address {
         if self.pk.is_identity().into() {
@@ -110,7 +115,7 @@ impl SignData {
     }
 }
 
-static SIGN_DATA_DEFAULT: LazyLock<SignData> = LazyLock::new(|| {
+static SIGN_DATA_DEFAULT: LazyLock<SignData<Fq_K1, Secp256k1Affine>> = LazyLock::new(|| {
     let (tx_req, sig) = get_dummy_tx();
     let tx = Transaction {
         tx_type: TxType::PreEip155,
@@ -132,7 +137,8 @@ static SIGN_DATA_DEFAULT: LazyLock<SignData> = LazyLock::new(|| {
     sign_data
 });
 
-impl Default for SignData {
+// Default for secp256k1
+impl Default for SignData<Fq_K1, Secp256k1Affine> {
     // Hardcoded valid signature corresponding to a hardcoded private key and
     // message hash generated from "nothing up my sleeve" values to make the
     // ECDSA chip pass the constraints, to be use for padding signature
@@ -183,11 +189,11 @@ pub fn recover_pk2(
     debug_assert_eq!(public_key[0], 0x04);
     let pk_le = pk_bytes_swap_endianness(&public_key[1..]);
     let x = ct_option_ok_or(
-        Fp::from_bytes(pk_le[..32].try_into().unwrap()),
+        Fp_K1::from_bytes(pk_le[..32].try_into().unwrap()),
         Error::Signature,
     )?;
     let y = ct_option_ok_or(
-        Fp::from_bytes(pk_le[32..].try_into().unwrap()),
+        Fp_K1::from_bytes(pk_le[32..].try_into().unwrap()),
         Error::Signature,
     )?;
     ct_option_ok_or(Secp256k1Affine::from_xy(x, y), Error::Signature)
@@ -196,7 +202,7 @@ pub fn recover_pk2(
 /// Secp256k1 Curve Scalar.  Reference: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
 /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
 pub static SECP256K1_Q: LazyLock<BigUint> =
-    LazyLock::new(|| BigUint::from_bytes_le(&(Fq::zero() - Fq::one()).to_repr()) + 1u64);
+    LazyLock::new(|| BigUint::from_bytes_le(&(Fq_K1::zero() - Fq_K1::one()).to_repr()) + 1u64);
 
 /// Helper function to convert a `CtOption` into an `Result`.  Similar to
 /// `Option::ok_or`.
