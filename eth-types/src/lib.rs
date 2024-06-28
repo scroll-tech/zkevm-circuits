@@ -819,11 +819,9 @@ impl GethCallTrace {
                 !created.contains(addr)
                     && prestate
                         .get(addr)
-                        .unwrap()
-                        .code
-                        .as_ref()
-                        .unwrap()
-                        .is_empty()
+                        .and_then(|trace| trace.code.as_ref())
+                        .map(|code| code.is_empty())
+                        .unwrap_or(true)
             })
             .unwrap_or(false);
 
