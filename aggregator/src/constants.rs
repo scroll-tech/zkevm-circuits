@@ -23,6 +23,7 @@ pub(crate) const LOG_DEGREE: u32 = 21;
 // - chunk_data_hash    32 bytes
 // - chunk_tx_data_hash 32 bytes
 
+pub(crate) const CHUNK_CHAIN_ID_INDEX: usize = 0;
 pub(crate) const PREV_STATE_ROOT_INDEX: usize = 8;
 pub(crate) const POST_STATE_ROOT_INDEX: usize = 40;
 pub(crate) const WITHDRAW_ROOT_INDEX: usize = 72;
@@ -30,7 +31,7 @@ pub(crate) const CHUNK_DATA_HASH_INDEX: usize = 104;
 pub(crate) const CHUNK_TX_DATA_HASH_INDEX: usize = 136;
 
 // ================================
-// indices for batch pi hash table
+// indices for batch hash table
 // ================================
 //
 // the preimages are arranged as
@@ -49,6 +50,24 @@ pub(crate) const BATCH_DATA_HASH_OFFSET: usize = 25;
 pub(crate) const BATCH_Z_OFFSET: usize = 129;
 pub(crate) const BATCH_Y_OFFSET: usize = 161;
 pub(crate) const BATCH_VH_OFFSET: usize = 193;
+
+
+// ================================
+// indices for public inputs
+// ================================
+// 
+// - parent state root (2 cells: hi, lo)
+// - parent batch hash ..
+// - current state root ..
+// - current batch hash ..
+// - chain id (1 Fr cell)
+// - current withdraw root ..
+pub(crate) const PI_PARENT_STATE_ROOT: usize = 0;
+pub(crate) const PI_PARENT_BATCH_HASH: usize = 2;
+pub(crate) const PI_CURRENT_STATE_ROOT: usize = 4;
+pub(crate) const PI_CURRENT_BATCH_HASH: usize = 6;
+pub(crate) const PI_CHAIN_ID: usize = 8;
+pub(crate) const PI_CURRENT_WITHDRAW_ROOT: usize = 9;
 
 // ================================
 // aggregator parameters

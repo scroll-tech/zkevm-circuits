@@ -341,6 +341,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 &chunks_are_valid,
                 self.batch_hash.number_of_valid_chunks,
                 &preimages,
+                config.instance,
             )
             .map_err(|e| {
                 log::error!("assign_batch_hashes err {:#?}", e);

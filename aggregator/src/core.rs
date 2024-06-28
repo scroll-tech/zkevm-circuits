@@ -34,7 +34,7 @@ use zkevm_circuits::{
 use crate::{
     constants::{
         BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
-    }, util::{assert_conditional_equal, assert_equal, parse_hash_preimage_cells}, RlcConfig, BATCH_DATA_HASH_OFFSET, BITS, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
+    }, util::{assert_conditional_equal, assert_equal, parse_hash_preimage_cells, rlc}, RlcConfig, BATCH_DATA_HASH_OFFSET, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_STATE_ROOT, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
 };
 
 /// Subroutine for the witness generations.
@@ -316,6 +316,8 @@ pub(crate) struct ExpectedBlobCells {
 }
 
 pub(crate) struct AssignedBatchHash {
+    pub(crate) hash_input: Vec<Vec<AssignedCell<Fr, Fr>>>,
+    pub(crate) hash_input_rlcs: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) hash_output: Vec<Vec<AssignedCell<Fr, Fr>>>,
     pub(crate) blob: ExpectedBlobCells,
     pub(crate) num_valid_snarks: AssignedCell<Fr, Fr>,
@@ -349,6 +351,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
+    instance: Column<Instance>,
 ) -> Result<AssignedBatchHash, Error> {
     // assign the hash table
     assign_keccak_table(keccak_config, layouter, challenges, preimages)?;
@@ -367,6 +370,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
         chunks_are_valid,
         num_valid_chunks,
         preimages,
+        instance,
     )?;
 
     let batch_hash_input = &extracted_hash_cells.inputs[0]; //[0..INPUT_LEN_PER_ROUND * 2];
@@ -384,6 +388,8 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     };
 
     Ok(AssignedBatchHash {
+        hash_input: extracted_hash_cells.inputs,
+        hash_input_rlcs: extracted_hash_cells.input_rlcs,
         hash_output: extracted_hash_cells.outputs,
         blob: expected_blob_cells,
         num_valid_snarks: extracted_hash_cells.num_valid_snarks,
@@ -461,6 +467,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
+    instance: Column<Instance>,
 ) -> Result<ExtractedHashCells<N_SNARKS>, Error> {
     layouter
         .assign_region(
@@ -628,7 +635,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 );
 
                 // ====================================================
-                // 4  __valid__ chunks are continuous: they are linked via the state roots
+                // 4.a  __valid__ chunks are continuous: they are linked via the state roots
                 // ====================================================
                 // chunk[i].piHash =
                 // keccak(
@@ -643,7 +650,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                             &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j],
                             &chunk_is_valid_cells[i + 1],
                             format!(
-                                "chunk_{i} is not continuous: {:?} {:?} {:?}",
+                                "chunk_{i} is not continuous (state roots): {:?} {:?} {:?}",
                                 &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j].value(),
                                 &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j].value(),
                                 &chunk_is_valid_cells[i + 1].value(),
@@ -654,6 +661,34 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                             &mut region,
                             &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j],
                             &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j],
+                            &chunk_is_valid_cells[i + 1],
+                            &mut offset,
+                        )?;
+                    }
+                }
+
+                // ====================================================
+                // 4.b  __valid__ chunks are continuous: chain_id are the same
+                // ====================================================
+                for i in 0..N_SNARKS - 1 {
+                    for j in 0..CHAIN_ID_LEN {
+                        // sanity check
+                        assert_conditional_equal(
+                            &chunk_pi_hash_preimages[i + 1][CHUNK_CHAIN_ID_INDEX + j],
+                            &chunk_pi_hash_preimages[i][CHUNK_CHAIN_ID_INDEX + j],
+                            &chunk_is_valid_cells[i + 1],
+                            format!(
+                                "chunk_{i} is not continuous (chain_id): {:?} {:?} {:?}",
+                                &chunk_pi_hash_preimages[i + 1][CHUNK_CHAIN_ID_INDEX + j].value(),
+                                &chunk_pi_hash_preimages[i][CHUNK_CHAIN_ID_INDEX + j].value(),
+                                &chunk_is_valid_cells[i + 1].value(),
+                            )
+                            .as_str(),
+                        )?;
+                        rlc_config.conditional_enforce_equal(
+                            &mut region,
+                            &chunk_pi_hash_preimages[i + 1][CHUNK_CHAIN_ID_INDEX + j],
+                            &chunk_pi_hash_preimages[i][CHUNK_CHAIN_ID_INDEX + j],
                             &chunk_is_valid_cells[i + 1],
                             &mut offset,
                         )?;
@@ -697,10 +732,133 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &chunk_is_valid_cell32s,
                     &mut offset,
                 )?;
-
+                
                 region.constrain_equal(
                     rlc_cell.cell(),
                     assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
+                )?;
+
+                // =============================================================================
+                // 8. state roots in public input corresponds correctly to chunk-level preimages
+                // =============================================================================
+
+                // Values in the public input are split into hi lo components
+                // To compare byte-wise assigned hash pre-image cells on the chunk-level,
+                // reconstruct two values for each pre-image.
+
+                // chunk[i].piHash =
+                //     keccak(
+                //        &chain id ||
+                //        chunk[i].prevStateRoot ||
+                //        chunk[i].postStateRoot ||
+                //        chunk[i].withdrawRoot  ||
+                //        chunk[i].datahash ||
+                //        chunk[i].tx_data_hash
+                //     )
+
+                // BatchCircuit PI
+                // - parent state root (2 cells: hi, lo)
+                // - parent batch hash ..
+                // - current state root ..
+                // - current batch hash ..
+                // - chain id (1 Fr cell)
+                // - current withdraw root ..
+
+                // pi.parent_state_root = chunks[0].prev_state_root
+                let (chunk_prev_state_hi, chunk_prev_state_lo) = {
+                    let hi_bytes = chunk_pi_hash_preimages[0][PREV_STATE_ROOT_INDEX..PREV_STATE_ROOT_INDEX + DIGEST_LEN/2];
+                    let lo_bytes = chunk_pi_hash_preimages[0][PREV_STATE_ROOT_INDEX + DIGEST_LEN/2..PREV_STATE_ROOT_INDEX + DIGEST_LEN];
+
+                    let mut hi_acc = hi_bytes[0];
+                    let mut lo_acc = lo_bytes[0];
+
+                    for hi_input in hi_bytes.iter().skip(1) {
+                        hi_acc += hi_input;
+                    }
+                    for lo_input in lo_bytes.iter().skip(1) {
+                        lo_acc += lo_input;
+                    }
+
+                    (hi_acc, lo_acc)
+                };
+
+                region.constrain_equal(
+                    chunk_prev_state_hi.cell(),
+                    instance[PI_PARENT_STATE_ROOT].cell(),
+                )?;
+                region.constrain_equal(
+                    chunk_prev_state_lo.cell(),
+                    instance[PI_PARENT_STATE_ROOT + 1].cell(),
+                )?;
+
+                // pi.current_state_root = chunks[N_SNARKS - 1].post_state_root
+                let (chunk_current_state_hi, chunk_current_state_lo) = {
+                    let hi_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][POST_STATE_ROOT_INDEX..POST_STATE_ROOT_INDEX + DIGEST_LEN/2];
+                    let lo_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][POST_STATE_ROOT_INDEX + DIGEST_LEN/2..POST_STATE_ROOT_INDEX + DIGEST_LEN];
+
+                    let mut hi_acc = hi_bytes[0];
+                    let mut lo_acc = lo_bytes[0];
+
+                    for hi_input in hi_bytes.iter().skip(1) {
+                        hi_acc += hi_input;
+                    }
+                    for lo_input in lo_bytes.iter().skip(1) {
+                        lo_acc += lo_input;
+                    }
+
+                    (hi_acc, lo_acc)
+                };
+
+                region.constrain_equal(
+                    chunk_current_state_hi.cell(),
+                    instance[PI_CURRENT_STATE_ROOT].cell(),
+                )?;
+                region.constrain_equal(
+                    chunk_current_state_lo.cell(),
+                    instance[PI_CURRENT_STATE_ROOT + 1].cell(),
+                )?;
+
+                // pi.current_withdraw_root = chunks[N_SNARKS - 1].withdraw_root
+                let (chunk_current_withdraw_root_hi, chunk_current_withdraw_root_lo) = {
+                    let hi_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][WITHDRAW_ROOT_INDEX..WITHDRAW_ROOT_INDEX + DIGEST_LEN/2];
+                    let lo_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][WITHDRAW_ROOT_INDEX + DIGEST_LEN/2..WITHDRAW_ROOT_INDEX + DIGEST_LEN];
+
+                    let mut hi_acc = hi_bytes[0];
+                    let mut lo_acc = lo_bytes[0];
+
+                    for hi_input in hi_bytes.iter().skip(1) {
+                        hi_acc += hi_input;
+                    }
+                    for lo_input in lo_bytes.iter().skip(1) {
+                        lo_acc += lo_input;
+                    }
+
+                    (hi_acc, lo_acc)
+                };
+
+                region.constrain_equal(
+                    chunk_current_withdraw_root_hi.cell(),
+                    instance[PI_CURRENT_WITHDRAW_ROOT].cell(),
+                )?;
+                region.constrain_equal(
+                    chunk_current_withdraw_root_lo.cell(),
+                    instance[PI_CURRENT_WITHDRAW_ROOT + 1].cell(),
+                )?;
+
+                // pi.chain_id = chunks[N_SNARKS - 1].chain_id
+                // Note: Chunk-chaining constraints in 4.b guarantee that previously assigned chain_id cells have the same values.
+                let chunk_chain_id = {
+                    let chunk_chain_id_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][CHUNK_CHAIN_ID_INDEX..CHUNK_CHAIN_ID_INDEX + CHAIN_ID_LEN];
+                    let chunk_chain_id_acc = chunk_chain_id_bytes[0];
+                    for input in chunk_chain_id_bytes.iter().skip(1) {
+                        chunk_chain_id_acc += input;
+                    }
+                    chunk_chain_id_acc
+                };
+
+                region.constrain_equal(
+                    chunk_chain_id.cell(),
+                    instance[PI_CHAIN_ID].cell(),
                 )?;
 
                 log::trace!("rlc chip uses {} rows", offset);
