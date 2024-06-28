@@ -1,5 +1,5 @@
 use aggregator::ChunkInfo;
-use eth_types::l2_types::BlockTrace;
+use eth_types::{l2_types::BlockTrace, H256};
 use serde::{Deserialize, Serialize};
 use zkevm_circuits::evm_circuit::witness::Block;
 
@@ -11,7 +11,7 @@ pub struct BlockTraceJsonRpcResult {
 }
 pub use eth_types::base64;
 
-use crate::ChunkProof;
+use crate::{BatchProof, ChunkProof};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChunkProvingTask {
@@ -43,6 +43,10 @@ impl ChunkProvingTask {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BatchProvingTask {
+    pub parent_batch_hash: H256,
+    pub parent_state_root: H256,
+    // BatchHeaderV3 will be re-exported from zkevm-circuits/prover.
+    // TODO: pub batch_header: BatchHeaderV3,
     pub chunk_proofs: Vec<ChunkProof>,
 }
 
@@ -57,4 +61,14 @@ impl BatchProvingTask {
             .to_low_u64_le()
             .to_string()
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BundleProvingTask {
+    chain_id: u64,
+    finalized_batch_hash: H256,
+    finalized_state_root: H256,
+    pending_state_root: H256,
+    pending_withdraw_root: H256,
+    batch_proofs: Vec<BatchProof>,
 }

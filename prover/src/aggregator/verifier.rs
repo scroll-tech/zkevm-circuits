@@ -3,6 +3,7 @@ use crate::{
     config::{LAYER4_CONFIG_PATH, LAYER4_DEGREE},
     consts::{agg_vk_filename, DEPLOYMENT_CODE_FILENAME},
     io::force_to_read,
+    proof::BundleProof,
     BatchProof,
 };
 use aggregator::CompressionCircuit;
@@ -48,7 +49,11 @@ impl Verifier {
         }
     }
 
-    pub fn verify_agg_evm_proof(&self, batch_proof: BatchProof) -> bool {
-        verify_evm_calldata(self.deployment_code.clone(), batch_proof.calldata())
+    pub fn verify_batch_proof(&self, batch_proof: BatchProof) -> bool {
+        self.inner.verify_snark(batch_proof.to_snark())
+    }
+
+    pub fn verify_bundle_proof(&self, bundle_proof: BundleProof) -> bool {
+        verify_evm_calldata(self.deployment_code.clone(), bundle_proof.calldata())
     }
 }

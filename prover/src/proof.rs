@@ -13,10 +13,12 @@ use snark_verifier_sdk::{verify_evm_proof, Snark};
 use std::{fs::File, path::PathBuf};
 
 mod batch;
+mod bundle;
 mod chunk;
 mod evm;
 
 pub use batch::BatchProof;
+pub use bundle::BundleProof;
 pub use chunk::{compare_chunk_info, ChunkProof};
 pub use evm::EvmProof;
 
