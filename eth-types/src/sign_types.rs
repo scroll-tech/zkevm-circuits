@@ -58,7 +58,7 @@ pub fn sign(randomness: Fq_K1, sk: Fq_K1, msg_hash: Fq_K1) -> (Fq_K1, Fq_K1, u8)
 /// Signature data required by the SignVerify Chip as input to verify a
 /// signature.
 #[derive(Clone, Debug)]
-pub struct SignData<Fq, Affine> {
+pub struct SignData<Fq: PrimeField, Affine: CurveAffine> {
     /// Secp256k1 signature point (r, s, v)
     /// v must be 0 or 1
     pub signature: (Fq, Fq, u8),
@@ -123,7 +123,7 @@ impl SignData<Fq_R1, Secp256r1Affine> {
         if self.pk.is_identity().into() {
             return Address::zero();
         }
-        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le(&self.pk)));
+        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le_p256(&self.pk)));
         Address::from_slice(&pk_hash[12..])
     }
 }

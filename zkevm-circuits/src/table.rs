@@ -2558,10 +2558,9 @@ impl SigTable {
                 let signatures_k1 = block.get_sign_data(false);
                 let signatures_r1 = block.get_sign_data_p256(false);
 
-                //let signatures = signatures_k1.extend(signatures_r1.iter().clone());
-                let evm_word = challenges.evm_word();
                 // TODO: connect signatures_r1 in following loop.
-                let signatures = combine_signatures(signatures_k1, signatures_r1);
+                let signatures =
+                    Self::combine_signatures(&signatures_k1, &signatures_r1, challenges);
                 for (
                     offset,
                     (msg_hash_rlc, sig_r_rlc, sig_s_rlc, sig_v, recovered_addr, is_valid),
@@ -2585,7 +2584,7 @@ impl SigTable {
                             || format!("sig table {column_name} {offset}"),
                             column,
                             offset,
-                            || value,
+                            || *value,
                         )?;
                     }
                 }
@@ -2597,13 +2596,19 @@ impl SigTable {
         Ok(())
     }
 
+    /// Combine secp256k1 signatures and secp256r1 signatures
     pub fn combine_signatures<F: Field>(
-        signatures_k1: Vec<SignData<Fq, Secp256k1Affine>>,
-        signatures_r1: Vec<SignData<secp256r1::Fq, Secp256k1Affine>>,
+        signatures_k1: &Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
+        signatures_r1: &Vec<SignData<secp256r1::Fq, Secp256r1Affine>>,
         challenges: &Challenges<Value<F>>,
-    ) {
+    ) -> Vec<(Value<F>, Value<F>, Value<F>, Value<F>, Value<F>, Value<F>)> {
         let mut sig_table_items = vec![];
         let evm_word = challenges.evm_word();
+
+        // refactor to more uniform method to replace following two loops.
+        // let construct_sig_table_items =
+        // |signatures: &Vec<SignData<, _>>| -> Vec<(Value<F>, Value<F>, Value<F>, Value<F>, Value<F>, Value<F>)> {
+        // };
 
         for (offset, sign_data) in signatures_k1.iter().enumerate() {
             let msg_hash_rlc = evm_word.map(|challenge| {
@@ -2668,6 +2673,8 @@ impl SigTable {
                 is_valid,
             ));
         }
+
+        sig_table_items
     }
 }
 

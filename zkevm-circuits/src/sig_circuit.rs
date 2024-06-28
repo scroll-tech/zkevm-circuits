@@ -75,8 +75,10 @@ pub struct SigCircuitConfigArgs<F: Field> {
 /// SignVerify Configuration
 #[derive(Debug, Clone)]
 pub struct SigCircuitConfig<F: Field> {
-    /// ECDSA
-    ecdsa_config: FpChip<F>,
+    /// secp256k1
+    ecdsa_k1_config: FpChip<F>,
+    /// secp256r1
+    ecdsa_r1_config: FpChip<F>,
     /// An advice column to store RLC witnesses
     rlc_column: Column<Advice>,
     /// selector for keccak lookup table
@@ -126,9 +128,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // - num_limbs: 3
         //
         // TODO: make those parameters tunable from a config file
-        // TODO: rename `ecdsa_config` to `ecdsa_config_k1` and add new `ecdsa_config_r1`
-        // for p256.
-        let ecdsa_config = FpConfig::configure(
+        let ecdsa_k1_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
             &num_advice,
@@ -138,6 +138,21 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             88,
             3,
             modulus::<Fp_K1>(),
+            0,
+            LOG_TOTAL_NUM_ROWS, // maximum k of the chip
+        );
+
+        // TODO: check if ecdsa_r1_config items need to be tuned.
+        let ecdsa_r1_config = FpConfig::configure(
+            meta,
+            FpStrategy::Simple,
+            &num_advice,
+            &num_lookup_advice,
+            1,
+            LOG_TOTAL_NUM_ROWS - 1,
+            88,
+            3,
+            modulus::<Fp_R1>(),
             0,
             LOG_TOTAL_NUM_ROWS, // maximum k of the chip
         );
@@ -195,7 +210,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         });
 
         Self {
-            ecdsa_config,
+            ecdsa_k1_config,
+            ecdsa_r1_config,
             rlc_column,
             q_keccak,
             keccak_table,
@@ -206,7 +222,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
 impl<F: Field> SigCircuitConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.ecdsa_config.range.load_lookup_table(layouter)
+        self.ecdsa_k1_config.range.load_lookup_table(layouter);
+        self.ecdsa_r1_config.range.load_lookup_table(layouter)
     }
 }
 
@@ -257,7 +274,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.ecdsa_config.range.load_lookup_table(layouter)?;
+        config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         self.assign(config, layouter, &self.signatures_k1, challenges)?;
         // TODO: assign signatures_r1
         Ok(())
@@ -775,7 +792,8 @@ impl<F: Field> SigCircuit<F> {
             return Err(Error::Synthesis);
         }
         let mut first_pass = SKIP_FIRST_PASS;
-        let ecdsa_chip = &config.ecdsa_config;
+        let ecdsa_chip = &config.ecdsa_k1_config;
+        // TODO: handle ecdsa_r1_config
 
         let assigned_sig_verifs = layouter.assign_region(
             || "ecdsa chip verification",
