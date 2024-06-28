@@ -34,7 +34,7 @@ use zkevm_circuits::{
 use crate::{
     constants::{
         BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
-    }, util::{assert_conditional_equal, assert_equal, parse_hash_preimage_cells, rlc}, RlcConfig, BATCH_DATA_HASH_OFFSET, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_STATE_ROOT, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
+    }, util::{assert_conditional_equal, assert_equal, parse_hash_preimage_cells, rlc}, RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
 };
 
 /// Subroutine for the witness generations.
@@ -547,15 +547,16 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // 1. batch_data_hash digest is reused for batch hash
                 // ====================================================
                 //
-                //
-                // batch hash is build as
-                // batch_hash = keccak(
-                //      chain_id ||
-                //      chunk[0].prev_state_root ||
-                //      chunk[k-1].post_state_root ||
-                //      chunk[k-1].withdraw_root ||
-                //      batch_data_hash ||
-                //      z || y || versioned_hash)
+                // batch_hash = keccak256( 
+                //      version || 
+                //      batch_index || 
+                //      l1_message_popped || 
+                //      total_l1_message_popped ||
+                //      batch_data_hash || 
+                //      versioned_hash || 
+                //      parent_batch_hash || 
+                //      last_block_timestamp ||
+                //      z || y)
                 //
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
 
@@ -582,6 +583,67 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 region.constrain_equal(
                     batch_data_hash_rlc.cell(),
                     assigned_hash_cells.output_rlcs[N_SNARKS + 1].cell(),
+                )?;
+
+                // ====================================================
+                // 1.a batch_parent_batch_hash is the same from public input
+                // ====================================================
+                let (batch_parent_batch_hash_hi, batch_parent_batch_hash_lo) = {
+                    let hi_bytes = batch_hash_preimage[0][BATCH_PARENT_BATCH_HASH..BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2];
+                    let lo_bytes = batch_hash_preimage[0][BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2..BATCH_PARENT_BATCH_HASH + DIGEST_LEN];
+
+                    let mut hi_acc = hi_bytes[0];
+                    let mut lo_acc = lo_bytes[0];
+
+                    for hi_input in hi_bytes.iter().skip(1) {
+                        hi_acc += hi_input;
+                    }
+                    for lo_input in lo_bytes.iter().skip(1) {
+                        lo_acc += lo_input;
+                    }
+
+                    (hi_acc, lo_acc)
+                };
+                region.constrain_instance(
+                    batch_parent_batch_hash_hi.cell(), 
+                    instance, 
+                    PI_PARENT_BATCH_HASH
+                )?;
+                region.constrain_instance(
+                    batch_parent_batch_hash_lo.cell(), 
+                    instance, 
+                    PI_PARENT_BATCH_HASH + 1
+                )?;
+
+                // ====================================================
+                // 1.b result batch_hash is the same from public input
+                // ====================================================
+                let (batch_hash_hi, batch_hash_lo) = {
+                    let batch_hash_results = assigned_hash_cells.outputs[0];
+                    let hi_bytes = batch_hash_results[0..DIGEST_LEN/2];
+                    let lo_bytes = batch_hash_results[DIGEST_LEN/2..DIGEST_LEN];
+
+                    let mut hi_acc = hi_bytes[0];
+                    let mut lo_acc = lo_bytes[0];
+
+                    for hi_input in hi_bytes.iter().skip(1) {
+                        hi_acc += hi_input;
+                    }
+                    for lo_input in lo_bytes.iter().skip(1) {
+                        lo_acc += lo_input;
+                    }
+
+                    (hi_acc, lo_acc)
+                };
+                region.constrain_instance(
+                    batch_hash_hi.cell(), 
+                    instance, 
+                    PI_CURRENT_BATCH_HASH
+                )?;
+                region.constrain_instance(
+                    batch_hash_lo.cell(), 
+                    instance, 
+                    PI_CURRENT_BATCH_HASH + 1
                 )?;
 
                 // 3 batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when
@@ -781,14 +843,15 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                     (hi_acc, lo_acc)
                 };
-
-                region.constrain_equal(
-                    chunk_prev_state_hi.cell(),
-                    instance[PI_PARENT_STATE_ROOT].cell(),
+                region.constrain_instance(
+                    chunk_prev_state_hi.cell(), 
+                    instance, 
+                    PI_PARENT_STATE_ROOT
                 )?;
-                region.constrain_equal(
-                    chunk_prev_state_lo.cell(),
-                    instance[PI_PARENT_STATE_ROOT + 1].cell(),
+                region.constrain_instance(
+                    chunk_prev_state_lo.cell(), 
+                    instance, 
+                    PI_PARENT_STATE_ROOT + 1
                 )?;
 
                 // pi.current_state_root = chunks[N_SNARKS - 1].post_state_root
@@ -808,14 +871,15 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                     (hi_acc, lo_acc)
                 };
-
-                region.constrain_equal(
-                    chunk_current_state_hi.cell(),
-                    instance[PI_CURRENT_STATE_ROOT].cell(),
+                region.constrain_instance(
+                    chunk_current_state_hi.cell(), 
+                    instance, 
+                    PI_CURRENT_STATE_ROOT
                 )?;
-                region.constrain_equal(
-                    chunk_current_state_lo.cell(),
-                    instance[PI_CURRENT_STATE_ROOT + 1].cell(),
+                region.constrain_instance(
+                    chunk_current_state_lo.cell(), 
+                    instance, 
+                    PI_CURRENT_STATE_ROOT + 1
                 )?;
 
                 // pi.current_withdraw_root = chunks[N_SNARKS - 1].withdraw_root
@@ -835,14 +899,15 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                     (hi_acc, lo_acc)
                 };
-
-                region.constrain_equal(
-                    chunk_current_withdraw_root_hi.cell(),
-                    instance[PI_CURRENT_WITHDRAW_ROOT].cell(),
+                region.constrain_instance(
+                    chunk_current_withdraw_root_hi.cell(), 
+                    instance, 
+                    PI_CURRENT_WITHDRAW_ROOT
                 )?;
-                region.constrain_equal(
-                    chunk_current_withdraw_root_lo.cell(),
-                    instance[PI_CURRENT_WITHDRAW_ROOT + 1].cell(),
+                region.constrain_instance(
+                    chunk_current_withdraw_root_lo.cell(), 
+                    instance, 
+                    PI_CURRENT_WITHDRAW_ROOT + 1
                 )?;
 
                 // pi.chain_id = chunks[N_SNARKS - 1].chain_id
@@ -855,10 +920,10 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     }
                     chunk_chain_id_acc
                 };
-
-                region.constrain_equal(
-                    chunk_chain_id.cell(),
-                    instance[PI_CHAIN_ID].cell(),
+                region.constrain_instance(
+                    chunk_chain_id.cell(), 
+                    instance, 
+                    PI_CHAIN_ID
                 )?;
 
                 log::trace!("rlc chip uses {} rows", offset);

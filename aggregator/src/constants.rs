@@ -47,10 +47,11 @@ pub(crate) const CHUNK_TX_DATA_HASH_INDEX: usize = 136;
 // - y                         32 bytes
 
 pub(crate) const BATCH_DATA_HASH_OFFSET: usize = 25;
+pub(crate) const BATCH_BLOB_VERSIONED_HASH_OFFSET: usize = 57;
+pub(crate) const BATCH_PARENT_BATCH_HASH: usize = 89;
 pub(crate) const BATCH_Z_OFFSET: usize = 129;
 pub(crate) const BATCH_Y_OFFSET: usize = 161;
 pub(crate) const BATCH_VH_OFFSET: usize = 193;
-
 
 // ================================
 // indices for public inputs
