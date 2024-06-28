@@ -27,6 +27,7 @@ use halo2curves::{
     secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
     Coordinates,
     CurveAffine,
+    CurveAffineExt,
 };
 use num_bigint::BigUint;
 use sha3::digest::generic_array::GenericArray;
@@ -106,6 +107,17 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
 }
 
 impl SignData<Fq_K1, Secp256k1Affine> {
+    /// Recover address of the signature
+    pub fn get_addr(&self) -> Address {
+        if self.pk.is_identity().into() {
+            return Address::zero();
+        }
+        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le(&self.pk)));
+        Address::from_slice(&pk_hash[12..])
+    }
+}
+
+impl SignData<Fq_R1, Secp256r1Affine> {
     /// Recover address of the signature
     pub fn get_addr(&self) -> Address {
         if self.pk.is_identity().into() {
@@ -224,6 +236,16 @@ pub fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
 
 /// Return the secp256k1 public key (x, y) coordinates in little endian bytes.
 pub fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
+    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
+    let mut pk_le = [0u8; 64];
+    pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
+    pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
+    pk_le
+}
+
+// TODO: refactor to generic type: `pk_bytes_le_<Affine: CurveAffineExt>(pk: &Affine)`
+/// Return the secp256k1 public key (x, y) coordinates in little endian bytes.
+pub fn pk_bytes_le_p256(pk: &Secp256r1Affine) -> [u8; 64] {
     let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
     let mut pk_le = [0u8; 64];
     pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());

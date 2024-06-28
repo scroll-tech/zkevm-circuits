@@ -32,6 +32,10 @@ use gadgets::{
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Fq, G1Affine},
+    halo2curves::{
+        secp256k1::{self, Secp256k1Affine},
+        secp256r1::{self, Secp256r1Affine},
+    },
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -2508,7 +2512,7 @@ impl RlpFsmRlpTable {
     }
 }
 
-/// The sig table is used to verify signatures, used in tx circuit and ecrecover precompile.
+/// The sig table is used to verify signatures, used in tx circuit and ecrecover & p256_verify precompiles.
 #[derive(Clone, Copy, Debug)]
 pub struct SigTable {
     /// Indicates whether or not the gates are enabled on the current row.
@@ -2551,30 +2555,18 @@ impl SigTable {
         layouter.assign_region(
             || "sig table (dev load)",
             |mut region| {
-                let signatures: Vec<SignData> = block.get_sign_data(false);
+                let signatures_k1 = block.get_sign_data(false);
+                let signatures_r1 = block.get_sign_data_p256(false);
 
+                //let signatures = signatures_k1.extend(signatures_r1.iter().clone());
                 let evm_word = challenges.evm_word();
-                for (offset, sign_data) in signatures.iter().enumerate() {
-                    let msg_hash_rlc = evm_word.map(|challenge| {
-                        rlc::value(
-                            sign_data.msg_hash.to_bytes().iter().collect_vec(),
-                            challenge,
-                        )
-                    });
-                    let sig_r_rlc = evm_word.map(|challenge| {
-                        rlc::value(
-                            sign_data.signature.0.to_bytes().iter().collect_vec(),
-                            challenge,
-                        )
-                    });
-                    let sig_s_rlc = evm_word.map(|challenge| {
-                        rlc::value(
-                            sign_data.signature.1.to_bytes().iter().collect_vec(),
-                            challenge,
-                        )
-                    });
-                    let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
-                    let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
+                // TODO: connect signatures_r1 in following loop.
+                let signatures = combine_signatures(signatures_k1, signatures_r1);
+                for (
+                    offset,
+                    (msg_hash_rlc, sig_r_rlc, sig_s_rlc, sig_v, recovered_addr, is_valid),
+                ) in signatures.iter().enumerate()
+                {
                     region.assign_fixed(
                         || format!("sig table q_enable {offset}"),
                         self.q_enable,
@@ -2587,11 +2579,7 @@ impl SigTable {
                         ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
                         ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
                         ("recovered_addr", self.recovered_addr, recovered_addr),
-                        (
-                            "is_valid",
-                            self.is_valid,
-                            Value::known(F::from(!sign_data.get_addr().is_zero())),
-                        ),
+                        ("is_valid", self.is_valid, is_valid),
                     ] {
                         region.assign_advice(
                             || format!("sig table {column_name} {offset}"),
@@ -2607,6 +2595,79 @@ impl SigTable {
         )?;
 
         Ok(())
+    }
+
+    pub fn combine_signatures<F: Field>(
+        signatures_k1: Vec<SignData<Fq, Secp256k1Affine>>,
+        signatures_r1: Vec<SignData<secp256r1::Fq, Secp256k1Affine>>,
+        challenges: &Challenges<Value<F>>,
+    ) {
+        let mut sig_table_items = vec![];
+        let evm_word = challenges.evm_word();
+
+        for (offset, sign_data) in signatures_k1.iter().enumerate() {
+            let msg_hash_rlc = evm_word.map(|challenge| {
+                rlc::value(
+                    sign_data.msg_hash.to_bytes().iter().collect_vec(),
+                    challenge,
+                )
+            });
+            let sig_r_rlc = evm_word.map(|challenge| {
+                rlc::value(
+                    sign_data.signature.0.to_bytes().iter().collect_vec(),
+                    challenge,
+                )
+            });
+            let sig_s_rlc = evm_word.map(|challenge| {
+                rlc::value(
+                    sign_data.signature.1.to_bytes().iter().collect_vec(),
+                    challenge,
+                )
+            });
+            let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
+            let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
+            let is_valid = Value::known(F::from(!sign_data.get_addr().is_zero()));
+            sig_table_items.push((
+                msg_hash_rlc,
+                sig_r_rlc,
+                sig_s_rlc,
+                sig_v,
+                recovered_addr,
+                is_valid,
+            ));
+        }
+
+        for (offset, sign_data) in signatures_r1.iter().enumerate() {
+            let msg_hash_rlc = evm_word.map(|challenge| {
+                rlc::value(
+                    sign_data.msg_hash.to_bytes().iter().collect_vec(),
+                    challenge,
+                )
+            });
+            let sig_r_rlc = evm_word.map(|challenge| {
+                rlc::value(
+                    sign_data.signature.0.to_bytes().iter().collect_vec(),
+                    challenge,
+                )
+            });
+            let sig_s_rlc = evm_word.map(|challenge| {
+                rlc::value(
+                    sign_data.signature.1.to_bytes().iter().collect_vec(),
+                    challenge,
+                )
+            });
+            let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
+            let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
+            let is_valid = Value::known(F::from(!sign_data.get_addr().is_zero()));
+            sig_table_items.push((
+                msg_hash_rlc,
+                sig_r_rlc,
+                sig_s_rlc,
+                sig_v,
+                recovered_addr,
+                is_valid,
+            ));
+        }
     }
 }
 
