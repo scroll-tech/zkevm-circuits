@@ -106,6 +106,7 @@ fn test_recursion_circuit() {
         &app_params,
         app_pk.get_vk(),
         &mut rng,
+        None,
     );
     end_timer!(pk_time);
 
@@ -122,7 +123,7 @@ fn test_recursion_circuit() {
     ).unwrap();
     let init_snark = initial_recursion_snark::<Square>(
         &recursion_params, 
-        &recursion_pk.get_vk(), 
+        Some(&recursion_pk.get_vk()), 
         &mut rng,
     );
     

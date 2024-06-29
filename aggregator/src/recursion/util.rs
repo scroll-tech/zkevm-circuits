@@ -22,6 +22,7 @@ use snark_verifier::{
     },
     pcs::{kzg::{Bdfg21, Kzg}},
 };
+use std::path::Path;
 
 mod dummy_circuit {
     use super::*;
@@ -127,18 +128,38 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
 }
 
 /// gen a dummy snark for construct the first recursion snark
+/// we should allow it is been generated even without the corresponding
+/// vk, which is required when constructing a circuit to generate the pk
 pub fn initial_recursion_snark<ST: StateTransition>(
     params: &ParamsKZG<Bn256>, 
-    recursion_vk: &VerifyingKey<G1Affine>,
+    recursion_vk: Option<&VerifyingKey<G1Affine>>,
     mut rng: impl Rng + Send,
 ) -> Snark 
 {
-    let mut snark = gen_dummy_snark::<RecursionCircuit<ST>>(
-        params, 
-        recursion_vk,
-        &[RecursionCircuit::<ST>::num_instance_fixed()],
-        &mut rng,
-    );
+    let mut snark = if let Some(vk) = recursion_vk {
+        gen_dummy_snark::<RecursionCircuit<ST>>(
+            params, 
+            vk,
+            &[RecursionCircuit::<ST>::num_instance_fixed()],
+            &mut rng,
+        )
+    } else {
+        // to generate the pk we need to construct a recursion circuit,
+        // which require another snark being build from itself (and so, need
+        // a pk), to break this cycling we use a "dummy" circuit for
+        // generating the snark        
+        let vk = &keygen_vk(
+            params, 
+            &dummy_circuit::CsProxy::<Fr, RecursionCircuit<ST>>::default()
+        ).unwrap();
+        gen_dummy_snark::<RecursionCircuit<ST>>(
+            params, 
+            vk,
+            &[RecursionCircuit::<ST>::num_instance_fixed()],
+            &mut rng,
+        )        
+    };
+
     let g = params.get_g();
     // ?why we need random for dummy snark of app but not for recursion
     snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
@@ -156,34 +177,30 @@ pub fn gen_recursion_pk<ST: StateTransition>(
     app_params: &ParamsKZG<Bn256>,
     app_vk: &VerifyingKey<G1Affine>,
     mut rng: impl Rng + Send,
+    path: Option<&Path>,
 ) -> ProvingKey<G1Affine> 
 {
-    // to generate the pk we need to construct a recursion circuit,
-    // which require another snark being build from itself (and so, need
-    // a pk), to break this cycling we use a "dummy" circuit for
-    // generating the snark
-    let dummy_vk = keygen_vk(
-        recursion_params, 
-        &dummy_circuit::CsProxy::<Fr, RecursionCircuit<ST>>::default()
-    ).unwrap();
+
+    let app_snark = gen_dummy_snark::<ST::Circuit>(
+        app_params, 
+        app_vk, 
+        &[ST::num_instance()], 
+        &mut rng,
+    );
+
     let recursive_snark = initial_recursion_snark::<ST>(
-        recursion_params, &dummy_vk, &mut rng);
+        recursion_params, None, &mut rng);
 
     let recursion = RecursionCircuit::<ST>::new(
         recursion_params,
-        gen_dummy_snark::<ST::Circuit>(
-            app_params, 
-            app_vk, 
-            &[ST::num_instance()], 
-            &mut rng,
-        ),
+        app_snark,
         recursive_snark,
         &mut rng,
         &vec![Fr::ZERO; ST::num_transition_instance()],
         &vec![Fr::ZERO; ST::num_transition_instance() + ST::num_additional_instance()],
         0,
     );
-    gen_pk(recursion_params, &recursion, None)
+    gen_pk(recursion_params, &recursion, path)    
 }
 
 // pub fn gen_recursion_snark<ConcreteCircuit: CircuitExt<Fr> + StateTransition>(

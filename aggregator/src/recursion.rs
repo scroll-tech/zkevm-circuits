@@ -73,17 +73,3 @@ pub trait StateTransition : Sized{
 }
 
 pub use circuit::RecursionCircuit;
-
-use crate::aggregation::AggregationCircuit;
-
-// impl<const N_SNARKS: usize> StateTransition for AggregationCircuit<N_SNARKS> {
-//     type Input = [Fr; 8];
-
-//     fn new(state: Self::Input) -> Self{
-
-//     }
-
-//     fn state_transition(&self) -> Self::Input {
-
-//     }
-// }
