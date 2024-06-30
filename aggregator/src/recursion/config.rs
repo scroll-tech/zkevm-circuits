@@ -8,7 +8,6 @@ use snark_verifier::loader::halo2::halo2_ecc::{
     halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig},
 };
 
-
 #[derive(Clone)]
 pub struct RecursionConfig {
     pub base_field_config: FpConfig<Fr, Fq>,
@@ -39,7 +38,10 @@ impl RecursionConfig {
         let instance = meta.instance_column();
         meta.enable_equality(instance);
 
-        Self { base_field_config, instance }
+        Self {
+            base_field_config,
+            instance,
+        }
     }
 
     pub fn gate(&self) -> &FlexGateConfig<Fr> {

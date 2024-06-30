@@ -1,21 +1,7 @@
-use halo2_proofs::{
-    halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine, G1},
-        group::ff::Field,
-    },
-    plonk::{Selector, Circuit, Error, ConstraintSystem, ProvingKey, VerifyingKey},
-    poly::{
-        commitment::ParamsProver,
-        kzg::commitment::ParamsKZG,
-    },    
-};
+use halo2_proofs::halo2curves::bn256::Fr;
 
-use snark_verifier_sdk::{
-    types::{PoseidonTranscript, POSEIDON_SPEC},
-    Snark, CircuitExt,
-};
-use std::rc::Rc;
 use aggregator::{AggregationCircuit, StateTransition};
+use snark_verifier_sdk::Snark;
 
 mod prover;
 
@@ -25,20 +11,23 @@ pub struct AggregatedBatchProvingTask<'a, const N_SNARK: usize> {
 }
 
 // 4 fields for 2 hashes (Hi, Lo)
-const ST_INSTANCE : usize = 4;
+const ST_INSTANCE: usize = 4;
 // and then 3 fields for 1 hash (withdraw root) and chainID
-const ADD_INSTANCE : usize = 3;
+const ADD_INSTANCE: usize = 3;
 const NUM_INSTANCES: usize = ST_INSTANCE + ADD_INSTANCE;
 const NUM_INIT_INSTANCES: usize = ST_INSTANCE;
 
 impl<const N_SNARK: usize> AggregatedBatchProvingTask<'_, N_SNARK> {
-
-    pub fn init_instances(&self) -> [Fr; NUM_INIT_INSTANCES]{
-        self.agg_snarks.first().unwrap().instances[0][..ST_INSTANCE].try_into().unwrap()
+    pub fn init_instances(&self) -> [Fr; NUM_INIT_INSTANCES] {
+        self.agg_snarks.first().unwrap().instances[0][..ST_INSTANCE]
+            .try_into()
+            .unwrap()
     }
 
-    pub fn state_instances(&self) -> [Fr; NUM_INSTANCES]{
-        self.agg_snarks.first().unwrap().instances[0][ST_INSTANCE..].try_into().unwrap()
+    pub fn state_instances(&self) -> [Fr; NUM_INSTANCES] {
+        self.agg_snarks.first().unwrap().instances[0][ST_INSTANCE..]
+            .try_into()
+            .unwrap()
     }
 
     pub fn iter_snark(&self) -> Snark {
@@ -52,15 +41,17 @@ impl<'a, const N_SNARK: usize> StateTransition for AggregatedBatchProvingTask<'a
 
     fn new(state: Self::Input) -> Self {
         assert!(!state.is_empty());
-        Self {
-            agg_snarks: state,
-        }
+        Self { agg_snarks: state }
     }
 
-    fn state_transition(&self, round: usize) -> Self::Input {
+    fn state_transition(&self, _round: usize) -> Self::Input {
         &self.agg_snarks[1..]
     }
 
-    fn num_transition_instance() -> usize {ST_INSTANCE}
-    fn num_additional_instance() -> usize {ADD_INSTANCE}
+    fn num_transition_instance() -> usize {
+        ST_INSTANCE
+    }
+    fn num_additional_instance() -> usize {
+        ADD_INSTANCE
+    }
 }

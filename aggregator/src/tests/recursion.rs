@@ -1,33 +1,16 @@
-
 use halo2_proofs::{
-    halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine},
-        group::ff::Field,
-    },
-    poly::{commitment::ParamsProver, Rotation},
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Selector, Circuit, Error, ConstraintSystem, ProvingKey, VerifyingKey},
+    circuit::{Layouter, SimpleFloorPlanner},
+    halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem, Error, Selector},
+    poly::Rotation,
 };
-use snark_verifier_sdk::{
-    gen_pk, gen_snark_shplonk, verify_snark_shplonk, 
-    types::{PoseidonTranscript, Plonk, POSEIDON_SPEC},
-    Snark, CircuitExt,
-};
-use snark_verifier::{
-    loader::{
-        halo2::halo2_ecc::halo2_base as sv_halo2_base,
-        native::NativeLoader,
-    },
-    verifier::{PlonkProof, PlonkVerifier},
-};
-use sv_halo2_base::utils::fs::gen_srs;
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base as sv_halo2_base;
+use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use std::fs;
+use sv_halo2_base::utils::fs::gen_srs;
 
+use crate::{param::ConfigParams as AggregationConfigParams, recursion::*};
 use ark_std::{end_timer, start_timer, test_rng};
-use crate::{
-    param::ConfigParams as AggregationConfigParams,
-    recursion::*,
-};
 
 #[derive(Clone, Default)]
 pub struct Square(Fr);
@@ -53,11 +36,7 @@ impl Circuit<Fr> for Square {
         q
     }
 
-    fn synthesize(
-        &self,
-        q: Self::Config,
-        mut layouter: impl Layouter<Fr>,
-    ) -> Result<(), Error> {
+    fn synthesize(&self, q: Self::Config, mut layouter: impl Layouter<Fr>) -> Result<(), Error> {
         layouter.assign_region(|| "", |mut region| q.enable(&mut region, 0))
     }
 }
@@ -80,7 +59,9 @@ impl StateTransition for Square {
         Self(state)
     }
 
-    fn num_transition_instance() -> usize {1}
+    fn num_transition_instance() -> usize {
+        1
+    }
 
     fn state_transition(&self, _: usize) -> Self::Input {
         self.0.square()
@@ -89,7 +70,6 @@ impl StateTransition for Square {
 
 #[test]
 fn test_recursion_circuit() {
-
     let app_params = gen_srs(3);
     let recursion_config: AggregationConfigParams =
         serde_json::from_reader(fs::File::open("configs/verify_circuit.config").unwrap()).unwrap();
@@ -110,23 +90,13 @@ fn test_recursion_circuit() {
     );
     end_timer!(pk_time);
 
-    
     let init_state = Fr::from(2u64);
     let app = Square::new(init_state);
     let next_state = app.state_transition(0);
-    let app_snark = gen_snark_shplonk(
-        &app_params, 
-        &app_pk, 
-        app, 
-        &mut rng, 
-        None::<String>,
-    ).unwrap();
-    let init_snark = initial_recursion_snark::<Square>(
-        &recursion_params, 
-        Some(&recursion_pk.get_vk()), 
-        &mut rng,
-    );
-    
+    let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>).unwrap();
+    let init_snark =
+        initial_recursion_snark::<Square>(&recursion_params, Some(recursion_pk.get_vk()), &mut rng);
+
     let recursion = RecursionCircuit::<Square>::new(
         &recursion_params,
         app_snark,
@@ -135,16 +105,17 @@ fn test_recursion_circuit() {
         &[init_state],
         &[next_state],
         0,
-    );    
+    );
     let pf_time = start_timer!(|| "Generate first recursive snark");
 
     let snark = gen_snark_shplonk(
-        &recursion_params, 
-        &recursion_pk, 
-        recursion, 
-        &mut rng, 
+        &recursion_params,
+        &recursion_pk,
+        recursion,
+        &mut rng,
         None::<String>,
-    ).unwrap();
+    )
+    .unwrap();
 
     end_timer!(pf_time);
     //assert_eq!(final_state, Fr::from(2u64).pow(&[1 << num_round, 0, 0, 0]));
@@ -157,14 +128,8 @@ fn test_recursion_circuit() {
 
     let app = Square::new(next_state);
     let next_state = app.state_transition(1);
-    let app_snark = gen_snark_shplonk(
-        &app_params, 
-        &app_pk, 
-        app, 
-        &mut rng, 
-        None::<String>,
-    ).unwrap();
-    
+    let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>).unwrap();
+
     let recursion = RecursionCircuit::<Square>::new(
         &recursion_params,
         app_snark,
@@ -174,16 +139,17 @@ fn test_recursion_circuit() {
         &[next_state],
         1,
     );
- 
+
     let pf_time = start_timer!(|| "Generate next recursive snark");
 
     let snark = gen_snark_shplonk(
-        &recursion_params, 
-        &recursion_pk, 
-        recursion, 
-        &mut rng, 
+        &recursion_params,
+        &recursion_pk,
+        recursion,
+        &mut rng,
         None::<String>,
-    ).unwrap();
+    )
+    .unwrap();
 
     end_timer!(pf_time);
 
@@ -192,5 +158,4 @@ fn test_recursion_circuit() {
         snark,
         recursion_pk.get_vk()
     ));
-
 }

@@ -4,13 +4,10 @@ use crate::{
     io::{load_snark, write_snark},
     utils::gen_rng,
 };
-use aggregator::{
-    RecursionCircuit, AggregationCircuit, BatchHash, ChunkInfo, MAX_AGG_SNARKS,
-    initial_recursion_snark, StateTransition,
-};
-use snark_verifier_sdk::{gen_snark_shplonk, Snark};
-use anyhow::{anyhow, Result};
+use aggregator::{initial_recursion_snark, RecursionCircuit, StateTransition, MAX_AGG_SNARKS};
+use anyhow::Result;
 use rand::Rng;
+use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 use std::env;
 // TODO: move the type to `types`
 use crate::recursion::AggregatedBatchProvingTask;
@@ -23,14 +20,15 @@ impl Prover {
         mut rng: impl Rng + Send,
         batch_snarks: &[Snark],
     ) -> Result<Snark> {
-
         assert!(!batch_snarks.is_empty());
         // recursion is a special kind of aggregation so we use aggregation's config
         env::set_var("AGGREGATION_CONFIG", layer_config_path(id));
 
         let params = self.params(degree);
 
-        let init_snark = initial_recursion_snark::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>(params, None, &mut rng);
+        let init_snark = initial_recursion_snark::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>(
+            params, None, &mut rng,
+        );
         let init_state = batch_snarks;
         let task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(init_state);
         let init_instance = task.init_instances();
@@ -53,9 +51,9 @@ impl Prover {
         // } else {
         //     log::info!("Before generate recursion pk of {}", &id);
         //     let pk = gen_recursion_pk_with_snark(
-        //         params, 
-        //         batch_snarks[0].clone(), 
-        //         &mut rng, 
+        //         params,
+        //         batch_snarks[0].clone(),
+        //         &mut rng,
         //         None,
         //     );
         //     log::info!("After generate recursion pk of {}", &id);
@@ -66,9 +64,7 @@ impl Prover {
         //let (recursion_params, pk) = self.params_and_pk(id, degree, &circuit)?;
 
         // prepare the initial snark
-        let mut previous_snark = gen_snark_shplonk(
-            params, pk, circuit, &mut rng, None::<String>,
-        )?;
+        let mut previous_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
         log::debug!("construct recursion snark for first round ...done");
         let mut n_rounds = 1;
         let mut cur_state = task.state_transition(n_rounds);
@@ -85,17 +81,13 @@ impl Prover {
                 &task.state_instances(),
                 n_rounds,
             );
-            previous_snark = gen_snark_shplonk(
-                params, pk, circuit, &mut rng, None::<String>,
-            )?;
+            previous_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
             log::debug!("construct recursion snark for round {} ...done", n_rounds);
             n_rounds += 1;
             cur_state = task.state_transition(n_rounds);
-;                 
         }
 
         Ok(previous_snark)
-
     }
 
     pub fn load_or_gen_recursion_snark(
