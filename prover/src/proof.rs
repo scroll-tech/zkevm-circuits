@@ -113,7 +113,7 @@ pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {
     let file_path = dump_proof_path(dir, filename);
-    Ok(eth_types::utils::from_json_file(&file_path)?)
+    crate::io::from_json_file(&file_path)
 }
 
 fn dump_proof_path(dir: &str, filename: &str) -> String {
