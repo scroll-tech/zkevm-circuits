@@ -12,6 +12,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub fn from_json_file<'de, P: serde::Deserialize<'de>>(file_path: &str) -> anyhow::Result<P> {
+    if !Path::new(&file_path).exists() {
+        anyhow::bail!("File {file_path} doesn't exist");
+    }
+
+    let fd = File::open(file_path)?;
+    let mut deserializer = serde_json::Deserializer::from_reader(fd);
+    deserializer.disable_recursion_limit();
+    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
+
+    Ok(serde::Deserialize::deserialize(deserializer)?)
+}
+
 pub fn serialize_fr(f: &Fr) -> Vec<u8> {
     f.to_bytes().to_vec()
 }
@@ -126,4 +139,16 @@ pub fn load_instances(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
                 .collect()
         })
         .collect()
+}
+
+#[ignore]
+#[test]
+fn test_block_trace_convert() {
+    let trace_v1: eth_types::l2_types::BlockTrace =
+        from_json_file("src/testdata/trace_v1_5224657.json").expect("should load");
+    let trace_v2: eth_types::l2_types::BlockTraceV2 = trace_v1.into();
+    let mut fd = std::fs::File::create("src/testdata/trace_v2_5224657.json").unwrap();
+    serde_json::to_writer_pretty(&mut fd, &trace_v2).unwrap();
+    // then we can use this command to compare the traces:
+    // vimdiff <(jq -S "del(.executionResults)|del(.txStorageTraces)" src/testdata/trace_v1_5224657.json) <(jq -S . src/testdata/trace_v2_5224657.json)
 }

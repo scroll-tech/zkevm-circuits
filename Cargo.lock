@@ -1426,7 +1426,6 @@ dependencies = [
  "revm-primitives",
  "serde",
  "serde_json",
- "serde_stacker",
  "serde_with",
  "sha3 0.10.8",
  "strum 0.25.0",
@@ -3698,7 +3697,7 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 version = "7.0.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#8543dd627348907773d8057807b6a310b276bb30"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#30613ed430505b7c11f335d265dc561e485c94bf"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
@@ -3714,7 +3713,7 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 version = "4.0.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#8543dd627348907773d8057807b6a310b276bb30"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#30613ed430505b7c11f335d265dc561e485c94bf"
 dependencies = [
  "alloy-primitives",
  "auto_impl",
