@@ -328,8 +328,8 @@ github.com/rivo/uniseg v0.4.4/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUc
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.9.0 h1:73kH8U+JUqXU8lRuOHeVHaa/SZPifC7BkcraZVejAe8=
 github.com/rogpeppe/go-internal v1.9.0/go.mod h1:WtVeX8xhTBvf0smdhujwtBcq4Qrzq/fJaraNFVN+nFs=
-github.com/scroll-tech/go-ethereum v1.10.24-0.20240624102405-a2c24a883325 h1:YYN7uQ/3KDOvUWlElmQXnEvY8J9UeEUAO3VKbaOPg4s=
-github.com/scroll-tech/go-ethereum v1.10.24-0.20240624102405-a2c24a883325/go.mod h1:nrklNFboaqUrA1jwle+7ZCrCpVdzeWrW1gzBBevitQ4=
+github.com/scroll-tech/go-ethereum v1.10.24-0.20240701094850-e50a8c98312c h1:OPfe/v9l1q2RBBYTfQ63t+R1IKXu6AYU5Ixv+T0pGKE=
+github.com/scroll-tech/go-ethereum v1.10.24-0.20240701094850-e50a8c98312c/go.mod h1:nrklNFboaqUrA1jwle+7ZCrCpVdzeWrW1gzBBevitQ4=
 github.com/scroll-tech/zktrie v0.8.4 h1:UagmnZ4Z3ITCk+aUq9NQZJNAwnWl4gSxsLb2Nl7IgRE=
 github.com/scroll-tech/zktrie v0.8.4/go.mod h1:XvNo7vAk8yxNyTjBDj5WIiFzYW4bx/gJ78+NK6Zn6Uk=
 github.com/shirou/gopsutil v3.21.11+incompatible h1:+1+c1VGhc88SSonWP6foOcLhvnKlUeu/erjjvaPEYiI=
