@@ -1,4 +1,4 @@
-use crate::{blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE};
+use crate::{blob::BatchData, witgen::MultiBlockProcessResult, BATCH_PARENT_BATCH_HASH, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -355,6 +355,31 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
+
+        // ========================================================================
+        // step 2.a: constrain extracted public input cells against actual instance
+        // ========================================================================
+        let hash_derived_public_input_cells = assigned_batch_hash.hash_derived_public_input_cells;
+        let instance_offsets: Vec<usize> = vec![
+            PI_PARENT_BATCH_HASH,
+            PI_PARENT_BATCH_HASH + 1,
+            PI_CURRENT_BATCH_HASH,
+            PI_CURRENT_BATCH_HASH + 1,
+            PI_PARENT_STATE_ROOT,
+            PI_PARENT_STATE_ROOT + 1,
+            PI_CURRENT_STATE_ROOT,
+            PI_CURRENT_STATE_ROOT + 1,
+            PI_CURRENT_WITHDRAW_ROOT,
+            PI_CURRENT_WITHDRAW_ROOT + 1,
+            PI_CHAIN_ID,
+        ];
+        for (c, inst_offset) in hash_derived_public_input_cells.into_iter().zip(instance_offsets.into_iter()) {
+            layouter.constrain_instance(
+                c.cell(),
+                config.instance,
+                inst_offset
+            )?;
+        }
 
         // ==============================================
         // step 3: assert public inputs to the snarks are correct

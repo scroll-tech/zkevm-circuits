@@ -1,5 +1,7 @@
 use gadgets::Field;
+use eth_types::H256;
 use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
+use crate::blob::N_BYTES_U256;
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -63,7 +65,7 @@ pub(crate) fn parse_hash_preimage_cells<const N_SNARKS: usize>(
     let batch_data_hash_preimage = hash_input_cells.last().unwrap();
 
     (
-        batch_pi_hash_preimage,
+        batch_data_hash_preimage,
         chunk_pi_hash_preimages,
         batch_data_hash_preimage,
     )
@@ -96,7 +98,7 @@ pub(crate) fn hi_lo_from_h256<F: Field>(input: H256) -> Vec<F> {
         F::from(chunk.iter().enumerate().fold(0u64, |acc, (i, &byte)| {
             acc | ((byte as u64) << (i * 8))
         }))
-    }).collect::<Vec<F>>().as_slice()
+    }).collect::<Vec<F>>()
 }
 
 #[cfg(test)]

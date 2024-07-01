@@ -30,11 +30,12 @@ use zkevm_circuits::{
     keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
     util::Challenges,
 };
+use halo2_proofs::plonk::{Column, Instance};
 
 use crate::{
     constants::{
         BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
-    }, util::{assert_conditional_equal, assert_equal, parse_hash_preimage_cells, rlc}, RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
+    }, util::{assert_conditional_equal, parse_hash_preimage_cells}, RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
 };
 
 /// Subroutine for the witness generations.
@@ -151,6 +152,9 @@ pub(crate) struct ExtractedHashCells<const N_SNARKS: usize> {
     num_valid_snarks: AssignedCell<Fr, Fr>,
     chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
 }
+
+// Computed cells to be constrained against public input. These cells are processed into hi/lo format from ExtractedHashCells.
+pub (crate) struct HashDerivedPublicInputCells(Vec<AssignedCell<Fr, Fr>>);
 
 impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
     /// Assign the cells for hash input/outputs and their RLCs.
@@ -322,6 +326,7 @@ pub(crate) struct AssignedBatchHash {
     pub(crate) blob: ExpectedBlobCells,
     pub(crate) num_valid_snarks: AssignedCell<Fr, Fr>,
     pub(crate) chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) hash_derived_public_input_cells: Vec<AssignedCell<Fr, Fr>>,
 }
 
 /// Input the hash input bytes,
@@ -363,7 +368,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
     // padded
     // 7. batch data hash is correct w.r.t. its RLCs
-    let extracted_hash_cells = conditional_constraints::<N_SNARKS>(
+    let (extracted_hash_cells, hash_derived_public_input_cells) = conditional_constraints::<N_SNARKS>(
         rlc_config,
         layouter,
         challenges,
@@ -394,6 +399,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
         blob: expected_blob_cells,
         num_valid_snarks: extracted_hash_cells.num_valid_snarks,
         chunks_are_padding: extracted_hash_cells.chunks_are_padding,
+        hash_derived_public_input_cells: hash_derived_public_input_cells.0,
     })
 }
 
@@ -468,11 +474,11 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
     instance: Column<Instance>,
-) -> Result<ExtractedHashCells<N_SNARKS>, Error> {
+) -> Result<(ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells), Error> {
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<ExtractedHashCells<N_SNARKS>, halo2_proofs::plonk::Error> {
+            |mut region| -> Result<(ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells), halo2_proofs::plonk::Error> {
                 let mut offset = 0;
                 rlc_config.init(&mut region)?;
                 // ====================================================
@@ -483,6 +489,8 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     rlc_config.read_challenge1(&mut region, challenges, &mut offset)?;
                 let evm_word_challenge =
                     rlc_config.read_challenge2(&mut region, challenges, &mut offset)?;
+                let byte_accumulator =
+                    rlc_config.load_private(&mut region, &Fr::from(256), &mut offset)?;
 
                 let chunk_is_valid_cells = chunks_are_valid
                     .iter()
@@ -497,7 +505,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 let chunk_is_valid_cell32s = chunk_is_valid_cells
                     .iter()
-                    .flat_map(|cell| vec![cell; 32])
+                    .flat_map(|cell: &AssignedCell<Fr, Fr>| vec![cell; 32])
                     .cloned()
                     .collect::<Vec<_>>();
 
@@ -588,62 +596,42 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // ====================================================
                 // 1.a batch_parent_batch_hash is the same from public input
                 // ====================================================
-                let (batch_parent_batch_hash_hi, batch_parent_batch_hash_lo) = {
-                    let hi_bytes = batch_hash_preimage[0][BATCH_PARENT_BATCH_HASH..BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2];
-                    let lo_bytes = batch_hash_preimage[0][BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2..BATCH_PARENT_BATCH_HASH + DIGEST_LEN];
-
-                    let mut hi_acc = hi_bytes[0];
-                    let mut lo_acc = lo_bytes[0];
-
-                    for hi_input in hi_bytes.iter().skip(1) {
-                        hi_acc += hi_input;
-                    }
-                    for lo_input in lo_bytes.iter().skip(1) {
-                        lo_acc += lo_input;
-                    }
-
-                    (hi_acc, lo_acc)
-                };
-                region.constrain_instance(
-                    batch_parent_batch_hash_hi.cell(), 
-                    instance, 
-                    PI_PARENT_BATCH_HASH
+                let batch_parent_batch_hash_hi = rlc_config.rlc(
+                    &mut region,
+                    batch_hash_preimage
+                        [BATCH_PARENT_BATCH_HASH..BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
-                region.constrain_instance(
-                    batch_parent_batch_hash_lo.cell(), 
-                    instance, 
-                    PI_PARENT_BATCH_HASH + 1
+                let batch_parent_batch_hash_lo = rlc_config.rlc(
+                    &mut region,
+                    batch_hash_preimage
+                        [BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2..BATCH_PARENT_BATCH_HASH + DIGEST_LEN]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
 
                 // ====================================================
                 // 1.b result batch_hash is the same from public input
                 // ====================================================
-                let (batch_hash_hi, batch_hash_lo) = {
-                    let batch_hash_results = assigned_hash_cells.outputs[0];
-                    let hi_bytes = batch_hash_results[0..DIGEST_LEN/2];
-                    let lo_bytes = batch_hash_results[DIGEST_LEN/2..DIGEST_LEN];
-
-                    let mut hi_acc = hi_bytes[0];
-                    let mut lo_acc = lo_bytes[0];
-
-                    for hi_input in hi_bytes.iter().skip(1) {
-                        hi_acc += hi_input;
-                    }
-                    for lo_input in lo_bytes.iter().skip(1) {
-                        lo_acc += lo_input;
-                    }
-
-                    (hi_acc, lo_acc)
-                };
-                region.constrain_instance(
-                    batch_hash_hi.cell(), 
-                    instance, 
-                    PI_CURRENT_BATCH_HASH
+                let batch_hash_results = assigned_hash_cells.outputs[0];
+                let batch_hash_hi = rlc_config.rlc(
+                    &mut region,
+                    batch_hash_results
+                        [0..DIGEST_LEN/2]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
-                region.constrain_instance(
-                    batch_hash_lo.cell(), 
-                    instance, 
-                    PI_CURRENT_BATCH_HASH + 1
+                let batch_hash_lo = rlc_config.rlc(
+                    &mut region,
+                    batch_hash_results
+                        [DIGEST_LEN/2..DIGEST_LEN]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
 
                 // 3 batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when
@@ -827,107 +815,89 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // - current withdraw root ..
 
                 // pi.parent_state_root = chunks[0].prev_state_root
-                let (chunk_prev_state_hi, chunk_prev_state_lo) = {
-                    let hi_bytes = chunk_pi_hash_preimages[0][PREV_STATE_ROOT_INDEX..PREV_STATE_ROOT_INDEX + DIGEST_LEN/2];
-                    let lo_bytes = chunk_pi_hash_preimages[0][PREV_STATE_ROOT_INDEX + DIGEST_LEN/2..PREV_STATE_ROOT_INDEX + DIGEST_LEN];
-
-                    let mut hi_acc = hi_bytes[0];
-                    let mut lo_acc = lo_bytes[0];
-
-                    for hi_input in hi_bytes.iter().skip(1) {
-                        hi_acc += hi_input;
-                    }
-                    for lo_input in lo_bytes.iter().skip(1) {
-                        lo_acc += lo_input;
-                    }
-
-                    (hi_acc, lo_acc)
-                };
-                region.constrain_instance(
-                    chunk_prev_state_hi.cell(), 
-                    instance, 
-                    PI_PARENT_STATE_ROOT
+                let chunk_prev_state_hi = rlc_config.rlc(
+                    &mut region,
+                    chunk_pi_hash_preimages[0]
+                        [PREV_STATE_ROOT_INDEX..PREV_STATE_ROOT_INDEX + DIGEST_LEN/2]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
-                region.constrain_instance(
-                    chunk_prev_state_lo.cell(), 
-                    instance, 
-                    PI_PARENT_STATE_ROOT + 1
+                let chunk_prev_state_lo = rlc_config.rlc(
+                    &mut region,
+                    chunk_pi_hash_preimages[0]
+                        [PREV_STATE_ROOT_INDEX + DIGEST_LEN/2..PREV_STATE_ROOT_INDEX + DIGEST_LEN]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
 
                 // pi.current_state_root = chunks[N_SNARKS - 1].post_state_root
-                let (chunk_current_state_hi, chunk_current_state_lo) = {
-                    let hi_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][POST_STATE_ROOT_INDEX..POST_STATE_ROOT_INDEX + DIGEST_LEN/2];
-                    let lo_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][POST_STATE_ROOT_INDEX + DIGEST_LEN/2..POST_STATE_ROOT_INDEX + DIGEST_LEN];
-
-                    let mut hi_acc = hi_bytes[0];
-                    let mut lo_acc = lo_bytes[0];
-
-                    for hi_input in hi_bytes.iter().skip(1) {
-                        hi_acc += hi_input;
-                    }
-                    for lo_input in lo_bytes.iter().skip(1) {
-                        lo_acc += lo_input;
-                    }
-
-                    (hi_acc, lo_acc)
-                };
-                region.constrain_instance(
-                    chunk_current_state_hi.cell(), 
-                    instance, 
-                    PI_CURRENT_STATE_ROOT
+                let chunk_current_state_hi = rlc_config.rlc(
+                    &mut region,
+                    chunk_pi_hash_preimages[N_SNARKS - 1]
+                        [POST_STATE_ROOT_INDEX..POST_STATE_ROOT_INDEX + DIGEST_LEN/2]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
-                region.constrain_instance(
-                    chunk_current_state_lo.cell(), 
-                    instance, 
-                    PI_CURRENT_STATE_ROOT + 1
+                let chunk_current_state_lo = rlc_config.rlc(
+                    &mut region,
+                    chunk_pi_hash_preimages[N_SNARKS - 1]
+                        [POST_STATE_ROOT_INDEX + DIGEST_LEN/2..POST_STATE_ROOT_INDEX + DIGEST_LEN]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
 
                 // pi.current_withdraw_root = chunks[N_SNARKS - 1].withdraw_root
-                let (chunk_current_withdraw_root_hi, chunk_current_withdraw_root_lo) = {
-                    let hi_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][WITHDRAW_ROOT_INDEX..WITHDRAW_ROOT_INDEX + DIGEST_LEN/2];
-                    let lo_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][WITHDRAW_ROOT_INDEX + DIGEST_LEN/2..WITHDRAW_ROOT_INDEX + DIGEST_LEN];
-
-                    let mut hi_acc = hi_bytes[0];
-                    let mut lo_acc = lo_bytes[0];
-
-                    for hi_input in hi_bytes.iter().skip(1) {
-                        hi_acc += hi_input;
-                    }
-                    for lo_input in lo_bytes.iter().skip(1) {
-                        lo_acc += lo_input;
-                    }
-
-                    (hi_acc, lo_acc)
-                };
-                region.constrain_instance(
-                    chunk_current_withdraw_root_hi.cell(), 
-                    instance, 
-                    PI_CURRENT_WITHDRAW_ROOT
+                let chunk_current_withdraw_root_hi = rlc_config.rlc(
+                    &mut region,
+                    chunk_pi_hash_preimages[N_SNARKS - 1]
+                        [WITHDRAW_ROOT_INDEX..WITHDRAW_ROOT_INDEX + DIGEST_LEN/2]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
-                region.constrain_instance(
-                    chunk_current_withdraw_root_lo.cell(), 
-                    instance, 
-                    PI_CURRENT_WITHDRAW_ROOT + 1
+                let chunk_current_withdraw_root_lo = rlc_config.rlc(
+                    &mut region,
+                    chunk_pi_hash_preimages[N_SNARKS - 1]
+                        [WITHDRAW_ROOT_INDEX + DIGEST_LEN/2..WITHDRAW_ROOT_INDEX + DIGEST_LEN]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
 
                 // pi.chain_id = chunks[N_SNARKS - 1].chain_id
                 // Note: Chunk-chaining constraints in 4.b guarantee that previously assigned chain_id cells have the same values.
-                let chunk_chain_id = {
-                    let chunk_chain_id_bytes = chunk_pi_hash_preimages[N_SNARKS - 1][CHUNK_CHAIN_ID_INDEX..CHUNK_CHAIN_ID_INDEX + CHAIN_ID_LEN];
-                    let chunk_chain_id_acc = chunk_chain_id_bytes[0];
-                    for input in chunk_chain_id_bytes.iter().skip(1) {
-                        chunk_chain_id_acc += input;
-                    }
-                    chunk_chain_id_acc
-                };
-                region.constrain_instance(
-                    chunk_chain_id.cell(), 
-                    instance, 
-                    PI_CHAIN_ID
+                let chunk_chain_id = rlc_config.rlc(
+                    &mut region,
+                    chunk_pi_hash_preimages[N_SNARKS - 1]
+                        [CHUNK_CHAIN_ID_INDEX..CHUNK_CHAIN_ID_INDEX + CHAIN_ID_LEN]
+                        .as_ref(),
+                    &byte_accumulator,
+                    &mut offset,
                 )?;
 
                 log::trace!("rlc chip uses {} rows", offset);
-                Ok(assigned_hash_cells)
+
+                // batch_circuit_debug
+                Ok((
+                    assigned_hash_cells, 
+                    HashDerivedPublicInputCells(vec![
+                        batch_parent_batch_hash_hi,
+                        batch_parent_batch_hash_lo,
+                        batch_hash_hi,
+                        batch_hash_lo,
+                        chunk_prev_state_hi,
+                        chunk_prev_state_lo,
+                        chunk_current_state_hi,
+                        chunk_current_state_lo,
+                        chunk_current_withdraw_root_hi,
+                        chunk_current_withdraw_root_lo,
+                        chunk_chain_id,
+                    ])
+                ))
             },
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))

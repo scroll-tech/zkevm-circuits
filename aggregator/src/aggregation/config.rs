@@ -17,7 +17,7 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    constants::{BITS, LIMBS}, param::ConfigParams, BarycentricEvaluationConfig, BatchCircuit, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs, RlcConfig
+    constants::{BITS, LIMBS}, param::ConfigParams, BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs, RlcConfig
 };
 
 #[derive(Debug, Clone)]

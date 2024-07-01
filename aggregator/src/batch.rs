@@ -293,17 +293,17 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         let batch_hash_preimage = [
             [self.batch_header.version].as_ref(),
             self.batch_header.batch_index.to_be_bytes().as_ref(),
-            batch_header.l1_message_popped.to_be_bytes().as_ref(),
-            batch_header.total_l1_message_popped.to_be_bytes().as_ref(),
+            self.batch_header.l1_message_popped.to_be_bytes().as_ref(),
+            self.batch_header.total_l1_message_popped.to_be_bytes().as_ref(),
             self.data_hash.as_bytes(),
             self.versioned_hash.as_bytes(),
-            batch_header.parent_batch_hash.as_bytes(),
-            batch_header.last_block_timestamp.to_be_bytes().as_ref(),
-            point_evaluation_assignments
+            self.batch_header.parent_batch_hash.as_bytes(),
+            self.batch_header.last_block_timestamp.to_be_bytes().as_ref(),
+            self.point_evaluation_assignments
                 .challenge
                 .to_be_bytes()
                 .as_ref(),
-            point_evaluation_assignments
+            self.point_evaluation_assignments
                 .evaluation
                 .to_be_bytes()
                 .as_ref(),

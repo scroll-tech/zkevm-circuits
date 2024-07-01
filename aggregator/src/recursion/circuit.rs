@@ -24,7 +24,7 @@ use sv_halo2_base::{
     gates::GateInstructions, halo2_proofs, AssignedValue, Context, ContextParams,
     QuantumCell::Existing,
 };
-
+use crate::param::ConfigParams as BatchCircuitConfigParams;
 use std::{fs::File, iter, marker::PhantomData, rc::Rc};
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 type Pcs = Kzg<Bn256, Bdfg21>;
@@ -224,7 +224,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let path = std::env::var("VERIFY_CONFIG")
             .unwrap_or_else(|_| "configs/verify_circuit.config".to_owned());
-        let params: BatchCircuitConfigParamsParams = serde_json::from_reader(
+        let params: BatchCircuitConfigParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|err| panic!("{err:?}")),
         )
         .unwrap();
@@ -503,14 +503,14 @@ pub fn gen_recursion_snark<ConcreteCircuit: CircuitExt<Fr> + StateTransition>(
 
 
 fn test() {
-    use std::fs;
-    use sv_halo2_base::utils::fs::gen_srs;
+    // use std::fs;
+    // use sv_halo2_base::utils::fs::gen_srs;
     
-    let app_params = gen_srs(3);
-    let recursion_config: BatchCircuitConfigParamsParams =
-        serde_json::from_reader(fs::File::open("configs/verify_circuit.config").unwrap()).unwrap();
-    let k = recursion_config.degree;
-    let recursion_params = gen_srs(k);
+    // let app_params = gen_srs(3);
+    // let recursion_config: BatchCircuitConfigParamsParams =
+    //     serde_json::from_reader(fs::File::open("configs/verify_circuit.config").unwrap()).unwrap();
+    // let k = recursion_config.degree;
+    // let recursion_params = gen_srs(k);
 
 //     let app_pk = gen_pk(&app_params, &application::Square::default());
 
@@ -543,4 +543,4 @@ fn test() {
 //         Plonk::verify(&svk, &dk, &snark.protocol, &snark.instances, &proof)
 //     };
 //     assert!(accept)
-// }
+}
