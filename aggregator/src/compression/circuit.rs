@@ -26,6 +26,7 @@ use aggregator_snark_verifier::{
     },
     pcs::kzg::{Bdfg21, KzgAs, KzgSuccinctVerifyingKey},
 };
+use aggregator_snark_verifier::pcs::kzg::KzgAccumulator;
 use aggregator_snark_verifier_sdk::halo2::aggregation::BaseFieldEccChip;
 use aggregator_snark_verifier_sdk::{
     halo2::aggregation::{aggregate, Svk},

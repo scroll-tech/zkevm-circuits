@@ -163,6 +163,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         // builder.core.copy_manager ....
 
         let builder = BaseCircuitBuilder::default();
+        let copy_manager = bulder.core.copy_manager();
 
         let (config, challenge) = config;
 
@@ -513,7 +514,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                             .zip_eq(expected_chunk_data_digest.iter())
                         {
                             log::trace!("blob chunk tx: {:?} {:?}", c.value(), ec.value());
-                            region.constrain_equal(c.cell(), ec.cell())?;
+                            // region.constrain_equal(c.cell(), ec.cell())?;
                         }
                     }
 
@@ -522,7 +523,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         .zip_eq(assigned_batch_hash.blob.y.iter().rev())
                     {
                         log::trace!("blob y: {:?} {:?}", c.value(), ec.value());
-                        region.constrain_equal(c.cell(), ec.cell())?;
+                        // region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
                     for (c, ec) in challenge_le
@@ -530,7 +531,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         .zip_eq(assigned_batch_hash.blob.z.iter().rev())
                     {
                         log::trace!("blob z: {:?} {:?}", c.value(), ec.value());
-                        region.constrain_equal(c.cell(), ec.cell())?;
+                        // region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
                     for (c, ec) in batch_data_exports
@@ -539,7 +540,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         .zip_eq(assigned_batch_hash.blob.versioned_hash.iter())
                     {
                         log::trace!("blob version hash: {:?} {:?}", c.value(), ec.value());
-                        region.constrain_equal(c.cell(), ec.cell())?;
+                        // region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
                     // equate rlc (from blob data) with decoder's encoded_rlc
@@ -567,6 +568,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 },
             )?;
         }
+
+        builder.assign_instances(&[instance_column], layouter);
 
         end_timer!(witness_time);
 

@@ -35,6 +35,8 @@ struct BlobCircuit {
     overwrite_digest_rlc: Option<usize>,
     overwrite_is_boundary: Option<usize>,
     overwrite_is_padding: Option<usize>,
+
+    inner: BaseCircuitBuilder<Fr>,
 }
 
 #[derive(Clone, Debug)]

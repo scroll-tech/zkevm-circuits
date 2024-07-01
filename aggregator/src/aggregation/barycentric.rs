@@ -57,6 +57,10 @@ pub static ROOTS_OF_UNITY: LazyLock<Vec<Scalar>> = LazyLock::new(|| {
         .collect()
 });
 
+pub struct BarycentricEvaluationChip {
+    inner: BaseCircuitBuilder<Fr>,
+}
+
 #[derive(Clone, Debug)]
 pub struct BarycentricEvaluationConfig {
     pub scalar: FpConfig<Fr>,
@@ -99,14 +103,12 @@ impl BarycentricEvaluationConfig {
 
     pub fn assign(
         &self,
-        ctx: &mut SinglePhaseCoreManager<Fr>,
+        ctx: &mut Context<Fr>,
+        range_chip: &RangeChip<Fr>,
         blob: &[U256; BLOB_WIDTH],
         challenge_digest: U256,
         evaluation: U256,
     ) -> AssignedBarycentricEvaluationConfig {
-        // some constants for later use.
-        // todo: move builder up...
-        let builder = BaseCircuitBuilder::default();
         let fp_chip = FpChip::<Fr, Scalar>::new(&builder.range_chip(), BITS, LIMBS);
 
         let one = fp_chip.load_constant(ctx, Scalar::one());
@@ -245,7 +247,7 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 }
 
 fn assert_le_bytes_equal_crt(
-    ctx: &mut SinglePhaseCoreManager<Fr>,
+    ctx: &mut Context<Fr>,
     gate: &GateChip<Fr>,
     le_bytes: &[AssignedValue<Fr>],
     crt_limbs: &[AssignedValue<Fr>],

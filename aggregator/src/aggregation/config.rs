@@ -182,7 +182,8 @@ impl<const N_SNARKS: usize> AggregationConfig<N_SNARKS> {
 
     /// Flex gate configuration
     pub fn flex_gate(&self) -> &FlexGateConfig<Fr> {
-        self.ecc_chip().gate()
+        unimplemented!()
+        // self.ecc_chip().gate()
     }
 
     /// Ecc gate configuration

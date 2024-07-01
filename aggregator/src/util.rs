@@ -12,6 +12,7 @@ use aggregator_snark_verifier::{
 // use std::rc::Rc;
 use eth_types::Field;
 use halo2curves::bn256::{Fr, G1Affine};
+use std::rc::Rc;
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -114,23 +115,23 @@ pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
     acc
 }
 
-// TODO: does this already exist in snark-verifier?
-pub fn flatten_accumulator<'a>(
-    accumulator: Rc<KzgAccumulator<G1Affine, Halo2Loader<G1Affine, BaseFieldEccChip<G1Affine>>>>,
-) -> Vec<AssignedValue<Fr>> {
-    let KzgAccumulator { lhs, rhs } = accumulator;
+// // TODO: does this already exist in snark-verifier?
+// pub fn flatten_accumulator<'a>(
+//     accumulator: Rc<KzgAccumulator<G1Affine, Halo2Loader<G1Affine, BaseFieldEccChip<G1Affine>>>>,
+// ) -> Vec<AssignedValue<Fr>> {
+//     let KzgAccumulator { lhs, rhs } = accumulator;
 
-    // TODO: this prevents compilation???
-    // figure out what to copy paste here.....
-    let lhs = lhs.into_assigned();
-    let rhs = rhs.into_assigned();
+//     // TODO: this prevents compilation???
+//     // figure out what to copy paste here.....
+//     let lhs = lhs.into_assigned();
+//     let rhs = rhs.into_assigned();
 
-    lhs.x
-        .truncation
-        .limbs
-        .into_iter()
-        .chain(lhs.y.truncation.limbs.into_iter())
-        .chain(rhs.x.truncation.limbs.into_iter())
-        .chain(rhs.y.truncation.limbs.into_iter())
-        .collect()
-}
+//     lhs.x
+//         .truncation
+//         .limbs
+//         .into_iter()
+//         .chain(lhs.y.truncation.limbs.into_iter())
+//         .chain(rhs.x.truncation.limbs.into_iter())
+//         .chain(rhs.y.truncation.limbs.into_iter())
+//         .collect()
+// }

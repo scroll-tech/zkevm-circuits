@@ -8,6 +8,7 @@ use aggregator_snark_verifier::{
             plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
             poly::Rotation,
         },
+        utils::halo2::constrain_virtual_equals_external,
         virtual_region::copy_constraints::CopyConstraintManager,
     },
     halo2_ecc::bigint::CRTInteger,
@@ -285,7 +286,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_bytes: &[AssignedCell<Fr, Fr>],
         bytes_len: &AssignedCell<Fr, Fr>,
-        copy_manager: &&mut CopyConstraintManager<Fr>,
+        copy_manager: &mut CopyConstraintManager<Fr>,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         rlc_config.init(region)?;
         let mut rlc_config_offset = 0;
@@ -348,9 +349,18 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
                 &pows_of_256[0..9],
                 &mut rlc_config_offset,
             )?;
-            region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell)?;
-            region.constrain_equal(limb2.cell(), blob_crt.truncation.limbs[1].cell)?;
-            region.constrain_equal(limb3.cell(), blob_crt.truncation.limbs[2].cell)?;
+
+            for (external_value, virtual_value) in [limb1, limb2, limb3]
+                .iter()
+                .zip_eq(&blob_crt.truncation.limbs)
+            {
+                constrain_virtual_equals_external(
+                    region,
+                    virtual_value,
+                    external_value.cell(),
+                    copy_manager,
+                );
+            }
         }
 
         // The zstd decoder (DecoderConfig) exports an encoded length that is 1 more than the
