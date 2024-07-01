@@ -7,7 +7,8 @@ use halo2_ecc::{
 };
 use halo2_proofs::{
     circuit::Value,
-    halo2curves::secp256k1::{Fp, Fq},
+    halo2curves::secp256k1::{Fp as Fp_K1, Fq as Fq_K1},
+    halo2curves::secp256r1::{Fp as Fp_R1, Fq as Fq_R1},
 };
 
 // Hard coded parameters.
@@ -61,9 +62,11 @@ pub(super) fn calc_required_lookup_advices(num_verif: usize) -> usize {
 }
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field
-pub(super) type FqChip<F> = FpConfig<F, Fq>;
-/// Chip to handle ECDSA::Fp, the base field
-pub(super) type FpChip<F> = FpConfig<F, Fp>;
+pub(super) type FqChip<F> = FpConfig<F, Fq_K1>;
+/// Chip to handle ECDSA(secp256k1)::Fp, the base field
+pub(super) type FpChip<F> = FpConfig<F, Fp_K1>;
+/// Chip to handle ECDSA(secp256k1)::Fp, the base field
+pub(super) type FpChipR1<F> = FpConfig<F, Fp_R1>;
 
 pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint>,

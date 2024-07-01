@@ -78,7 +78,7 @@ pub struct SigCircuitConfig<F: Field> {
     /// secp256k1
     ecdsa_k1_config: FpChip<F>,
     /// secp256r1
-    ecdsa_r1_config: FpChip<F>,
+    ecdsa_r1_config: FpChipR1<F>,
     /// An advice column to store RLC witnesses
     rlc_column: Column<Advice>,
     /// selector for keccak lookup table
@@ -142,7 +142,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             LOG_TOTAL_NUM_ROWS, // maximum k of the chip
         );
 
-        // TODO: check if ecdsa_r1_config items need to be tuned.
+        // TODO: check if ecdsa_r1_config parameters need to be tuned.
         let ecdsa_r1_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
