@@ -454,53 +454,53 @@ impl<ST: StateTransition> CircuitExt<Fr> for RecursionCircuit<ST> {
     }
 }
 
-pub fn gen_recursion_pk<ConcreteCircuit: CircuitExt<Fr>>(
-    recursion_params: &ParamsKZG<Bn256>,
-    app_params: &ParamsKZG<Bn256>,
-    app_vk: &VerifyingKey<G1Affine>,
-) -> ProvingKey<G1Affine> {
-    let recursion = RecursionCircuit::new(
-        recursion_params,
-        gen_dummy_snark::<ConcreteCircuit>(app_params, Some(app_vk)),
-        RecursionCircuit::initial_snark(recursion_params, None),
-        Fr::ZERO,
-        Fr::ZERO,
-        0,
-    );
-    gen_pk(recursion_params, &recursion)
-}
+// batch_circuit_debug
+// pub fn gen_recursion_pk<ConcreteCircuit: CircuitExt<Fr>>(
+//     recursion_params: &ParamsKZG<Bn256>,
+//     app_params: &ParamsKZG<Bn256>,
+//     app_vk: &VerifyingKey<G1Affine>,
+// ) -> ProvingKey<G1Affine> {
+//     let recursion = RecursionCircuit::new(
+//         recursion_params,
+//         gen_dummy_snark::<ConcreteCircuit>(app_params, Some(app_vk)),
+//         RecursionCircuit::initial_snark(recursion_params, None),
+//         Fr::ZERO,
+//         Fr::ZERO,
+//         0,
+//     );
+//     gen_pk(recursion_params, &recursion)
+// }
 
-pub fn gen_recursion_snark<ConcreteCircuit: CircuitExt<Fr> + StateTransition>(
-    app_params: &ParamsKZG<Bn256>,
-    recursion_params: &ParamsKZG<Bn256>,
-    app_pk: &ProvingKey<G1Affine>,
-    recursion_pk: &ProvingKey<G1Affine>,
-    initial_state: Fr,
-    inputs: Vec<ConcreteCircuit::Input>,
-) -> (Fr, Snark) {
-    let mut state = initial_state;
-    let mut app = ConcreteCircuit::new(state);
-    let mut previous =
-        RecursionCircuit::initial_snark(recursion_params, Some(recursion_pk.get_vk()));
-    for (round, input) in inputs.into_iter().enumerate() {
-        state = app.state_transition(input);
-        println!("Generate app snark");
-        let app_snark = gen_snark(app_params, app_pk, app);
-        let recursion = RecursionCircuit::new(
-            recursion_params,
-            app_snark,
-            previous,
-            initial_state,
-            state,
-            round,
-        );
-        println!("Generate recursion snark");
-        previous = gen_snark(recursion_params, recursion_pk, recursion);
-        app = ConcreteCircuit::new(state);
-    }
-    (state, previous)
-}
-
+// pub fn gen_recursion_snark<ConcreteCircuit: CircuitExt<Fr> + StateTransition>(
+//     app_params: &ParamsKZG<Bn256>,
+//     recursion_params: &ParamsKZG<Bn256>,
+//     app_pk: &ProvingKey<G1Affine>,
+//     recursion_pk: &ProvingKey<G1Affine>,
+//     initial_state: Fr,
+//     inputs: Vec<ConcreteCircuit::Input>,
+// ) -> (Fr, Snark) {
+//     let mut state = initial_state;
+//     let mut app = ConcreteCircuit::new(state);
+//     let mut previous =
+//         RecursionCircuit::initial_snark(recursion_params, Some(recursion_pk.get_vk()));
+//     for (round, input) in inputs.into_iter().enumerate() {
+//         state = app.state_transition(input);
+//         println!("Generate app snark");
+//         let app_snark = gen_snark(app_params, app_pk, app);
+//         let recursion = RecursionCircuit::new(
+//             recursion_params,
+//             app_snark,
+//             previous,
+//             initial_state,
+//             state,
+//             round,
+//         );
+//         println!("Generate recursion snark");
+//         previous = gen_snark(recursion_params, recursion_pk, recursion);
+//         app = ConcreteCircuit::new(state);
+//     }
+//     (state, previous)
+// }
 
 fn test() {
     // use std::fs;

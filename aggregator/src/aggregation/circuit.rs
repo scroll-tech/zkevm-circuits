@@ -107,7 +107,7 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
         // - current_batch_hash (2 elements)
         // - chain id (1 element)
         // - current_withdraw_root (2 elements)
-        let flattened_instances: Vec<Fr> = batch_hash.instances_exclude_acc::<Fr>()[0];
+        let flattened_instances: Vec<Fr> = batch_hash.instances_exclude_acc::<Fr>()[0].clone();
 
         end_timer!(timer);
         Ok(Self {

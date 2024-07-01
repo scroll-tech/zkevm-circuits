@@ -616,7 +616,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // ====================================================
                 // 1.b result batch_hash is the same from public input
                 // ====================================================
-                let batch_hash_results = assigned_hash_cells.outputs[0];
+                let batch_hash_results = assigned_hash_cells.outputs[0].clone();
                 let batch_hash_hi = rlc_config.rlc(
                     &mut region,
                     batch_hash_results
