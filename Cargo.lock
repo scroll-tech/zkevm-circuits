@@ -1001,6 +1001,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "compression"
+version = "0.11.0"
+dependencies = [
+ "ark-std 0.3.0",
+ "csv",
+ "ctor",
+ "env_logger",
+ "eth-types",
+ "ethers-core",
+ "gadgets",
+ "halo2_proofs",
+ "halo2curves",
+ "hex",
+ "itertools 0.11.0",
+ "log",
+ "once_cell",
+ "rand",
+ "serde",
+ "serde_json",
+ "snark-verifier 0.1.8",
+ "snark-verifier-sdk 0.1.8",
+ "strum 0.25.0",
+ "strum_macros 0.25.3",
+ "zkevm-circuits",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

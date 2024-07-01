@@ -1,3 +1,7 @@
+use crate::{
+    constants::{BITS, LIMBS},
+    params::ConfigParams,
+};
 use aggregator_snark_verifier::{
     halo2_base::halo2_proofs::{
         halo2curves::bn256::{Fq, Fr, G1Affine},
@@ -14,11 +18,6 @@ use aggregator_snark_verifier::{
             utils::modulus,
         },
     },
-};
-
-use crate::{
-    constants::{BITS, LIMBS},
-    param::ConfigParams,
 };
 
 #[derive(Clone, Debug)]

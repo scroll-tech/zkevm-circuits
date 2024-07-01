@@ -5,7 +5,7 @@ use aggregator_snark_verifier::halo2_base::halo2_proofs::{
 };
 use aggregator_snark_verifier_sdk::CircuitExt;
 
-use crate::ACC_LEN;
+use crate::constants::ACC_LEN;
 
 use super::circuit::CompressionCircuit;
 

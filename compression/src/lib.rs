@@ -10,5 +10,10 @@ mod circuit_ext;
 /// Config for compression circuit
 mod config;
 
+mod constants;
+mod params;
+
+pub mod util;
+
 pub use circuit::CompressionCircuit;
 pub use config::CompressionConfig;

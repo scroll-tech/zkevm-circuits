@@ -1,7 +1,10 @@
 //! Circuit implementation for compression circuit.
 
-use std::fs::File;
-
+use crate::{
+    constants::ACC_LEN,
+    params::ConfigParams,
+    util::{extract_proof_and_instances_with_pairing_check, flatten_accumulator},
+};
 use aggregator_snark_verifier::{
     halo2_base::{
         gates::flex_gate::threads::MultiPhaseCoreManager,
@@ -24,9 +27,8 @@ use aggregator_snark_verifier::{
         },
         Halo2Loader,
     },
-    pcs::kzg::{Bdfg21, KzgAs, KzgSuccinctVerifyingKey},
+    pcs::kzg::{Bdfg21, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey},
 };
-use aggregator_snark_verifier::pcs::kzg::KzgAccumulator;
 use aggregator_snark_verifier_sdk::halo2::aggregation::BaseFieldEccChip;
 use aggregator_snark_verifier_sdk::{
     halo2::aggregation::{aggregate, Svk},
@@ -34,11 +36,7 @@ use aggregator_snark_verifier_sdk::{
 };
 use ark_std::{end_timer, start_timer};
 use rand::Rng;
-
-use crate::{
-    core::extract_proof_and_instances_with_pairing_check, param::ConfigParams,
-    util::flatten_accumulator, ACC_LEN,
-};
+use std::fs::File;
 
 use super::config::CompressionConfig;
 

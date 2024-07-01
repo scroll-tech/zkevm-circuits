@@ -10,8 +10,6 @@ mod blob;
 // This module implements `Chunk` related data types.
 // A chunk is a list of blocks.
 mod chunk;
-/// proof compression
-mod compression;
 /// Configurations
 mod constants;
 /// Core module for circuit assignment
@@ -28,7 +26,6 @@ pub use self::core::extract_proof_and_instances_with_pairing_check;
 pub use aggregation::*;
 pub use batch::BatchHash;
 pub use chunk::ChunkInfo;
-pub use compression::*;
 pub use constants::MAX_AGG_SNARKS;
 pub(crate) use constants::*;
 pub use param::*;

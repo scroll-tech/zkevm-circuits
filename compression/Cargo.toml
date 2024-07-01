@@ -1,0 +1,35 @@
+[package]
+name = "compression"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# aggregator = { path = "../aggregator" }
+eth-types = { path = "../eth-types" }
+gadgets = { path = "../gadgets" }
+zkevm-circuits = { path = "../zkevm-circuits" }
+
+ark-std.workspace = true
+ctor.workspace = true
+env_logger.workspace = true
+ethers-core.workspace = true
+halo2_proofs.workspace = true
+hex.workspace = true
+log.workspace = true
+itertools.workspace = true
+once_cell.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+# halo2-base.workspace = true
+# halo2-ecc.workspace = true
+# halo2_proofs.workspace = true
+halo2curves.workspace = true
+aggregator-snark-verifier.workspace = true
+aggregator-snark-verifier-sdk.workspace = true
+strum.workspace = true
+strum_macros.workspace = true
+
+[dev-dependencies]
+csv = "1.1"
