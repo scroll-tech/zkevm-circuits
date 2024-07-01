@@ -1,27 +1,16 @@
-
 use super::*;
-use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, CircuitExt, Snark};
 use halo2_proofs::{
-    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    poly::{
-        commitment::ParamsProver,
-        kzg::{
-            commitment::ParamsKZG,
-            multiopen::{ProverGWC, VerifierGWC},
-            strategy::AccumulatorStrategy,
-        },
-        Rotation, VerificationStrategy,
-    },
+    circuit::Layouter,
+    plonk::keygen_vk,
+    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
+use snark_verifier_sdk::{gen_pk, CircuitExt, Snark};
 // required by kzg specific implements
 use snark_verifier::{
-    util::{
-        arithmetic::{fe_to_fe, fe_from_limbs, fe_to_limbs},
-        transcript::{Transcript, TranscriptWrite, TranscriptRead},
-    },
-    pcs::{kzg::{Bdfg21, Kzg}},
+    pcs::kzg::{Bdfg21, Kzg},
+    util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
 };
+use std::path::Path;
 
 mod dummy_circuit {
     use super::*;
@@ -29,14 +18,13 @@ mod dummy_circuit {
 
     pub struct CsProxy<F, C>(PhantomData<(F, C)>);
 
-    impl<F, C> Default for CsProxy<F, C>{
+    impl<F, C> Default for CsProxy<F, C> {
         fn default() -> Self {
             Self(Default::default())
         }
     }
 
-    impl<F: Field, C: CircuitExt<F>> Circuit<F> for CsProxy<F, C>
-    {
+    impl<F: Field, C: CircuitExt<F>> Circuit<F> for CsProxy<F, C> {
         type Config = C::Config;
         type FloorPlanner = C::FloorPlanner;
         #[cfg(feature = "circuit-params")]
@@ -69,10 +57,9 @@ mod dummy_circuit {
             Ok(())
         }
     }
-
 }
 
-// gen a "dummy" snark in case we need to "skip" the verify part 
+// gen a "dummy" snark in case we need to "skip" the verify part
 // inside the recursive circuit: cost would be high if we apply conditional
 // selection above the verify circuits (it is in fact a ecc chip, and
 // selection increase the maxium degree by 1).
@@ -80,31 +67,26 @@ mod dummy_circuit {
 // witness and we just skip the output accumulator later
 // it can "mock" any circuit (with vk being provided in argument)
 // specified by ConcreteCircuit
-fn gen_dummy_snark<ConcreteCircuit, RNG>(
+fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
     params: &ParamsKZG<Bn256>,
     vk: &VerifyingKey<G1Affine>,
     num_instance: &[usize],
-    rng: &mut impl FnMut() -> RNG,
-) -> Snark 
-where
-    ConcreteCircuit: CircuitExt<Fr>,
-    RNG: Rng + Send,
-{
-
-    use std::iter;
+    mut rng: impl Rng + Send,
+) -> Snark {
     use snark_verifier::cost::CostEstimation;
+    use std::iter;
     type Pcs = Kzg<Bn256, Bdfg21>;
 
     let protocol = compile(
         params,
-        &vk,
+        vk,
         Config::kzg()
             .with_num_instance(Vec::from(num_instance))
             .with_accumulator_indices(ConcreteCircuit::accumulator_indices()),
     );
     let instances = num_instance
-        .into_iter()
-        .map(|&n| iter::repeat_with(|| Fr::random(rng())).take(n).collect())
+        .iter()
+        .map(|&n| iter::repeat_with(|| Fr::random(&mut rng)).take(n).collect())
         .collect();
     let proof = {
         let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(Vec::new());
@@ -114,14 +96,18 @@ where
             .chain(Some(&protocol.quotient.num_chunk()))
             .sum::<usize>()
         {
-            transcript.write_ec_point(G1Affine::random(rng())).unwrap();
+            transcript
+                .write_ec_point(G1Affine::random(&mut rng))
+                .unwrap();
         }
         for _ in 0..protocol.evaluations.len() {
-            transcript.write_scalar(Fr::random(rng())).unwrap();
+            transcript.write_scalar(Fr::random(&mut rng)).unwrap();
         }
         let queries = PlonkProof::<G1Affine, NativeLoader, Pcs>::empty_queries(&protocol);
         for _ in 0..Pcs::estimate_cost(&queries).num_commitment {
-            transcript.write_ec_point(G1Affine::random(rng())).unwrap();
+            transcript
+                .write_ec_point(G1Affine::random(&mut rng))
+                .unwrap();
         }
         transcript.finalize()
     };
@@ -130,19 +116,38 @@ where
 }
 
 /// gen a dummy snark for construct the first recursion snark
-pub fn initial_recursion_snark<RNG, const ST: usize>(
-    params: &ParamsKZG<Bn256>, 
-    recursion_vk: &VerifyingKey<G1Affine>,
-    rng: &mut impl FnMut() -> RNG,
-) -> Snark 
-where RNG: Rng + Send
-{
-    let mut snark = gen_dummy_snark::<RecursionCircuit<ST>, _>(
-        params, 
-        recursion_vk,
-        &[RecursionCircuit::<ST>::num_instance_fixed()],
-        rng,
-    );
+/// we should allow it is been generated even without the corresponding
+/// vk, which is required when constructing a circuit to generate the pk
+pub fn initial_recursion_snark<ST: StateTransition>(
+    params: &ParamsKZG<Bn256>,
+    recursion_vk: Option<&VerifyingKey<G1Affine>>,
+    mut rng: impl Rng + Send,
+) -> Snark {
+    let mut snark = if let Some(vk) = recursion_vk {
+        gen_dummy_snark::<RecursionCircuit<ST>>(
+            params,
+            vk,
+            &[RecursionCircuit::<ST>::num_instance_fixed()],
+            &mut rng,
+        )
+    } else {
+        // to generate the pk we need to construct a recursion circuit,
+        // which require another snark being build from itself (and so, need
+        // a pk), to break this cycling we use a "dummy" circuit for
+        // generating the snark
+        let vk = &keygen_vk(
+            params,
+            &dummy_circuit::CsProxy::<Fr, RecursionCircuit<ST>>::default(),
+        )
+        .unwrap();
+        gen_dummy_snark::<RecursionCircuit<ST>>(
+            params,
+            vk,
+            &[RecursionCircuit::<ST>::num_instance_fixed()],
+            &mut rng,
+        )
+    };
+
     let g = params.get_g();
     // ?why we need random for dummy snark of app but not for recursion
     snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
@@ -155,68 +160,26 @@ where RNG: Rng + Send
 }
 
 /// gen the pk for recursion
-pub fn gen_recursion_pk<AppCircuit, RNG, const ST: usize>(
+pub fn gen_recursion_pk<ST: StateTransition>(
     recursion_params: &ParamsKZG<Bn256>,
     app_params: &ParamsKZG<Bn256>,
     app_vk: &VerifyingKey<G1Affine>,
-    rng: &mut impl FnMut() -> RNG,
-) -> ProvingKey<G1Affine> 
-where
-    AppCircuit: CircuitExt<Fr> + StateTransition,
-    RNG: Rng + Send
-{
-    // to generate the pk we need to construct a recursion circuit,
-    // which require another snark being build from itself (and so, need
-    // a pk), to break this cycling we use a "dummy" circuit for
-    // generating the snark
-    let dummy_vk = keygen_vk(
-        recursion_params, 
-        &dummy_circuit::CsProxy::<Fr, RecursionCircuit<ST>>::default()
-    ).unwrap();
-    let recursive_snark = initial_recursion_snark::<_, ST>(recursion_params, &dummy_vk, rng);
+    mut rng: impl Rng + Send,
+    path: Option<&Path>,
+) -> ProvingKey<G1Affine> {
+    let app_snark =
+        gen_dummy_snark::<ST::Circuit>(app_params, app_vk, &[ST::num_instance()], &mut rng);
 
-    let dummy_app = AppCircuit::new(Default::default());
+    let recursive_snark = initial_recursion_snark::<ST>(recursion_params, None, &mut rng);
+
     let recursion = RecursionCircuit::<ST>::new(
         recursion_params,
-        gen_dummy_snark::<AppCircuit, _>(
-            app_params, app_vk, &dummy_app.num_instance(), rng,
-        ),
+        app_snark,
         recursive_snark,
-        rng(),
-        [Fr::ZERO; ST],
-        [Fr::ZERO; ST],
+        &mut rng,
+        &vec![Fr::ZERO; ST::num_transition_instance()],
+        &vec![Fr::ZERO; ST::num_transition_instance() + ST::num_additional_instance()],
         0,
     );
-    gen_pk(recursion_params, &recursion, None)
+    gen_pk(recursion_params, &recursion, path)
 }
-
-// pub fn gen_recursion_snark<ConcreteCircuit: CircuitExt<Fr> + StateTransition>(
-//     app_params: &ParamsKZG<Bn256>,
-//     recursion_params: &ParamsKZG<Bn256>,
-//     app_pk: &ProvingKey<G1Affine>,
-//     recursion_pk: &ProvingKey<G1Affine>,
-//     initial_state: Fr,
-//     inputs: Vec<ConcreteCircuit::Input>,
-// ) -> (Fr, Snark) {
-//     let mut state = initial_state;
-//     let mut app = ConcreteCircuit::new(state);
-//     let mut previous =
-//         RecursionCircuit::initial_snark(recursion_params, Some(recursion_pk.get_vk()));
-//     for (round, input) in inputs.into_iter().enumerate() {
-//         state = app.state_transition(input);
-//         println!("Generate app snark");
-//         let app_snark = gen_snark_shplonk(app_params, app_pk, app, None);
-//         let recursion = RecursionCircuit::new(
-//             recursion_params,
-//             app_snark,
-//             previous,
-//             initial_state,
-//             state,
-//             round,
-//         );
-//         println!("Generate recursion snark");
-//         previous = gen_snark_shplonk(recursion_params, recursion_pk, recursion, None);
-//         app = ConcreteCircuit::new(state);
-//     }
-//     (state, previous)
-// }

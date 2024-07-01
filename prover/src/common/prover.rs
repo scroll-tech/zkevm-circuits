@@ -6,13 +6,13 @@ use halo2_proofs::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-mod recursion;
 mod aggregation;
 mod chunk;
 mod compression;
 mod evm;
 mod inner;
 mod mock;
+mod recursion;
 mod utils;
 
 #[derive(Debug)]

@@ -1,6 +1,4 @@
 #![feature(lazy_cell)]
-/// Config to recursive aggregate multiple aggregations
-mod recursion;
 /// proof aggregation
 mod aggregation;
 /// This module implements `Batch` related data types.
@@ -8,6 +6,8 @@ mod aggregation;
 mod batch;
 /// blob struct and constants
 mod blob;
+/// Config to recursive aggregate multiple aggregations
+mod recursion;
 // This module implements `Chunk` related data types.
 // A chunk is a list of blocks.
 mod chunk;
@@ -27,7 +27,6 @@ mod tests;
 
 pub use self::core::extract_proof_and_instances_with_pairing_check;
 pub use aggregation::*;
-pub use recursion::*;
 pub use batch::BatchHash;
 pub use blob::BatchData;
 pub use chunk::ChunkInfo;
@@ -35,3 +34,4 @@ pub use compression::*;
 pub use constants::MAX_AGG_SNARKS;
 pub(crate) use constants::*;
 pub use param::*;
+pub use recursion::*;

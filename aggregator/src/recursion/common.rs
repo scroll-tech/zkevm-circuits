@@ -1,16 +1,12 @@
-
 use super::*;
 use snark_verifier::{
     loader::halo2::EccInstructions,
+    pcs::{kzg::KzgAccumulator, MultiOpenScheme, PolynomialCommitmentScheme},
     util::hash,
-    pcs::{
-        kzg::KzgAccumulator,
-        MultiOpenScheme, PolynomialCommitmentScheme,
-    },
 };
 use snark_verifier_sdk::{
+    types::{BaseFieldEccChip, Halo2Loader, Plonk},
     SnarkWitness,
-    types::{Plonk, Halo2Loader, BaseFieldEccChip}
 };
 use std::rc::Rc;
 
@@ -28,9 +24,6 @@ use std::rc::Rc;
 // // TODO: replace with POSEIDON_SPEC
 // pub type PoseidonTranscript<L, S> =
 //     halo2::transcript::halo2::PoseidonTranscript<G1Affine, L, S, T, RATE, R_F, R_P>;
-
-
-
 
 // pub struct Snark {
 //     pub protocol: Protocol<G1Affine>,
@@ -237,10 +230,7 @@ use std::rc::Rc;
 
 type AssignedScalar<'a> = <BaseFieldEccChip as EccInstructions<'a, G1Affine>>::AssignedScalar;
 
-fn poseidon<L: Loader<G1Affine>>(
-    loader: &L,
-    inputs: &[L::LoadedScalar],
-) -> L::LoadedScalar {
+fn poseidon<L: Loader<G1Affine>>(loader: &L, inputs: &[L::LoadedScalar]) -> L::LoadedScalar {
     let mut hasher = hash::Poseidon::from_spec(loader, POSEIDON_SPEC.clone());
     hasher.update(inputs);
     hasher.squeeze()
@@ -252,26 +242,23 @@ fn poseidon<L: Loader<G1Affine>>(
 // is LimbsEncoding, which only be generic with PCS whose Accmulator
 // is KzgAccmulator ...
 
-/// It is similar to `succient_verify` method inside of snark-verifier 
+/// It is similar to `succient_verify` method inside of snark-verifier
 /// but allow it allow loader to load preprocessed part as witness (so ANY circuit)
 /// can be verified
-/// 
-/// 
+///
+///
 pub fn dynamic_verify<'a, PCS>(
     svk: &PCS::SuccinctVerifyingKey,
     loader: &Rc<Halo2Loader<'a>>,
     snark: &SnarkWitness,
     preprocessed_digest: Option<AssignedScalar<'a>>,
-) -> (
-    Vec<Vec<AssignedScalar<'a>>>, 
-    Vec<PCS::Accumulator>
-)
+) -> (Vec<Vec<AssignedScalar<'a>>>, Vec<PCS::Accumulator>)
 where
     PCS: PolynomialCommitmentScheme<
             G1Affine,
             Rc<Halo2Loader<'a>>,
             Accumulator = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-        > + MultiOpenScheme<G1Affine, Rc<Halo2Loader<'a>>>, 
+        > + MultiOpenScheme<G1Affine, Rc<Halo2Loader<'a>>>,
 {
     let protocol = if let Some(preprocessed_digest) = preprocessed_digest {
         let preprocessed_digest = loader.scalar_from_assigned(preprocessed_digest);
@@ -282,11 +269,13 @@ where
             .flat_map(|preprocessed| {
                 let assigned = preprocessed.assigned();
                 [assigned.x(), assigned.y()]
-                    .map(|coordinate| loader.scalar_from_assigned(coordinate.native().clone()))
+                    .map(|coordinate| loader.scalar_from_assigned(*coordinate.native()))
             })
             .chain(protocol.transcript_initial_state.clone())
             .collect_vec();
-        loader.assert_eq("", &poseidon(loader, &inputs), &preprocessed_digest).unwrap();
+        loader
+            .assert_eq("", &poseidon(loader, &inputs), &preprocessed_digest)
+            .unwrap();
         protocol
     } else {
         snark.protocol.loaded(loader)
@@ -296,7 +285,10 @@ where
         .instances
         .iter()
         .map(|instances| {
-            instances.iter().map(|instance| loader.assign_scalar(*instance)).collect_vec()
+            instances
+                .iter()
+                .map(|instance| loader.assign_scalar(*instance))
+                .collect_vec()
         })
         .collect_vec();
     let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, snark.proof());
@@ -307,10 +299,12 @@ where
         instances
             .into_iter()
             .map(|instance| {
-                instance.into_iter().map(|instance| instance.into_assigned()).collect()
+                instance
+                    .into_iter()
+                    .map(|instance| instance.into_assigned())
+                    .collect()
             })
             .collect(),
         accumulators,
     )
 }
-
