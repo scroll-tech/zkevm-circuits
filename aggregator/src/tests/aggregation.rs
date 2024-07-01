@@ -7,7 +7,7 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 
 use crate::{
-    aggregation::BatchCircuit, batch::BatchHash, constants::MAX_AGG_SNARKS, layer_0,
+    aggregation::BatchCircuit, batch::{BatchHash, BatchHeader}, constants::MAX_AGG_SNARKS, layer_0,
     tests::mock_chunk::MockChunkCircuit, ChunkInfo,
 };
 
@@ -180,7 +180,7 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
     // ==========================
     // batch
     // ==========================
-    let batch_hash = BatchHash::construct(&chunks_with_padding);
+    let batch_hash = BatchHash::construct(&chunks_with_padding, BatchHeader::default());
 
     BatchCircuit::new(
         &params,
