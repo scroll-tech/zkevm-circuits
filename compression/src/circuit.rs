@@ -65,20 +65,24 @@ impl Circuit<Fr> for CompressionCircuit {
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        let flattened_instances = self
-            .snark
-            .instances
-            .iter()
-            .flat_map(|instance| instance.iter().map(|_| Fr::zero()))
-            .collect();
+        unimplemented!()
+        // // TODO: check if unimplement
+        // let instances = self.snark.instances.iter().map()
+        // let snark = Snark::new(self.snark.protocol, instances,  );
+        // let flattened_instances = self
+        //     .snark
+        //     .instances
+        //     .iter()
+        //     .flat_map(|instance| instance.iter().map(|_| Fr::zero()))
+        //     .collect();
 
-        Self {
-            svk: self.svk,
-            snark: Snark::without_witnesses(&self.snark),
-            has_accumulator: false,
-            flattened_instances,
-            as_proof: Value::unknown(),
-        }
+        // Self {
+        //     svk: self.svk,
+        //     snark: Snark::without_witnesses(&self.snark),
+        //     has_accumulator: false,
+        //     flattened_instances,
+        //     as_proof: Value::unknown(),
+        // }
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
@@ -107,66 +111,69 @@ impl Circuit<Fr> for CompressionCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let witness_time = start_timer!(|| "synthesize | compression Circuit");
-        config
-            .range()
-            .load_lookup_table(&mut layouter)
-            .expect("load range lookup table");
+        // let witness_time = start_timer!(|| "synthesize | compression Circuit");
+        // config
+        //     .range()
+        //     .load_lookup_table(&mut layouter)
+        //     .expect("load range lookup table");
 
-        let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+        // let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-        let instances = layouter.assign_region(
-            || "compression circuit",
-            |region| -> Result<Vec<Cell>, Error> {
-                if first_pass {
-                    first_pass = false;
-                    return Ok(vec![]);
-                }
-                let mut instances = vec![];
-                // TODO: check correctness of this!
-                let mut ctx = MultiPhaseCoreManager::new(false).main(0);
+        // let instances = layouter.assign_region(
+        //     || "compression circuit",
+        //     |region| -> Result<Vec<Cell>, Error> {
+        //         if first_pass {
+        //             first_pass = false;
+        //             return Ok(vec![]);
+        //         }
+        //         let mut instances = vec![];
+        //         // TODO: check correctness of this!
+        //         let mut ctx = MultiPhaseCoreManager::new(false).main(0);
 
-                let ecc_chip = config.ecc_chip();
-                let loader = Halo2Loader::new(ecc_chip, ctx);
-                let (assigned_instances, acc) = aggregate::<KzgAs<Bn256, Bdfg21>>(
-                    &self.svk,
-                    &loader,
-                    &[self.snark.clone()],
-                    self.as_proof(),
-                );
+        //     let KzgAccumulator { lhs, rhs } =
+        //         aggregate(&svk, &loader, &snarks, as_proof.as_slice());
 
-                let acc: KzgAccumulator<G1Affine, Halo2Loader<Bn256, BaseFieldEccChip<G1Affine>>> =
-                    acc;
+        //         let ecc_chip = config.ecc_chip();
+        //         let loader = Halo2Loader::new(ecc_chip, ctx);
+        //         let witness = aggregate::<KzgAs<Bn256, Bdfg21>>(
+        //             &self.svk,
+        //             &loader,
+        //             &[self.snark.clone()],
+        //             self.as_proof(),
+        //         );
 
-                // instance of the compression circuit is defined as
-                // - accumulators
-                // - re-export the public input from snark
-                instances.extend(
-                    flatten_accumulator(acc)
-                        .iter()
-                        .map(|assigned| assigned.cell),
-                );
-                // - if the snark is not a fresh one, assigned_instances already contains an
-                //   accumulator so we want to skip the first 12 elements from the public input
-                let skip = if self.has_accumulator { ACC_LEN } else { 0 };
-                instances.extend(assigned_instances.iter().flat_map(|instance_column| {
-                    instance_column.iter().skip(skip).map(|x| x.cell())
-                }));
+        //         let assigned_instances = witness.previous_instances;
+        //         let acc = witness.accumulator;
 
-                // TODO: figure out where to call this!
-                // config.range().finalize(&mut loader.ctx_mut());
+        //         // instance of the compression circuit is defined as
+        //         // - accumulators
+        //         // - re-export the public input from snark
+        //         instances.extend(
+        //             flatten_accumulator(acc)
+        //                 .iter()
+        //                 .map(|assigned| assigned.cell),
+        //         );
+        //         // - if the snark is not a fresh one, assigned_instances already contains an
+        //         //   accumulator so we want to skip the first 12 elements from the public input
+        //         let skip = if self.has_accumulator { ACC_LEN } else { 0 };
+        //         instances.extend(assigned_instances.iter().flat_map(|instance_column| {
+        //             instance_column.iter().skip(skip).map(|x| x.cell())
+        //         }));
 
-                // loader.ctx_mut().print_stats(&["Range"]);
-                Ok(instances)
-            },
-        )?;
+        //         // TODO: figure out where to call this!
+        //         // config.range().finalize(&mut loader.ctx_mut());
 
-        // Expose instances
-        for (i, cell) in instances.into_iter().enumerate() {
-            layouter.constrain_instance(cell, config.instance, i)?;
-        }
+        //         // loader.ctx_mut().print_stats(&["Range"]);
+        //         Ok(instances)
+        //     },
+        // )?;
 
-        end_timer!(witness_time);
+        // // Expose instances
+        // for (i, cell) in instances.into_iter().enumerate() {
+        //     layouter.constrain_instance(cell, config.instance, i)?;
+        // }
+
+        // end_timer!(witness_time);
         Ok(())
     }
 }

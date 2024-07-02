@@ -11,6 +11,7 @@ use aggregator_snark_verifier::{
         AccumulationScheme, AccumulationSchemeProver,
     },
     util::arithmetic::fe_to_limbs,
+    verifier::SnarkVerifier,
     Error as SnarkVerifierError,
 };
 use aggregator_snark_verifier_sdk::halo2::aggregation::BaseFieldEccChip;
@@ -81,21 +82,22 @@ pub fn extract_proof_and_instances_with_pairing_check(
 pub fn flatten_accumulator<'a>(
     accumulator: KzgAccumulator<G1Affine, Rc<Halo2Loader<G1Affine, BaseFieldEccChip>>>,
 ) -> Vec<AssignedValue<Fr>> {
-    let KzgAccumulator { lhs, rhs } = accumulator;
+    unimplemented!();
+    // let KzgAccumulator { lhs, rhs } = accumulator;
 
-    // TODO: this prevents compilation???
-    // figure out what to copy paste here.....
-    let lhs = lhs.into_assigned();
-    let rhs = rhs.into_assigned();
+    // // TODO: this prevents compilation???
+    // // figure out what to copy paste here.....
+    // let lhs = lhs.into_assigned();
+    // let rhs = rhs.into_assigned();
 
-    lhs.x
-        .truncation
-        .limbs
-        .into_iter()
-        .chain(lhs.y.truncation.limbs.into_iter())
-        .chain(rhs.x.truncation.limbs.into_iter())
-        .chain(rhs.y.truncation.limbs.into_iter())
-        .collect()
+    // lhs.x
+    //     .truncation
+    //     .limbs
+    //     .into_iter()
+    //     .chain(lhs.y.truncation.limbs.into_iter())
+    //     .chain(rhs.x.truncation.limbs.into_iter())
+    //     .chain(rhs.y.truncation.limbs.into_iter())
+    //     .collect()
 }
 
 fn extract_accumulators_and_proof(
@@ -109,7 +111,7 @@ fn extract_accumulators_and_proof(
 
     let mut transcript_read =
         PoseidonTranscript::<NativeLoader, &[u8]>::from_spec(&[], POSEIDON_SPEC.clone());
-    let accumulators = snarks
+    let accumulators: Vec<KzgAccumulator<_, _>> = snarks
         .iter()
         .flat_map(|snark| {
             transcript_read.new_stream(snark.proof.as_slice());
@@ -118,15 +120,17 @@ fn extract_accumulators_and_proof(
                 &snark.protocol,
                 &snark.instances,
                 &mut transcript_read,
-            );
+            )
+            .unwrap();
             // each accumulator has (lhs, rhs) based on Shplonk
             // lhs and rhs are EC points
-            PlonkSuccinctVerifier::<SHPLONK>::verify(
+            let x: Vec<KzgAccumulator<_, _>> = PlonkSuccinctVerifier::<SHPLONK>::verify(
                 &svk,
                 &snark.protocol,
                 &snark.instances,
                 &proof,
-            )
+            ).unwrap();
+            x
         })
         .collect::<Vec<_>>();
 
