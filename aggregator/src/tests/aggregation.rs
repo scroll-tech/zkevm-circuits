@@ -15,7 +15,9 @@ use crate::{
 #[ignore]
 #[test]
 fn test_max_agg_snarks_batch_circuit() {
-    let k = 21;
+    // batch_circuit_debug
+    // let k = 21;
+    let k = 18;
 
     // This set up requires one round of keccak for chunk's data hash
     let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
