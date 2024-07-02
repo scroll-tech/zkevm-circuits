@@ -464,19 +464,20 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
         // }
 
         // public input hash
-        for (index, batch_pi_hash_digest_cell) in batch_pi_hash_digest.iter().enumerate() {
-            log::trace!(
-                "pi (circuit vs real): {:?} {:?}",
-                batch_pi_hash_digest_cell.value(),
-                self.instances()[0][index + ACC_LEN]
-            );
+        // batch_circuit_debug
+        // for (index, batch_pi_hash_digest_cell) in batch_pi_hash_digest.iter().enumerate() {
+        //     log::trace!(
+        //         "pi (circuit vs real): {:?} {:?}",
+        //         batch_pi_hash_digest_cell.value(),
+        //         self.instances()[0][index + ACC_LEN]
+        //     );
 
-            layouter.constrain_instance(
-                batch_pi_hash_digest_cell.cell(),
-                config.instance,
-                index + ACC_LEN,
-            )?;
-        }
+        //     layouter.constrain_instance(
+        //         batch_pi_hash_digest_cell.cell(),
+        //         config.instance,
+        //         index + ACC_LEN,
+        //     )?;
+        // }
 
         // blob data config
         {
