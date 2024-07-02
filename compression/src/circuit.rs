@@ -1,40 +1,23 @@
 //! Circuit implementation for compression circuit.
 
 use crate::{
-    constants::ACC_LEN,
-    params::ConfigParams,
-    util::{extract_proof_and_instances_with_pairing_check, flatten_accumulator},
+    constants::ACC_LEN, params::ConfigParams, util::extract_proof_and_instances_with_pairing_check,
 };
 use aggregator_snark_verifier::{
-    halo2_base::{
-        gates::flex_gate::threads::MultiPhaseCoreManager,
-        halo2_proofs::{
-            circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
-            halo2curves::bn256::G1Affine,
-            plonk::{Circuit, ConstraintSystem, Error},
-        },
+    halo2_base::halo2_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner, Value},
+        halo2curves::bn256::G1Affine,
+        plonk::{Circuit, ConstraintSystem, Error},
     },
-    loader::halo2::{
-        halo2_ecc::{
-            halo2_base,
-            halo2_base::{
-                halo2_proofs::{
-                    halo2curves::bn256::{Bn256, Fr},
-                    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-                },
-                Context,
-            },
-        },
-        Halo2Loader,
+    loader::halo2::halo2_ecc::halo2_base::halo2_proofs::{
+        halo2curves::bn256::{Bn256, Fr},
+        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
     },
-    pcs::kzg::{Bdfg21, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey},
+    pcs::kzg::KzgSuccinctVerifyingKey,
 };
-use aggregator_snark_verifier_sdk::halo2::aggregation::BaseFieldEccChip;
-use aggregator_snark_verifier_sdk::{
-    halo2::aggregation::{aggregate, Svk},
-    Snark,
-};
-use ark_std::{end_timer, start_timer};
+
+use aggregator_snark_verifier_sdk::{halo2::aggregation::Svk, Snark};
+
 use rand::Rng;
 use std::fs::File;
 
@@ -106,11 +89,7 @@ impl Circuit<Fr> for CompressionCircuit {
         Self::Config::configure(meta, params)
     }
 
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<Fr>,
-    ) -> Result<(), Error> {
+    fn synthesize(&self, _config: Self::Config, _layouter: impl Layouter<Fr>) -> Result<(), Error> {
         // let witness_time = start_timer!(|| "synthesize | compression Circuit");
         // config
         //     .range()

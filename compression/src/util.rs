@@ -1,11 +1,9 @@
-use crate::constants::{BITS, LIMBS};
-use aggregator_snark_verifier::halo2_ecc::bigint::ProperCrtUint;
-use aggregator_snark_verifier::loader::halo2::halo2_ecc::ecc::EccChip;
-use aggregator_snark_verifier::loader::halo2::halo2_ecc::halo2_base::AssignedValue;
-use aggregator_snark_verifier::loader::halo2::EcPoint;
-use aggregator_snark_verifier::loader::halo2::Halo2Loader;
 use aggregator_snark_verifier::{
-    loader::native::NativeLoader,
+    halo2_ecc::bigint::ProperCrtUint,
+    loader::{
+        halo2::{halo2_ecc::halo2_base::AssignedValue, EcPoint, Halo2Loader},
+        native::NativeLoader,
+    },
     pcs::{
         kzg::{Bdfg21, KzgAccumulator, KzgAs},
         AccumulationScheme, AccumulationSchemeProver,
@@ -14,31 +12,20 @@ use aggregator_snark_verifier::{
     verifier::SnarkVerifier,
     Error as SnarkVerifierError,
 };
-use aggregator_snark_verifier_sdk::halo2::aggregation::BaseFieldEccChip;
-use aggregator_snark_verifier_sdk::PlonkSuccinctVerifier;
 use aggregator_snark_verifier_sdk::{
-    halo2::{PoseidonTranscript, POSEIDON_SPEC},
-    PlonkVerifier, Snark, SHPLONK,
+    halo2::{aggregation::BaseFieldEccChip, PoseidonTranscript, POSEIDON_SPEC},
+    PlonkSuccinctVerifier, Snark, BITS, LIMBS, SHPLONK,
 };
-use ark_std::{end_timer, start_timer};
-use ethers_core::utils::keccak256;
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::{
         bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
         pairing::Engine,
     },
-    plonk::Error,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
 use rand::Rng;
-use std::iter::repeat;
 use std::rc::Rc;
-use zkevm_circuits::{
-    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
-    util::Challenges,
-};
 
 /// Subroutine for the witness generations.
 /// Extract proof from previous snarks and check pairing for accumulation.

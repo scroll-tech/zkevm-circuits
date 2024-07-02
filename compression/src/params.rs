@@ -1,4 +1,4 @@
-use crate::constants::{BITS, LIMBS};
+use aggregator_snark_verifier_sdk::{BITS, LIMBS};
 use aggregator_snark_verifier::loader::halo2::halo2_ecc::fields::FpStrategy;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
