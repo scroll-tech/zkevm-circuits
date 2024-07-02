@@ -1,8 +1,8 @@
-use std::iter::repeat;
-
 use crate::constants::{BITS, LIMBS};
+use aggregator_snark_verifier::halo2_ecc::bigint::ProperCrtUint;
 use aggregator_snark_verifier::loader::halo2::halo2_ecc::ecc::EccChip;
 use aggregator_snark_verifier::loader::halo2::halo2_ecc::halo2_base::AssignedValue;
+use aggregator_snark_verifier::loader::halo2::EcPoint;
 use aggregator_snark_verifier::loader::halo2::Halo2Loader;
 use aggregator_snark_verifier::{
     loader::native::NativeLoader,
@@ -33,6 +33,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
+use std::iter::repeat;
 use std::rc::Rc;
 use zkevm_circuits::{
     keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
@@ -79,25 +80,21 @@ pub fn extract_proof_and_instances_with_pairing_check(
     Ok((as_proof, acc_instances))
 }
 
-pub fn flatten_accumulator<'a>(
+pub fn flatten_accumulator(
     accumulator: KzgAccumulator<G1Affine, Rc<Halo2Loader<G1Affine, BaseFieldEccChip>>>,
 ) -> Vec<AssignedValue<Fr>> {
-    unimplemented!();
-    // let KzgAccumulator { lhs, rhs } = accumulator;
-
-    // // TODO: this prevents compilation???
-    // // figure out what to copy paste here.....
-    // let lhs = lhs.into_assigned();
-    // let rhs = rhs.into_assigned();
-
-    // lhs.x
-    //     .truncation
-    //     .limbs
-    //     .into_iter()
-    //     .chain(lhs.y.truncation.limbs.into_iter())
-    //     .chain(rhs.x.truncation.limbs.into_iter())
-    //     .chain(rhs.y.truncation.limbs.into_iter())
-    //     .collect()
+    let KzgAccumulator { lhs, rhs } = accumulator;
+    let [lhs_assigned, rhs_assigned] = [lhs, rhs].map(EcPoint::into_assigned);
+    [
+        lhs_assigned.x,
+        lhs_assigned.y,
+        rhs_assigned.x,
+        rhs_assigned.y,
+    ]
+    .iter()
+    .flat_map(ProperCrtUint::limbs)
+    .cloned()
+    .collect()
 }
 
 fn extract_accumulators_and_proof(
@@ -129,7 +126,8 @@ fn extract_accumulators_and_proof(
                 &snark.protocol,
                 &snark.instances,
                 &proof,
-            ).unwrap();
+            )
+            .unwrap();
             x
         })
         .collect::<Vec<_>>();
