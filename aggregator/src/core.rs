@@ -881,7 +881,6 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 log::trace!("rlc chip uses {} rows", offset);
 
-                // batch_circuit_debug
                 Ok((
                     assigned_hash_cells, 
                     HashDerivedPublicInputCells(vec![

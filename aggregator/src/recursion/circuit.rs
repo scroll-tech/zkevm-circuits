@@ -471,6 +471,7 @@ impl<ST: StateTransition> CircuitExt<Fr> for RecursionCircuit<ST> {
 //     gen_pk(recursion_params, &recursion)
 // }
 
+// batch_circuit_debug
 // pub fn gen_recursion_snark<ConcreteCircuit: CircuitExt<Fr> + StateTransition>(
 //     app_params: &ParamsKZG<Bn256>,
 //     recursion_params: &ParamsKZG<Bn256>,

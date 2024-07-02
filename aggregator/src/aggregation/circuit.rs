@@ -48,7 +48,6 @@ pub struct BatchCircuit<const N_SNARKS: usize> {
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
     pub snarks_with_padding: Vec<SnarkWitness>,
-    // batch_circuit_debug:
     // the public instance for this circuit consists of
     // - parent_state_root (2 elements, split hi_lo)
     // - parent_batch_hash (2 elements)
@@ -315,6 +314,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             (_accumulator_instances, _snark_inputs, barycentric)
         };
         end_timer!(timer);
+        
         // ==============================================
         // step 2: public input batch circuit
         // ==============================================
@@ -399,85 +399,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 inst_offset
             )?;
         }
-
-        // ==============================================
-        // step 3: assert public inputs to the snarks are correct
-        // ==============================================
-        for (i, chunk) in chunk_pi_hash_digests.iter().enumerate() {
-            let hash = self.batch_hash.chunks_with_padding[i].public_input_hash();
-            for j in 0..DIGEST_LEN {
-                log::trace!("pi {:02x} {:?}", hash[j], chunk[j].value());
-            }
-        }
-
-        #[cfg(not(feature = "disable_proof_aggregation"))]
-        let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-
-
-        // batch_circuit_debug
-        #[cfg(not(feature = "disable_proof_aggregation"))]
-        // layouter.assign_region(
-        //     || "pi checks",
-        //     |mut region| -> Result<(), Error> {
-        //         if first_pass {
-        //             // this region only use copy constraints and do not affect the shape of the
-        //             // layouter
-        //             first_pass = false;
-        //             return Ok(());
-        //         }
-
-        //         for i in 0..N_SNARKS {
-        //             for j in 0..DIGEST_LEN {
-        //                 let mut t1 = Fr::default();
-        //                 let mut t2 = Fr::default();
-        //                 chunk_pi_hash_digests[i][j].value().map(|x| t1 = *x);
-        //                 snark_inputs[i * DIGEST_LEN + j].value().map(|x| t2 = *x);
-        //                 log::trace!(
-        //                     "{}-th snark: {:?} {:?}",
-        //                     i,
-        //                     chunk_pi_hash_digests[i][j].value(),
-        //                     snark_inputs[i * DIGEST_LEN + j].value()
-        //                 );
-
-        //                 region.constrain_equal(
-        //                     chunk_pi_hash_digests[i][j].cell(),
-        //                     snark_inputs[i * DIGEST_LEN + j].cell(),
-        //                 )?;
-        //             }
-        //         }
-
-        //         Ok(())
-        //     },
-        // )?;
-
-        // ==============================================
-        // step 4: assert public inputs to the aggregator circuit are correct
-        // ==============================================
-        // accumulator
-        // batch_circuit_debug
-        // #[cfg(not(feature = "disable_proof_aggregation"))]
-        // {
-        //     assert!(accumulator_instances.len() == ACC_LEN);
-        //     for (i, v) in accumulator_instances.iter().enumerate() {
-        //         layouter.constrain_instance(v.cell(), config.instance, i)?;
-        //     }
-        // }
-
-        // public input hash
-        // batch_circuit_debug
-        // for (index, batch_pi_hash_digest_cell) in batch_pi_hash_digest.iter().enumerate() {
-        //     log::trace!(
-        //         "pi (circuit vs real): {:?} {:?}",
-        //         batch_pi_hash_digest_cell.value(),
-        //         self.instances()[0][index + ACC_LEN]
-        //     );
-
-        //     layouter.constrain_instance(
-        //         batch_pi_hash_digest_cell.cell(),
-        //         config.instance,
-        //         index + ACC_LEN,
-        //     )?;
-        // }
 
         // blob data config
         {
