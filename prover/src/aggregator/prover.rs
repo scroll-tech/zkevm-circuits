@@ -166,8 +166,10 @@ impl Prover {
         name: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<BundleProof> {
-        let bundle_snarks = bundle.batch_proofs
-            .clone().into_iter()
+        let bundle_snarks = bundle
+            .batch_proofs
+            .clone()
+            .into_iter()
             .map(BatchProof::to_snark)
             .collect::<Vec<_>>();
 
@@ -175,8 +177,8 @@ impl Prover {
 
         let recursion_snark = self.prover_impl.load_or_gen_recursion_snark(
             name.unwrap_or(&default_name),
-            LayerId::Layer5.id(), 
-            LayerId::Layer5.degree(), 
+            LayerId::Layer5.id(),
+            LayerId::Layer5.degree(),
             &bundle_snarks,
             output_dir,
         )?;
@@ -189,7 +191,7 @@ impl Prover {
             bundle_proof.dump(output_dir, "recursion")?;
         }
 
-        Ok(bundle_proof)        
+        Ok(bundle_proof)
     }
 
     /// Check vk generated is same with vk loaded from assets

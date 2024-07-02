@@ -1,7 +1,7 @@
-use gadgets::Field;
-use eth_types::H256;
-use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
 use crate::blob::N_BYTES_U256;
+use eth_types::H256;
+use gadgets::Field;
+use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
 
 #[cfg(test)]
 #[ctor::ctor]

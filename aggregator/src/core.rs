@@ -2,6 +2,7 @@ use std::iter::repeat;
 
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
+use halo2_proofs::plonk::{Column, Instance};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::{
@@ -30,12 +31,16 @@ use zkevm_circuits::{
     keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
     util::Challenges,
 };
-use halo2_proofs::plonk::{Column, Instance};
 
 use crate::{
     constants::{
         BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
-    }, util::{assert_conditional_equal, parse_hash_preimage_cells}, RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
+    },
+    util::{assert_conditional_equal, parse_hash_preimage_cells},
+    RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX,
+    CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH,
+    PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
+    POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
 /// Subroutine for the witness generations.
@@ -154,7 +159,7 @@ pub(crate) struct ExtractedHashCells<const N_SNARKS: usize> {
 }
 
 // Computed cells to be constrained against public input. These cells are processed into hi/lo format from ExtractedHashCells.
-pub (crate) struct HashDerivedPublicInputCells(Vec<AssignedCell<Fr, Fr>>);
+pub(crate) struct HashDerivedPublicInputCells(Vec<AssignedCell<Fr, Fr>>);
 
 impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
     /// Assign the cells for hash input/outputs and their RLCs.
@@ -368,15 +373,16 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
     // padded
     // 7. batch data hash is correct w.r.t. its RLCs
-    let (extracted_hash_cells, hash_derived_public_input_cells) = conditional_constraints::<N_SNARKS>(
-        rlc_config,
-        layouter,
-        challenges,
-        chunks_are_valid,
-        num_valid_chunks,
-        preimages,
-        instance,
-    )?;
+    let (extracted_hash_cells, hash_derived_public_input_cells) =
+        conditional_constraints::<N_SNARKS>(
+            rlc_config,
+            layouter,
+            challenges,
+            chunks_are_valid,
+            num_valid_chunks,
+            preimages,
+            instance,
+        )?;
 
     let batch_hash_input = &extracted_hash_cells.inputs[0]; //[0..INPUT_LEN_PER_ROUND * 2];
     let expected_blob_cells = ExpectedBlobCells {
@@ -415,13 +421,13 @@ pub(crate) fn assign_keccak_table(
     let timer = start_timer!(|| ("multi keccak").to_string());
     // preimages consists of the following parts
     // (1) batchHash preimage =
-    //      (version || 
-    //      batch_index || 
-    //      l1_message_popped || 
+    //      (version ||
+    //      batch_index ||
+    //      l1_message_popped ||
     //      total_l1_message_popped ||
-    //      batch_data_hash || 
-    //      versioned_hash || 
-    //      parent_batch_hash || 
+    //      batch_data_hash ||
+    //      versioned_hash ||
+    //      parent_batch_hash ||
     //      last_block_timestamp ||
     //      z || y)
     // (2) chunk[i].piHash preimage =
@@ -478,7 +484,10 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<(ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells), halo2_proofs::plonk::Error> {
+            |mut region| -> Result<
+                (ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells),
+                halo2_proofs::plonk::Error,
+            > {
                 let mut offset = 0;
                 rlc_config.init(&mut region)?;
                 // ====================================================
@@ -555,14 +564,14 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // 1. batch_data_hash digest is reused for batch hash
                 // ====================================================
                 //
-                // batch_hash = keccak256( 
-                //      version || 
-                //      batch_index || 
-                //      l1_message_popped || 
+                // batch_hash = keccak256(
+                //      version ||
+                //      batch_index ||
+                //      l1_message_popped ||
                 //      total_l1_message_popped ||
-                //      batch_data_hash || 
-                //      versioned_hash || 
-                //      parent_batch_hash || 
+                //      batch_data_hash ||
+                //      versioned_hash ||
+                //      parent_batch_hash ||
                 //      last_block_timestamp ||
                 //      z || y)
                 //
@@ -599,15 +608,15 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 let batch_parent_batch_hash_hi = rlc_config.rlc(
                     &mut region,
                     batch_hash_preimage
-                        [BATCH_PARENT_BATCH_HASH..BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2]
+                        [BATCH_PARENT_BATCH_HASH..BATCH_PARENT_BATCH_HASH + DIGEST_LEN / 2]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
                 )?;
                 let batch_parent_batch_hash_lo = rlc_config.rlc(
                     &mut region,
-                    batch_hash_preimage
-                        [BATCH_PARENT_BATCH_HASH + DIGEST_LEN/2..BATCH_PARENT_BATCH_HASH + DIGEST_LEN]
+                    batch_hash_preimage[BATCH_PARENT_BATCH_HASH + DIGEST_LEN / 2
+                        ..BATCH_PARENT_BATCH_HASH + DIGEST_LEN]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
@@ -619,17 +628,13 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 let batch_hash_results = assigned_hash_cells.outputs[0].clone();
                 let batch_hash_hi = rlc_config.rlc(
                     &mut region,
-                    batch_hash_results
-                        [0..DIGEST_LEN/2]
-                        .as_ref(),
+                    batch_hash_results[0..DIGEST_LEN / 2].as_ref(),
                     &byte_accumulator,
                     &mut offset,
                 )?;
                 let batch_hash_lo = rlc_config.rlc(
                     &mut region,
-                    batch_hash_results
-                        [DIGEST_LEN/2..DIGEST_LEN]
-                        .as_ref(),
+                    batch_hash_results[DIGEST_LEN / 2..DIGEST_LEN].as_ref(),
                     &byte_accumulator,
                     &mut offset,
                 )?;
@@ -782,7 +787,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &chunk_is_valid_cell32s,
                     &mut offset,
                 )?;
-                
+
                 region.constrain_equal(
                     rlc_cell.cell(),
                     assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
@@ -818,15 +823,15 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 let chunk_prev_state_hi = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[0]
-                        [PREV_STATE_ROOT_INDEX..PREV_STATE_ROOT_INDEX + DIGEST_LEN/2]
+                        [PREV_STATE_ROOT_INDEX..PREV_STATE_ROOT_INDEX + DIGEST_LEN / 2]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
                 )?;
                 let chunk_prev_state_lo = rlc_config.rlc(
                     &mut region,
-                    chunk_pi_hash_preimages[0]
-                        [PREV_STATE_ROOT_INDEX + DIGEST_LEN/2..PREV_STATE_ROOT_INDEX + DIGEST_LEN]
+                    chunk_pi_hash_preimages[0][PREV_STATE_ROOT_INDEX + DIGEST_LEN / 2
+                        ..PREV_STATE_ROOT_INDEX + DIGEST_LEN]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
@@ -836,15 +841,15 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 let chunk_current_state_hi = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1]
-                        [POST_STATE_ROOT_INDEX..POST_STATE_ROOT_INDEX + DIGEST_LEN/2]
+                        [POST_STATE_ROOT_INDEX..POST_STATE_ROOT_INDEX + DIGEST_LEN / 2]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
                 )?;
                 let chunk_current_state_lo = rlc_config.rlc(
                     &mut region,
-                    chunk_pi_hash_preimages[N_SNARKS - 1]
-                        [POST_STATE_ROOT_INDEX + DIGEST_LEN/2..POST_STATE_ROOT_INDEX + DIGEST_LEN]
+                    chunk_pi_hash_preimages[N_SNARKS - 1][POST_STATE_ROOT_INDEX + DIGEST_LEN / 2
+                        ..POST_STATE_ROOT_INDEX + DIGEST_LEN]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
@@ -854,7 +859,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 let chunk_current_withdraw_root_hi = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1]
-                        [WITHDRAW_ROOT_INDEX..WITHDRAW_ROOT_INDEX + DIGEST_LEN/2]
+                        [WITHDRAW_ROOT_INDEX..WITHDRAW_ROOT_INDEX + DIGEST_LEN / 2]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
@@ -862,7 +867,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 let chunk_current_withdraw_root_lo = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1]
-                        [WITHDRAW_ROOT_INDEX + DIGEST_LEN/2..WITHDRAW_ROOT_INDEX + DIGEST_LEN]
+                        [WITHDRAW_ROOT_INDEX + DIGEST_LEN / 2..WITHDRAW_ROOT_INDEX + DIGEST_LEN]
                         .as_ref(),
                     &byte_accumulator,
                     &mut offset,
@@ -883,7 +888,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 // batch_circuit_debug
                 Ok((
-                    assigned_hash_cells, 
+                    assigned_hash_cells,
                     HashDerivedPublicInputCells(vec![
                         batch_parent_batch_hash_hi,
                         batch_parent_batch_hash_lo,
@@ -896,7 +901,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                         chunk_current_withdraw_root_hi,
                         chunk_current_withdraw_root_lo,
                         chunk_chain_id,
-                    ])
+                    ]),
                 ))
             },
         )

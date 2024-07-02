@@ -3,14 +3,15 @@
 
 use eth_types::{ToBigEndian, H256};
 use ethers_core::utils::keccak256;
-use gadgets::{Field, util::split_h256};
+use gadgets::{util::split_h256, Field};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     blob::{BatchData, PointEvaluationAssignments},
     chunk::ChunkInfo,
 };
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// Batch header provides additional fields from the context (within recursion)
 /// for constructing the preimage of the batch hash.
 pub struct BatchHeader {
@@ -41,7 +42,7 @@ pub struct BatchHeader {
 /// A BatchHash consists of 2 hashes.
 /// - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
 ///   chunk_k-1.withdraw_root || batch_data_hash || z || y || versioned_hash)
-/// 
+///
 /// - batchHash := keccak256(version || batch_index || l1_message_popped || total_l1_message_popped ||
 ///   batch_data_hash || versioned_hash || parent_batch_hash || last_block_timestamp || z || y)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
@@ -182,8 +183,10 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
 
         // Update export value
-        export_batch_header.blob_data_proof[0] = H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes());
-        export_batch_header.blob_data_proof[1] = H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes());
+        export_batch_header.blob_data_proof[0] =
+            H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes());
+        export_batch_header.blob_data_proof[1] =
+            H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes());
 
         let versioned_hash = batch_data.get_versioned_hash();
 
@@ -191,14 +194,14 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         export_batch_header.blob_versioned_hash = versioned_hash;
 
         // the current batch hash is build as
-        // keccak256( 
-        //     version || 
-        //     batch_index || 
-        //     l1_message_popped || 
+        // keccak256(
+        //     version ||
+        //     batch_index ||
+        //     l1_message_popped ||
         //     total_l1_message_popped ||
-        //     batch_data_hash || 
-        //     versioned_hash || 
-        //     parent_batch_hash || 
+        //     batch_data_hash ||
+        //     versioned_hash ||
+        //     parent_batch_hash ||
         //     last_block_timestamp ||
         //     z ||
         //     y
@@ -220,7 +223,8 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
                 .evaluation
                 .to_be_bytes()
                 .as_ref(),
-        ].concat();
+        ]
+        .concat();
         let current_batch_hash: H256 = keccak256(batch_hash_preimage).into();
 
         log::info!(
@@ -241,7 +245,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             data_hash: batch_data_hash.into(),
             current_batch_hash,
             number_of_valid_chunks,
-            point_evaluation_assignments,        
+            point_evaluation_assignments,
             versioned_hash,
             batch_header: export_batch_header,
         }
@@ -266,14 +270,14 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         let mut res = vec![];
 
         // batchHash =
-        //   keccak256( 
-        //     version || 
-        //     batch_index || 
-        //     l1_message_popped || 
+        //   keccak256(
+        //     version ||
+        //     batch_index ||
+        //     l1_message_popped ||
         //     total_l1_message_popped ||
-        //     batch_data_hash || 
-        //     versioned_hash || 
-        //     parent_batch_hash || 
+        //     batch_data_hash ||
+        //     versioned_hash ||
+        //     parent_batch_hash ||
         //     last_block_timestamp ||
         //     z ||
         //     y
@@ -282,11 +286,17 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             [self.batch_header.version].as_ref(),
             self.batch_header.batch_index.to_be_bytes().as_ref(),
             self.batch_header.l1_message_popped.to_be_bytes().as_ref(),
-            self.batch_header.total_l1_message_popped.to_be_bytes().as_ref(),
+            self.batch_header
+                .total_l1_message_popped
+                .to_be_bytes()
+                .as_ref(),
             self.data_hash.as_bytes(),
             self.versioned_hash.as_bytes(),
             self.batch_header.parent_batch_hash.as_bytes(),
-            self.batch_header.last_block_timestamp.to_be_bytes().as_ref(),
+            self.batch_header
+                .last_block_timestamp
+                .to_be_bytes()
+                .as_ref(),
             self.point_evaluation_assignments
                 .challenge
                 .to_be_bytes()
@@ -356,12 +366,13 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         .map(|h| {
             let (hi, lo) = split_h256(h);
             vec![hi, lo]
-        }).concat();
-        
+        })
+        .concat();
+
         res.push(F::from(self.chain_id as u64));
         let (withdraw_hi, withdraw_lo) = split_h256(self.current_withdraw_root);
         res.extend_from_slice(vec![withdraw_hi, withdraw_lo].as_slice());
-        
+
         vec![res]
     }
 }

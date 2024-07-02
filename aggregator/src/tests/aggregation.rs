@@ -7,8 +7,12 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 
 use crate::{
-    aggregation::BatchCircuit, batch::{BatchHash, BatchHeader}, constants::MAX_AGG_SNARKS, layer_0,
-    tests::mock_chunk::MockChunkCircuit, ChunkInfo,
+    aggregation::BatchCircuit,
+    batch::{BatchHash, BatchHeader},
+    constants::MAX_AGG_SNARKS,
+    layer_0,
+    tests::mock_chunk::MockChunkCircuit,
+    ChunkInfo,
 };
 
 // See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866
@@ -90,7 +94,8 @@ fn test_batch_circuit_full() {
     let pk = gen_pk(&param, &circuit, None);
     log::trace!("finished pk generation for circuit");
 
-    let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>).expect("Snark generated successfully");
+    let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>)
+        .expect("Snark generated successfully");
     log::trace!("finished snark generation for circuit");
 
     assert!(verify_snark_shplonk::<BatchCircuit<MAX_AGG_SNARKS>>(
@@ -102,7 +107,8 @@ fn test_batch_circuit_full() {
 
     // This set up requires two rounds of keccak for chunk's data hash
     let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(5, k);
-    let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>).expect("Snark generated successfully");
+    let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>)
+        .expect("Snark generated successfully");
     log::trace!("finished snark generation for circuit");
 
     assert!(verify_snark_shplonk::<BatchCircuit<MAX_AGG_SNARKS>>(
