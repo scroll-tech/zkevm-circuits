@@ -1,15 +1,13 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use bitstream_io::Primitive;
 use eth_types::{ToBigEndian, H256};
 use ethers_core::utils::keccak256;
-use gadgets::Field;
+use gadgets::{Field, util::split_h256};
 
 use crate::{
-    blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
+    blob::{BatchData, PointEvaluationAssignments},
     chunk::ChunkInfo,
-    util::hi_lo_from_h256,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -107,6 +105,8 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             "input chunk slice does not match N_SNARKS"
         );
 
+        let mut export_batch_header = batch_header.clone();
+
         let number_of_valid_chunks = match chunks_with_padding
             .iter()
             .enumerate()
@@ -175,32 +175,20 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
-        // Check against context in batch header
-        assert_eq!(batch_data_hash, batch_header.data_hash.as_bytes(), "chunk-derived data hash is the same as field in batch header");
+        // Update export value
+        export_batch_header.data_hash = batch_data_hash.into();
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
         let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
 
-        // Check against context in batch header
-        assert_eq!(
-            point_evaluation_assignments.challenge.to_be_bytes(),
-            batch_header.blob_data_proof[0].as_bytes(),
-            "chunk-derived z is the same as field in batch header"
-        );
-        assert_eq!(
-            point_evaluation_assignments.evaluation.to_be_bytes(),
-            batch_header.blob_data_proof[1].as_bytes(),
-            "chunk-derived y is the same as field in batch header"
-        );
+        // Update export value
+        export_batch_header.blob_data_proof[0] = H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes());
+        export_batch_header.blob_data_proof[1] = H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes());
 
         let versioned_hash = batch_data.get_versioned_hash();
 
-        // Check against context in batch header
-        assert_eq!(
-            versioned_hash,
-            batch_header.blob_versioned_hash,
-            "chunk-derived versioned hash is the same as field in batch header"
-        );
+        // Update export value
+        export_batch_header.blob_versioned_hash = versioned_hash;
 
         // the current batch hash is build as
         // keccak256( 
@@ -253,9 +241,9 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             data_hash: batch_data_hash.into(),
             current_batch_hash,
             number_of_valid_chunks,
-            point_evaluation_assignments,            
+            point_evaluation_assignments,        
             versioned_hash,
-            batch_header,
+            batch_header: export_batch_header,
         }
     }
 
@@ -365,10 +353,14 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             self.current_state_root,
             self.current_batch_hash,
         ]
-        .map(|h| hi_lo_from_h256(h)).concat();
+        .map(|h| {
+            let (hi, lo) = split_h256(h);
+            vec![hi, lo]
+        }).concat();
         
         res.push(F::from(self.chain_id as u64));
-        res.extend_from_slice(hi_lo_from_h256(self.current_withdraw_root).as_slice());
+        let (withdraw_hi, withdraw_lo) = split_h256(self.current_withdraw_root);
+        res.extend_from_slice(vec![withdraw_hi, withdraw_lo].as_slice());
         
         vec![res]
     }

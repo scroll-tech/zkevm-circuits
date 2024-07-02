@@ -93,14 +93,6 @@ pub(crate) fn parse_hash_digest_cells<const N_SNARKS: usize>(
     )
 }
 
-pub(crate) fn hi_lo_from_h256<F: Field>(input: H256) -> Vec<F> {
-    input.as_bytes().chunks(N_BYTES_U256/2).map(|chunk| {
-        F::from(chunk.iter().enumerate().fold(0u64, |acc, (i, &byte)| {
-            acc | ((byte as u64) << (i * 8))
-        }))
-    }).collect::<Vec<F>>()
-}
-
 #[cfg(test)]
 pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
     assert!(!inputs.is_empty());
