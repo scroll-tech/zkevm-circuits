@@ -3,7 +3,9 @@ use crate::{
     config::{LayerId, AGG_DEGREES},
     consts::{AGG_KECCAK_ROW, AGG_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
     io::{force_to_read, try_to_read},
-    BatchProof, BatchProvingTask, ChunkProof,
+    proof::BundleProof,
+    types::BundleProvingTask,
+    BatchProof, BatchProvingTask, ChunkProof, Proof,
 };
 use aggregator::{ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{bail, Result};
@@ -67,7 +69,7 @@ impl Prover {
     }
 
     // Return the EVM proof for verification.
-    pub fn gen_agg_evm_proof(
+    pub fn gen_batch_proof(
         &mut self,
         batch: BatchProvingTask,
         name: Option<&str>,
@@ -78,7 +80,7 @@ impl Prover {
         let layer3_snark = self.load_or_gen_last_agg_snark(&name, batch, output_dir)?;
 
         // Load or generate final compression thin EVM proof (layer-4).
-        let evm_proof = self.prover_impl.load_or_gen_comp_evm_proof(
+        let layer4_snark = self.prover_impl.load_or_gen_comp_snark(
             &name,
             LayerId::Layer4.id(),
             true,
@@ -90,7 +92,9 @@ impl Prover {
 
         self.check_vk();
 
-        let batch_proof = BatchProof::from(evm_proof.proof);
+        // TODO: let batch_hash = batch.batch_header.batch_hash();
+        let pk = self.prover_impl.pk(LayerId::Layer4.id());
+        let batch_proof = BatchProof::new(/* batch_hash */ layer4_snark, pk)?;
         if let Some(output_dir) = output_dir {
             batch_proof.dump(output_dir, "agg")?;
         }
@@ -145,6 +149,18 @@ impl Prover {
         log::info!("Got aggregation snark (layer-3): {name}");
 
         Ok(layer3_snark)
+    }
+
+    // Given a bundle proving task that consists of a list of batch proofs for all intermediate
+    // batches, bundles them into a single bundle proof using the RecursionCircuit, effectively
+    // proving the validity of all those batches.
+    pub fn gen_bundle_proof(
+        &mut self,
+        bundle: BundleProvingTask,
+        name: Option<&str>,
+        output_dir: Option<&str>,
+    ) -> Result<BundleProof> {
+        unimplemented!()
     }
 
     /// Check vk generated is same with vk loaded from assets
