@@ -4,7 +4,7 @@ use crate::{
     io::{load_snark, write_snark},
     utils::gen_rng,
 };
-use aggregator::{BatchCircuit, BatchHash, ChunkInfo, MAX_AGG_SNARKS};
+use aggregator::{BatchCircuit, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{anyhow, Result};
 use rand::Rng;
 use snark_verifier_sdk::Snark;
@@ -21,7 +21,7 @@ impl Prover {
     ) -> Result<Snark> {
         env::set_var("AGGREGATION_CONFIG", layer_config_path(id));
 
-        let batch_hash = BatchHash::construct(chunk_hashes);
+        let batch_hash = BatchHash::construct(chunk_hashes, BatchHeader::default());
 
         let circuit: BatchCircuit<MAX_AGG_SNARKS> =
             BatchCircuit::new(self.params(degree), previous_snarks, &mut rng, batch_hash)

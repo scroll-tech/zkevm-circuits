@@ -1,6 +1,6 @@
 use halo2_proofs::halo2curves::bn256::Fr;
 
-use aggregator::{AggregationCircuit, StateTransition};
+use aggregator::{BatchCircuit, StateTransition};
 use snark_verifier_sdk::Snark;
 
 mod prover;
@@ -37,7 +37,7 @@ impl<const N_SNARK: usize> AggregatedBatchProvingTask<'_, N_SNARK> {
 
 impl<'a, const N_SNARK: usize> StateTransition for AggregatedBatchProvingTask<'a, N_SNARK> {
     type Input = &'a [Snark];
-    type Circuit = AggregationCircuit<N_SNARK>;
+    type Circuit = BatchCircuit<N_SNARK>;
 
     fn new(state: Self::Input) -> Self {
         assert!(!state.is_empty());

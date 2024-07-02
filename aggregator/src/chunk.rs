@@ -175,6 +175,49 @@ impl ChunkInfo {
         H256(keccak256(&self.tx_bytes))
     }
 
+    #[cfg(test)]
+    pub(crate) fn mock_chunk_infos(txs_data: &[Vec<u8>]) -> Vec<Self> {
+        use crate::MAX_AGG_SNARKS;
+
+        assert!(txs_data.len() <= MAX_AGG_SNARKS);
+        let state_roots: [H256; MAX_AGG_SNARKS + 1] = (0..=MAX_AGG_SNARKS)
+            .map(|i| {
+                let i = i as u8;
+                let mut state_root = [0u8; 32];
+                state_root[31] = i;
+                state_root.into()
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("should not fail");
+
+        txs_data
+            .iter()
+            .enumerate()
+            .map(|(i, tx_data)| {
+                let withdraw_root = {
+                    let mut root = [0u8; 32];
+                    root[31] = 255 - (i as u8);
+                    root.into()
+                };
+                let data_hash = {
+                    let mut root = [0u8; 32];
+                    root[0] = 255 - (i as u8);
+                    root.into()
+                };
+                ChunkInfo {
+                    chain_id: 123456,
+                    prev_state_root: state_roots[i],
+                    post_state_root: state_roots[i + 1],
+                    withdraw_root,
+                    data_hash,
+                    tx_bytes: tx_data.to_vec(),
+                    is_padding: false,
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
     /// Sample a chunk info from random (for testing)
     #[cfg(test)]
     pub(crate) fn mock_random_chunk_info_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
