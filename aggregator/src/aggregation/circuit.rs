@@ -1,4 +1,4 @@
-use crate::{blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE};
+use crate::{blob::BatchData, witgen::MultiBlockProcessResult, BATCH_PARENT_BATCH_HASH, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -35,18 +35,23 @@ use crate::{
     AssignedBarycentricEvaluationConfig, ConfigParams,
 };
 
-use super::AggregationConfig;
+use super::BatchCircuitConfig;
 
-/// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
+/// Batch circuit, the chunk aggregation routine below recursion circuit
 #[derive(Clone)]
-pub struct AggregationCircuit<const N_SNARKS: usize> {
+pub struct BatchCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
     pub snarks_with_padding: Vec<SnarkWitness>,
+    // batch_circuit_debug:
     // the public instance for this circuit consists of
-    // - an accumulator (12 elements)
-    // - the batch's public_input_hash (32 elements)
+    // - parent_state_root (2 elements, split hi_lo)
+    // - parent_batch_hash (2 elements)
+    // - current_state_root (2 elements)
+    // - current_batch_hash (2 elements)
+    // - chain id (1 element)
+    // - current_withdraw_root (2 elements)
     pub flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
     pub as_proof: Value<Vec<u8>>,
@@ -55,7 +60,7 @@ pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub batch_hash: BatchHash<N_SNARKS>,
 }
 
-impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
     pub fn new(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
@@ -92,17 +97,17 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
 
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
-        let (as_proof, acc_instances) =
+        let (as_proof, _acc_instances) =
             extract_proof_and_instances_with_pairing_check(params, snarks_with_padding, rng)?;
 
-        // extract batch's public input hash
-        let public_input_hash = &batch_hash.instances_exclude_acc()[0];
-
         // the public instance for this circuit consists of
-        // - an accumulator (12 elements)
-        // - the batch's public_input_hash (32 elements)
-        let flattened_instances: Vec<Fr> =
-            [acc_instances.as_slice(), public_input_hash.as_slice()].concat();
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - chain id (1 element)
+        // - current_withdraw_root (2 elements)
+        let flattened_instances: Vec<Fr> = batch_hash.instances_exclude_acc::<Fr>()[0].clone();
 
         end_timer!(timer);
         Ok(Self {
@@ -119,8 +124,8 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
-    type Config = (AggregationConfig<N_SNARKS>, Challenges);
+impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
+    type Config = (BatchCircuitConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
         unimplemented!()
@@ -138,7 +143,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         );
 
         let challenges = Challenges::construct_p1(meta);
-        let config = AggregationConfig::configure(meta, &params, challenges);
+        let config = BatchCircuitConfig::configure(meta, &params, challenges);
         log::info!(
             "aggregation circuit configured with k = {} and {:?} advice columns",
             params.degree,
@@ -266,10 +271,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                             .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                     );
 
-                    loader.ctx_mut().print_stats(&["snark aggregation"]);
+                    loader.ctx_mut().print_stats(&["snark aggregation [chunks -> batch]"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
-                    log::debug!("aggregation: assigning barycentric");
+                    log::debug!("batching: assigning barycentric");
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
                         &self.batch_hash.point_evaluation_assignments.coefficients,
@@ -292,7 +297,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         };
         end_timer!(timer);
         // ==============================================
-        // step 2: public input aggregation circuit
+        // step 2: public input batch circuit
         // ==============================================
         // extract all the hashes and load them to the hash table
         let challenges = challenge.values(&layouter);
@@ -307,7 +312,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
             let timer = start_timer!(|| "extract hash");
             // orders:
-            // - batch_public_input_hash
+            // - batch_hash
             // - chunk\[i\].piHash for i in \[0, N_SNARKS)
             // - batch_data_hash_preimage
             // - preimage for blob metadata
@@ -336,6 +341,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 &chunks_are_valid,
                 self.batch_hash.number_of_valid_chunks,
                 &preimages,
+                config.instance,
             )
             .map_err(|e| {
                 log::error!("assign_batch_hashes err {:#?}", e);
@@ -349,6 +355,31 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
+
+        // ========================================================================
+        // step 2.a: constrain extracted public input cells against actual instance
+        // ========================================================================
+        let hash_derived_public_input_cells = assigned_batch_hash.hash_derived_public_input_cells;
+        let instance_offsets: Vec<usize> = vec![
+            PI_PARENT_BATCH_HASH,
+            PI_PARENT_BATCH_HASH + 1,
+            PI_CURRENT_BATCH_HASH,
+            PI_CURRENT_BATCH_HASH + 1,
+            PI_PARENT_STATE_ROOT,
+            PI_PARENT_STATE_ROOT + 1,
+            PI_CURRENT_STATE_ROOT,
+            PI_CURRENT_STATE_ROOT + 1,
+            PI_CURRENT_WITHDRAW_ROOT,
+            PI_CURRENT_WITHDRAW_ROOT + 1,
+            PI_CHAIN_ID,
+        ];
+        for (c, inst_offset) in hash_derived_public_input_cells.into_iter().zip(instance_offsets.into_iter()) {
+            layouter.constrain_instance(
+                c.cell(),
+                config.instance,
+                inst_offset
+            )?;
+        }
 
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
@@ -489,7 +520,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 address_table_arr,
                 sequence_exec_info_arr,
                 &challenges,
-                LOG_DEGREE, // TODO: configure k for aggregation circuit instead of hard-coded here.
+                LOG_DEGREE, // TODO: configure k for batch circuit instead of hard-coded here.
             )?;
 
             layouter.assign_region(
@@ -571,22 +602,23 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> CircuitExt<Fr> for AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> CircuitExt<Fr> for BatchCircuit<N_SNARKS> {
     fn num_instance(&self) -> Vec<usize> {
-        // 12 elements from accumulator
-        // 32 elements from batch's public_input_hash
-        vec![ACC_LEN + DIGEST_LEN]
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - chain id (1 element)
+        // - current_withdraw_root (2 elements)
+        vec![11]
     }
 
-    // 12 elements from accumulator
-    // 32 elements from batch's public_input_hash
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
     }
 
     fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
-        // the accumulator are the first 12 cells in the instance
-        Some((0..ACC_LEN).map(|idx| (0, idx)).collect())
+        None
     }
 
     fn selectors(config: &Self::Config) -> Vec<Selector> {

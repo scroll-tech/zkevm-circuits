@@ -1,5 +1,5 @@
 use super::*;
-use crate::param::ConfigParams as AggregationConfigParams;
+use crate::param::ConfigParams as BatchCircuitConfigParams;
 
 use halo2_proofs::plonk::{Column, Instance};
 use snark_verifier::loader::halo2::halo2_ecc::{
@@ -15,7 +15,7 @@ pub struct RecursionConfig {
 }
 
 impl RecursionConfig {
-    pub fn configure(meta: &mut ConstraintSystem<Fr>, params: AggregationConfigParams) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<Fr>, params: BatchCircuitConfigParams) -> Self {
         assert!(
             params.limb_bits == BITS && params.num_limbs == LIMBS,
             "For now we fix limb_bits = {}, otherwise change code",
