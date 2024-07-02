@@ -22,14 +22,14 @@ pub const SCROLL_MAINNET_CHAIN_ID: u64 = 534352;
 /// Returns a list of triplets of (hardfork id, chain id, block number)
 pub fn hardfork_heights() -> Vec<(HardforkId, u64, u64)> {
     vec![
-        (HardforkId::Curie, SCROLL_DEVNET_CHAIN_ID, 0), // devnet
-        (HardforkId::Curie, SCROLL_TESTNET_CHAIN_ID, 3747132), // testnet
+        (HardforkId::Bernoulli, SCROLL_DEVNET_CHAIN_ID, 0), // devnet
+        (HardforkId::Bernoulli, SCROLL_TESTNET_CHAIN_ID, 3747132), // testnet
         (
-            HardforkId::Curie,
+            HardforkId::Bernoulli,
             SCROLL_MAINNET_CHAIN_ID,
             read_env_var("SCROLL_MAINNET_BERNOULLI_BLOCK", 5220340),
         ), // mainnet
-        (HardforkId::Curie, SCROLL_DEVNET_CHAIN_ID, 5), // devnet
+        (HardforkId::Curie, SCROLL_DEVNET_CHAIN_ID, 5),     // devnet
         (HardforkId::Curie, SCROLL_TESTNET_CHAIN_ID, 4740239), // testnet
         (
             HardforkId::Curie,
