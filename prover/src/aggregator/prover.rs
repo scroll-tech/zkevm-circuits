@@ -166,7 +166,30 @@ impl Prover {
         name: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<BundleProof> {
-        unimplemented!()
+        let bundle_snarks = bundle.batch_proofs
+            .clone().into_iter()
+            .map(BatchProof::to_snark)
+            .collect::<Vec<_>>();
+
+        let default_name = "bundle";
+
+        let recursion_snark = self.prover_impl.load_or_gen_recursion_snark(
+            name.unwrap_or(&default_name),
+            LayerId::Layer5.id(), 
+            LayerId::Layer5.degree(), 
+            &bundle_snarks,
+            output_dir,
+        )?;
+
+        self.check_bundle_vk();
+
+        let pk = self.prover_impl.pk(LayerId::Layer5.id());
+        let bundle_proof = BundleProof::new(recursion_snark, pk);
+        if let Some(output_dir) = output_dir {
+            bundle_proof.dump(output_dir, "recursion")?;
+        }
+
+        Ok(bundle_proof)        
     }
 
     /// Check vk generated is same with vk loaded from assets
@@ -196,7 +219,7 @@ impl Prover {
         if self.raw_vk.is_some() {
             let gen_vk = self
                 .prover_impl
-                .raw_vk(LayerId::Layer6.id())
+                .raw_vk(LayerId::Layer5.id())
                 .unwrap_or_default();
             if gen_vk.is_empty() {
                 log::warn!("no gen_vk found, skip check_vk");

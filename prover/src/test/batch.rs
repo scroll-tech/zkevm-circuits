@@ -59,5 +59,20 @@ pub fn batch_prove(test: &str, batch: BatchProvingTask) {
 }
 
 pub fn bundle_prove(test: &str, bundle: BundleProvingTask) {
-    unimplemented!()
+    log::info!("{test}: bundle-prove BEGIN");
+
+    let proof = BATCH_PROVER
+        .lock()
+        .expect("poisoned batch-prover")
+        .gen_bundle_proof(bundle, None, None)
+        .unwrap_or_else(|err| panic!("{test}: failed to generate bundle proof: {err}"));
+    log::info!("{test}: generated bundle proof");
+
+    let verified = BATCH_VERIFIER
+        .lock()
+        .expect("poisoned batch-verifier")
+        .verify_bundle_proof(proof);
+    assert!(verified, "{test}: failed to verify bundle proof");
+
+    log::info!("{test}: bundle-prove END");
 }

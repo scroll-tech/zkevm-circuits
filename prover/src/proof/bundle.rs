@@ -1,5 +1,8 @@
+use super::{dump_as_json, dump_data, dump_vk};
 use serde_derive::{Deserialize, Serialize};
-
+use snark_verifier_sdk::Snark;
+use anyhow::Result;
+use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use crate::{utils::short_git_version, Proof};
 
 // 3 limbs per field element, 4 field elements
@@ -23,6 +26,18 @@ pub struct BundleProof {
 }
 
 impl BundleProof {
+
+    pub fn new(
+        snark: Snark,
+        pk: Option<&ProvingKey<G1Affine>>,
+    ) -> Self {
+        let proof = Proof::new(snark.proof, &snark.instances, pk);
+
+        Self {
+            raw: proof,
+        }
+    }
+
     /// Returns the calldata given to YUL verifier.
     /// Format: Accumulator(12x32bytes) || PI(11x32bytes) || Proof
     pub fn calldata(self) -> Vec<u8> {
@@ -33,6 +48,17 @@ impl BundleProof {
         calldata.extend(proof.proof);
 
         calldata
+    }
+
+    pub fn dump(&self, dir: &str, name: &str) -> Result<()> {
+        let filename = format!("bundle_{name}");
+
+        dump_data(dir, &format!("pi_{filename}.data"), &self.raw.instances);
+        dump_data(dir, &format!("proof_{filename}.data"), &self.raw.proof);
+
+        dump_vk(dir, &filename, &self.raw.vk);
+
+        dump_as_json(dir, &filename, &self)
     }
 
     // Recover a `Proof` which follows halo2 semantic of "proof" and "instance",

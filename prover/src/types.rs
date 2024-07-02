@@ -70,5 +70,5 @@ pub struct BundleProvingTask {
     finalized_state_root: H256,
     pending_state_root: H256,
     pending_withdraw_root: H256,
-    batch_proofs: Vec<BatchProof>,
+    pub batch_proofs: Vec<BatchProof>,
 }
