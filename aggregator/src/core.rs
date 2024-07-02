@@ -34,8 +34,8 @@ use halo2_proofs::plonk::{Column, Instance};
 
 use crate::{
     constants::{
-        BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
-    }, util::{assert_conditional_equal, parse_hash_preimage_cells}, RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
+        BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
+    }, util::{assert_conditional_equal, parse_hash_preimage_cells}, RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT, BATCH_BLOB_VERSIONED_HASH_OFFSET, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
 };
 
 /// Subroutine for the witness generations.
@@ -382,7 +382,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     let expected_blob_cells = ExpectedBlobCells {
         z: batch_hash_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + DIGEST_LEN].to_vec(),
         y: batch_hash_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + DIGEST_LEN].to_vec(),
-        versioned_hash: batch_hash_input[BATCH_VH_OFFSET..BATCH_VH_OFFSET + DIGEST_LEN].to_vec(),
+        versioned_hash: batch_hash_input[BATCH_BLOB_VERSIONED_HASH_OFFSET..BATCH_BLOB_VERSIONED_HASH_OFFSET + DIGEST_LEN].to_vec(),
         chunk_tx_data_digests: (0..N_SNARKS)
             .map(|i| {
                 extracted_hash_cells.inputs[i + 1]
