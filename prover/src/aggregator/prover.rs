@@ -62,9 +62,15 @@ impl Prover {
         })
     }
 
-    pub fn get_vk(&self) -> Option<Vec<u8>> {
+    pub fn get_batch_vk(&self) -> Option<Vec<u8>> {
         self.prover_impl
             .raw_vk(LayerId::Layer4.id())
+            .or_else(|| self.raw_vk.clone())
+    }
+
+    pub fn get_bundle_vk(&self) -> Option<Vec<u8>> {
+        self.prover_impl
+            .raw_vk(LayerId::Layer6.id())
             .or_else(|| self.raw_vk.clone())
     }
 
@@ -90,7 +96,7 @@ impl Prover {
         )?;
         log::info!("Got final compression thin EVM proof (layer-4): {name}");
 
-        self.check_vk();
+        self.check_batch_vk();
 
         // TODO: let batch_hash = batch.batch_header.batch_hash();
         let pk = self.prover_impl.pk(LayerId::Layer4.id());
@@ -164,7 +170,7 @@ impl Prover {
     }
 
     /// Check vk generated is same with vk loaded from assets
-    fn check_vk(&self) {
+    fn check_batch_vk(&self) {
         if self.raw_vk.is_some() {
             let gen_vk = self
                 .prover_impl
@@ -177,7 +183,29 @@ impl Prover {
             let init_vk = self.raw_vk.clone().unwrap_or_default();
             if gen_vk != init_vk {
                 log::error!(
-                    "agg-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",
+                    "batch-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",
+                    base64::encode(gen_vk),
+                    base64::encode(init_vk),
+                );
+            }
+        }
+    }
+
+    /// Check vk generated is same with vk loaded from assets
+    fn check_bundle_vk(&self) {
+        if self.raw_vk.is_some() {
+            let gen_vk = self
+                .prover_impl
+                .raw_vk(LayerId::Layer6.id())
+                .unwrap_or_default();
+            if gen_vk.is_empty() {
+                log::warn!("no gen_vk found, skip check_vk");
+                return;
+            }
+            let init_vk = self.raw_vk.clone().unwrap_or_default();
+            if gen_vk != init_vk {
+                log::error!(
+                    "bundle-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",
                     base64::encode(gen_vk),
                     base64::encode(init_vk),
                 );
