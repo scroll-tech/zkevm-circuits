@@ -76,7 +76,7 @@ pub struct SigCircuitConfigArgs<F: Field> {
 #[derive(Debug, Clone)]
 pub struct SigCircuitConfig<F: Field> {
     /// secp256k1
-    ecdsa_k1_config: FpChip<F>,
+    ecdsa_k1_config: FpChipK1<F>,
     /// secp256r1
     ecdsa_r1_config: FpChipR1<F>,
     /// An advice column to store RLC witnesses
@@ -222,7 +222,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
 impl<F: Field> SigCircuitConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.ecdsa_k1_config.range.load_lookup_table(layouter);
+        self.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         self.ecdsa_r1_config.range.load_lookup_table(layouter)
     }
 }
@@ -275,7 +275,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
-        self.assign(config, layouter, &self.signatures_k1, challenges)?;
+        self.assign(config, layouter, &self.signatures_k1, &self.signatures_r1, challenges)?;
         // TODO: assign signatures_r1
         Ok(())
     }
@@ -355,11 +355,11 @@ impl<F: Field> SigCircuit<F> {
     fn assign_ecdsa(
         &self,
         ctx: &mut Context<F>,
-        ecdsa_chip: &FpChip<F>,
+        ecdsa_chip: &FpChipK1<F>,
         sign_data: &SignData<Fq_K1, Secp256k1Affine>,
         // TODO: refactor method `assign_ecdsa` to `assign_ecdsa<Fq, Affine>`
         // or add more one parameter `sign_data_r1`
-    ) -> Result<AssignedECDSA<F, FpChip<F>>, Error> {
+    ) -> Result<AssignedECDSA<F, FpChipK1<F>>, Error> {
         let gate = ecdsa_chip.gate();
         let zero = gate.load_zero(ctx);
 
@@ -372,7 +372,7 @@ impl<F: Field> SigCircuit<F> {
         let (sig_r, sig_s, v) = signature;
 
         // build ecc chip from Fp chip
-        let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
+        let ecc_chip = EccChip::<F, FpChipK1<F>>::construct(ecdsa_chip.clone());
         let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Secp256k1Affine>(ctx, &pk_assigned);
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
@@ -534,14 +534,14 @@ impl<F: Field> SigCircuit<F> {
     fn sign_data_decomposition(
         &self,
         ctx: &mut Context<F>,
-        ecdsa_chip: &FpChip<F>,
+        ecdsa_chip: &FpChipK1<F>,
         sign_data: &SignData<Fq_K1, Secp256k1Affine>,
         //TODO: refactor this method to sign_data_decomposition<Fq, Affine>
         // or just add new parameter `sign_data_r1`
-        assigned_data: &AssignedECDSA<F, FpChip<F>>,
+        assigned_data: &AssignedECDSA<F, FpChipK1<F>>,
     ) -> Result<SignDataDecomposed<F>, Error> {
         // build ecc chip from Fp chip
-        let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
+        let ecc_chip = EccChip::<F, FpChipK1<F>>::construct(ecdsa_chip.clone());
 
         let zero = ecdsa_chip.range.gate.load_zero(ctx);
 
@@ -686,7 +686,7 @@ impl<F: Field> SigCircuit<F> {
         // TODO: add sign_data_r1
         sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
-        assigned_ecdsa: &AssignedECDSA<F, FpChip<F>>,
+        assigned_ecdsa: &AssignedECDSA<F, FpChipK1<F>>,
     ) -> Result<([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Error> {
         // ================================================
         // step 0. powers of aux parameters
@@ -778,22 +778,23 @@ impl<F: Field> SigCircuit<F> {
         &self,
         config: &SigCircuitConfig<F>,
         layouter: &mut impl Layouter<F>,
-        signatures: &[SignData<Fq_K1, Secp256k1Affine>],
+        signatures_k1: &[SignData<Fq_K1, Secp256k1Affine>],
+        signatures_r1: &[SignData<Fq_R1, Secp256r1Affine>],
         // TODO: refactor method `assign` to `assign<Fq, Affine>`
         // or add more one parameter `sign_data_r1`
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
-        if signatures.len() > self.max_verif {
+        if (signatures_k1.len() + signatures_r1.len()) > self.max_verif {
             error!(
                 "signatures.len() = {} > max_verif = {}",
-                signatures.len(),
+                signatures_k1.len() + signatures_r1.len() ,
                 self.max_verif
             );
             return Err(Error::Synthesis);
         }
         let mut first_pass = SKIP_FIRST_PASS;
-        let ecdsa_chip = &config.ecdsa_k1_config;
-        // TODO: handle ecdsa_r1_config
+        let ecdsa_k1_chip = &config.ecdsa_k1_config;
+        let ecdsa_r1_chip = &config.ecdsa_r1_config;
 
         let assigned_sig_verifs = layouter.assign_region(
             || "ecdsa chip verification",
@@ -803,22 +804,22 @@ impl<F: Field> SigCircuit<F> {
                     return Ok(vec![]);
                 }
 
-                let mut ctx = ecdsa_chip.new_context(region);
+                let mut ctx = ecdsa_k1_chip.new_context(region);
 
                 // ================================================
                 // step 1: assert the signature is valid in circuit
                 // ================================================
-                let assigned_ecdsas = signatures
+                let assigned_ecdsas = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
                     .take(self.max_verif)
-                    .map(|sign_data| self.assign_ecdsa(&mut ctx, ecdsa_chip, sign_data))
-                    .collect::<Result<Vec<AssignedECDSA<F, FpChip<F>>>, Error>>()?;
+                    .map(|sign_data| self.assign_ecdsa(&mut ctx, ecdsa_k1_chip, sign_data))
+                    .collect::<Result<Vec<AssignedECDSA<F, FpChipK1<F>>>, Error>>()?;
 
                 // ================================================
                 // step 2: decompose the keys and messages
                 // ================================================
-                let sign_data_decomposed = signatures
+                let sign_data_decomposed = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
                     .take(self.max_verif)
@@ -826,7 +827,7 @@ impl<F: Field> SigCircuit<F> {
                     .map(|(sign_data, assigned_ecdsa)| {
                         self.sign_data_decomposition(
                             &mut ctx,
-                            ecdsa_chip,
+                            ecdsa_k1_chip,
                             sign_data,
                             assigned_ecdsa,
                         )
@@ -839,7 +840,7 @@ impl<F: Field> SigCircuit<F> {
                 #[cfg(not(feature = "onephase"))]
                 {
                     // finalize the current lookup table before moving to next phase
-                    ecdsa_chip.finalize(&mut ctx);
+                    ecdsa_k1_chip.finalize(&mut ctx);
                     ctx.print_stats(&["ECDSA context"]);
                     ctx.next_phase();
                 }
@@ -850,7 +851,7 @@ impl<F: Field> SigCircuit<F> {
                 let (assigned_keccak_values, assigned_sig_values): (
                     Vec<[AssignedValue<F>; 3]>,
                     Vec<AssignedSignatureVerify<F>>,
-                ) = signatures
+                ) = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
                     .take(self.max_verif)
@@ -859,7 +860,7 @@ impl<F: Field> SigCircuit<F> {
                     .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
                         self.assign_sig_verify(
                             &mut ctx,
-                            &ecdsa_chip.range,
+                            &ecdsa_k1_chip.range,
                             sign_data,
                             sign_data_decomp,
                             challenges,
@@ -894,7 +895,7 @@ impl<F: Field> SigCircuit<F> {
                 // IMPORTANT: this copies cells to the lookup advice column to perform range
                 // check lookups
                 // This is not optional.
-                let lookup_cells = ecdsa_chip.finalize(&mut ctx);
+                let lookup_cells = ecdsa_k1_chip.finalize(&mut ctx);
                 log::info!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["ECDSA context"]);
