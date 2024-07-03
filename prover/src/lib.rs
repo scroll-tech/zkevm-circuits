@@ -23,7 +23,7 @@ pub mod types;
 pub mod utils;
 pub mod zkevm;
 
-pub use aggregator::{check_chunk_hashes, BatchData, BatchHash, MAX_AGG_SNARKS};
+pub use aggregator::{check_chunk_hashes, BatchData, BatchHash, BatchHeader, MAX_AGG_SNARKS};
 pub use common::{ChunkInfo, CompressionCircuit};
 pub use eth_types;
 pub use eth_types::l2_types::BlockTrace;

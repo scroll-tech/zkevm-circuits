@@ -11,9 +11,9 @@ use crate::{
     chunk::ChunkInfo,
 };
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// Batch header provides additional fields from the context (within recursion)
 /// for constructing the preimage of the batch hash.
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct BatchHeader {
     /// the batch version
     pub(crate) version: u8,
@@ -23,14 +23,14 @@ pub struct BatchHeader {
     pub(crate) l1_message_popped: u64,
     /// Number of total L1 messages popped after the batch
     pub(crate) total_l1_message_popped: u64,
-    /// The data hash of the batch
-    pub(crate) data_hash: H256,
-    /// The versioned hash of the blob with this batch's data
-    pub(crate) blob_versioned_hash: H256,
     /// The parent batch hash
     pub(crate) parent_batch_hash: H256,
     /// The timestamp of the last block in this batch
     pub(crate) last_block_timestamp: u64,
+    /// The data hash of the batch
+    pub(crate) data_hash: H256,
+    /// The versioned hash of the blob with this batch's data
+    pub(crate) blob_versioned_hash: H256,
     /// The blob data proof: z (32), y (32)
     pub(crate) blob_data_proof: [H256; 2],
 }
