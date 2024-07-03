@@ -679,11 +679,10 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     )?
                 };
 
-                // batch_circuit_debug
-                // region.constrain_equal(
-                //     batch_data_hash_reconstructed_rlc.cell(),
-                //     assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
-                // )?;
+                region.constrain_equal(
+                    batch_data_hash_reconstructed_rlc.cell(),
+                    assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
+                )?;
 
                 log::debug!(
                     "batch data hash rlc reconstructed: {:?}",
