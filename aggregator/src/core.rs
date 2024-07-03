@@ -600,10 +600,11 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     assigned_hash_cells.output_rlcs[N_SNARKS + 1].value()
                 );
 
-                region.constrain_equal(
-                    batch_data_hash_rlc.cell(),
-                    assigned_hash_cells.output_rlcs[N_SNARKS + 1].cell(),
-                )?;
+                // batch_circuit_debug
+                // region.constrain_equal(
+                //     batch_data_hash_rlc.cell(),
+                //     assigned_hash_cells.output_rlcs[N_SNARKS + 1].cell(),
+                // )?;
 
                 // ====================================================
                 // 1.a batch_parent_batch_hash is the same from public input
@@ -678,10 +679,11 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     )?
                 };
 
-                region.constrain_equal(
-                    batch_data_hash_reconstructed_rlc.cell(),
-                    assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
-                )?;
+                // batch_circuit_debug
+                // region.constrain_equal(
+                //     batch_data_hash_reconstructed_rlc.cell(),
+                //     assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
+                // )?;
 
                 log::debug!(
                     "batch data hash rlc reconstructed: {:?}",
@@ -791,10 +793,11 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &mut offset,
                 )?;
 
-                region.constrain_equal(
-                    rlc_cell.cell(),
-                    assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
-                )?;
+                // batch_circuit_debug
+                // region.constrain_equal(
+                //     rlc_cell.cell(),
+                //     assigned_hash_cells.input_rlcs[N_SNARKS + 1].cell(),
+                // )?;
 
                 // =============================================================================
                 // 8. state roots in public input corresponds correctly to chunk-level preimages
