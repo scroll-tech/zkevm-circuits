@@ -232,6 +232,11 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
 
         {
             let batch_data_hash_preimage = &preimages[N_SNARKS + 1];
+
+            // batch_circuit_debug
+            log::trace!("=> batch_data_hash_preimage idx: {:?}", N_SNARKS + 1);
+            log::trace!("=> batch_data_hash_preimage: {:?}", batch_data_hash_preimage);
+
             let batch_data_hash_digest = keccak256(batch_data_hash_preimage);
             let batch_data_hash_padded_preimage = batch_data_hash_preimage
                 .iter()
@@ -601,10 +606,10 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 );
 
                 // batch_circuit_debug
-                // region.constrain_equal(
-                //     batch_data_hash_rlc.cell(),
-                //     assigned_hash_cells.output_rlcs[N_SNARKS + 1].cell(),
-                // )?;
+                region.constrain_equal(
+                    batch_data_hash_rlc.cell(),
+                    assigned_hash_cells.output_rlcs[N_SNARKS + 1].cell(),
+                )?;
 
                 // ====================================================
                 // 1.a batch_parent_batch_hash is the same from public input

@@ -309,6 +309,9 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         .concat();
         res.push(batch_hash_preimage);
 
+        // batch_circuit_debug
+        log::trace!("=> synthesize batch_hash_preimage: {:?}", batch_hash_preimage);
+
         // compute piHash for each chunk for i in [0..N_SNARKS)
         // chunk[i].piHash =
         // keccak(
