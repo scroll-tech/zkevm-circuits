@@ -30,17 +30,19 @@ use eth_types::{
 };
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions, RangeInstructions},
-    utils::modulus,
+    utils::{modulus, CurveAffineExt}, 
     AssignedValue, Context, QuantumCell, SKIP_FIRST_PASS,
 };
+
 use halo2_ecc::{
     bigint::CRTInteger,
     ecc::EccChip,
     fields::{
         fp::{FpConfig, FpStrategy},
-        FieldChip,
+        FieldChip, PrimeField
     },
 };
+use halo2_proofs::arithmetic::CurveAffine;
 
 mod ecdsa;
 mod utils;
@@ -57,7 +59,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use ethers_core::utils::keccak256;
+use ethers_core::{utils::keccak256, k256::elliptic_curve::AffinePoint};
 use itertools::Itertools;
 use log::error;
 use std::{iter, marker::PhantomData};
@@ -380,6 +382,144 @@ impl<F: Field> SigCircuit<F> {
         // build Fq chip from Fp chip
         // TODO: check if need to add new fq_chip_r
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq_K1>());
+        let integer_r =
+            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
+        let integer_s =
+            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
+        let msg_hash =
+            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*msg_hash)));
+
+        // returns the verification result of ecdsa signature
+        //
+        // WARNING: this circuit does not enforce the returned value to be true
+        // make sure the caller checks this result!
+        let (sig_is_valid, pk_is_zero, y_coord) =
+            // add new p256 curve `ecdsa_verify_no_pubkey_check`
+            ecdsa_verify_no_pubkey_check::<F, Fp_K1, Fq_K1, Secp256k1Affine>(
+                &ecc_chip.field_chip,
+                ctx,
+                &pk_assigned,
+                &integer_r,
+                &integer_s,
+                &msg_hash,
+                4,
+                4,
+            );
+
+        // =======================================
+        // constrains v == y.is_oddness()
+        // =======================================
+        assert!(*v == 0 || *v == 1, "v is not boolean");
+
+        // we constrain:
+        // - v + 2*tmp = y where y is already range checked (88 bits)
+        // - v is a binary
+        // - tmp is also < 88 bits (this is crucial otherwise tmp may wrap around and break
+        //   soundness)
+
+        let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
+        gate.assert_bit(ctx, assigned_y_is_odd);
+
+        // the last 88 bits of y
+        let assigned_y_limb = &y_coord.limbs()[0];
+        let mut y_value = F::zero();
+        assigned_y_limb.value().map(|&x| y_value = x);
+
+        // y_tmp = (y_value - y_last_bit)/2
+        let y_tmp = (y_value - F::from(*v as u64)) * F::TWO_INV;
+        let assigned_y_tmp = gate.load_witness(ctx, Value::known(y_tmp));
+
+        // y_tmp_double = (y_value - y_last_bit)
+        let y_tmp_double = gate.mul(
+            ctx,
+            QuantumCell::Existing(assigned_y_tmp),
+            QuantumCell::Constant(F::from(2)),
+        );
+        let y_rec = gate.add(
+            ctx,
+            QuantumCell::Existing(y_tmp_double),
+            QuantumCell::Existing(assigned_y_is_odd),
+        );
+        let y_is_ok = gate.is_equal(
+            ctx,
+            QuantumCell::Existing(*assigned_y_limb),
+            QuantumCell::Existing(y_rec),
+        );
+
+        // last step we want to constrain assigned_y_tmp is 87 bits
+        let assigned_y_tmp = gate.select(
+            ctx,
+            QuantumCell::Existing(zero),
+            QuantumCell::Existing(assigned_y_tmp),
+            QuantumCell::Existing(pk_is_zero),
+        );
+        ecc_chip
+            .field_chip
+            .range
+            .range_check(ctx, &assigned_y_tmp, 87);
+
+        let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
+        let sig_is_valid = gate.and_many(
+            ctx,
+            vec![
+                QuantumCell::Existing(sig_is_valid),
+                QuantumCell::Existing(y_is_ok),
+                QuantumCell::Existing(pk_not_zero),
+            ],
+        );
+
+        Ok(AssignedECDSA {
+            pk: pk_assigned,
+            pk_is_zero,
+            msg_hash,
+            integer_r,
+            integer_s,
+            v: assigned_y_is_odd,
+            sig_is_valid,
+        })
+    }
+
+    // this method try to support both Secp256k1 and Secp256r1 by using generic type.
+    // FpChip: can be FpChipK1 or FpChipR1
+    // Fq: can be Fq_K1 or Fq_R1
+    // Affine can be Secp256k1Affine or Secp256r1Affine
+    fn assign_ecdsa_generic<FpChip: FieldChip<F>, Fq: PrimeField, Affine: CurveAffine<Base = FpChip::FieldType> + CurveAffineExt>(
+    //fn assign_ecdsa_generic<FpChip: FpConfig<F, Fp: PrimeField>, Fq: PrimeField, Affine: CurveAffine<Base = FpChip::FieldType> + CurveAffineExt>(
+        &self,
+        ctx: &mut Context<F>,
+        ecdsa_chip: &FpChip,
+        sign_data: &SignData<Fq, Affine>,
+        // TODO: refactor method `assign_ecdsa` to `assign_ecdsa<Fq, Affine>`
+        // or add more one parameter `sign_data_r1`
+    ) -> Result<AssignedECDSA<F, FpChipK1<F>>, Error>
+    where Affine::Base: ff::PrimeField
+     {
+        let gate = ecdsa_chip.gate();
+        let zero = gate.load_zero(ctx);
+
+        let SignData {
+            signature,
+            pk,
+            msg: _,
+            msg_hash,
+        } = sign_data;
+        let (sig_r, sig_s, v) = signature;
+
+        // build ecc chip from Fp chip
+        let ecc_chip = EccChip::<F, FpChip>::construct(*ecdsa_chip.clone());
+        // match pk {
+        //     Secp256k1Affine { x, y } => println!("k1 affine"),
+        //     Secp256R1Affine { x, y } => println!("k1 affine"),
+        //     _ => panic!("found unknown PK type, not Secp256k1Affine or Secp256R1Affine"),
+        // }
+        let (x, y) = pk.into_coordinates();
+        let pk_assigned = ecc_chip.load_private(ctx, (Value::known(x), Value::known(y)));
+        let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Affine>(ctx, &pk_assigned);
+        gate.assert_is_const(ctx, &pk_is_valid, F::one());
+
+        // build Fq chip from Fp chip
+        // TODO: check if need to add new fq_chip_r
+        let fq_chip = FqChip::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq_K1>());
         let integer_r =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
