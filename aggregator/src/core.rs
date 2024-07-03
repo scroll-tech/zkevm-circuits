@@ -238,6 +238,10 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
             log::trace!("=> batch_data_hash_preimage: {:?}", batch_data_hash_preimage);
 
             let batch_data_hash_digest = keccak256(batch_data_hash_preimage);
+
+            // batch_circuit_debug
+            log::trace!("=> batch_data_hash_digest: {:?}", batch_data_hash_digest);
+            
             let batch_data_hash_padded_preimage = batch_data_hash_preimage
                 .iter()
                 .cloned()
