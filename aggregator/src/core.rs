@@ -34,7 +34,7 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
+        BATCH_BLOB_VERSIONED_HASH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
     },
     util::{assert_conditional_equal, parse_hash_preimage_cells},
     RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX,
