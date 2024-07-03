@@ -232,16 +232,7 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
 
         {
             let batch_data_hash_preimage = &preimages[N_SNARKS + 1];
-
-            // batch_circuit_debug
-            log::trace!("=> batch_data_hash_preimage idx: {:?}", N_SNARKS + 1);
-            log::trace!("=> batch_data_hash_preimage: {:?}", batch_data_hash_preimage);
-
             let batch_data_hash_digest = keccak256(batch_data_hash_preimage);
-
-            // batch_circuit_debug
-            log::trace!("=> batch_data_hash_digest: {:?}", batch_data_hash_digest);
-
             let batch_data_hash_padded_preimage = batch_data_hash_preimage
                 .iter()
                 .cloned()
@@ -249,11 +240,15 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
 
             {
                 let mut preimage_cells = vec![];
+
                 for input in batch_data_hash_padded_preimage {
                     let v = Fr::from(input as u64);
                     let cell = plonk_config.load_private(region, &v, offset)?;
+
+                    
                     preimage_cells.push(cell);
                 }
+
                 let input_rlc = plonk_config.rlc_with_flag(
                     region,
                     &preimage_cells,
@@ -268,9 +263,17 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
 
             {
                 let mut digest_cells = vec![];
+
+                // batch_circuit_debug
+                log::trace!("=> Outputing batch_data_hash in hash assignment");
+
                 for output in batch_data_hash_digest.iter() {
                     let v = Fr::from(*output as u64);
                     let cell = plonk_config.load_private(region, &v, offset)?;
+
+                    // batch_circuit_debug
+                    log::trace!("=> cell value: {:?}", cell.value());
+
                     digest_cells.push(cell);
                 }
                 let output_rlc =
@@ -596,6 +599,15 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 // the strategy here is to generate the RLCs of the batch_hash_preimage and
                 // compare it with batchDataHash's input RLC
+
+                // batch_circuit_debug
+                log::trace!("=> Log batch hash preimage data hash cells");
+                for cell in batch_hash_preimage
+                    [BATCH_DATA_HASH_OFFSET..BATCH_DATA_HASH_OFFSET + DIGEST_LEN].iter() {
+                    // batch_circuit_debug
+                    log::trace!("=> cell_value: {:?}", cell.value());
+                }
+
                 let batch_data_hash_rlc = rlc_config.rlc(
                     &mut region,
                     batch_hash_preimage
