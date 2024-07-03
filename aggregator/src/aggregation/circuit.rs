@@ -1,4 +1,8 @@
-use crate::{blob::BatchData, witgen::MultiBlockProcessResult, BATCH_PARENT_BATCH_HASH, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT};
+use crate::{
+    blob::BatchData, witgen::MultiBlockProcessResult, BATCH_PARENT_BATCH_HASH, LOG_DEGREE,
+    PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT,
+    PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
+};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_ecc::{
@@ -247,7 +251,9 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
                     log::debug!("aggregation: assigning aggregation");
 
-                    loader.ctx_mut().print_stats(&["snark aggregation [chunks -> batch]"]);
+                    loader
+                        .ctx_mut()
+                        .print_stats(&["snark aggregation [chunks -> batch]"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     log::debug!("batching: assigning barycentric");
@@ -349,12 +355,11 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             PI_CURRENT_WITHDRAW_ROOT + 1,
             PI_CHAIN_ID,
         ];
-        for (c, inst_offset) in hash_derived_public_input_cells.into_iter().zip(instance_offsets.into_iter()) {
-            layouter.constrain_instance(
-                c.cell(),
-                config.instance,
-                inst_offset
-            )?;
+        for (c, inst_offset) in hash_derived_public_input_cells
+            .into_iter()
+            .zip(instance_offsets.into_iter())
+        {
+            layouter.constrain_instance(c.cell(), config.instance, inst_offset)?;
         }
 
         // blob data config

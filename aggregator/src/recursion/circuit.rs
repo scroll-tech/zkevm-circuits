@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 
 use super::*;
+use crate::param::ConfigParams as BatchCircuitConfigParams;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
@@ -20,12 +21,11 @@ use snark_verifier_sdk::{
     types::{Halo2Loader, Plonk},
     SnarkWitness,
 };
+use std::{fs::File, iter, marker::PhantomData, rc::Rc};
 use sv_halo2_base::{
     gates::GateInstructions, halo2_proofs, AssignedValue, Context, ContextParams,
     QuantumCell::Existing,
 };
-use crate::param::ConfigParams as BatchCircuitConfigParams;
-use std::{fs::File, iter, marker::PhantomData, rc::Rc};
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 type Pcs = Kzg<Bn256, Bdfg21>;
 
@@ -502,3 +502,46 @@ impl<ST: StateTransition> CircuitExt<Fr> for RecursionCircuit<ST> {
 //     }
 //     (state, previous)
 // }
+
+fn test() {
+    // use std::fs;
+    // use sv_halo2_base::utils::fs::gen_srs;
+
+    // let app_params = gen_srs(3);
+    // let recursion_config: BatchCircuitConfigParamsParams =
+    //     serde_json::from_reader(fs::File::open("configs/verify_circuit.config").unwrap()).unwrap();
+    // let k = recursion_config.degree;
+    // let recursion_params = gen_srs(k);
+
+    //     let app_pk = gen_pk(&app_params, &application::Square::default());
+
+    //     let pk_time = start_timer!(|| "Generate recursion pk");
+    //     let recursion_pk = gen_recursion_pk::<application::Square>(
+    //         &recursion_params,
+    //         &app_params,
+    //         app_pk.get_vk(),
+    //     );
+    //     end_timer!(pk_time);
+
+    //     let num_round = 1;
+    //     let pf_time = start_timer!(|| "Generate full recursive snark");
+    //     let (final_state, snark) = gen_recursion_snark::<application::Square>(
+    //         &app_params,
+    //         &recursion_params,
+    //         &app_pk,
+    //         &recursion_pk,
+    //         Fr::from(2u64),
+    //         vec![(); num_round],
+    //     );
+    //     end_timer!(pf_time);
+    //     assert_eq!(final_state, Fr::from(2u64).pow(&[1 << num_round, 0, 0, 0]));
+
+    //     let accept = {
+    //         let svk = recursion_params.get_g()[0].into();
+    //         let dk = (recursion_params.g2(), recursion_params.s_g2()).into();
+    //         let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
+    //         let proof = Plonk::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript);
+    //         Plonk::verify(&svk, &dk, &snark.protocol, &snark.instances, &proof)
+    //     };
+    //     assert!(accept)
+}

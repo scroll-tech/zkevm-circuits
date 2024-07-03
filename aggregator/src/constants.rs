@@ -55,7 +55,7 @@ pub(crate) const BATCH_Y_OFFSET: usize = 161;
 // ================================
 // indices for public inputs
 // ================================
-// 
+//
 // - parent state root (2 cells: hi, lo)
 // - parent batch hash ..
 // - current state root ..

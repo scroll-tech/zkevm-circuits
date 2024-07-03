@@ -757,22 +757,21 @@ mod tests {
                 &chunks_without_padding,
                 batch_header,
             );
-            println!(
-                "[[ {:60} ]] batch_hash = {:0>64x}\n\n",
-                annotation, batch_hash.current_batch_hash,
-            );
 
             // blob data
             let batch_data: BatchData<MAX_AGG_SNARKS> = tcase.into();
             let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
             let versioned_hash = batch_data.get_versioned_hash();
             println!(
-                "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}\n\n",
+                "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}, batch_hash = {:0>64x}\n\n",
                 annotation,
                 point_evaluation_assignments.challenge,
                 point_evaluation_assignments.evaluation,
                 versioned_hash,
+                batch_hash.current_batch_hash,
             );
+
+            panic!("stop");
         }
     }
 

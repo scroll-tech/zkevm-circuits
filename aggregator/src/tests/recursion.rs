@@ -93,7 +93,8 @@ fn test_recursion_circuit() {
     let init_state = Fr::from(2u64);
     let app = Square::new(init_state);
     let next_state = app.state_transition(0);
-    let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>).expect("Snark generated successfully");
+    let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>)
+        .expect("Snark generated successfully");
     let init_snark =
         initial_recursion_snark::<Square>(&recursion_params, Some(recursion_pk.get_vk()), &mut rng);
 
@@ -114,7 +115,8 @@ fn test_recursion_circuit() {
         recursion,
         &mut rng,
         None::<String>,
-    ).expect("Snark generated successfully");
+    )
+    .expect("Snark generated successfully");
 
     end_timer!(pf_time);
     //assert_eq!(final_state, Fr::from(2u64).pow(&[1 << num_round, 0, 0, 0]));
@@ -127,7 +129,8 @@ fn test_recursion_circuit() {
 
     let app = Square::new(next_state);
     let next_state = app.state_transition(1);
-    let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>).expect("Snark generated successfully");
+    let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>)
+        .expect("Snark generated successfully");
 
     let recursion = RecursionCircuit::<Square>::new(
         &recursion_params,
@@ -147,7 +150,8 @@ fn test_recursion_circuit() {
         recursion,
         &mut rng,
         None::<String>,
-    ).expect("Snark generated successfully");
+    )
+    .expect("Snark generated successfully");
 
     end_timer!(pf_time);
 
