@@ -36,10 +36,7 @@ pub struct BatchCircuitConfig<const N_SNARKS: usize> {
     /// The batch data's config.
     pub batch_data_config: BatchDataConfig<N_SNARKS>,
     /// The zstd decoder's config.
-    // batch_circuit_debug
-    // pub decoder_config: DecoderConfig<1024, 512>,
-    pub decoder_config: DecoderConfig<256, 256>,
-
+    pub decoder_config: DecoderConfig<1024, 512>,
     /// Config to do the barycentric evaluation on blob polynomial.
     pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores

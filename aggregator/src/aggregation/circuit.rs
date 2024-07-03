@@ -213,11 +213,9 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
         };
 
         #[cfg(not(feature = "disable_proof_aggregation"))]
-        // batch_circuit_debug
         let (_accumulator_instances, _snark_inputs, barycentric) = {
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-            // batch_circuit_debug
             let (_accumulator_instances, _snark_inputs, barycentric) = layouter.assign_region(
                 || "aggregation",
                 |region| {
@@ -230,7 +228,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         ));
                     }
 
-                    // batch_circuit_debug
                     // stores accumulators for all snarks, including the padded ones
                     let mut _accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
                     // stores public inputs for all snarks, including the padded ones
@@ -248,44 +245,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     let ecc_chip = config.ecc_chip();
                     let loader: Rc<Halo2Loader<G1Affine, EccChip<Fr, FpConfig<Fr, Fq>>>> = Halo2Loader::new(ecc_chip, ctx);
 
-                    //
-                    // extract the assigned values for
-                    // - instances which are the public inputs of each chunk (prefixed with 12
-                    //   instances from previous accumulators)
-                    // - new accumulator to be verified on chain
-                    //
                     log::debug!("aggregation: assigning aggregation");
-
-                    // batch_circuit_debug
-                    // let (_assigned_aggregation_instances, _acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
-                    //     &self.svk,
-                    //     &loader,
-                    //     &self.snarks_with_padding,
-                    //     self.as_proof(),
-                    // );
-
-                    // batch_circuit_debug
-                    // for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
-                    //     log::trace!("{}-th instance: {:?}", i, e.value)
-                    // }
-
-                    // extract the following cells for later constraints
-                    // - the accumulators
-                    // - the public inputs from each snark
-
-                    // batch_circuit_debug
-                    // accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
-
-                    // the snark is not a fresh one, assigned_instances already contains an
-                    // accumulator so we want to skip the first 12 elements from the public
-                    // input
-
-                    // batch_circuit_debug
-                    // snark_inputs.extend(
-                    //     assigned_aggregation_instances
-                    //         .iter()
-                    //         .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
-                    // );
 
                     loader.ctx_mut().print_stats(&["snark aggregation [chunks -> batch]"]);
 
@@ -304,13 +264,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
                     config.range().finalize(&mut ctx);
 
-                    // batch_circuit_debug
                     Ok((_accumulator_instances, _snark_inputs, barycentric))
                 },
             )?;
 
-            // batch_circuit_debug
-            // assert_eq!(snark_inputs.len(), N_SNARKS * DIGEST_LEN);
             (_accumulator_instances, _snark_inputs, barycentric)
         };
         end_timer!(timer);
