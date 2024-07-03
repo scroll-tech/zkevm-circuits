@@ -34,7 +34,8 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        BATCH_BLOB_VERSIONED_HASH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
+        BATCH_BLOB_VERSIONED_HASH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN,
+        LOG_DEGREE,
     },
     util::{assert_conditional_equal, parse_hash_preimage_cells},
     RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX,
@@ -388,7 +389,9 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     let expected_blob_cells = ExpectedBlobCells {
         z: batch_hash_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + DIGEST_LEN].to_vec(),
         y: batch_hash_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + DIGEST_LEN].to_vec(),
-        versioned_hash: batch_hash_input[BATCH_BLOB_VERSIONED_HASH_OFFSET..BATCH_BLOB_VERSIONED_HASH_OFFSET + DIGEST_LEN].to_vec(),
+        versioned_hash: batch_hash_input
+            [BATCH_BLOB_VERSIONED_HASH_OFFSET..BATCH_BLOB_VERSIONED_HASH_OFFSET + DIGEST_LEN]
+            .to_vec(),
         chunk_tx_data_digests: (0..N_SNARKS)
             .map(|i| {
                 extracted_hash_cells.inputs[i + 1]

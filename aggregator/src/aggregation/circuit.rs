@@ -11,7 +11,7 @@ use halo2_ecc::{
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Bn256, Fr, Fq, G1Affine},
+    halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -247,7 +247,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     );
 
                     let ecc_chip = config.ecc_chip();
-                    let loader: Rc<Halo2Loader<G1Affine, EccChip<Fr, FpConfig<Fr, Fq>>>> = Halo2Loader::new(ecc_chip, ctx);
+                    let loader: Rc<Halo2Loader<G1Affine, EccChip<Fr, FpConfig<Fr, Fq>>>> =
+                        Halo2Loader::new(ecc_chip, ctx);
 
                     log::debug!("aggregation: assigning aggregation");
 
@@ -277,7 +278,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             (_accumulator_instances, _snark_inputs, barycentric)
         };
         end_timer!(timer);
-        
+
         // ==============================================
         // step 2: public input batch circuit
         // ==============================================

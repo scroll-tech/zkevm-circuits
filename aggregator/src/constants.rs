@@ -85,5 +85,3 @@ pub(crate) const BITS: usize = 88;
 /// If the input size is less than this, dummy snarks
 /// will be padded.
 pub const MAX_AGG_SNARKS: usize = 45;
-
-
