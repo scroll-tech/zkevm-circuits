@@ -3,6 +3,7 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::Rotation,
+    SerdeFormat,
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base as sv_halo2_base;
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
@@ -81,6 +82,7 @@ fn test_recursion_circuit() {
     let mut rng = test_rng();
 
     let pk_time = start_timer!(|| "Generate recursion pk");
+    // this is the pk from default app and dummy self-snark
     let recursion_pk = gen_recursion_pk::<Square>(
         &recursion_params,
         &app_params,
@@ -107,6 +109,21 @@ fn test_recursion_circuit() {
         &[next_state],
         0,
     );
+
+    let pk_time = start_timer!(|| "Generate secondary recursion pk for test");
+    {
+        let r_pk_2 = gen_pk(
+            &recursion_params, 
+            &recursion, 
+            None,
+        );
+        assert_eq!(
+            r_pk_2.get_vk().to_bytes(SerdeFormat::RawBytesUnchecked),
+            recursion_pk.get_vk().to_bytes(SerdeFormat::RawBytesUnchecked),
+        );
+    }   
+    end_timer!(pk_time);
+
     let pf_time = start_timer!(|| "Generate first recursive snark");
 
     let snark = gen_snark_shplonk(
@@ -141,6 +158,20 @@ fn test_recursion_circuit() {
         &[next_state],
         1,
     );
+
+    let pk_time = start_timer!(|| "Generate thrid recursion pk for test");
+    {
+        let r_pk_3 = gen_pk(
+            &recursion_params, 
+            &recursion, 
+            None,
+        );
+        assert_eq!(
+            r_pk_3.get_vk().to_bytes(SerdeFormat::RawBytesUnchecked),
+            recursion_pk.get_vk().to_bytes(SerdeFormat::RawBytesUnchecked),
+        );
+    }   
+    end_timer!(pk_time);
 
     let pf_time = start_timer!(|| "Generate next recursive snark");
 
