@@ -241,7 +241,7 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
 
             // batch_circuit_debug
             log::trace!("=> batch_data_hash_digest: {:?}", batch_data_hash_digest);
-            
+
             let batch_data_hash_padded_preimage = batch_data_hash_preimage
                 .iter()
                 .cloned()
@@ -261,6 +261,7 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
                     chunk_is_valid_cell32s,
                     offset,
                 )?;
+
                 inputs.push(preimage_cells);
                 input_rlcs.push(input_rlc);
             }
@@ -274,6 +275,10 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
                 }
                 let output_rlc =
                     plonk_config.rlc(region, &digest_cells, evm_word_challenge, offset)?;
+
+                // batch_circuit_debug
+                log::trace!("=> batch_data_hash_digest output_rlc: {:?}", output_rlc.value());
+
                 outputs.push(digest_cells);
                 output_rlcs.push(output_rlc)
             }
@@ -599,6 +604,9 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &evm_word_challenge,
                     &mut offset,
                 )?;
+
+                // batch_circuit_debug
+                log::trace!("=> batch_data_hash_rlc: {:?}", batch_data_hash_rlc.value());
 
                 log::debug!(
                     "batch data hash rlc recomputed: {:?}",
