@@ -629,7 +629,6 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     assigned_hash_cells.output_rlcs[N_SNARKS + 1].value()
                 );
 
-                // batch_circuit_debug
                 region.constrain_equal(
                     batch_data_hash_rlc.cell(),
                     assigned_hash_cells.output_rlcs[N_SNARKS + 1].cell(),
