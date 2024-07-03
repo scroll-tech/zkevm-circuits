@@ -65,7 +65,7 @@ pub(crate) fn parse_hash_preimage_cells<const N_SNARKS: usize>(
     let batch_data_hash_preimage = hash_input_cells.last().unwrap();
 
     (
-        batch_data_hash_preimage,
+        batch_hash_preimage,
         chunk_pi_hash_preimages,
         batch_data_hash_preimage,
     )
