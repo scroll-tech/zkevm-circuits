@@ -30,7 +30,7 @@ use eth_types::{
 };
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions, RangeInstructions},
-    utils::{modulus, CurveAffineExt}, 
+    utils::{modulus, CurveAffineExt},
     AssignedValue, Context, QuantumCell, SKIP_FIRST_PASS,
 };
 
@@ -39,10 +39,10 @@ use halo2_ecc::{
     ecc::EccChip,
     fields::{
         fp::{FpConfig, FpStrategy},
-        FieldChip, PrimeField
+        FieldChip, PrimeField,
     },
 };
-use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::{arithmetic::CurveAffine, halo2curves::bls12_381::Fp};
 
 mod ecdsa;
 mod utils;
@@ -59,7 +59,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use ethers_core::{utils::keccak256, k256::elliptic_curve::AffinePoint};
+use ethers_core::{k256::elliptic_curve::AffinePoint, utils::keccak256};
 use itertools::Itertools;
 use log::error;
 use std::{iter, marker::PhantomData};
@@ -277,7 +277,13 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
-        self.assign(config, layouter, &self.signatures_k1, &self.signatures_r1, challenges)?;
+        self.assign(
+            config,
+            layouter,
+            &self.signatures_k1,
+            &self.signatures_r1,
+            challenges,
+        )?;
         // TODO: assign signatures_r1
         Ok(())
     }
@@ -381,13 +387,13 @@ impl<F: Field> SigCircuit<F> {
 
         // build Fq chip from Fp chip
         // TODO: check if need to add new fq_chip_r
-        let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq_K1>());
+        let fq_chip = FqChipK1::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq_K1>());
         let integer_r =
-            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
+            fq_chip.load_private(ctx, FqChipK1::<F>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
-            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
+            fq_chip.load_private(ctx, FqChipK1::<F>::fe_to_witness(&Value::known(*sig_s)));
         let msg_hash =
-            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*msg_hash)));
+            fq_chip.load_private(ctx, FqChipK1::<F>::fe_to_witness(&Value::known(*msg_hash)));
 
         // returns the verification result of ecdsa signature
         //
@@ -483,17 +489,22 @@ impl<F: Field> SigCircuit<F> {
     // FpChip: can be FpChipK1 or FpChipR1
     // Fq: can be Fq_K1 or Fq_R1
     // Affine can be Secp256k1Affine or Secp256r1Affine
-    fn assign_ecdsa_generic<FpChip: FieldChip<F>, Fq: PrimeField, Affine: CurveAffine<Base = FpChip::FieldType> + CurveAffineExt>(
-    //fn assign_ecdsa_generic<FpChip: FpConfig<F, Fp: PrimeField>, Fq: PrimeField, Affine: CurveAffine<Base = FpChip::FieldType> + CurveAffineExt>(
+    //fn assign_ecdsa_generic<FpChip: FieldChip<F>, Fq: PrimeField, Affine: CurveAffine<Base = FpChip::FieldType> + CurveAffineExt>(
+    fn assign_ecdsa_generic<
+        Fp: PrimeField,
+        Fq: PrimeField,
+        Affine: CurveAffine<Base = Fp, ScalarExt = Fq> + CurveAffineExt,
+    >(
         &self,
         ctx: &mut Context<F>,
-        ecdsa_chip: &FpChip,
+        ecdsa_chip: &FpConfig<F, Fp>,
         sign_data: &SignData<Fq, Affine>,
         // TODO: refactor method `assign_ecdsa` to `assign_ecdsa<Fq, Affine>`
         // or add more one parameter `sign_data_r1`
-    ) -> Result<AssignedECDSA<F, FpChipK1<F>>, Error>
-    where Affine::Base: ff::PrimeField
-     {
+    ) -> Result<AssignedECDSA<F, FpConfig<F, Fp>>, Error>
+    where
+        Affine::Base: ff::PrimeField,
+    {
         let gate = ecdsa_chip.gate();
         let zero = gate.load_zero(ctx);
 
@@ -506,7 +517,7 @@ impl<F: Field> SigCircuit<F> {
         let (sig_r, sig_s, v) = signature;
 
         // build ecc chip from Fp chip
-        let ecc_chip = EccChip::<F, FpChip>::construct(*ecdsa_chip.clone());
+        let ecc_chip = EccChip::<F, FpConfig<F, Fp>>::construct(ecdsa_chip.clone());
         // match pk {
         //     Secp256k1Affine { x, y } => println!("k1 affine"),
         //     Secp256R1Affine { x, y } => println!("k1 affine"),
@@ -519,13 +530,15 @@ impl<F: Field> SigCircuit<F> {
 
         // build Fq chip from Fp chip
         // TODO: check if need to add new fq_chip_r
-        let fq_chip = FqChip::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq_K1>());
+        let fq_chip = FqChipK1::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq_K1>());
         let integer_r =
-            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
+            fq_chip.load_private(ctx, FpConfig::<F, Fq>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
-            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
-        let msg_hash =
-            fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*msg_hash)));
+            fq_chip.load_private(ctx, FpConfig::<F, Fq>::fe_to_witness(&Value::known(*sig_s)));
+        let msg_hash = fq_chip.load_private(
+            ctx,
+            FpConfig::<F, Fq>::fe_to_witness(&Value::known(*msg_hash)),
+        );
 
         // returns the verification result of ecdsa signature
         //
@@ -533,7 +546,7 @@ impl<F: Field> SigCircuit<F> {
         // make sure the caller checks this result!
         let (sig_is_valid, pk_is_zero, y_coord) =
             // add new p256 curve `ecdsa_verify_no_pubkey_check`
-            ecdsa_verify_no_pubkey_check::<F, Fp_K1, Fq_K1, Secp256k1Affine>(
+            ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Affine>(
                 &ecc_chip.field_chip,
                 ctx,
                 &pk_assigned,
@@ -927,7 +940,7 @@ impl<F: Field> SigCircuit<F> {
         if (signatures_k1.len() + signatures_r1.len()) > self.max_verif {
             error!(
                 "signatures.len() = {} > max_verif = {}",
-                signatures_k1.len() + signatures_r1.len() ,
+                signatures_k1.len() + signatures_r1.len(),
                 self.max_verif
             );
             return Err(Error::Synthesis);

@@ -62,7 +62,7 @@ pub(super) fn calc_required_lookup_advices(num_verif: usize) -> usize {
 }
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field
-pub(super) type FqChip<F> = FpConfig<F, Fq_K1>;
+pub(super) type FqChipK1<F> = FpConfig<F, Fq_K1>;
 /// Chip to handle ECDSA(secp256k1)::Fp, the base field
 pub(super) type FpChipK1<F> = FpConfig<F, Fp_K1>;
 /// Chip to handle ECDSA(secp256r1)::Fp, the base field
