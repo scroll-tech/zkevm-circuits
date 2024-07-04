@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/imdario/mergo v0.3.16
-	github.com/scroll-tech/go-ethereum v1.10.24-0.20240701094850-e50a8c98312c
+	github.com/scroll-tech/go-ethereum v1.10.24-0.20240704042234-d54574ec69a9
 )
 
 require (
