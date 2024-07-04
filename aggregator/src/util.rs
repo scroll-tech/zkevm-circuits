@@ -1,5 +1,3 @@
-use crate::blob::N_BYTES_U256;
-use eth_types::H256;
 use gadgets::Field;
 use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
 
@@ -8,22 +6,6 @@ use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
 fn init_env_logger() {
     // Enable RUST_LOG during tests
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
-}
-
-#[inline]
-// assert two cells have same value
-// (NOT constraining equality in circuit)
-pub(crate) fn assert_equal<F: Field>(
-    a: &AssignedCell<F, F>,
-    b: &AssignedCell<F, F>,
-    description: &str,
-) -> Result<(), Error> {
-    a.value().zip(b.value()).error_if_known_and(|(&a, &b)| {
-        if a != b {
-            log::error!("{description}");
-        }
-        a != b
-    })
 }
 
 #[inline]
@@ -65,7 +47,7 @@ pub(crate) fn parse_hash_preimage_cells<const N_SNARKS: usize>(
     let batch_data_hash_preimage = hash_input_cells.last().unwrap();
 
     (
-        batch_data_hash_preimage,
+        batch_hash_preimage,
         chunk_pi_hash_preimages,
         batch_data_hash_preimage,
     )

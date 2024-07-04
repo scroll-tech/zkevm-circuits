@@ -62,7 +62,7 @@ mod dummy_circuit {
 // gen a "dummy" snark in case we need to "skip" the verify part
 // inside the recursive circuit: cost would be high if we apply conditional
 // selection above the verify circuits (it is in fact a ecc chip, and
-// selection increase the maxium degree by 1).
+// selection increase the maximum degree by 1).
 // Instead, a "dummy" snark ensure the ecc chip is valid with providen
 // witness and we just skip the output accumulator later
 // it can "mock" any circuit (with vk being provided in argument)

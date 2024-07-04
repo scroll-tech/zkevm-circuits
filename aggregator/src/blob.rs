@@ -752,7 +752,7 @@ mod tests {
                 last_block_timestamp: 192837,
                 ..Default::default()
             };
-            let chunks_without_padding = crate::chunk::ChunkInfo::mock_chunk_infos(&tcase);
+            let chunks_without_padding = crate::chunk::ChunkInfo::mock_chunk_infos(tcase);
             let batch_hash = BatchHash::<MAX_AGG_SNARKS>::construct_with_unpadded(
                 &chunks_without_padding,
                 batch_header,
@@ -770,8 +770,6 @@ mod tests {
                 versioned_hash,
                 batch_hash.current_batch_hash,
             );
-
-            panic!("stop");
         }
     }
 

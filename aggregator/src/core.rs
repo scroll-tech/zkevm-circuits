@@ -2,7 +2,6 @@ use std::iter::repeat;
 
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
-use halo2_proofs::plonk::{Column, Instance};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::{
@@ -34,13 +33,13 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE,
+        BATCH_BLOB_VERSIONED_HASH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN,
+        LOG_DEGREE,
     },
     util::{assert_conditional_equal, parse_hash_preimage_cells},
     RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX,
-    CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH,
-    PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
-    POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
+    CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, POST_STATE_ROOT_INDEX,
+    PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
 /// Subroutine for the witness generations.
@@ -239,11 +238,14 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
 
             {
                 let mut preimage_cells = vec![];
+
                 for input in batch_data_hash_padded_preimage {
                     let v = Fr::from(input as u64);
                     let cell = plonk_config.load_private(region, &v, offset)?;
+
                     preimage_cells.push(cell);
                 }
+
                 let input_rlc = plonk_config.rlc_with_flag(
                     region,
                     &preimage_cells,
@@ -251,19 +253,23 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
                     chunk_is_valid_cell32s,
                     offset,
                 )?;
+
                 inputs.push(preimage_cells);
                 input_rlcs.push(input_rlc);
             }
 
             {
                 let mut digest_cells = vec![];
+
                 for output in batch_data_hash_digest.iter() {
                     let v = Fr::from(*output as u64);
                     let cell = plonk_config.load_private(region, &v, offset)?;
                     digest_cells.push(cell);
                 }
+
                 let output_rlc =
                     plonk_config.rlc(region, &digest_cells, evm_word_challenge, offset)?;
+
                 outputs.push(digest_cells);
                 output_rlcs.push(output_rlc)
             }
@@ -325,8 +331,6 @@ pub(crate) struct ExpectedBlobCells {
 }
 
 pub(crate) struct AssignedBatchHash {
-    pub(crate) hash_input: Vec<Vec<AssignedCell<Fr, Fr>>>,
-    pub(crate) hash_input_rlcs: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) hash_output: Vec<Vec<AssignedCell<Fr, Fr>>>,
     pub(crate) blob: ExpectedBlobCells,
     pub(crate) num_valid_snarks: AssignedCell<Fr, Fr>,
@@ -353,6 +357,7 @@ pub(crate) struct AssignedBatchHash {
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     keccak_config: &KeccakCircuitConfig<Fr>,
     rlc_config: &RlcConfig,
@@ -361,7 +366,6 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-    instance: Column<Instance>,
 ) -> Result<AssignedBatchHash, Error> {
     // assign the hash table
     assign_keccak_table(keccak_config, layouter, challenges, preimages)?;
@@ -381,14 +385,15 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
             chunks_are_valid,
             num_valid_chunks,
             preimages,
-            instance,
         )?;
 
     let batch_hash_input = &extracted_hash_cells.inputs[0]; //[0..INPUT_LEN_PER_ROUND * 2];
     let expected_blob_cells = ExpectedBlobCells {
         z: batch_hash_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + DIGEST_LEN].to_vec(),
         y: batch_hash_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + DIGEST_LEN].to_vec(),
-        versioned_hash: batch_hash_input[BATCH_VH_OFFSET..BATCH_VH_OFFSET + DIGEST_LEN].to_vec(),
+        versioned_hash: batch_hash_input
+            [BATCH_BLOB_VERSIONED_HASH_OFFSET..BATCH_BLOB_VERSIONED_HASH_OFFSET + DIGEST_LEN]
+            .to_vec(),
         chunk_tx_data_digests: (0..N_SNARKS)
             .map(|i| {
                 extracted_hash_cells.inputs[i + 1]
@@ -399,8 +404,6 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     };
 
     Ok(AssignedBatchHash {
-        hash_input: extracted_hash_cells.inputs,
-        hash_input_rlcs: extracted_hash_cells.input_rlcs,
         hash_output: extracted_hash_cells.outputs,
         blob: expected_blob_cells,
         num_valid_snarks: extracted_hash_cells.num_valid_snarks,
@@ -479,7 +482,6 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-    instance: Column<Instance>,
 ) -> Result<(ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells), Error> {
     layouter
         .assign_region(
@@ -886,7 +888,6 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 log::trace!("rlc chip uses {} rows", offset);
 
-                // batch_circuit_debug
                 Ok((
                     assigned_hash_cells,
                     HashDerivedPublicInputCells(vec![
