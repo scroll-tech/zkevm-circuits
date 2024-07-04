@@ -242,7 +242,7 @@ fn poseidon<L: Loader<G1Affine>>(loader: &L, inputs: &[L::LoadedScalar]) -> L::L
 // is LimbsEncoding, which only be generic with PCS whose Accmulator
 // is KzgAccmulator ...
 
-/// It is similar to `succient_verify` method inside of snark-verifier
+/// It is similar to `succinct_verify` method inside of snark-verifier
 /// but allow it allow loader to load preprocessed part as witness (so ANY circuit)
 /// can be verified
 ///

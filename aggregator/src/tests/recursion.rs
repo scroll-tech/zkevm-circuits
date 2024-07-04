@@ -108,7 +108,7 @@ where
         1,
     );
 
-    let pk_time = start_timer!(|| "Generate thrid recursion pk for test");
+    let pk_time = start_timer!(|| "Generate third recursion pk for test");
     {
         let r_pk_3 = gen_pk(&recursion_params, &recursion, None);
         assert_eq!(
