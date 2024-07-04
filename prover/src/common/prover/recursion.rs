@@ -45,24 +45,6 @@ impl Prover {
 
         let (params, pk) = self.params_and_pk(id, degree, &circuit)?;
 
-        // notice we can not directly build the pk with `params_and_pk`
-        // let pk = if self.pk_map.contains_key(id) {
-        //     &self.pk_map[id]
-        // } else {
-        //     log::info!("Before generate recursion pk of {}", &id);
-        //     let pk = gen_recursion_pk_with_snark(
-        //         params,
-        //         batch_snarks[0].clone(),
-        //         &mut rng,
-        //         None,
-        //     );
-        //     log::info!("After generate recursion pk of {}", &id);
-        //     self.pk_map.insert(id.to_string(), pk);
-        //     &self.pk_map[id]
-        // };
-
-        //let (recursion_params, pk) = self.params_and_pk(id, degree, &circuit)?;
-
         // prepare the initial snark
         let mut previous_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
         log::debug!("construct recursion snark for first round ...done");

@@ -70,7 +70,7 @@ impl Prover {
 
     pub fn get_bundle_vk(&self) -> Option<Vec<u8>> {
         self.prover_impl
-            .raw_vk(LayerId::Layer6.id())
+            .raw_vk(LayerId::Layer5.id())
             .or_else(|| self.raw_vk.clone())
     }
 
