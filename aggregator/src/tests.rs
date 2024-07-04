@@ -17,14 +17,10 @@ macro_rules! layer_0 {
             param
         };
 
-        let pk = gen_pk(
-            &param, &$circuit, None,
-            // Some(&$path.join(Path::new("layer_0.pkey"))),
-        );
+        let pk = gen_pk(&param, &$circuit, None);
         log::trace!("finished layer 0 pk generation for circuit");
 
-        let snark =
-            gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>).unwrap();
+        let snark = gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>).unwrap();
         log::trace!("finished layer 0 snark generation for circuit");
 
         assert!(verify_snark_shplonk::<$circuit_type>(
@@ -35,10 +31,7 @@ macro_rules! layer_0 {
 
         log::trace!("finished layer 0 snark verification");
         log::trace!("proof size: {}", snark.proof.len());
-        log::trace!(
-            "pi size: {}",
-            snark.instances.iter().map(|x| x.len()).sum::<usize>()
-        );
+        log::trace!("pi size: {}", snark.instances.iter().map(|x| x.len()).sum::<usize>());
 
         log::trace!("layer 0 circuit instances");
         for (i, e) in $circuit.instances()[0].iter().enumerate() {
@@ -63,7 +56,7 @@ macro_rules! compression_layer_snark {
 
         let mut rng = test_rng();
 
-        let is_fresh = if $layer_index == 1 { true } else { false };
+        let is_fresh = $layer_index == 1;
         let compression_circuit =
             CompressionCircuit::new(&$param, $previous_snark.clone(), is_fresh, &mut rng).unwrap();
 
@@ -134,11 +127,7 @@ macro_rules! compression_layer_evm {
         );
         log::trace!("finished layer 4 bytecode generation");
 
-        evm_verify(
-            deployment_code,
-            compression_circuit.instances(),
-            proof.clone(),
-        );
+        evm_verify(deployment_code, compression_circuit.instances(), proof.clone());
         log::trace!("layer 2 evm verification finished");
 
         end_timer!(timer);
@@ -166,7 +155,7 @@ macro_rules! aggregation_layer_snark {
             $chunks.as_ref(),
         );
 
-        let pk = gen_pk(&$param, &aggregation_circuit, None);
+        let pk = gen_pk(&$param, &aggregation_circuit, None)?;
         // build the snark for next layer
         let snark = gen_snark_shplonk(
             &param,
@@ -174,11 +163,8 @@ macro_rules! aggregation_layer_snark {
             aggregation_circuit.clone(),
             &mut rng,
             None::<String>, // Some(&$path.join(Path::new("layer_3.snark"))),
-        );
-        log::trace!(
-            "finished layer {} snark generation for circuit",
-            $layer_index
-        );
+        )?;
+        log::trace!("finished layer {} snark generation for circuit", $layer_index);
 
         assert!(verify_snark_shplonk::<AggregationCircuit>(
             &param,
