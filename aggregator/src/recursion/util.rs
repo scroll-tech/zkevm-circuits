@@ -149,7 +149,9 @@ pub fn initial_recursion_snark<ST: StateTransition>(
     };
 
     let g = params.get_g();
-    // ?why we need random for dummy snark of app but not for recursion
+    // the accumulator must be set to initial state so the first "real"
+    // recursion circuit (which also merge the accumulator from this snark)
+    // could start with a correct accumulator state
     snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
         .into_iter()
         .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
