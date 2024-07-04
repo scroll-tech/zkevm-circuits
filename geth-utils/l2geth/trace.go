@@ -164,6 +164,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
+		ShanghaiTime:        newUint64(0),
 
 		TerminalTotalDifficulty: big.NewInt(0),
 
