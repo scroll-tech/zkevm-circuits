@@ -832,7 +832,7 @@ impl GethCallTrace {
         }
 
         let has_output = self.output.as_ref().map(|x| !x.is_empty()).unwrap_or(false);
-        if call_type.is_create() && has_output {
+        if call_type.is_create() && self.error.is_none() && has_output {
             created.insert(self.to.unwrap());
         }
     }
