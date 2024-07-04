@@ -1,20 +1,17 @@
 use crate::{
-    blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE,
-    PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT,
-    PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
+    blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE, PI_CHAIN_ID,
+    PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH,
+    PI_PARENT_STATE_ROOT,
 };
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use halo2_ecc::{
-    ecc::EccChip,
-    fields::{fp::FpConfig},
-};
+use halo2_ecc::{ecc::EccChip, fields::fp::FpConfig};
 
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -26,11 +23,9 @@ use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
-use snark_verifier::{loader::halo2::EccInstructions, pcs::kzg::KzgSuccinctVerifyingKey};
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::{
-    loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader},
-};
+use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
+use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier_sdk::{aggregate, flatten_accumulator};
 use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
@@ -220,6 +215,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
         #[cfg(not(feature = "disable_proof_aggregation"))]
         let (_accumulator_instances, _snark_inputs, barycentric) = {
+            use halo2_proofs::halo2curves::bn256::Fq;
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
             let (_accumulator_instances, _snark_inputs, barycentric) = layouter.assign_region(

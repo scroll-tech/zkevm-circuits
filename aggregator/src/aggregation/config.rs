@@ -131,7 +131,7 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
 
         // Zstd decoder.
         let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
-        
+
         let pow2_table = Pow2Table::construct(meta);
         let range8 = RangeTable::construct(meta);
         let range16 = RangeTable::construct(meta);

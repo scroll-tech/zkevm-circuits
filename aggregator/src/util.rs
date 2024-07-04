@@ -9,22 +9,6 @@ fn init_env_logger() {
 }
 
 #[inline]
-// assert two cells have same value
-// (NOT constraining equality in circuit)
-pub(crate) fn assert_equal<F: Field>(
-    a: &AssignedCell<F, F>,
-    b: &AssignedCell<F, F>,
-    description: &str,
-) -> Result<(), Error> {
-    a.value().zip(b.value()).error_if_known_and(|(&a, &b)| {
-        if a != b {
-            log::error!("{description}");
-        }
-        a != b
-    })
-}
-
-#[inline]
 // if cond = 1, assert two cells have same value;
 // (NOT constraining equality in circuit)
 pub(crate) fn assert_conditional_equal<F: Field>(

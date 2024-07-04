@@ -5,7 +5,7 @@ use crate::{
     io::{force_to_read, try_to_read},
     proof::BundleProof,
     types::BundleProvingTask,
-    BatchProof, BatchProvingTask, ChunkProof, Proof,
+    BatchProof, BatchProvingTask, ChunkProof,
 };
 use aggregator::{ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{bail, Result};
@@ -176,7 +176,7 @@ impl Prover {
         let default_name = "bundle";
 
         let recursion_snark = self.prover_impl.load_or_gen_recursion_snark(
-            name.unwrap_or(&default_name),
+            name.unwrap_or(default_name),
             LayerId::Layer5.id(),
             LayerId::Layer5.degree(),
             &bundle_snarks,

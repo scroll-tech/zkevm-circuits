@@ -2,7 +2,6 @@ use std::iter::repeat;
 
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
-use halo2_proofs::plonk::{Column, Instance};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::{
@@ -39,8 +38,8 @@ use crate::{
     },
     util::{assert_conditional_equal, parse_hash_preimage_cells},
     RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX,
-    CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS,
-    POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
+    CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, POST_STATE_ROOT_INDEX,
+    PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
 /// Subroutine for the witness generations.
@@ -243,7 +242,7 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
                 for input in batch_data_hash_padded_preimage {
                     let v = Fr::from(input as u64);
                     let cell = plonk_config.load_private(region, &v, offset)?;
-                    
+
                     preimage_cells.push(cell);
                 }
 
@@ -332,8 +331,6 @@ pub(crate) struct ExpectedBlobCells {
 }
 
 pub(crate) struct AssignedBatchHash {
-    pub(crate) hash_input: Vec<Vec<AssignedCell<Fr, Fr>>>,
-    pub(crate) hash_input_rlcs: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) hash_output: Vec<Vec<AssignedCell<Fr, Fr>>>,
     pub(crate) blob: ExpectedBlobCells,
     pub(crate) num_valid_snarks: AssignedCell<Fr, Fr>,
@@ -407,8 +404,6 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     };
 
     Ok(AssignedBatchHash {
-        hash_input: extracted_hash_cells.inputs,
-        hash_input_rlcs: extracted_hash_cells.input_rlcs,
         hash_output: extracted_hash_cells.outputs,
         blob: expected_blob_cells,
         num_valid_snarks: extracted_hash_cells.num_valid_snarks,

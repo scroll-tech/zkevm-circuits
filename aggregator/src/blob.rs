@@ -770,8 +770,6 @@ mod tests {
                 versioned_hash,
                 batch_hash.current_batch_hash,
             );
-
-            panic!("stop");
         }
     }
 
