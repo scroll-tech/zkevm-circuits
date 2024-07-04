@@ -19,8 +19,9 @@ use halo2curves::{
     group::{
         ff::{Field as GroupField, PrimeField},
         prime::PrimeCurveAffine,
-        Curve,
+        Curve, GroupEncoding,
     },
+
     // secp256k1 curve
     secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
     // p256 curve
@@ -236,6 +237,20 @@ pub fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
 
 /// Return the secp256k1 public key (x, y) coordinates in little endian bytes.
 pub fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
+    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
+    let mut pk_le = [0u8; 64];
+    pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
+    pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
+    pk_le
+}
+
+/// Return both secp256k1 and secp256r1 public key (x, y) coordinates in little endian bytes.
+pub fn pk_bytes_le_generic<
+    Fp: PrimeField + GroupEncoding<Repr = [u8; 32]>, // 32 bytes for secp256k1 and secp256r1 curve
+    Affine: CurveAffine<Base = Fp>,
+>(
+    pk: &Affine,
+) -> [u8; 64] {
     let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
     let mut pk_le = [0u8; 64];
     pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
