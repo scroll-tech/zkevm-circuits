@@ -30,10 +30,7 @@ use snark_verifier_sdk::{
     CircuitExt, Snark,
 };
 
-use crate::{
-    constants::{BITS, LIMBS},
-    param::ConfigParams as AggregationConfigParams,
-};
+use crate::constants::{BITS, LIMBS};
 
 use itertools::Itertools;
 use rand::Rng;
