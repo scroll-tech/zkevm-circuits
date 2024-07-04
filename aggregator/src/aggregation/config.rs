@@ -12,10 +12,9 @@ use snark_verifier::{
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
-    table::{BitwiseOp, BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
+    table::{BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
     util::{Challenges, SubCircuitConfig},
 };
-use zstd_encoder::N_BLOCK_SIZE_TARGET;
 
 use crate::{
     constants::{BITS, LIMBS},

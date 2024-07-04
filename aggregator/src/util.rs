@@ -1,5 +1,3 @@
-use crate::blob::N_BYTES_U256;
-use eth_types::H256;
 use gadgets::Field;
 use halo2_proofs::{circuit::AssignedCell, halo2curves::bn256::Fr, plonk::Error};
 

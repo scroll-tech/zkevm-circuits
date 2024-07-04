@@ -1,14 +1,17 @@
 use crate::{
-    blob::BatchData, witgen::MultiBlockProcessResult, BATCH_PARENT_BATCH_HASH, LOG_DEGREE,
+    blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE,
     PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT,
     PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
+
+#[cfg(not(feature = "disable_proof_aggregation"))]
 use halo2_ecc::{
     ecc::EccChip,
-    fields::{fp::FpConfig, FieldChip},
+    fields::{fp::FpConfig},
 };
+
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
@@ -27,7 +30,6 @@ use snark_verifier::{loader::halo2::EccInstructions, pcs::kzg::KzgSuccinctVerify
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
     loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader},
-    pcs::kzg::{Bdfg21, Kzg},
 };
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier_sdk::{aggregate, flatten_accumulator};
@@ -324,7 +326,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 &chunks_are_valid,
                 self.batch_hash.number_of_valid_chunks,
                 &preimages,
-                config.instance,
             )
             .map_err(|e| {
                 log::error!("assign_batch_hashes err {:#?}", e);
@@ -336,7 +337,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             assigned_batch_hash
         };
         // digests
-        let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
+        let (_batch_pi_hash_digest, _chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
 
         // ========================================================================

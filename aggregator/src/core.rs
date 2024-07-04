@@ -39,8 +39,7 @@ use crate::{
     },
     util::{assert_conditional_equal, parse_hash_preimage_cells},
     RlcConfig, BATCH_DATA_HASH_OFFSET, BATCH_PARENT_BATCH_HASH, BITS, CHUNK_CHAIN_ID_INDEX,
-    CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH,
-    PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
+    CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS,
     POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
@@ -361,6 +360,7 @@ pub(crate) struct AssignedBatchHash {
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     keccak_config: &KeccakCircuitConfig<Fr>,
     rlc_config: &RlcConfig,
@@ -369,7 +369,6 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-    instance: Column<Instance>,
 ) -> Result<AssignedBatchHash, Error> {
     // assign the hash table
     assign_keccak_table(keccak_config, layouter, challenges, preimages)?;
@@ -389,7 +388,6 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
             chunks_are_valid,
             num_valid_chunks,
             preimages,
-            instance,
         )?;
 
     let batch_hash_input = &extracted_hash_cells.inputs[0]; //[0..INPUT_LEN_PER_ROUND * 2];
@@ -489,7 +487,6 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-    instance: Column<Instance>,
 ) -> Result<(ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells), Error> {
     layouter
         .assign_region(

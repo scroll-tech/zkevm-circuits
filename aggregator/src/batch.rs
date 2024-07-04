@@ -106,7 +106,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             "input chunk slice does not match N_SNARKS"
         );
 
-        let mut export_batch_header = batch_header.clone();
+        let mut export_batch_header = batch_header;
 
         let number_of_valid_chunks = match chunks_with_padding
             .iter()
@@ -369,7 +369,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         })
         .concat();
 
-        res.push(F::from(self.chain_id as u64));
+        res.push(F::from(self.chain_id));
         let (withdraw_hi, withdraw_lo) = split_h256(self.current_withdraw_root);
         res.extend_from_slice(vec![withdraw_hi, withdraw_lo].as_slice());
 
