@@ -1905,4 +1905,42 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_encode_decode_roundtrip() -> Result<(), std::io::Error> {
+        use super::*;
+        use halo2_proofs::halo2curves::bn256::Fr;
+
+        let raw = fs::read("./data/failed_roundtrip")?;
+
+        let compressed = {
+            // compression level = 0 defaults to using level=3, which is zstd's default.
+            let mut encoder = init_zstd_encoder(None);
+
+            // set source length, which will be reflected in the frame header.
+            encoder.set_pledged_src_size(Some(raw.len() as u64))?;
+
+            encoder.write_all(&raw)?;
+            encoder.finish()?
+        };
+
+        let MultiBlockProcessResult {
+            witness_rows: _w,
+            literal_bytes: _l,
+            fse_aux_tables: _f,
+            block_info_arr: _b,
+            sequence_info_arr: _s,
+            address_table_rows: _a,
+            sequence_exec_results,
+        } = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+
+        let decoded_bytes = sequence_exec_results
+            .into_iter()
+            .flat_map(|r| r.recovered_bytes)
+            .collect::<Vec<u8>>();
+
+        assert!(raw == decoded_bytes);
+
+        Ok(())
+    }
 }
