@@ -375,4 +375,9 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
 
         vec![res]
     }
+
+    /// ...
+    pub fn batch_header(&self) -> BatchHeader {
+        self.batch_header
+    }
 }

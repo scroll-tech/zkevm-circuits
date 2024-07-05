@@ -1,5 +1,6 @@
 use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
 use crate::types::base64;
+use aggregator::BatchHeader;
 use anyhow::Result;
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
@@ -12,13 +13,14 @@ pub struct BatchProof {
     pub protocol: Vec<u8>,
     #[serde(flatten)]
     proof: Proof,
-    // batch_hash: H256,
+    batch_header: BatchHeader,
 }
 
 impl BatchProof {
     pub fn new(
-        /* batch_hash: H256, */ snark: Snark,
+        snark: Snark,
         pk: Option<&ProvingKey<G1Affine>>,
+        batch_header: BatchHeader,
     ) -> Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
         let proof = Proof::new(snark.proof, &snark.instances, pk);
@@ -26,7 +28,7 @@ impl BatchProof {
         Ok(Self {
             protocol,
             proof,
-            // TODO: batch_hash,
+            batch_header,
         })
     }
 

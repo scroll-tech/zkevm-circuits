@@ -26,8 +26,6 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
 use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier_sdk::{aggregate, flatten_accumulator};
 use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
 use zkevm_circuits::util::Challenges;
 
