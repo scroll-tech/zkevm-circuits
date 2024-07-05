@@ -28,7 +28,6 @@ use halo2curves::{
     secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
     Coordinates,
     CurveAffine,
-    CurveAffineExt,
 };
 use num_bigint::BigUint;
 use sha3::digest::generic_array::GenericArray;
@@ -246,15 +245,17 @@ pub fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
 
 /// Return both secp256k1 and secp256r1 public key (x, y) coordinates in little endian bytes.
 pub fn pk_bytes_le_generic<
-    Fp: PrimeField + GroupEncoding<Repr = [u8; 32]>, // 32 bytes for secp256k1 and secp256r1 curve
+    Fp: PrimeField<Repr = [u8; 32]>, // + GroupEncoding<Repr = [u8; 32]>, // 32 bytes for secp256k1 and secp256r1 curve
     Affine: CurveAffine<Base = Fp>,
 >(
     pk: &Affine,
 ) -> [u8; 64] {
     let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
     let mut pk_le = [0u8; 64];
-    pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
-    pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
+    //pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
+    //pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
+    pk_le[..32].copy_from_slice(&pk_coord.x().to_repr());
+    pk_le[32..].copy_from_slice(&pk_coord.y().to_repr());
     pk_le
 }
 

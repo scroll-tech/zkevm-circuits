@@ -26,8 +26,9 @@ use crate::{
 };
 use eth_types::{
     self,
-    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    sign_types::{pk_bytes_le, pk_bytes_le_generic, pk_bytes_swap_endianness, SignData},
 };
+use ff::PrimeField;
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions, RangeInstructions},
     utils::{modulus, CurveAffineExt},
@@ -39,7 +40,7 @@ use halo2_ecc::{
     ecc::EccChip,
     fields::{
         fp::{FpConfig, FpStrategy},
-        FieldChip, PrimeField,
+        FieldChip,
     },
 };
 use halo2_proofs::{arithmetic::CurveAffine, halo2curves::bls12_381::Fp};
@@ -51,6 +52,7 @@ pub(crate) use utils::*;
 
 use halo2_proofs::{
     circuit::{Layouter, Value},
+    halo2curves::group::GroupEncoding,
     // secp256k1 curve
     halo2curves::secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
     // p256 curve
@@ -491,8 +493,8 @@ impl<F: Field> SigCircuit<F> {
     // Affine can be Secp256k1Affine or Secp256r1Affine
     //fn assign_ecdsa_generic<FpChip: FieldChip<F>, Fq: PrimeField, Affine: CurveAffine<Base = FpChip::FieldType> + CurveAffineExt>(
     fn assign_ecdsa_generic<
-        Fp: PrimeField,
-        Fq: PrimeField,
+        Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
+        Fq: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
         Affine: CurveAffine<Base = Fp, ScalarExt = Fq> + CurveAffineExt,
     >(
         &self,
@@ -832,8 +834,8 @@ impl<F: Field> SigCircuit<F> {
 
     // this helper aims to handle both k1 and r1 signatures by generic type.
     fn sign_data_decomposition_generic<
-        Fp: PrimeField,
-        Fq: PrimeField,
+        Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
+        Fq: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
         Affine: CurveAffine<Base = Fp, ScalarExt = Fq> + CurveAffineExt,
     >(
         &self,
@@ -863,9 +865,9 @@ impl<F: Field> SigCircuit<F> {
             .collect_vec();
 
         // ================================================
-        // pk hash cells
+        // pk hash cellsreset
         // ================================================
-        let pk_le = pk_bytes_le(&sign_data.pk);
+        let pk_le = pk_bytes_le_generic(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         let pk_hash = keccak256(pk_be).map(|byte| Value::known(F::from(byte as u64)));
 
@@ -921,29 +923,25 @@ impl<F: Field> SigCircuit<F> {
         // assert the assigned_msg_hash_le is the right decomposition of msg_hash
         // msg_hash is an overflowing integer with 3 limbs, of sizes 88, 88, and 80
         let assigned_msg_hash_le =
-            assert_crt(ctx, sign_data.msg_hash.to_bytes(), &assigned_data.msg_hash)?;
+            assert_crt(ctx, sign_data.msg_hash.to_repr(), &assigned_data.msg_hash)?;
 
         // ================================================
         // pk cells
         // ================================================
-        let pk_x_le = sign_data
-            .pk
-            .x
-            .to_bytes()
+        let (x, y) = sign_data.pk.into_coordinates();
+
+        let pk_x_le = x
+            .to_repr()
             .iter()
             .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
             .collect_vec();
-        let pk_y_le = sign_data
-            .pk
-            .y
-            .to_bytes()
+        let pk_y_le = y
+            //.to_bytes()
+            .to_repr()
             .iter()
             .map(|&y| QuantumCell::Witness(Value::known(F::from_u128(y as u128))))
             .collect_vec();
-        let pk_assigned = ecc_chip.load_private(
-            ctx,
-            (Value::known(sign_data.pk.x), Value::known(sign_data.pk.y)),
-        );
+        let pk_assigned = ecc_chip.load_private(ctx, (Value::known(x), Value::known(y)));
 
         self.assert_crt_int_byte_repr(
             ctx,
@@ -965,12 +963,14 @@ impl<F: Field> SigCircuit<F> {
 
         let r_cells = assert_crt(
             ctx,
-            sign_data.signature.0.to_bytes(),
+            //sign_data.signature.0.to_bytes(),
+            sign_data.signature.0.to_repr(),
             &assigned_data.integer_r,
         )?;
         let s_cells = assert_crt(
             ctx,
-            sign_data.signature.1.to_bytes(),
+            //sign_data.signature.1.to_bytes(),
+            sign_data.signature.1.to_repr(),
             &assigned_data.integer_s,
         )?;
 
@@ -1129,7 +1129,7 @@ impl<F: Field> SigCircuit<F> {
                     //.chain(std::iter::repeat(&SignData::default()))
                     //.take(self.max_verif)
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_r1_chip, sign_data))
-                    .collect::<Result<Vec<AssignedECDSA<F, FpChipK1<F>>>, Error>>()?;
+                    .collect::<Result<Vec<AssignedECDSA<F, FpChipR1<F>>>, Error>>()?;
 
                 // ================================================
                 // step 2: decompose the keys and messages
@@ -1140,7 +1140,7 @@ impl<F: Field> SigCircuit<F> {
                     .take(self.max_verif)
                     .zip_eq(assigned_ecdsas_k1.iter())
                     .map(|(sign_data, assigned_ecdsa)| {
-                        self.sign_data_decomposition(
+                        self.sign_data_decomposition_generic(
                             &mut ctx,
                             ecdsa_k1_chip,
                             sign_data,
