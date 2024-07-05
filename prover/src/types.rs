@@ -64,11 +64,5 @@ impl BatchProvingTask {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BundleProvingTask {
-    pub chain_id: u64,
-    pub finalized_batch_hash: H256,
-    pub finalized_state_root: H256,
-    pub pending_batch_hash: H256,
-    pub pending_state_root: H256,
-    pub pending_withdraw_root: H256,
     pub batch_proofs: Vec<BatchProof>,
 }

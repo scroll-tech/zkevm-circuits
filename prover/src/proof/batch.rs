@@ -13,7 +13,7 @@ pub struct BatchProof {
     pub protocol: Vec<u8>,
     #[serde(flatten)]
     proof: Proof,
-    batch_header: BatchHeader,
+    pub batch_header: BatchHeader,
 }
 
 impl BatchProof {
