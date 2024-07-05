@@ -1081,6 +1081,107 @@ impl<F: Field> SigCircuit<F> {
         Ok((to_be_keccak_checked, assigned_sig_verif))
     }
 
+    // this helper support both secp256k1 snf secp256r1
+    #[allow(clippy::too_many_arguments)]
+    fn assign_sig_verify_generic<
+        Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
+        Fq: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
+        Affine: CurveAffine<Base = Fp, ScalarExt = Fq> + CurveAffineExt,
+    >(
+        &self,
+        ctx: &mut Context<F>,
+        rlc_chip: &RangeConfig<F>,
+        sign_data: &SignData<Fq, Affine>,
+        sign_data_decomposed: &SignDataDecomposed<F>,
+        challenges: &Challenges<Value<F>>,
+        assigned_ecdsa: &AssignedECDSA<F, FpConfig<F, Fp>>,
+        //assigned_ecdsa: &AssignedECDSA<F, FpChipK1<F>>,
+    ) -> Result<([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Error> {
+        // ================================================
+        // step 0. powers of aux parameters
+        // ================================================
+        let evm_challenge_powers = iter::successors(Some(Value::known(F::one())), |coeff| {
+            Some(challenges.evm_word() * coeff)
+        })
+        .take(32)
+        .map(|x| QuantumCell::Witness(x))
+        .collect_vec();
+
+        log::trace!("evm challenge: {:?} ", challenges.evm_word());
+
+        let keccak_challenge_powers = iter::successors(Some(Value::known(F::one())), |coeff| {
+            Some(challenges.keccak_input() * coeff)
+        })
+        .take(64)
+        .map(|x| QuantumCell::Witness(x))
+        .collect_vec();
+        // ================================================
+        // step 1 random linear combination of message hash
+        // ================================================
+        // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
+        // with RLC encoding corresponds to msg_hash_rlc
+        let msg_hash_rlc = rlc_chip.gate.inner_product(
+            ctx,
+            sign_data_decomposed
+                .msg_hash_cells
+                .iter()
+                .take(32)
+                .cloned()
+                .collect_vec(),
+            evm_challenge_powers.clone(),
+        );
+
+        log::trace!("assigned msg hash rlc: {:?}", msg_hash_rlc.value());
+
+        // ================================================
+        // step 2 random linear combination of pk
+        // ================================================
+        let pk_rlc = rlc_chip.gate.inner_product(
+            ctx,
+            sign_data_decomposed.pk_cells.clone(),
+            keccak_challenge_powers,
+        );
+        log::trace!("pk rlc: {:?}", pk_rlc.value());
+
+        // ================================================
+        // step 3 random linear combination of pk_hash
+        // ================================================
+        let pk_hash_rlc = rlc_chip.gate.inner_product(
+            ctx,
+            sign_data_decomposed.pk_hash_cells.clone(),
+            evm_challenge_powers.clone(),
+        );
+
+        // step 4: r,s rlc
+        let r_rlc = rlc_chip.gate.inner_product(
+            ctx,
+            sign_data_decomposed.r_cells.clone(),
+            evm_challenge_powers.clone(),
+        );
+        let s_rlc = rlc_chip.gate.inner_product(
+            ctx,
+            sign_data_decomposed.s_cells.clone(),
+            evm_challenge_powers,
+        );
+
+        log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
+        log::trace!("finished sign verify");
+        let to_be_keccak_checked = [sign_data_decomposed.is_address_zero, pk_rlc, pk_hash_rlc];
+        let assigned_sig_verif = AssignedSignatureVerify {
+            address: sign_data_decomposed.address,
+            msg_len: sign_data.msg.len(),
+            msg_rlc: challenges
+                .keccak_input()
+                .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
+            msg_hash_rlc,
+            sig_is_valid: assigned_ecdsa.sig_is_valid,
+            r_rlc,
+            s_rlc,
+            v: assigned_ecdsa.v,
+        };
+        Ok((to_be_keccak_checked, assigned_sig_verif))
+    }
+
     /// Assign witness data to the sig circuit.
     pub(crate) fn assign(
         &self,
