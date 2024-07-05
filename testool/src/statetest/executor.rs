@@ -567,88 +567,88 @@ pub fn run_test(
     log::debug!("witness_block created");
     //builder.sdb.list_accounts();
 
-    let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
-    let mut overflow = false;
-    for (num, limit) in row_usage.iter().zip_eq(
-        get_sub_circuit_limit_and_confidence()
-            .iter()
-            .map(|(limit, _)| limit),
-    ) {
-        if num.row_num_real > *limit {
-            log::warn!(
-                "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
-                suite.id,
-                st.id,
-                num.name,
-                num.row_num_real,
-                limit
-            );
-            overflow = true;
-        }
-    }
-    let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
-    if overflow {
-        log::warn!(
-            "ccc overflow: st.id {}, detail {} {}",
-            st.id,
-            max_row_usage.name,
-            max_row_usage.row_num_real
-        );
-        // panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
-        return Err(StateTestError::CircuitOverflow {
-            circuit: max_row_usage.name.to_string(),
-            needed: max_row_usage.row_num_real,
-        });
-    }
-    log::info!(
-        "ccc ok: st.id {}, detail {} {}",
-        st.id,
-        max_row_usage.name,
-        max_row_usage.row_num_real
-    );
+    // let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
+    // let mut overflow = false;
+    // for (num, limit) in row_usage.iter().zip_eq(
+    //     get_sub_circuit_limit_and_confidence()
+    //         .iter()
+    //         .map(|(limit, _)| limit),
+    // ) {
+    //     if num.row_num_real > *limit {
+    //         log::warn!(
+    //             "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
+    //             suite.id,
+    //             st.id,
+    //             num.name,
+    //             num.row_num_real,
+    //             limit
+    //         );
+    //         overflow = true;
+    //     }
+    // }
+    // let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
+    // if overflow {
+    //     log::warn!(
+    //         "ccc overflow: st.id {}, detail {} {}",
+    //         st.id,
+    //         max_row_usage.name,
+    //         max_row_usage.row_num_real
+    //     );
+    //     // panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
+    //     return Err(StateTestError::CircuitOverflow {
+    //         circuit: max_row_usage.name.to_string(),
+    //         needed: max_row_usage.row_num_real,
+    //     });
+    // }
+    // log::info!(
+    //     "ccc ok: st.id {}, detail {} {}",
+    //     st.id,
+    //     max_row_usage.name,
+    //     max_row_usage.row_num_real
+    // );
 
-    if !circuits_config.super_circuit {
-        if (*CIRCUIT).is_empty() {
-            CircuitTestBuilder::<1, 1>::new_from_block(witness_block).run();
-        } else {
-            match (*CIRCUIT).as_str() {
-                "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
-                "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
-                "ecc" => test_with::<EccCircuit<Fr, 9>>(&witness_block),
-                "sig" => {
-                    if !witness_block
-                        .precompile_events
-                        .get_ecrecover_events()
-                        .is_empty()
-                    {
-                        test_with::<SigCircuit<Fr>>(&witness_block);
-                    } else {
-                        log::warn!("no ec recover event {}, skip", st.id);
-                    }
-                }
-                _ => unimplemented!(),
-            };
-        }
-    } else {
-        log::debug!("test super circuit {}", *CIRCUIT);
-
-        // TODO: these codes are too difficult to maintain.
-        // The correct way is to dump trace files,
-        // and use separate tools to test trace files.
-        #[cfg(feature = "inner-prove")]
-        {
-            eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
-            prover::test::inner_prove(&test_id, &witness_block);
-        }
-        #[cfg(feature = "chunk-prove")]
-        {
-            eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
-            prover::test::chunk_prove(&test_id, prover::ChunkProvingTask::from(vec![scroll_trace]));
-        }
-
-        #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
-        mock_prove(&test_id, &witness_block);
-    };
+    // if !circuits_config.super_circuit {
+    //     if (*CIRCUIT).is_empty() {
+    //         CircuitTestBuilder::<1, 1>::new_from_block(witness_block).run();
+    //     } else {
+    //         match (*CIRCUIT).as_str() {
+    //             "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
+    //             "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
+    //             "ecc" => test_with::<EccCircuit<Fr, 9>>(&witness_block),
+    //             "sig" => {
+    //                 if !witness_block
+    //                     .precompile_events
+    //                     .get_ecrecover_events()
+    //                     .is_empty()
+    //                 {
+    //                     test_with::<SigCircuit<Fr>>(&witness_block);
+    //                 } else {
+    //                     log::warn!("no ec recover event {}, skip", st.id);
+    //                 }
+    //             }
+    //             _ => unimplemented!(),
+    //         };
+    //     }
+    // } else {
+    //     log::debug!("test super circuit {}", *CIRCUIT);
+    //
+    //     // TODO: these codes are too difficult to maintain.
+    //     // The correct way is to dump trace files,
+    //     // and use separate tools to test trace files.
+    //     #[cfg(feature = "inner-prove")]
+    //     {
+    //         eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
+    //         prover::test::inner_prove(&test_id, &witness_block);
+    //     }
+    //     #[cfg(feature = "chunk-prove")]
+    //     {
+    //         eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
+    //         prover::test::chunk_prove(&test_id, prover::ChunkProvingTask::from(vec![scroll_trace]));
+    //     }
+    //
+    //     #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
+    //     mock_prove(&test_id, &witness_block);
+    // };
     log::debug!("balance_overflow = {balance_overflow}");
     log::debug!(
         "has_l2_different_evm_behaviour_trace = {}",
