@@ -1214,6 +1214,7 @@ impl<F: Field> SigCircuit<F> {
                 }
 
                 let mut ctx = ecdsa_k1_chip.new_context(region);
+                // don't need ecdsa_r1_chip.new_context(region) when they share the same region?
 
                 // ================================================
                 // step 1: assert the signature is valid in circuit
@@ -1235,7 +1236,7 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 2: decompose the keys and messages
                 // ================================================
-                let sign_data_decomposed = signatures_k1
+                let sign_data_k1_decomposed = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
                     .take(self.max_verif)
@@ -1244,6 +1245,21 @@ impl<F: Field> SigCircuit<F> {
                         self.sign_data_decomposition_generic(
                             &mut ctx,
                             ecdsa_k1_chip,
+                            sign_data,
+                            assigned_ecdsa,
+                        )
+                    })
+                    .collect::<Result<Vec<SignDataDecomposed<F>>, Error>>()?;
+
+                let sign_data_r1_decomposed = signatures_r1
+                    .iter()
+                    //.chain(std::iter::repeat(&SignData::default()))
+                    //.take(self.max_verif)
+                    .zip_eq(assigned_ecdsas_r1.iter())
+                    .map(|(sign_data, assigned_ecdsa)| {
+                        self.sign_data_decomposition_generic(
+                            &mut ctx,
+                            ecdsa_r1_chip,
                             sign_data,
                             assigned_ecdsa,
                         )
@@ -1272,9 +1288,9 @@ impl<F: Field> SigCircuit<F> {
                     .chain(std::iter::repeat(&SignData::default()))
                     .take(self.max_verif)
                     .zip_eq(assigned_ecdsas_k1.iter())
-                    .zip_eq(sign_data_decomposed.iter())
+                    .zip_eq(sign_data_k1_decomposed.iter())
                     .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
-                        self.assign_sig_verify(
+                        self.assign_sig_verify_generic(
                             &mut ctx,
                             &ecdsa_k1_chip.range,
                             sign_data,
