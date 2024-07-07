@@ -62,14 +62,14 @@ pub(crate) fn parse_hash_digest_cells<const N_SNARKS: usize>(
     Vec<&Vec<AssignedCell<Fr, Fr>>>,
     &[AssignedCell<Fr, Fr>],
 ) {
-    let batch_pi_hash_digest = &hash_output_cells[0];
+    let batch_hash_digest = &hash_output_cells[0];
     let mut chunk_pi_hash_digests = vec![];
     for i in 0..N_SNARKS {
         chunk_pi_hash_digests.push(&hash_output_cells[i + 1]);
     }
     let batch_data_hash_digest = &hash_output_cells[N_SNARKS + 1];
     (
-        batch_pi_hash_digest,
+        batch_hash_digest,
         chunk_pi_hash_digests,
         batch_data_hash_digest,
     )

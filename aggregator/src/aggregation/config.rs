@@ -43,13 +43,13 @@ pub struct BatchCircuitConfig<const N_SNARKS: usize> {
     /// Config to do the barycentric evaluation on blob polynomial.
     pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores
+    /// - accumulator from aggregation (12 elements)
     /// - chain id (1 element)
     /// - parent_state_root (2 elements, split hi_lo)
     /// - parent_batch_hash (2 elements)
     /// - current_state_root (2 elements)
     /// - current_batch_hash (2 elements)
     /// - current_withdraw_root (2 elements)
-    /// - the number of valid SNARKs (1 element)
     pub instance: Column<Instance>,
 }
 
@@ -156,6 +156,7 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
 
         // Instance column stores public input column
         // the public instance for this circuit consists of
+        // - the accumulator
         // - chain id (1 element)
         // - parent_state_root (2 elements, split hi_lo)
         // - parent_batch_hash (2 elements)
