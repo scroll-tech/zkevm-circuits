@@ -21,8 +21,7 @@ impl Prover {
         batch_snarks: &[Snark],
     ) -> Result<Snark> {
         assert!(!batch_snarks.is_empty());
-        // recursion is a special kind of aggregation so we use aggregation's config
-        env::set_var("AGGREGATION_CONFIG", layer_config_path(id));
+        env::set_var("BUNDLE_CONFIG", layer_config_path(id));
 
         let params = self.params(degree);
 
