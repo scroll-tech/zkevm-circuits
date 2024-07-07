@@ -62,7 +62,7 @@ pub(crate) const BATCH_Y_OFFSET: usize = 161;
 // - current batch hash ..
 // - chain id (1 Fr cell)
 // - current withdraw root ..
-pub(crate) const PI_PARENT_STATE_ROOT: usize = ACC_LEN + 0;
+pub(crate) const PI_PARENT_STATE_ROOT: usize = ACC_LEN;
 pub(crate) const PI_PARENT_BATCH_HASH: usize = ACC_LEN + 2;
 pub(crate) const PI_CURRENT_STATE_ROOT: usize = ACC_LEN + 4;
 pub(crate) const PI_CURRENT_BATCH_HASH: usize = ACC_LEN + 6;

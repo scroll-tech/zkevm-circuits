@@ -370,8 +370,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
             assigned_batch_hash
         };
-        // digests
-        let (batch_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
+        
+        // Extract digests
+        #[cfg(not(feature = "disable_proof_aggregation"))]
+        let (_batch_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
 
         // ========================================================================
