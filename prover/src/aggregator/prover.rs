@@ -1,7 +1,7 @@
 use crate::{
     common,
     config::{LayerId, AGG_DEGREES},
-    consts::{AGG_KECCAK_ROW, AGG_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
+    consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
     io::{force_to_read, try_to_read},
     proof::BundleProof,
     types::BundleProvingTask,
@@ -23,17 +23,17 @@ pub struct Prover {
 
 impl Prover {
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        log::debug!("set env KECCAK_ROWS={}", AGG_KECCAK_ROW.to_string());
-        env::set_var("KECCAK_ROWS", AGG_KECCAK_ROW.to_string());
+        log::debug!("set env KECCAK_ROWS={}", BATCH_KECCAK_ROW.to_string());
+        env::set_var("KECCAK_ROWS", BATCH_KECCAK_ROW.to_string());
 
         let prover_impl = common::Prover::from_params_dir(params_dir, &AGG_DEGREES);
         let chunk_protocol = force_to_read(assets_dir, &CHUNK_PROTOCOL_FILENAME);
 
-        let raw_vk = try_to_read(assets_dir, &AGG_VK_FILENAME);
+        let raw_vk = try_to_read(assets_dir, &BATCH_VK_FILENAME);
         if raw_vk.is_none() {
             log::warn!(
-                "agg-prover: {} doesn't exist in {}",
-                *AGG_VK_FILENAME,
+                "batch-prover: {} doesn't exist in {}",
+                *BATCH_VK_FILENAME,
                 assets_dir
             );
         }
