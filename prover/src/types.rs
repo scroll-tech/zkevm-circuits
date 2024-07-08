@@ -64,3 +64,18 @@ impl BatchProvingTask {
 pub struct BundleProvingTask {
     pub batch_proofs: Vec<BatchProof>,
 }
+
+impl BundleProvingTask {
+    pub fn identifier(&self) -> String {
+        // TODO:
+        // - add `batch_hash()` method to BatchHeader.
+        // - use this method from `export_batch_header` in the `BatchHash::construct` method.
+        // - use `batch_hash()` as the identifier instead of `batch_index`.
+        self.batch_proofs
+            .last()
+            .unwrap()
+            .batch_header
+            .batch_index
+            .to_string()
+    }
+}
