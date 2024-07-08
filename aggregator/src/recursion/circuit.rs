@@ -222,8 +222,8 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let path = std::env::var("VERIFY_CONFIG")
-            .unwrap_or_else(|_| "configs/verify_circuit.config".to_owned());
+        let path = std::env::var("BUNDLE_CONFIG")
+            .unwrap_or_else(|_| "configs/bundle_circuit.config".to_owned());
         let params: BatchCircuitConfigParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|err| panic!("{err:?}")),
         )

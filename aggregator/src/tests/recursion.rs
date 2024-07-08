@@ -19,7 +19,7 @@ where
 {
     let app_params = gen_srs(app_degree);
     let recursion_config: AggregationConfigParams =
-        serde_json::from_reader(fs::File::open("configs/verify_circuit.config").unwrap()).unwrap();
+        serde_json::from_reader(fs::File::open("configs/bundle_circuit.config").unwrap()).unwrap();
     let k = recursion_config.degree;
     let recursion_params = gen_srs(k);
 
