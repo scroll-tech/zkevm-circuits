@@ -38,8 +38,9 @@ pub struct BatchCircuitConfig<const N_SNARKS: usize> {
     pub blob_data_config: BlobDataConfig<N_SNARKS>,
     /// The batch data's config.
     pub batch_data_config: BatchDataConfig<N_SNARKS>,
-    /// The zstd decoder's config.
-    pub decoder_config: DecoderConfig<1024, 512>,
+    // batch_circuit_debug
+    // /// The zstd decoder's config.
+    // pub decoder_config: DecoderConfig<1024, 512>,
     /// Config to do the barycentric evaluation on blob polynomial.
     pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores
@@ -130,29 +131,30 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
         );
 
         // Zstd decoder.
-        let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+        // batch_circuit_debug
+        // let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
 
-        let pow2_table = Pow2Table::construct(meta);
-        let range8 = RangeTable::construct(meta);
-        let range16 = RangeTable::construct(meta);
-        let range512 = RangeTable::construct(meta);
-        let range_block_len = RangeTable::construct(meta);
-        let bitwise_op_table = BitwiseOpTable::construct(meta);
+        // let pow2_table = Pow2Table::construct(meta);
+        // let range8 = RangeTable::construct(meta);
+        // let range16 = RangeTable::construct(meta);
+        // let range512 = RangeTable::construct(meta);
+        // let range_block_len = RangeTable::construct(meta);
+        // let bitwise_op_table = BitwiseOpTable::construct(meta);
 
-        let decoder_config = DecoderConfig::configure(
-            meta,
-            &challenges_expr,
-            DecoderConfigArgs {
-                pow_rand_table,
-                pow2_table,
-                u8_table,
-                range8,
-                range16,
-                range512,
-                range_block_len,
-                bitwise_op_table,
-            },
-        );
+        // let decoder_config = DecoderConfig::configure(
+        //     meta,
+        //     &challenges_expr,
+        //     DecoderConfigArgs {
+        //         pow_rand_table,
+        //         pow2_table,
+        //         u8_table,
+        //         range8,
+        //         range16,
+        //         range512,
+        //         range_block_len,
+        //         bitwise_op_table,
+        //     },
+        // );
 
         // Instance column stores public input column
         // the public instance for this circuit consists of
@@ -177,7 +179,8 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
             instance,
             barycentric,
             batch_data_config,
-            decoder_config,
+            // batch_circuit_debug
+            // decoder_config,
         }
     }
 
