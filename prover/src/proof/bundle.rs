@@ -1,9 +1,7 @@
 use super::{dump_as_json, dump_data, dump_vk};
 use crate::{utils::short_git_version, Proof};
 use anyhow::Result;
-use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
-use snark_verifier_sdk::Snark;
 
 // 3 limbs per field element, 4 field elements
 const ACC_LEN: usize = 12;
@@ -26,9 +24,7 @@ pub struct BundleProof {
 }
 
 impl BundleProof {
-    pub fn new(snark: Snark, pk: Option<&ProvingKey<G1Affine>>) -> Self {
-        let proof = Proof::new(snark.proof, &snark.instances, pk);
-
+    pub fn new(proof: Proof) -> Self {
         Self { raw: proof }
     }
 

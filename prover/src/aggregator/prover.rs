@@ -169,6 +169,8 @@ impl Prover {
         name: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<BundleProof> {
+        let name = name.map_or_else(|| bundle.identifier(), |name| name.to_string());
+
         let bundle_snarks = bundle
             .batch_proofs
             .clone()
@@ -176,22 +178,29 @@ impl Prover {
             .map(BatchProof::to_snark)
             .collect::<Vec<_>>();
 
-        let default_name = "bundle";
-
-        let recursion_snark = self.prover_impl.load_or_gen_recursion_snark(
-            name.unwrap_or(default_name),
+        let layer5_snark = self.prover_impl.load_or_gen_recursion_snark(
+            &name,
             LayerId::Layer5.id(),
             LayerId::Layer5.degree(),
             &bundle_snarks,
             output_dir,
         )?;
 
+        // TODO(rohit): compress layer5 snark into layer6 evm verifiable snark.
+        let layer6_evm_proof = self.prover_impl.load_or_gen_comp_evm_proof(
+            &name,
+            LayerId::Layer6.id(),
+            true,
+            LayerId::Layer6.degree(),
+            layer5_snark,
+            output_dir,
+        )?;
+
         self.check_bundle_vk();
 
-        let pk = self.prover_impl.pk(LayerId::Layer5.id());
-        let bundle_proof = BundleProof::new(recursion_snark, pk);
+        let bundle_proof = BundleProof::new(layer6_evm_proof.proof);
         if let Some(output_dir) = output_dir {
-            bundle_proof.dump(output_dir, "recursion")?;
+            bundle_proof.dump(output_dir, "bundle")?;
         }
 
         Ok(bundle_proof)
@@ -224,7 +233,7 @@ impl Prover {
         if self.raw_vk.is_some() {
             let gen_vk = self
                 .prover_impl
-                .raw_vk(LayerId::Layer5.id())
+                .raw_vk(LayerId::Layer6.id())
                 .unwrap_or_default();
             if gen_vk.is_empty() {
                 log::warn!("no gen_vk found, skip check_vk");
