@@ -7,7 +7,6 @@ use crate::{
     utils::read_env_var,
     BatchProvingTask,
 };
-use aggregator::MAX_AGG_SNARKS;
 use std::sync::{LazyLock, Mutex};
 
 static BATCH_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
@@ -46,7 +45,7 @@ pub fn batch_prove(test: &str, batch: BatchProvingTask) {
     let proof = BATCH_PROVER
         .lock()
         .expect("poisoned batch-prover")
-        .gen_batch_proof::<MAX_AGG_SNARKS>(batch, None, None)
+        .gen_batch_proof(batch, None, None)
         .unwrap_or_else(|err| panic!("{test}: failed to generate batch proof: {err}"));
     log::info!("{test}: generated batch proof");
 

@@ -1,7 +1,7 @@
 use crate::{
     common,
     config::{LayerId, AGG_DEGREES},
-    consts::{AGG_KECCAK_ROW, AGG_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
+    consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
     io::{force_to_read, try_to_read},
     proof::BundleProof,
     types::BundleProvingTask,
@@ -23,17 +23,17 @@ pub struct Prover {
 
 impl Prover {
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        log::debug!("set env KECCAK_ROWS={}", AGG_KECCAK_ROW.to_string());
-        env::set_var("KECCAK_ROWS", AGG_KECCAK_ROW.to_string());
+        log::debug!("set env KECCAK_ROWS={}", BATCH_KECCAK_ROW.to_string());
+        env::set_var("KECCAK_ROWS", BATCH_KECCAK_ROW.to_string());
 
         let prover_impl = common::Prover::from_params_dir(params_dir, &AGG_DEGREES);
         let chunk_protocol = force_to_read(assets_dir, &CHUNK_PROTOCOL_FILENAME);
 
-        let raw_vk = try_to_read(assets_dir, &AGG_VK_FILENAME);
+        let raw_vk = try_to_read(assets_dir, &BATCH_VK_FILENAME);
         if raw_vk.is_none() {
             log::warn!(
-                "agg-prover: {} doesn't exist in {}",
-                *AGG_VK_FILENAME,
+                "batch-prover: {} doesn't exist in {}",
+                *BATCH_VK_FILENAME,
                 assets_dir
             );
         }
@@ -75,7 +75,7 @@ impl Prover {
     }
 
     // Return the EVM proof for verification.
-    pub fn gen_batch_proof<const N_SNARKS: usize>(
+    pub fn gen_batch_proof(
         &mut self,
         batch: BatchProvingTask,
         name: Option<&str>,
@@ -84,7 +84,7 @@ impl Prover {
         let name = name.map_or_else(|| batch.identifier(), |name| name.to_string());
 
         let (layer3_snark, batch_header) =
-            self.load_or_gen_last_agg_snark::<N_SNARKS>(&name, batch, output_dir)?;
+            self.load_or_gen_last_agg_snark::<MAX_AGG_SNARKS>(&name, batch, output_dir)?;
 
         // Load or generate final compression thin EVM proof (layer-4).
         let layer4_snark = self.prover_impl.load_or_gen_comp_snark(
@@ -169,6 +169,8 @@ impl Prover {
         name: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<BundleProof> {
+        let name = name.map_or_else(|| bundle.identifier(), |name| name.to_string());
+
         let bundle_snarks = bundle
             .batch_proofs
             .clone()
@@ -176,22 +178,28 @@ impl Prover {
             .map(BatchProof::to_snark)
             .collect::<Vec<_>>();
 
-        let default_name = "bundle";
-
-        let recursion_snark = self.prover_impl.load_or_gen_recursion_snark(
-            name.unwrap_or(default_name),
+        let layer5_snark = self.prover_impl.load_or_gen_recursion_snark(
+            &name,
             LayerId::Layer5.id(),
             LayerId::Layer5.degree(),
             &bundle_snarks,
             output_dir,
         )?;
 
+        let layer6_evm_proof = self.prover_impl.load_or_gen_comp_evm_proof(
+            &name,
+            LayerId::Layer6.id(),
+            true,
+            LayerId::Layer6.degree(),
+            layer5_snark,
+            output_dir,
+        )?;
+
         self.check_bundle_vk();
 
-        let pk = self.prover_impl.pk(LayerId::Layer5.id());
-        let bundle_proof = BundleProof::new(recursion_snark, pk);
+        let bundle_proof = BundleProof::new(layer6_evm_proof.proof);
         if let Some(output_dir) = output_dir {
-            bundle_proof.dump(output_dir, "recursion")?;
+            bundle_proof.dump(output_dir, "bundle")?;
         }
 
         Ok(bundle_proof)
@@ -224,7 +232,7 @@ impl Prover {
         if self.raw_vk.is_some() {
             let gen_vk = self
                 .prover_impl
-                .raw_vk(LayerId::Layer5.id())
+                .raw_vk(LayerId::Layer6.id())
                 .unwrap_or_default();
             if gen_vk.is_empty() {
                 log::warn!("no gen_vk found, skip check_vk");

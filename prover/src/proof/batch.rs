@@ -1,4 +1,4 @@
-use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
+use super::{dump_as_json, dump_vk, from_json_file, Proof};
 use crate::types::base64;
 use aggregator::BatchHeader;
 use anyhow::Result;
@@ -38,9 +38,6 @@ impl BatchProof {
 
     pub fn dump(&self, dir: &str, name: &str) -> Result<()> {
         let filename = dump_filename(name);
-
-        dump_data(dir, &format!("pi_{filename}.data"), &self.proof.instances);
-        dump_data(dir, &format!("proof_{filename}.data"), &self.proof.proof);
 
         dump_vk(dir, &filename, &self.proof.vk);
 
