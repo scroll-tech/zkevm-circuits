@@ -1,7 +1,7 @@
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
-    halo2curves::bn256::{G1Affine, Fr},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector, VerifyingKey},
+    halo2curves::bn256::Fr,
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
     SerdeFormat,
 };
@@ -13,9 +13,7 @@ use sv_halo2_base::utils::fs::gen_srs;
 use crate::{param::ConfigParams as AggregationConfigParams, recursion::*};
 use ark_std::{end_timer, start_timer, test_rng};
 
-type Vk = VerifyingKey<G1Affine>;
-
-fn test_recursion_impl<App>(app_degree: u32, init_state: Fr) -> (Snark, Vk)
+fn test_recursion_impl<App>(app_degree: u32, init_state: Fr) -> Snark
 where
     App: CircuitExt<Fr> + StateTransition<Input = Fr>,
 {
@@ -131,7 +129,7 @@ where
         recursion_pk.get_vk()
     ));
 
-    (snark, recursion_pk.get_vk().clone())
+    snark
 }
 
 mod app {
@@ -225,7 +223,8 @@ mod app {
 
     #[test]
     fn test_recursion_agg_circuit() {
-        let (square_snark1, vk) = test_recursion_impl::<Square>(3, Fr::from(2u64));
+        let square_snark1 = test_recursion_impl::<Square>(3, Fr::from(2u64));
+        let square_snark2 = test_recursion_impl::<Square>(3, Fr::from(16u64));
 
         let recursion_config: AggregationConfigParams =
         serde_json::from_reader(fs::File::open("configs/bundle_circuit.config").unwrap()).unwrap();
@@ -254,15 +253,14 @@ mod app {
             &mut rng
         );
 
+        let pf_time = start_timer!(|| "Generate first recursive snark");
         let recursion = RecursionCircuit::<SquareBundle>::new(
             &recursion_params,
             square_snark1,
             init_snark,
             &mut rng,
             0,
-        );        
-
-        let pf_time = start_timer!(|| "Generate first recursive snark");
+        );
 
         let snark = gen_snark_shplonk(
             &recursion_params,
@@ -273,6 +271,25 @@ mod app {
         )
         .expect("Snark generated successfully");
     
+        end_timer!(pf_time);       
+
+        let pf_time = start_timer!(|| "Generate second recursive snark");
+        let recursion = RecursionCircuit::<SquareBundle>::new(
+            &recursion_params,
+            square_snark2,
+            snark,
+            &mut rng,
+            1,
+        );
+
+        let snark = gen_snark_shplonk(
+            &recursion_params,
+            &recursion_pk,
+            recursion,
+            &mut rng,
+            None::<String>,
+        )
+        .expect("Snark generated successfully");
         end_timer!(pf_time);
 
         assert!(verify_snark_shplonk::<RecursionCircuit<SquareBundle>>(
