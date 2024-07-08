@@ -1,27 +1,20 @@
 //! Circuit implementation for compression circuit.
 
 use crate::{
-    constants::ACC_LEN, params::ConfigParams, util::extract_proof_and_instances_with_pairing_check,
+    config::CompressionConfig, constants::ACC_LEN, params::ConfigParams,
+    util::extract_proof_and_instances_with_pairing_check,
 };
-use aggregator_snark_verifier::{
-    halo2_base::halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner, Value},
-        halo2curves::bn256::G1Affine,
-        plonk::{Circuit, ConstraintSystem, Error},
-    },
-    loader::halo2::halo2_ecc::halo2_base::halo2_proofs::{
-        halo2curves::bn256::{Bn256, Fr},
-        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-    },
-    pcs::kzg::KzgSuccinctVerifyingKey,
-};
-
+use aggregator_snark_verifier::{halo2_base::SKIP_FIRST_PASS, pcs::kzg::KzgSuccinctVerifyingKey};
 use aggregator_snark_verifier_sdk::{halo2::aggregation::Svk, Snark};
-
+use ark_std::{end_timer, start_timer};
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Circuit, ConstraintSystem, Error},
+    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+};
+use halo2curves::bn256::{Bn256, Fr, G1Affine};
 use rand::Rng;
 use std::fs::File;
-
-use super::config::CompressionConfig;
 
 /// Input a proof, this compression circuit generates a new proof that may have smaller size.
 ///
@@ -89,17 +82,21 @@ impl Circuit<Fr> for CompressionCircuit {
         Self::Config::configure(meta, params)
     }
 
-    fn synthesize(&self, _config: Self::Config, _layouter: impl Layouter<Fr>) -> Result<(), Error> {
-        // let witness_time = start_timer!(|| "synthesize | compression Circuit");
-        // config
-        //     .range()
-        //     .load_lookup_table(&mut layouter)
-        //     .expect("load range lookup table");
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<Fr>,
+    ) -> Result<(), Error> {
+        let witness_time = start_timer!(|| "synthesize | compression Circuit");
+        config
+            .range()
+            .load_lookup_table(&mut layouter)
+            .expect("load range lookup table");
 
-        // let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+        let mut first_pass = SKIP_FIRST_PASS;
 
         // let instances = layouter.assign_region(
-        //     || "compression circuit",
+        // || "compression circuit",
         //     |region| -> Result<Vec<Cell>, Error> {
         //         if first_pass {
         //             first_pass = false;
@@ -143,8 +140,8 @@ impl Circuit<Fr> for CompressionCircuit {
         //         // config.range().finalize(&mut loader.ctx_mut());
 
         //         // loader.ctx_mut().print_stats(&["Range"]);
-        //         Ok(instances)
-        //     },
+        // Ok(instances)
+        // },
         // )?;
 
         // // Expose instances
@@ -152,7 +149,7 @@ impl Circuit<Fr> for CompressionCircuit {
         //     layouter.constrain_instance(cell, config.instance, i)?;
         // }
 
-        // end_timer!(witness_time);
+        end_timer!(witness_time);
         Ok(())
     }
 }

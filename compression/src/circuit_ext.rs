@@ -1,13 +1,9 @@
 //! CircuitExt implementation for compression circuit.
 
-use aggregator_snark_verifier::halo2_base::halo2_proofs::{
-    halo2curves::bn256::Fr, plonk::Selector,
-};
+use crate::{circuit::CompressionCircuit, constants::ACC_LEN};
 use aggregator_snark_verifier_sdk::CircuitExt;
-
-use crate::constants::ACC_LEN;
-
-use super::circuit::CompressionCircuit;
+use halo2_proofs::plonk::Selector;
+use halo2curves::bn256::Fr;
 
 impl CircuitExt<Fr> for CompressionCircuit {
     fn num_instance(&self) -> Vec<usize> {

@@ -1,19 +1,14 @@
 use crate::params::ConfigParams;
 use aggregator_snark_verifier::{
-    halo2_base::halo2_proofs::{
-        halo2curves::bn256::{Fr, G1Affine},
-        plonk::{Column, ConstraintSystem, Instance},
+    halo2_base::gates::{
+        flex_gate::{FlexGateConfig, FlexGateConfigParams},
+        range::RangeConfig,
     },
-    loader::halo2::halo2_ecc::{
-        ecc::BaseFieldEccChip,
-        fields::fp::FpConfig,
-        halo2_base::gates::{
-            flex_gate::{FlexGateConfig, FlexGateConfigParams},
-            range::RangeConfig,
-        },
-    },
+    halo2_ecc::{ecc::BaseFieldEccChip, fields::fp::FpConfig},
 };
 use aggregator_snark_verifier_sdk::{BITS, LIMBS};
+use halo2_proofs::plonk::{Column, ConstraintSystem, Instance};
+use halo2curves::bn256::{Fr, G1Affine};
 
 #[derive(Clone, Debug)]
 /// Configurations for compression circuit

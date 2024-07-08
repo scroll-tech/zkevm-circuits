@@ -1,12 +1,13 @@
 use aggregator_snark_verifier::{
+    halo2_base::AssignedValue,
     halo2_ecc::bigint::ProperCrtUint,
     loader::{
-        halo2::{halo2_ecc::halo2_base::AssignedValue, EcPoint, Halo2Loader},
+        halo2::{EcPoint, Halo2Loader},
         native::NativeLoader,
     },
     pcs::{
         kzg::{Bdfg21, KzgAccumulator, KzgAs},
-        AccumulationScheme, AccumulationSchemeProver,
+        AccumulationSchemeProver,
     },
     util::arithmetic::fe_to_limbs,
     verifier::SnarkVerifier,
@@ -16,14 +17,11 @@ use aggregator_snark_verifier_sdk::{
     halo2::{aggregation::BaseFieldEccChip, PoseidonTranscript, POSEIDON_SPEC},
     PlonkSuccinctVerifier, Snark, BITS, LIMBS, SHPLONK,
 };
-use halo2_proofs::{
-    halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
-        pairing::Engine,
-    },
-    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+use halo2_proofs::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG};
+use halo2curves::{
+    bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
+    pairing::Engine,
 };
-use itertools::Itertools;
 use rand::Rng;
 use std::rc::Rc;
 
