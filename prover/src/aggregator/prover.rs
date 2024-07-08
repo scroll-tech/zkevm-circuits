@@ -75,7 +75,7 @@ impl Prover {
     }
 
     // Return the EVM proof for verification.
-    pub fn gen_batch_proof<const N_SNARKS: usize>(
+    pub fn gen_batch_proof(
         &mut self,
         batch: BatchProvingTask,
         name: Option<&str>,
@@ -84,7 +84,7 @@ impl Prover {
         let name = name.map_or_else(|| batch.identifier(), |name| name.to_string());
 
         let (layer3_snark, batch_header) =
-            self.load_or_gen_last_agg_snark::<N_SNARKS>(&name, batch, output_dir)?;
+            self.load_or_gen_last_agg_snark::<MAX_AGG_SNARKS>(&name, batch, output_dir)?;
 
         // Load or generate final compression thin EVM proof (layer-4).
         let layer4_snark = self.prover_impl.load_or_gen_comp_snark(
@@ -186,7 +186,6 @@ impl Prover {
             output_dir,
         )?;
 
-        // TODO(rohit): compress layer5 snark into layer6 evm verifiable snark.
         let layer6_evm_proof = self.prover_impl.load_or_gen_comp_evm_proof(
             &name,
             LayerId::Layer6.id(),
