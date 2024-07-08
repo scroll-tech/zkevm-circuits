@@ -169,6 +169,11 @@ pub fn gen_recursion_pk<ST: StateTransition>(
     mut rng: impl Rng + Send,
     path: Option<&Path>,
 ) -> ProvingKey<G1Affine> {
+    // TODO: it seems the "dummy app snark" is not correct when
+    // app has accumulator
+    assert_eq!(ST::num_accumulator_instance(), 0, 
+    "can not build dummy snark for app with accumulator");
+
     let app_snark =
         gen_dummy_snark::<ST::Circuit>(app_params, app_vk, &[ST::num_instance()], &mut rng);
 
@@ -179,8 +184,6 @@ pub fn gen_recursion_pk<ST: StateTransition>(
         app_snark,
         recursive_snark,
         &mut rng,
-        &vec![Fr::ZERO; ST::num_transition_instance()],
-        &vec![Fr::ZERO; ST::num_transition_instance() + ST::num_additional_instance()],
         0,
     );
     gen_pk(recursion_params, &recursion, path)

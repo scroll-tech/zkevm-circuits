@@ -1,21 +1,23 @@
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
-    halo2curves::bn256::Fr,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
+    halo2curves::bn256::{G1Affine, Fr},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector, VerifyingKey},
     poly::Rotation,
     SerdeFormat,
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base as sv_halo2_base;
-use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
+use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt, Snark};
 use std::fs;
 use sv_halo2_base::utils::fs::gen_srs;
 
 use crate::{param::ConfigParams as AggregationConfigParams, recursion::*};
 use ark_std::{end_timer, start_timer, test_rng};
 
-fn test_recursion_impl<App>(app_degree: u32, init_state: Fr, mut add_inst: Vec<Vec<Fr>>)
+type Vk = VerifyingKey<G1Affine>;
+
+fn test_recursion_impl<App>(app_degree: u32, init_state: Fr) -> (Snark, Vk)
 where
-    App: CircuitExt<Fr> + StateTransition<Input = Fr> + Default,
+    App: CircuitExt<Fr> + StateTransition<Input = Fr>,
 {
     let app_params = gen_srs(app_degree);
     let recursion_config: AggregationConfigParams =
@@ -23,7 +25,7 @@ where
     let k = recursion_config.degree;
     let recursion_params = gen_srs(k);
 
-    let app = App::default();
+    let app = App::new(Default::default());
     let app_pk = gen_pk(&app_params, &app, None);
     let mut rng = test_rng();
 
@@ -45,16 +47,12 @@ where
     let init_snark =
         initial_recursion_snark::<App>(&recursion_params, Some(recursion_pk.get_vk()), &mut rng);
 
-    // gen inst for first round
-    add_inst[0].insert(0, next_state);
 
     let recursion = RecursionCircuit::<App>::new(
         &recursion_params,
         app_snark,
         init_snark,
-        test_rng(),
-        &[init_state],
-        &add_inst[0],
+        &mut rng,
         0,
     );
 
@@ -91,20 +89,14 @@ where
     ));
 
     let app = App::new(next_state);
-    let next_state = app.state_transition(1);
     let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>)
         .expect("Snark generated successfully");
-
-    // gen inst for first round
-    add_inst[1].insert(0, next_state);
 
     let recursion = RecursionCircuit::<App>::new(
         &recursion_params,
         app_snark,
         snark,
         test_rng(),
-        &[init_state],
-        &add_inst[1],
         1,
     );
 
@@ -135,13 +127,16 @@ where
 
     assert!(verify_snark_shplonk::<RecursionCircuit<App>>(
         &recursion_params,
-        snark,
+        snark.clone(),
         recursion_pk.get_vk()
     ));
+
+    (snark, recursion_pk.get_vk().clone())
 }
 
-#[test]
-fn test_recursion_circuit() {
+mod app {
+    use super::*;
+
     #[derive(Clone, Default)]
     struct Square(Fr);
 
@@ -202,8 +197,94 @@ fn test_recursion_circuit() {
         }
     }
 
-    test_recursion_impl::<Square>(3, Fr::from(2u64), vec![Vec::new(), Vec::new()])
+    #[derive(Clone, Default)]
+    struct SquareBundle(Fr);
+
+    impl StateTransition for SquareBundle {
+        type Input = Fr;
+        type Circuit = RecursionCircuit<Square>;
+
+        fn new(state: Self::Input) -> Self {
+            Self(state)
+        }
+
+        fn num_transition_instance() -> usize {
+            Square::num_transition_instance()
+        }
+
+        fn state_transition(&self, _: usize) -> Self::Input {
+            self.0.square().square()
+        }
+    }
+
+
+    #[test]
+    fn test_recursion_circuit() {
+        test_recursion_impl::<Square>(3, Fr::from(2u64));
+    }
+
+    #[test]
+    fn test_recursion_agg_circuit() {
+        let (square_snark1, vk) = test_recursion_impl::<Square>(3, Fr::from(2u64));
+
+        let recursion_config: AggregationConfigParams =
+        serde_json::from_reader(fs::File::open("configs/bundle_circuit.config").unwrap()).unwrap();
+        let k = recursion_config.degree;
+        let recursion_params = gen_srs(k);
+        let mut rng = test_rng();
+
+        let pk_time = start_timer!(|| "Generate agg recursion pk");
+        let recursion_for_pk = RecursionCircuit::<SquareBundle>::new(
+            &recursion_params,
+            square_snark1.clone(),
+            initial_recursion_snark::<SquareBundle>(
+                &recursion_params, 
+                None, 
+                &mut rng
+            ),
+            &mut rng,
+            0,
+        );
+        let recursion_pk = gen_pk(&recursion_params, &recursion_for_pk, None);
+        end_timer!(pk_time);
+
+        let init_snark = initial_recursion_snark::<SquareBundle>(
+            &recursion_params, 
+            Some(recursion_pk.get_vk()), 
+            &mut rng
+        );
+
+        let recursion = RecursionCircuit::<SquareBundle>::new(
+            &recursion_params,
+            square_snark1,
+            init_snark,
+            &mut rng,
+            0,
+        );        
+
+        let pf_time = start_timer!(|| "Generate first recursive snark");
+
+        let snark = gen_snark_shplonk(
+            &recursion_params,
+            &recursion_pk,
+            recursion,
+            &mut rng,
+            None::<String>,
+        )
+        .expect("Snark generated successfully");
+    
+        end_timer!(pf_time);
+
+        assert!(verify_snark_shplonk::<RecursionCircuit<SquareBundle>>(
+            &recursion_params,
+            snark.clone(),
+            recursion_pk.get_vk()
+        ));
+
+    }
+
 }
+
 
 #[test]
 fn test_recursion_add_inst() {
@@ -298,9 +379,5 @@ fn test_recursion_add_inst() {
     test_recursion_impl::<Square>(
         4,
         Fr::from(2u64),
-        vec![
-            vec![Fr::from(16u64), Fr::from(42u64)],
-            vec![Fr::from(256u64), Fr::from(42u64)],
-        ],
-    )
+    );
 }

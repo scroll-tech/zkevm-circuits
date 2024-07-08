@@ -73,6 +73,7 @@ pub struct RecursionCircuit<ST> {
     round: usize,
     instances: Vec<Fr>,
     as_proof: Value<Vec<u8>>,
+    app_is_aggregation: bool,
     _marker: PhantomData<ST>,
 }
 
@@ -87,15 +88,8 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         app: Snark,
         previous: Snark,
         rng: impl Rng + Send,
-        initial_state: &[Fr],
-        state: &[Fr],
         round: usize,
     ) -> Self {
-        assert_eq!(initial_state.len(), ST::num_transition_instance());
-        assert_eq!(
-            state.len(),
-            ST::num_transition_instance() + ST::num_additional_instance()
-        );
 
         let svk = params.get_g()[0].into();
         let default_accumulator = KzgAccumulator::new(params.get_g()[1], params.get_g()[0]);
@@ -126,6 +120,23 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
             (accumulator, transcript.finalize())
         };
 
+        let init_instances = if round > 0 {
+            // pick from prev snark
+            Vec::from(&previous.instances[0][
+                Self::INITIAL_STATE_ROW..Self::INITIAL_STATE_ROW+ST::num_transition_instance()
+            ])
+        } else {
+            // pick from app
+            ST::state_prev_indices()
+            .into_iter().map(|i|app.instances[0][i])
+            .collect::<Vec<_>>()
+        };
+
+        let state_instances = ST::state_indices()
+            .into_iter().map(|i|&app.instances[0][i])
+            .chain(ST::additional_indices().into_iter()
+            .map(|i|&app.instances[0][i]));
+
         let preprocessed_digest = {
             let inputs = previous
                 .protocol
@@ -148,8 +159,8 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         .into_iter()
         .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
         .chain(iter::once(preprocessed_digest))
-        .chain(initial_state.iter().copied())
-        .chain(state.iter().copied())
+        .chain(init_instances)
+        .chain(state_instances.copied())
         .chain(iter::once(Fr::from(round as u64)))
         .collect();
 
@@ -163,6 +174,7 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
             round,
             instances,
             as_proof: Value::known(as_proof),
+            app_is_aggregation: true,
             _marker: Default::default(),
         }
     }
@@ -218,6 +230,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
             instances: self.instances.clone(),
             as_proof: Value::unknown(),
             _marker: Default::default(),
+            app_is_aggregation: self.app_is_aggregation,
         }
     }
 
@@ -339,7 +352,9 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 let initial_state_propagate = initial_state
                     .iter()
                     .zip_eq(previous_instances[init_state_row_beg..state_row_beg].iter())
-                    .zip_eq(app_instances[..ST::num_transition_instance()].iter())
+                    .zip_eq(
+                        ST::state_prev_indices().into_iter().map(|i|&app_instances[i])
+                    )
                     .flat_map(|((&st, &previous_st), &app_inst)| {
                         [
                             // Propagate initial_state
@@ -359,14 +374,21 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 // Verify current state is same as the current application snark
                 let verify_app_state = state
                     .iter()
-                    .zip_eq(app_instances[ST::num_transition_instance()..].iter())
+                    .zip_eq(
+                        ST::state_indices().into_iter().map(|i|&app_instances[i])
+                        .chain(
+                            ST::additional_indices().into_iter().map(|i|&app_instances[i])
+                        )
+                    )
                     .map(|(&st, &app_inst)| (st, app_inst))
                     .collect::<Vec<_>>();
 
                 // Verify previous state (additional state not included) is same as the current application snark
                 let verify_app_init_state = previous_instances[state_row_beg..addition_state_beg]
                     .iter()
-                    .zip_eq(app_instances[..ST::num_transition_instance()].iter())
+                    .zip_eq(
+                        ST::state_prev_indices().into_iter().map(|i|&app_instances[i])
+                    )
                     .map(|(&st, &app_inst)| {
                         (
                             main_gate.mul(&mut ctx, Existing(app_inst), Existing(not_first_round)),
