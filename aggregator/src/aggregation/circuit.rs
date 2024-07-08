@@ -21,6 +21,7 @@ use rand::Rng;
 use std::rc::Rc;
 use std::{env, fs::File};
 
+#[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
 use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
@@ -372,6 +373,11 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
         };
 
         // Extract digests
+        #[cfg(feature = "disable_proof_aggregation")]
+        let (_batch_hash_digest, _chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
+            parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
+
+        #[cfg(not(feature = "disable_proof_aggregation"))]
         let (_batch_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
 
