@@ -1,11 +1,7 @@
 use crate::{utils::read_env_var, zkevm::SubCircuitRowUsage};
 use anyhow::{bail, Result};
-use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
-use eth_types::{
-    l2_types::BlockTrace,
-    state_db::{CodeDB, StateDB},
-    ToWord,
-};
+use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+use eth_types::{l2_types::BlockTrace, ToWord};
 use itertools::Itertools;
 use mpt_zktrie::state::ZkTrieHash;
 use std::sync::LazyLock;
@@ -104,11 +100,7 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
 
 pub fn dummy_witness_block() -> Result<Block> {
     log::debug!("generate dummy witness block");
-    let builder_block = circuit_input_builder::Blocks::init(*CHAIN_ID, get_super_circuit_params());
-    let mut builder: CircuitInputBuilder =
-        CircuitInputBuilder::new(StateDB::new(), CodeDB::new(), &builder_block);
-    builder.finalize_building()?;
-    let witness_block = block_convert(&builder.block, &builder.code_db)?;
+    let witness_block = zkevm_circuits::witness::dummy_witness_block(*CHAIN_ID);
     log::debug!("generate dummy witness block done");
     Ok(witness_block)
 }
