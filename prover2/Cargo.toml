@@ -1,0 +1,13 @@
+[package]
+name = "prover2"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aggregator = { path = "../aggregator" }
+zkevm-circuits = { path = "../zkevm-circuits" }
+
+serde.workspace = true
+snark-verifier.workspace = true
+snark-verifier-sdk.workspace = true

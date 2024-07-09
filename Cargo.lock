@@ -3493,6 +3493,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "prover2"
+version = "0.11.0"
+dependencies = [
+ "aggregator",
+ "serde",
+ "snark-verifier",
+ "snark-verifier-sdk",
+ "zkevm-circuits",
+]
+
+[[package]]
 name = "psm"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -12,7 +12,8 @@ members = [
     "mock",
     "testool",
     "aggregator",
-    "prover"
+    "prover",
+    "prover2"
 ]
 resolver = "2"
 
