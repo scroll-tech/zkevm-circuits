@@ -213,6 +213,23 @@ mod app {
         fn state_transition(&self, _: usize) -> Self::Input {
             self.0.square().square()
         }
+
+        fn num_additional_instance() -> usize {
+            2
+        }
+
+        fn state_indices() -> Vec<usize> {
+            let beg = 13 + Self::num_transition_instance();
+            (beg..beg + Self::num_transition_instance()).collect()
+        }
+
+        fn state_prev_indices() -> Vec<usize> {
+            (13..13 + Self::num_transition_instance()).collect()
+        }
+
+        fn additional_indices() -> Vec<usize> {
+            vec![12, 13 + Self::num_transition_instance()*2]
+        }        
     }
 
 
@@ -302,9 +319,9 @@ mod app {
 
 }
 
+mod app_add_inst {
+    use super::*;
 
-#[test]
-fn test_recursion_add_inst() {
     #[derive(Clone, Default)]
     struct Square(Fr);
 
@@ -393,8 +410,14 @@ fn test_recursion_add_inst() {
         }
     }
 
-    test_recursion_impl::<Square>(
-        4,
-        Fr::from(2u64),
-    );
+    #[test]
+    fn test_recursion_circuit() {
+        test_recursion_impl::<Square>(
+            4,
+            Fr::from(2u64),
+        );
+    }
+    
+
 }
+
