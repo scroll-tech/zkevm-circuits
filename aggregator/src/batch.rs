@@ -35,6 +35,38 @@ pub struct BatchHeader {
     pub blob_data_proof: [H256; 2],
 }
 
+impl BatchHeader {
+    pub(crate) fn batch_hash(&self) -> H256 {
+        // the current batch hash is build as
+        // keccak256(
+        //     version ||
+        //     batch_index ||
+        //     l1_message_popped ||
+        //     total_l1_message_popped ||
+        //     batch_data_hash ||
+        //     versioned_hash ||
+        //     parent_batch_hash ||
+        //     last_block_timestamp ||
+        //     z ||
+        //     y
+        // )
+        let batch_hash_preimage = [
+            vec![self.version].as_slice(),
+            self.batch_index.to_be_bytes().as_ref(),
+            self.l1_message_popped.to_be_bytes().as_ref(),
+            self.total_l1_message_popped.to_be_bytes().as_ref(),
+            self.data_hash.as_bytes(),
+            self.blob_versioned_hash.as_bytes(),
+            self.parent_batch_hash.as_bytes(),
+            self.last_block_timestamp.to_be_bytes().as_ref(),
+            self.blob_data_proof[0].to_fixed_bytes().as_ref(),
+            self.blob_data_proof[1].to_fixed_bytes().as_ref(),
+        ]
+        .concat();
+        keccak256(batch_hash_preimage).into()
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 /// A batch is a set of N_SNARKS num of continuous chunks
 /// - the first k chunks are from real traces
@@ -193,39 +225,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         // Update export value
         export_batch_header.blob_versioned_hash = versioned_hash;
 
-        // the current batch hash is build as
-        // keccak256(
-        //     version ||
-        //     batch_index ||
-        //     l1_message_popped ||
-        //     total_l1_message_popped ||
-        //     batch_data_hash ||
-        //     versioned_hash ||
-        //     parent_batch_hash ||
-        //     last_block_timestamp ||
-        //     z ||
-        //     y
-        // )
-        let batch_hash_preimage = [
-            vec![batch_header.version].as_slice(),
-            batch_header.batch_index.to_be_bytes().as_ref(),
-            batch_header.l1_message_popped.to_be_bytes().as_ref(),
-            batch_header.total_l1_message_popped.to_be_bytes().as_ref(),
-            batch_data_hash.as_slice(),
-            versioned_hash.as_bytes(),
-            batch_header.parent_batch_hash.as_bytes(),
-            batch_header.last_block_timestamp.to_be_bytes().as_ref(),
-            point_evaluation_assignments
-                .challenge
-                .to_be_bytes()
-                .as_ref(),
-            point_evaluation_assignments
-                .evaluation
-                .to_be_bytes()
-                .as_ref(),
-        ]
-        .concat();
-        let current_batch_hash: H256 = keccak256(batch_hash_preimage).into();
+        let current_batch_hash = export_batch_header.batch_hash();
 
         log::info!(
             "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
