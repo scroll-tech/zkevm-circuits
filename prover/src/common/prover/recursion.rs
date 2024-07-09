@@ -28,42 +28,57 @@ impl Prover {
         let init_snark = initial_recursion_snark::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>(
             params, None, &mut rng,
         );
-        let init_state = batch_snarks;
-        let task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(init_state);
 
-        let circuit = RecursionCircuit::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>::new(
-            self.params(degree),
+        // notice this circuit must not be used to genreate the real snark
+        // since it has a "fake" circuit in its `init_snark` (the preprocess digest is not identify)
+        let circuit_for_pk = RecursionCircuit::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>::new(
+            params,
             batch_snarks[0].clone(),
             init_snark,
             &mut rng,
             0,
         );
 
-        let (params, pk) = self.params_and_pk(id, degree, &circuit)?;
+        let (params, pk) = self.params_and_pk(id, degree, &circuit_for_pk)?;
+
+        // with the pk we can construct the correct init_snark
+        let init_snark = initial_recursion_snark::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>(
+            params, Some(pk.get_vk()), &mut rng,
+        );        
+        let init_state = batch_snarks;
+        let mut task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(init_state);
+
+        let circuit = RecursionCircuit::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>::new(
+            params,
+            task.iter_snark(),
+            init_snark,
+            &mut rng,
+            0,
+        );
 
         // prepare the initial snark
-        let mut previous_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
-        log::debug!("construct recursion snark for first round ...done");
+        let mut cur_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
+        log::info!("construct recursion snark for first round ...done");
         let mut n_rounds = 1;
         let mut cur_state = task.state_transition(n_rounds);
 
-        while !cur_state.is_empty() {
+        while !task.completed() {
             log::debug!("construct recursion circuit for round {}", n_rounds);
-            let task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(cur_state);
+            task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(cur_state);
             let circuit = RecursionCircuit::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>::new(
                 params,
-                batch_snarks[0].clone(),
-                previous_snark,
+                task.iter_snark(),
+                cur_snark,
                 &mut rng,
                 n_rounds,
             );
-            previous_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
-            log::debug!("construct recursion snark for round {} ...done", n_rounds);
+            cur_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
+            log::info!("construct recursion snark for round {} ...done", n_rounds);
             n_rounds += 1;
             cur_state = task.state_transition(n_rounds);
         }
 
-        Ok(previous_snark)
+        Ok(cur_snark)
     }
 
     pub fn load_or_gen_recursion_snark(
