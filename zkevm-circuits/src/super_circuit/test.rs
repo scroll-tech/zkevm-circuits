@@ -64,7 +64,7 @@ fn super_circuit_degree() {
 }
 
 // This circuit is used to prevent unexpected changes in circuit vk.
-#[ignore = "enable this when we want to prevent unexpected changes in circuit"]
+// #[ignore = "enable this when we want to prevent unexpected changes in circuit"]
 #[test]
 fn super_circuit_vk() {
     use halo2_proofs::poly::kzg::commitment::ParamsKZG;
