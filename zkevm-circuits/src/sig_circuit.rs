@@ -279,6 +279,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
+        config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         self.assign(
             config,
             layouter,
@@ -1273,6 +1274,7 @@ impl<F: Field> SigCircuit<F> {
                 {
                     // finalize the current lookup table before moving to next phase
                     ecdsa_k1_chip.finalize(&mut ctx);
+                    ecdsa_r1_chip.finalize(&mut ctx);
                     ctx.print_stats(&["ECDSA context"]);
                     ctx.next_phase();
                 }
