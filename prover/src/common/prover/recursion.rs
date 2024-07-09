@@ -30,15 +30,12 @@ impl Prover {
         );
         let init_state = batch_snarks;
         let task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(init_state);
-        let init_instance = task.init_instances();
 
         let circuit = RecursionCircuit::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>::new(
             self.params(degree),
             batch_snarks[0].clone(),
             init_snark,
             &mut rng,
-            &init_instance,
-            &task.state_instances(),
             0,
         );
 
@@ -58,8 +55,6 @@ impl Prover {
                 batch_snarks[0].clone(),
                 previous_snark,
                 &mut rng,
-                &init_instance,
-                &task.state_instances(),
                 n_rounds,
             );
             previous_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
