@@ -199,7 +199,7 @@ impl Prover {
 
         let bundle_proof = BundleProof::new(layer6_evm_proof.proof);
         if let Some(output_dir) = output_dir {
-            bundle_proof.dump(output_dir, "bundle")?;
+            bundle_proof.dump(output_dir, "recursion")?;
         }
 
         Ok(bundle_proof)
