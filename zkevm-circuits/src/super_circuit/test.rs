@@ -1,4 +1,6 @@
 #![allow(unused_imports)]
+use crate::witness::dummy_witness_block;
+
 pub use super::*;
 use bus_mapping::{
     circuit_input_builder::CircuitInputBuilder,
@@ -7,13 +9,18 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    dev::MockProver,
+    halo2curves::bn256::{Bn256, Fr},
+    plonk::keygen_vk,
+};
 use log::error;
 #[cfg(not(feature = "scroll"))]
 use mock::MOCK_DIFFICULTY;
 #[cfg(feature = "scroll")]
 use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
 use mock::{eth, TestContext, MOCK_CHAIN_ID};
+use params::ScrollSuperCircuit;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::env::set_var;
@@ -54,6 +61,19 @@ fn super_circuit_degree() {
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
+}
+
+// This circuit is used to prevent unexpected changes in circuit vk.
+#[ignore = "enable this when we want to prevent unexpected changes in circuit"]
+#[test]
+fn super_circuit_vk() {
+    use halo2_proofs::poly::kzg::commitment::ParamsKZG;
+    let params = ParamsKZG::<Bn256>::unsafe_setup_with_s(20, Fr::from(1234u64));
+    let chain_id = 1;
+    let circuit = ScrollSuperCircuit::new_from_block(&dummy_witness_block(chain_id));
+    let vk = keygen_vk(&params, &circuit).unwrap();
+    let protocol_hash = vk.transcript_repr();
+    log::info!("transcript_repr {:?}", protocol_hash);
 }
 
 #[cfg(feature = "scroll")]
