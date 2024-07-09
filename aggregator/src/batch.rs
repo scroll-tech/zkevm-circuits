@@ -36,7 +36,8 @@ pub struct BatchHeader {
 }
 
 impl BatchHeader {
-    pub(crate) fn batch_hash(&self) -> H256 {
+    /// Returns the batch hash as per BatchHeaderV3.
+    pub fn batch_hash(&self) -> H256 {
         // the current batch hash is build as
         // keccak256(
         //     version ||
