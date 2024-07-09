@@ -69,11 +69,16 @@ fn super_circuit_degree() {
 fn super_circuit_vk() {
     use halo2_proofs::poly::kzg::commitment::ParamsKZG;
     let params = ParamsKZG::<Bn256>::unsafe_setup_with_s(20, Fr::from(1234u64));
-    let chain_id = 1;
+    // chain_id is not related to vk, so we can use any value here.
+    let chain_id = 534351;
     let circuit = ScrollSuperCircuit::new_from_block(&dummy_witness_block(chain_id));
     let vk = keygen_vk(&params, &circuit).unwrap();
     let protocol_hash = vk.transcript_repr();
     log::info!("transcript_repr {:?}", protocol_hash);
+    assert_eq!(
+        "0x1b3d158be8148c9e8ac9fce6eff2c576027c356ee1ff68ad7662d61556d5a7d7",
+        format!("{:?}", protocol_hash)
+    );
 }
 
 #[cfg(feature = "scroll")]
