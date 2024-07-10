@@ -34,7 +34,7 @@ impl<const N_SNARK: usize> AggregatedBatchProvingTask<'_, N_SNARK> {
 
     pub fn completed(&self) -> bool {
         self.agg_snarks.is_empty()
-    }    
+    }
 }
 
 impl<'a, const N_SNARK: usize> StateTransition for AggregatedBatchProvingTask<'a, N_SNARK> {

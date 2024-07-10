@@ -158,6 +158,7 @@ pub fn initial_recursion_snark<ST: StateTransition>(
         .chain(std::iter::repeat(Fr::ZERO))
         .take(RecursionCircuit::<ST>::num_instance_fixed())
         .collect_vec()];
+
     snark
 }
 
@@ -169,18 +170,12 @@ pub fn gen_recursion_pk<ST: StateTransition>(
     mut rng: impl Rng + Send,
     path: Option<&Path>,
 ) -> ProvingKey<G1Affine> {
-
     let app_snark =
         gen_dummy_snark::<ST::Circuit>(app_params, app_vk, &[ST::num_instance()], &mut rng);
 
     let recursive_snark = initial_recursion_snark::<ST>(recursion_params, None, &mut rng);
 
-    let recursion = RecursionCircuit::<ST>::new(
-        recursion_params,
-        app_snark,
-        recursive_snark,
-        &mut rng,
-        0,
-    );
+    let recursion =
+        RecursionCircuit::<ST>::new(recursion_params, app_snark, recursive_snark, &mut rng, 0);
     gen_pk(recursion_params, &recursion, path)
 }
