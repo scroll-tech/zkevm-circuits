@@ -1,7 +1,7 @@
 use super::{dump_as_json, dump_vk, from_json_file, Proof};
 use crate::types::base64;
-use aggregator::BatchHeader;
 use anyhow::Result;
+use eth_types::H256;
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
 use snark_verifier::Protocol;
@@ -13,7 +13,7 @@ pub struct BatchProof {
     pub protocol: Vec<u8>,
     #[serde(flatten)]
     proof: Proof,
-    pub batch_header: BatchHeader,
+    pub batch_hash: H256,
 }
 
 impl From<BatchProof> for Snark {
@@ -25,23 +25,19 @@ impl From<BatchProof> for Snark {
             protocol,
             proof: value.proof.proof,
             instances,
-        }        
+        }
     }
 }
 
 impl BatchProof {
-    pub fn new(
-        snark: Snark,
-        pk: Option<&ProvingKey<G1Affine>>,
-        batch_header: BatchHeader,
-    ) -> Result<Self> {
+    pub fn new(snark: Snark, pk: Option<&ProvingKey<G1Affine>>, batch_hash: H256) -> Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
         let proof = Proof::new(snark.proof, &snark.instances, pk);
 
         Ok(Self {
             protocol,
             proof,
-            batch_header,
+            batch_hash,
         })
     }
 

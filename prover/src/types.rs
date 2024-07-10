@@ -1,5 +1,5 @@
-use aggregator::{BatchHeader, ChunkInfo};
-use eth_types::l2_types::BlockTrace;
+use aggregator::ChunkInfo;
+use eth_types::{l2_types::BlockTrace, H256};
 use serde::{Deserialize, Serialize};
 use zkevm_circuits::evm_circuit::witness::Block;
 
@@ -43,7 +43,12 @@ impl ChunkProvingTask {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BatchProvingTask {
-    pub batch_header: BatchHeader,
+    pub version: u8,
+    pub batch_index: u64,
+    pub l1_message_popped: u64,
+    pub total_l1_message_popped: u64,
+    pub parent_batch_hash: H256,
+    pub last_block_timestamp: u64,
     pub chunk_proofs: Vec<ChunkProof>,
 }
 
@@ -67,11 +72,6 @@ pub struct BundleProvingTask {
 
 impl BundleProvingTask {
     pub fn identifier(&self) -> String {
-        self.batch_proofs
-            .last()
-            .unwrap()
-            .batch_header
-            .batch_hash()
-            .to_string()
+        self.batch_proofs.last().unwrap().batch_hash.to_string()
     }
 }

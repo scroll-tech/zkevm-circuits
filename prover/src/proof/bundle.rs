@@ -57,7 +57,6 @@ impl From<Proof> for BundleProof {
 }
 
 impl BundleProof {
-
     /// Returns the calldata given to YUL verifier.
     /// Format: Accumulator(12x32bytes) || PI(13x32bytes) || Proof
     pub fn calldata(self) -> Vec<u8> {
@@ -73,8 +72,16 @@ impl BundleProof {
     pub fn dump(&self, dir: &str, name: &str) -> Result<()> {
         let filename = format!("bundle_{name}");
 
-        dump_data(dir, &format!("pi_{filename}.data"), &self.on_chain_proof.instances);
-        dump_data(dir, &format!("proof_{filename}.data"), &self.on_chain_proof.proof);
+        dump_data(
+            dir,
+            &format!("pi_{filename}.data"),
+            &self.on_chain_proof.instances,
+        );
+        dump_data(
+            dir,
+            &format!("proof_{filename}.data"),
+            &self.on_chain_proof.proof,
+        );
 
         dump_vk(dir, &filename, &self.on_chain_proof.vk);
 

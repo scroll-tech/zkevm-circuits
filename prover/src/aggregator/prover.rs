@@ -9,6 +9,7 @@ use crate::{
 };
 use aggregator::{BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{bail, Result};
+use eth_types::H256;
 use sha2::{Digest, Sha256};
 use snark_verifier_sdk::Snark;
 use std::{env, iter::repeat};
@@ -83,7 +84,7 @@ impl Prover {
     ) -> Result<BatchProof> {
         let name = name.map_or_else(|| batch.identifier(), |name| name.to_string());
 
-        let (layer3_snark, batch_header) =
+        let (layer3_snark, batch_hash) =
             self.load_or_gen_last_agg_snark::<MAX_AGG_SNARKS>(&name, batch, output_dir)?;
 
         // Load or generate final compression thin EVM proof (layer-4).
@@ -100,7 +101,7 @@ impl Prover {
         self.check_batch_vk();
 
         let pk = self.prover_impl.pk(LayerId::Layer4.id());
-        let batch_proof = BatchProof::new(layer4_snark, pk, batch_header)?;
+        let batch_proof = BatchProof::new(layer4_snark, pk, batch_hash)?;
         if let Some(output_dir) = output_dir {
             batch_proof.dump(output_dir, "agg")?;
         }
@@ -115,7 +116,7 @@ impl Prover {
         name: &str,
         batch: BatchProvingTask,
         output_dir: Option<&str>,
-    ) -> Result<(Snark, BatchHeader)> {
+    ) -> Result<(Snark, H256)> {
         let real_chunk_count = batch.chunk_proofs.len();
         assert!((1..=MAX_AGG_SNARKS).contains(&real_chunk_count));
 
@@ -144,9 +145,17 @@ impl Prover {
         }
 
         // Load or generate aggregation snark (layer-3).
-        let batch_info: BatchHash<N_SNARKS> =
-            BatchHash::construct(&chunk_hashes, batch.batch_header);
-        let batch_header = batch_info.batch_header();
+        let batch_header = BatchHeader::construct_from_chunks(
+            batch.version,
+            batch.batch_index,
+            batch.l1_message_popped,
+            batch.total_l1_message_popped,
+            batch.parent_batch_hash,
+            batch.last_block_timestamp,
+            &chunk_hashes,
+        );
+        let batch_hash = batch_header.batch_hash();
+        let batch_info: BatchHash<N_SNARKS> = BatchHash::construct(&chunk_hashes, batch_header);
         let layer3_snark = self.prover_impl.load_or_gen_agg_snark(
             name,
             LayerId::Layer3.id(),
@@ -157,7 +166,7 @@ impl Prover {
         )?;
         log::info!("Got aggregation snark (layer-3): {name}");
 
-        Ok((layer3_snark, batch_header))
+        Ok((layer3_snark, batch_hash))
     }
 
     // Given a bundle proving task that consists of a list of batch proofs for all intermediate
@@ -175,7 +184,7 @@ impl Prover {
             .batch_proofs
             .clone()
             .into_iter()
-            .map(|proof|proof.into())
+            .map(|proof| proof.into())
             .collect::<Vec<_>>();
 
         let layer5_snark = self.prover_impl.load_or_gen_recursion_snark(
@@ -197,7 +206,7 @@ impl Prover {
 
         self.check_bundle_vk();
 
-        let bundle_proof : BundleProof = layer6_evm_proof.proof.into();
+        let bundle_proof: BundleProof = layer6_evm_proof.proof.into();
         if let Some(output_dir) = output_dir {
             bundle_proof.dump(output_dir, "recursion")?;
         }
