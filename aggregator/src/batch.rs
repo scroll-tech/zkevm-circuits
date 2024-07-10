@@ -14,7 +14,7 @@ use crate::{
 /// Batch header provides additional fields from the context (within recursion)
 /// for constructing the preimage of the batch hash.
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct BatchHeader {
+pub struct BatchHeader<const N_SNARKS: usize> {
     /// the batch version
     pub version: u8,
     /// the index of the batch
@@ -35,7 +35,65 @@ pub struct BatchHeader {
     pub blob_data_proof: [H256; 2],
 }
 
-impl BatchHeader {
+impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
+    /// Constructs the correct batch header from chunks data and context variables
+    pub fn construct_from_chunks(
+        version: u8,
+        batch_index: u64,
+        l1_message_popped: u64,
+        total_l1_message_popped: u64,
+        parent_batch_hash: H256,
+        last_block_timestamp: u64,
+        chunks: &[ChunkInfo],
+    ) -> Self {
+        assert_ne!(chunks.len(), 0);
+        assert!(chunks.len() <= N_SNARKS);
+
+        let mut chunks_with_padding = chunks.to_vec();
+        if chunks.len() < N_SNARKS {
+            let last_chunk = chunks.last().unwrap();
+            let mut padding_chunk = last_chunk.clone();
+            padding_chunk.is_padding = true;
+            chunks_with_padding
+                .extend(std::iter::repeat(padding_chunk).take(N_SNARKS - chunks.len()));
+        }
+
+        let number_of_valid_chunks = match chunks_with_padding
+            .iter()
+            .enumerate()
+            .find(|(_index, chunk)| chunk.is_padding)
+        {
+            Some((index, _)) => index,
+            None => N_SNARKS,
+        };
+
+        let batch_data_hash_preimage = chunks_with_padding
+            .iter()
+            .take(number_of_valid_chunks)
+            .flat_map(|chunk_info| chunk_info.data_hash.0.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        let batch_data_hash = keccak256(batch_data_hash_preimage);
+
+        let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, &chunks_with_padding);
+        let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
+
+        Self {
+            version,
+            batch_index,
+            l1_message_popped,
+            total_l1_message_popped,
+            parent_batch_hash,
+            last_block_timestamp,
+            data_hash: batch_data_hash.into(),
+            blob_versioned_hash: batch_data.get_versioned_hash(),
+            blob_data_proof: [
+                H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
+                H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
+            ],
+        }
+    }
+
     /// Returns the batch hash as per BatchHeaderV3.
     pub fn batch_hash(&self) -> H256 {
         // the current batch hash is build as
@@ -107,12 +165,15 @@ pub struct BatchHash<const N_SNARKS: usize> {
     /// The 4844 versioned hash for the blob.
     pub(crate) versioned_hash: H256,
     /// The context batch header
-    pub(crate) batch_header: BatchHeader,
+    pub(crate) batch_header: BatchHeader<N_SNARKS>,
 }
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     /// Build Batch hash from an ordered list of chunks. Will pad if needed
-    pub fn construct_with_unpadded(chunks: &[ChunkInfo], batch_header: BatchHeader) -> Self {
+    pub fn construct_with_unpadded(
+        chunks: &[ChunkInfo],
+        batch_header: BatchHeader<N_SNARKS>,
+    ) -> Self {
         assert_ne!(chunks.len(), 0);
         assert!(chunks.len() <= N_SNARKS);
         let mut chunks_with_padding = chunks.to_vec();
@@ -132,14 +193,15 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     }
 
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
-    pub fn construct(chunks_with_padding: &[ChunkInfo], batch_header: BatchHeader) -> Self {
+    pub fn construct(
+        chunks_with_padding: &[ChunkInfo],
+        batch_header: BatchHeader<N_SNARKS>,
+    ) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
             N_SNARKS,
             "input chunk slice does not match N_SNARKS"
         );
-
-        let mut export_batch_header = batch_header;
 
         let number_of_valid_chunks = match chunks_with_padding
             .iter()
@@ -209,24 +271,34 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
-        // Update export value
-        export_batch_header.data_hash = batch_data_hash.into();
+        assert_eq!(
+            batch_header.data_hash,
+            H256::from_slice(&batch_data_hash),
+            "Expect provided BatchHeader's data_hash field to be correct"
+        );
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
         let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
 
-        // Update export value
-        export_batch_header.blob_data_proof[0] =
-            H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes());
-        export_batch_header.blob_data_proof[1] =
-            H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes());
+        assert_eq!(
+            batch_header.blob_data_proof[0],
+            H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
+            "Expect provided BatchHeader's blob_data_proof field 0 to be correct"
+        );
+        assert_eq!(
+            batch_header.blob_data_proof[1],
+            H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
+            "Expect provided BatchHeader's blob_data_proof field 1 to be correct"
+        );
 
         let versioned_hash = batch_data.get_versioned_hash();
 
-        // Update export value
-        export_batch_header.blob_versioned_hash = versioned_hash;
+        assert_eq!(
+            batch_header.blob_versioned_hash, versioned_hash,
+            "Expect provided BatchHeader's blob_versioned_hash field to be correct"
+        );
 
-        let current_batch_hash = export_batch_header.batch_hash();
+        let current_batch_hash = batch_header.batch_hash();
 
         log::info!(
             "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
@@ -248,7 +320,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             number_of_valid_chunks,
             point_evaluation_assignments,
             versioned_hash,
-            batch_header: export_batch_header,
+            batch_header,
         }
     }
 
@@ -378,7 +450,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     }
 
     /// ...
-    pub fn batch_header(&self) -> BatchHeader {
+    pub fn batch_header(&self) -> BatchHeader<N_SNARKS> {
         self.batch_header
     }
 }

@@ -4,9 +4,7 @@ use crate::{
     consts::{batch_vk_filename, DEPLOYMENT_CODE_FILENAME},
     io::{force_to_read, try_to_read},
     proof::BundleProof,
-    BatchProof,
 };
-use snark_verifier_sdk::Snark;
 use aggregator::CompressionCircuit;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
@@ -14,6 +12,7 @@ use halo2_proofs::{
     poly::kzg::commitment::ParamsKZG,
 };
 use snark_verifier_sdk::verify_evm_calldata;
+use snark_verifier_sdk::Snark;
 use std::env;
 
 #[derive(Debug)]
