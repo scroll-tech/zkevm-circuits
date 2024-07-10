@@ -145,7 +145,7 @@ fn test_edge_cases() {
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 10, signatures);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 10, signatures, vec![]);
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn sign_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, signatures);
+        run::<Fr>(k, 1, signatures, vec![]);
 
         log::debug!("end of testing for msg_hash = 0");
     }
@@ -196,7 +196,7 @@ fn sign_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, signatures);
+        run::<Fr>(k, 1, signatures, vec![]);
 
         log::debug!("end of testing for msg_hash = 1");
     }
@@ -224,7 +224,7 @@ fn sign_verify() {
         }
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, *max_sig, signatures);
+        run::<Fr>(k, *max_sig, signatures, vec![]);
 
         log::debug!("end of testing for {} signatures", max_sig);
     }

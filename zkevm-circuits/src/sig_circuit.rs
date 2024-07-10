@@ -279,7 +279,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
-        config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
+        config.ecdsa_r1_config.range.load_lookup_table(layouter)?;
         self.assign(
             config,
             layouter,
@@ -287,7 +287,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             &self.signatures_r1,
             challenges,
         )?;
-        // TODO: assign signatures_r1
+        // TODO: assign signatures_r1？
         Ok(())
     }
 
