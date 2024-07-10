@@ -44,65 +44,70 @@ pub trait StateTransition: Sized {
     type Input: Clone;
     type Circuit: CircuitExt<Fr>;
 
+    /// Initialise a new type that implements the state transition behaviour.
     fn new(state: Self::Input) -> Self;
 
+    /// Transition to the next state.
     fn state_transition(&self, round: usize) -> Self::Input;
 
-    // the number of fields should be used for state transition
-    // notice the pi take 2 times of the returned number (before -> after)
+    /// Returns the number of fields used to represent state. The public input consists of twice
+    /// this number as both the previous and current states are included in the public input.
     fn num_transition_instance() -> usize;
 
-    // in case the circuit still require more PI followed by
-    // state transition
+    /// Returns the number of fields required by the circuit in addition to the fields to represent
+    /// its state.
     fn num_additional_instance() -> usize {
         0
     }
 
+    /// The number of instance cells for the circuit.
     fn num_instance() -> usize {
-        Self::num_transition_instance() * 2 
-        + Self::num_additional_instance()
-        + Self::Circuit::accumulator_indices()
-            .map(|v|v.len()).unwrap_or_default()
+        Self::num_accumulator_instance()
+            + Self::num_transition_instance() * 2
+            + Self::num_additional_instance()
     }
 
+    /// Returns the number of instance cells used to hold the accumulator.
     fn num_accumulator_instance() -> usize {
         Self::Circuit::accumulator_indices()
-        .map(|v|v.len()).unwrap_or_default()
+            .map(|v| v.len())
+            .unwrap_or_default()
     }
 
     /// Following is the indices of the layout of instance
     /// for StateTransition circuit, the default suppose
-    /// single col of instance, and the layout is
-    /// accmulator | prev_state | state | additional
-    /// 
+    /// single col of instance, and the layout is:
+    /// accumulator | prev_state | state | additional
+    ///
     /// Notice we do not verify the layout of accumulator
     /// simply suppose they are put in the beginning
     fn accumulator_indices() -> Vec<usize> {
-        (0..Self::num_accumulator_instance()).collect()
+        let start = 0;
+        let end = Self::num_accumulator_instance();
+        (start..end).collect()
     }
 
-    fn state_indices() -> Vec<usize> {
-        (
-            Self::num_accumulator_instance() + Self::num_transition_instance()..
-            Self::num_accumulator_instance() + Self::num_transition_instance()*2
-        ).collect()
-    }
-
+    /// The accumulator is followed by the instance cells representing the previous state.
     fn state_prev_indices() -> Vec<usize> {
-        (
-            Self::num_accumulator_instance() ..
-            Self::num_accumulator_instance() + Self::num_transition_instance()
-        ).collect()
+        let start = Self::num_accumulator_instance();
+        let end = start + Self::num_transition_instance();
+        (start..end).collect()
     }
 
-    /// The indices of the accumulator
+    /// The previous state is followed by the instance cells representing the current state.
+    fn state_indices() -> Vec<usize> {
+        let start = Self::num_accumulator_instance() + Self::num_transition_instance();
+        let end = start + Self::num_transition_instance();
+        (start..end).collect()
+    }
+
+    /// The indices of any other instances cells in addition to the accumulator and state
+    /// transition cells.
     fn additional_indices() -> Vec<usize> {
-        (
-            Self::num_accumulator_instance() + Self::num_transition_instance()*2..
-            Self::num_instance()
-        ).collect()
+        let start = Self::num_accumulator_instance() + 2 * Self::num_transition_instance();
+        let end = Self::num_instance();
+        (start..end).collect()
     }
-
 }
 
 pub use circuit::RecursionCircuit;

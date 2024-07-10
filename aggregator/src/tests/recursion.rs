@@ -45,14 +45,8 @@ where
     let init_snark =
         initial_recursion_snark::<App>(&recursion_params, Some(recursion_pk.get_vk()), &mut rng);
 
-
-    let recursion = RecursionCircuit::<App>::new(
-        &recursion_params,
-        app_snark,
-        init_snark,
-        &mut rng,
-        0,
-    );
+    let recursion =
+        RecursionCircuit::<App>::new(&recursion_params, app_snark, init_snark, &mut rng, 0);
 
     let pk_time = start_timer!(|| "Generate secondary recursion pk for test");
     {
@@ -90,13 +84,8 @@ where
     let app_snark = gen_snark_shplonk(&app_params, &app_pk, app, &mut rng, None::<String>)
         .expect("Snark generated successfully");
 
-    let recursion = RecursionCircuit::<App>::new(
-        &recursion_params,
-        app_snark,
-        snark,
-        test_rng(),
-        1,
-    );
+    let recursion =
+        RecursionCircuit::<App>::new(&recursion_params, app_snark, snark, test_rng(), 1);
 
     let pk_time = start_timer!(|| "Generate third recursion pk for test");
     {
@@ -228,10 +217,9 @@ mod app {
         }
 
         fn additional_indices() -> Vec<usize> {
-            vec![12, 13 + Self::num_transition_instance()*2]
-        }        
+            vec![12, 13 + Self::num_transition_instance() * 2]
+        }
     }
-
 
     #[test]
     fn test_recursion_circuit() {
@@ -244,7 +232,8 @@ mod app {
         let square_snark2 = test_recursion_impl::<Square>(3, Fr::from(16u64));
 
         let recursion_config: AggregationConfigParams =
-        serde_json::from_reader(fs::File::open("configs/bundle_circuit.config").unwrap()).unwrap();
+            serde_json::from_reader(fs::File::open("configs/bundle_circuit.config").unwrap())
+                .unwrap();
         let k = recursion_config.degree;
         let recursion_params = gen_srs(k);
         let mut rng = test_rng();
@@ -253,11 +242,7 @@ mod app {
         let recursion_for_pk = RecursionCircuit::<SquareBundle>::new(
             &recursion_params,
             square_snark1.clone(),
-            initial_recursion_snark::<SquareBundle>(
-                &recursion_params, 
-                None, 
-                &mut rng
-            ),
+            initial_recursion_snark::<SquareBundle>(&recursion_params, None, &mut rng),
             &mut rng,
             0,
         );
@@ -265,9 +250,9 @@ mod app {
         end_timer!(pk_time);
 
         let init_snark = initial_recursion_snark::<SquareBundle>(
-            &recursion_params, 
-            Some(recursion_pk.get_vk()), 
-            &mut rng
+            &recursion_params,
+            Some(recursion_pk.get_vk()),
+            &mut rng,
         );
 
         let pf_time = start_timer!(|| "Generate first recursive snark");
@@ -287,8 +272,8 @@ mod app {
             None::<String>,
         )
         .expect("Snark generated successfully");
-    
-        end_timer!(pf_time);       
+
+        end_timer!(pf_time);
 
         let pf_time = start_timer!(|| "Generate second recursive snark");
         let recursion = RecursionCircuit::<SquareBundle>::new(
@@ -314,9 +299,7 @@ mod app {
             snark.clone(),
             recursion_pk.get_vk()
         ));
-
     }
-
 }
 
 mod app_add_inst {
@@ -412,12 +395,6 @@ mod app_add_inst {
 
     #[test]
     fn test_recursion_circuit() {
-        test_recursion_impl::<Square>(
-            4,
-            Fr::from(2u64),
-        );
+        test_recursion_impl::<Square>(4, Fr::from(2u64));
     }
-    
-
 }
-

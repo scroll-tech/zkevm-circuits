@@ -3,7 +3,7 @@
 use super::*;
 use crate::param::ConfigParams as BatchCircuitConfigParams;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use snark_verifier::{
@@ -26,9 +26,9 @@ use sv_halo2_base::{
     gates::GateInstructions, halo2_proofs, AssignedValue, Context, ContextParams,
     QuantumCell::Existing,
 };
+
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 type Pcs = Kzg<Bn256, Bdfg21>;
-
 type As = KzgAs<Pcs>;
 
 fn select_accumulator<'a>(
@@ -80,8 +80,6 @@ pub struct RecursionCircuit<ST> {
 impl<ST: StateTransition> RecursionCircuit<ST> {
     const PREPROCESSED_DIGEST_ROW: usize = 4 * LIMBS;
     const INITIAL_STATE_ROW: usize = Self::PREPROCESSED_DIGEST_ROW + 1;
-    //const STATE_ROW: usize = Self::INITIAL_STATE_ROW + ST;
-    //const ROUND_ROW: usize = Self::STATE_ROW + ST;
 
     pub fn new(
         params: &ParamsKZG<Bn256>,
@@ -90,7 +88,6 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         rng: impl Rng + Send,
         round: usize,
     ) -> Self {
-
         let svk = params.get_g()[0].into();
         let default_accumulator = KzgAccumulator::new(params.get_g()[1], params.get_g()[0]);
 
@@ -122,20 +119,26 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
 
         let init_instances = if round > 0 {
             // pick from prev snark
-            Vec::from(&previous.instances[0][
-                Self::INITIAL_STATE_ROW..Self::INITIAL_STATE_ROW+ST::num_transition_instance()
-            ])
+            Vec::from(
+                &previous.instances[0][Self::INITIAL_STATE_ROW
+                    ..Self::INITIAL_STATE_ROW + ST::num_transition_instance()],
+            )
         } else {
             // pick from app
             ST::state_prev_indices()
-            .into_iter().map(|i|app.instances[0][i])
-            .collect::<Vec<_>>()
+                .into_iter()
+                .map(|i| app.instances[0][i])
+                .collect::<Vec<_>>()
         };
 
         let state_instances = ST::state_indices()
-            .into_iter().map(|i|&app.instances[0][i])
-            .chain(ST::additional_indices().into_iter()
-            .map(|i|&app.instances[0][i]));
+            .into_iter()
+            .map(|i| &app.instances[0][i])
+            .chain(
+                ST::additional_indices()
+                    .into_iter()
+                    .map(|i| &app.instances[0][i]),
+            );
 
         let preprocessed_digest = {
             let inputs = previous
@@ -150,6 +153,7 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
             hasher.update(&inputs);
             hasher.squeeze()
         };
+
         let instances = [
             accumulator.lhs.x,
             accumulator.lhs.y,
@@ -179,17 +183,6 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         }
     }
 
-    // fn initial_snark(params: &ParamsKZG<Bn256>, vk: Option<&VerifyingKey<G1Affine>>) -> Snark {
-    //     let mut snark = gen_dummy_snark::<RecursionCircuit>(params, vk);
-    //     let g = params.get_g();
-    //     snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
-    //         .into_iter()
-    //         .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-    //         .chain([Fr::ZERO; 4])
-    //         .collect_vec()];
-    //     snark
-    // }
-
     fn as_proof(&self) -> Value<&[u8]> {
         self.as_proof.as_ref().map(Vec::as_slice)
     }
@@ -209,7 +202,7 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         Ok(KzgAccumulator::new(lhs, rhs))
     }
 
-    /// get the number of instance, help to refine the CircuitExt trait
+    /// Returns the number of instance cells in the Recursion Circuit, help to refine the CircuitExt trait
     pub fn num_instance_fixed() -> usize {
         // [..lhs, ..rhs, preprocessed_digest, initial_state, state, round]
         4 * LIMBS + 2 * ST::num_transition_instance() + ST::num_additional_instance() + 2
@@ -255,13 +248,12 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
         let main_gate = config.gate();
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS; // assume using simple floor planner
-        let mut assigned_instances = Vec::new();
-        layouter.assign_region(
+        let assigned_instances = layouter.assign_region(
             || "",
-            |region| {
+            |region| -> Result<Vec<Cell>, Error> {
                 if first_pass {
                     first_pass = false;
-                    return Ok(());
+                    return Ok(vec![]);
                 }
                 let mut ctx = Context::new(
                     region,
@@ -324,14 +316,14 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     Some(preprocessed_digest),
                 );
 
-                let default_accmulator = self.load_default_accumulator(&loader)?;
+                let default_accumulator = self.load_default_accumulator(&loader)?;
                 let previous_accumulators = previous_accumulators
                     .iter()
                     .map(|previous_accumulator| {
                         select_accumulator(
                             &loader,
                             &first_round,
-                            &default_accmulator,
+                            &default_accumulator,
                             previous_accumulator,
                         )
                     })
@@ -353,7 +345,9 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     .iter()
                     .zip_eq(previous_instances[init_state_row_beg..state_row_beg].iter())
                     .zip_eq(
-                        ST::state_prev_indices().into_iter().map(|i|&app_instances[i])
+                        ST::state_prev_indices()
+                            .into_iter()
+                            .map(|i| &app_instances[i]),
                     )
                     .flat_map(|((&st, &previous_st), &app_inst)| {
                         [
@@ -375,10 +369,14 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 let verify_app_state = state
                     .iter()
                     .zip_eq(
-                        ST::state_indices().into_iter().map(|i|&app_instances[i])
-                        .chain(
-                            ST::additional_indices().into_iter().map(|i|&app_instances[i])
-                        )
+                        ST::state_indices()
+                            .into_iter()
+                            .map(|i| &app_instances[i])
+                            .chain(
+                                ST::additional_indices()
+                                    .into_iter()
+                                    .map(|i| &app_instances[i]),
+                            ),
                     )
                     .map(|(&st, &app_inst)| (st, app_inst))
                     .collect::<Vec<_>>();
@@ -387,7 +385,9 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 let verify_app_init_state = previous_instances[state_row_beg..addition_state_beg]
                     .iter()
                     .zip_eq(
-                        ST::state_prev_indices().into_iter().map(|i|&app_instances[i])
+                        ST::state_prev_indices()
+                            .into_iter()
+                            .map(|i| &app_instances[i]),
                     )
                     .map(|(&st, &app_inst)| {
                         (
@@ -432,17 +432,15 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 #[cfg(feature = "display")]
                 println!("Advice columns used: {}", ctx.advice_alloc[0][0].0 + 1);
 
-                assigned_instances.extend(
-                    [lhs.x(), lhs.y(), rhs.x(), rhs.y()]
-                        .into_iter()
-                        .flat_map(|coordinate| coordinate.limbs())
-                        .chain(iter::once(&preprocessed_digest))
-                        .chain(initial_state.iter())
-                        .chain(state.iter())
-                        .chain(iter::once(&round))
-                        .map(|assigned| assigned.cell()),
-                );
-                Ok(())
+                Ok([lhs.x(), lhs.y(), rhs.x(), rhs.y()]
+                    .into_iter()
+                    .flat_map(|coordinate| coordinate.limbs())
+                    .chain(iter::once(&preprocessed_digest))
+                    .chain(initial_state.iter())
+                    .chain(state.iter())
+                    .chain(iter::once(&round))
+                    .map(|assigned| assigned.cell())
+                    .collect())
             },
         )?;
 
