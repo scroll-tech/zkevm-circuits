@@ -506,21 +506,20 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 "original and recovered bytes mismatch"
             );
 
-            // batch_circuit_debug
-            // let decoder_exports = config.decoder_config.assign(
-            //     &mut layouter,
-            //     &batch_bytes,
-            //     &encoded_batch_bytes,
-            //     witness_rows,
-            //     decoded_literals,
-            //     fse_aux_tables,
-            //     block_info_arr,
-            //     sequence_info_arr,
-            //     address_table_arr,
-            //     sequence_exec_info_arr,
-            //     &challenges,
-            //     LOG_DEGREE, // TODO: configure k for batch circuit instead of hard-coded here.
-            // )?;
+            let decoder_exports = config.decoder_config.assign(
+                &mut layouter,
+                &batch_bytes,
+                &encoded_batch_bytes,
+                witness_rows,
+                decoded_literals,
+                fse_aux_tables,
+                block_info_arr,
+                sequence_info_arr,
+                address_table_arr,
+                sequence_exec_info_arr,
+                &challenges,
+                LOG_DEGREE, // TODO: configure k for batch circuit instead of hard-coded here.
+            )?;
 
             layouter.assign_region(
                 || "consistency checks",
@@ -569,27 +568,26 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
-                    // batch_circuit_debug
-                    // // equate rlc (from blob data) with decoder's encoded_rlc
-                    // region.constrain_equal(
-                    //     blob_data_exports.bytes_rlc.cell(),
-                    //     decoder_exports.encoded_rlc.cell(),
-                    // )?;
-                    // // equate len(blob_bytes) with decoder's encoded_len
-                    // region.constrain_equal(
-                    //     blob_data_exports.bytes_len.cell(),
-                    //     decoder_exports.encoded_len.cell(),
-                    // )?;
-                    // // equate rlc (from batch data) with decoder's decoded_rlc
-                    // region.constrain_equal(
-                    //     batch_data_exports.bytes_rlc.cell(),
-                    //     decoder_exports.decoded_rlc.cell(),
-                    // )?;
-                    // // equate len(batch_data) with decoder's decoded_len
-                    // region.constrain_equal(
-                    //     batch_data_exports.batch_data_len.cell(),
-                    //     decoder_exports.decoded_len.cell(),
-                    // )?;
+                    // equate rlc (from blob data) with decoder's encoded_rlc
+                    region.constrain_equal(
+                        blob_data_exports.bytes_rlc.cell(),
+                        decoder_exports.encoded_rlc.cell(),
+                    )?;
+                    // equate len(blob_bytes) with decoder's encoded_len
+                    region.constrain_equal(
+                        blob_data_exports.bytes_len.cell(),
+                        decoder_exports.encoded_len.cell(),
+                    )?;
+                    // equate rlc (from batch data) with decoder's decoded_rlc
+                    region.constrain_equal(
+                        batch_data_exports.bytes_rlc.cell(),
+                        decoder_exports.decoded_rlc.cell(),
+                    )?;
+                    // equate len(batch_data) with decoder's decoded_len
+                    region.constrain_equal(
+                        batch_data_exports.batch_data_len.cell(),
+                        decoder_exports.decoded_len.cell(),
+                    )?;
 
                     Ok(())
                 },
