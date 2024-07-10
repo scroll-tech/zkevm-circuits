@@ -42,29 +42,15 @@ impl Prover {
         let (params, pk) = self.params_and_pk(id, degree, &circuit_for_pk)?;
 
         // with the pk we can construct the correct init_snark
-        let init_snark = initial_recursion_snark::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>(
+        let mut cur_snark = initial_recursion_snark::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>(
             params, Some(pk.get_vk()), &mut rng,
-        );        
-        let init_state = batch_snarks;
-        let mut task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(init_state);
-
-        let circuit = RecursionCircuit::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>::new(
-            params,
-            task.iter_snark(),
-            init_snark,
-            &mut rng,
-            0,
         );
-
-        // prepare the initial snark
-        let mut cur_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
-        log::info!("construct recursion snark for first round ...done");
-        let mut n_rounds = 1;
-        let mut cur_state = task.state_transition(n_rounds);
+        let mut task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(batch_snarks);
+        let mut n_rounds = 0;
 
         while !task.completed() {
             log::debug!("construct recursion circuit for round {}", n_rounds);
-            task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(cur_state);
+            
             let circuit = RecursionCircuit::<AggregatedBatchProvingTask<MAX_AGG_SNARKS>>::new(
                 params,
                 task.iter_snark(),
@@ -75,7 +61,9 @@ impl Prover {
             cur_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
             log::info!("construct recursion snark for round {} ...done", n_rounds);
             n_rounds += 1;
-            cur_state = task.state_transition(n_rounds);
+            task = AggregatedBatchProvingTask::<MAX_AGG_SNARKS>::new(
+                task.state_transition(n_rounds)
+            );
         }
 
         Ok(cur_snark)

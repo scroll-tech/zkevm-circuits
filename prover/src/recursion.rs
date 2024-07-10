@@ -42,7 +42,6 @@ impl<'a, const N_SNARK: usize> StateTransition for AggregatedBatchProvingTask<'a
     type Circuit = BatchCircuit<N_SNARK>;
 
     fn new(state: Self::Input) -> Self {
-        assert!(!state.is_empty());
         Self { agg_snarks: state }
     }
 
