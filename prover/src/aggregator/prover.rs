@@ -175,7 +175,7 @@ impl Prover {
             .batch_proofs
             .clone()
             .into_iter()
-            .map(BatchProof::to_snark)
+            .map(|proof|proof.into())
             .collect::<Vec<_>>();
 
         let layer5_snark = self.prover_impl.load_or_gen_recursion_snark(
@@ -197,7 +197,7 @@ impl Prover {
 
         self.check_bundle_vk();
 
-        let bundle_proof = BundleProof::new(layer6_evm_proof.proof);
+        let bundle_proof : BundleProof = layer6_evm_proof.proof.into();
         if let Some(output_dir) = output_dir {
             bundle_proof.dump(output_dir, "recursion")?;
         }

@@ -16,6 +16,19 @@ pub struct BatchProof {
     pub batch_header: BatchHeader,
 }
 
+impl From<BatchProof> for Snark {
+    fn from(value: BatchProof) -> Self {
+        let instances = value.proof.instances();
+        let protocol = serde_json::from_slice::<Protocol<G1Affine>>(&value.protocol).unwrap();
+
+        Self {
+            protocol,
+            proof: value.proof.proof,
+            instances,
+        }        
+    }
+}
+
 impl BatchProof {
     pub fn new(
         snark: Snark,
@@ -42,17 +55,6 @@ impl BatchProof {
         dump_vk(dir, &filename, &self.proof.vk);
 
         dump_as_json(dir, &filename, &self)
-    }
-
-    pub fn to_snark(self) -> Snark {
-        let instances = self.proof.instances();
-        let protocol = serde_json::from_slice::<Protocol<G1Affine>>(&self.protocol).unwrap();
-
-        Snark {
-            protocol,
-            proof: self.proof.proof,
-            instances,
-        }
     }
 }
 

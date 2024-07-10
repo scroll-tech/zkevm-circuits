@@ -6,6 +6,7 @@ use crate::{
     proof::BundleProof,
     BatchProof,
 };
+use snark_verifier_sdk::Snark;
 use aggregator::CompressionCircuit;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
@@ -49,8 +50,8 @@ impl Verifier {
         }
     }
 
-    pub fn verify_batch_proof(&self, batch_proof: BatchProof) -> bool {
-        self.inner.verify_snark(batch_proof.to_snark())
+    pub fn verify_batch_proof(&self, snark: impl Into<Snark>) -> bool {
+        self.inner.verify_snark(snark.into())
     }
 
     pub fn verify_bundle_proof(&self, bundle_proof: BundleProof) -> bool {
