@@ -22,7 +22,6 @@ use halo2curves::{
         Curve, GroupEncoding,
     },
 
-    pasta::pallas::Base,
     // secp256k1 curve
     secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
     // p256 curve
@@ -36,34 +35,12 @@ use sha3::digest::generic_array::GenericArray;
 use std::sync::LazyLock;
 use subtle::CtOption;
 
-/// Do a secp256k1 signature with a given randomness value.
-pub fn sign(randomness: Fq_K1, sk: Fq_K1, msg_hash: Fq_K1) -> (Fq_K1, Fq_K1, u8) {
-    let randomness_inv =
-        Option::<Fq_K1>::from(randomness.invert()).expect("cannot invert randomness");
-    let generator = Secp256k1Affine::generator();
-    let sig_point = generator * randomness;
-    let sig_v: bool = sig_point.to_affine().y.is_odd().into();
-
-    let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
-        .expect("point is the identity")
-        .x();
-
-    let mut x_bytes = [0u8; 64];
-    x_bytes[..32].copy_from_slice(&x.to_bytes());
-
-    let sig_r = Fq_K1::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
-
-    let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-    (sig_r, sig_s, u8::from(sig_v))
-}
-
-/// Do a secp256r1 signature with a given randomness value.
-/// TODO: make `sign_r1` and `sign` into one method ?
+/// Do a secp256k1 or secp256r1 signature with a given randomness value.
 /// FromUniformBytes<64> refers to https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256k1/fq.rs#L287
 /// and https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256r1/fq.rs#L283
-pub fn sign_generic<
-    Fq: PrimeField + FromUniformBytes<64>,
+pub fn sign<
     Fp: PrimeField<Repr = [u8; 32]>,
+    Fq: PrimeField + FromUniformBytes<64>,
     Affine: CurveAffine<ScalarExt = Fq, Base = Fp> + std::ops::Mul<Fq> + CurveAffineExt,
 >(
     randomness: Fq,

@@ -163,7 +163,7 @@ fn sign_verify() {
         log::debug!("testing for msg_hash = 0");
         let mut signatures = Vec::new();
 
-        let (sk, pk) = gen_key_pair(&mut rng);
+        let (sk, pk) = gen_key_pair_k1(&mut rng);
         let msg = gen_msg(&mut rng);
         let msg_hash = secp256k1::Fq::zero();
         let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
@@ -184,7 +184,7 @@ fn sign_verify() {
         log::debug!("testing for msg_hash = 1");
         let mut signatures = Vec::new();
 
-        let (sk, pk) = gen_key_pair(&mut rng);
+        let (sk, pk) = gen_key_pair_k1(&mut rng);
         let msg = gen_msg(&mut rng);
         let msg_hash = secp256k1::Fq::one();
         let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
@@ -206,7 +206,7 @@ fn sign_verify() {
         log::debug!("testing for {} signatures", max_sig);
         let mut signatures = Vec::new();
         for _ in 0..*max_sig {
-            let (sk, pk) = gen_key_pair(&mut rng);
+            let (sk, pk) = gen_key_pair_k1(&mut rng);
             let msg = gen_msg(&mut rng);
             let msg_hash: [u8; 32] = Keccak256::digest(&msg)
                 .as_slice()
@@ -230,11 +230,22 @@ fn sign_verify() {
     }
 }
 
-// Generate a test key pair
-fn gen_key_pair(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
+// Generate a test key pair for secp256k1
+fn gen_key_pair_k1(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
     // generate a valid signature
     let generator = Secp256k1Affine::generator();
     let sk = secp256k1::Fq::random(rng);
+    let pk = generator * sk;
+    let pk = pk.to_affine();
+
+    (sk, pk)
+}
+
+// Generate a test key pair for secp256r1
+fn gen_key_pair_r1(rng: impl RngCore) -> (secp256r1::Fq, Secp256r1Affine) {
+    // generate a valid signature
+    let generator = Secp256r1Affine::generator();
+    let sk = secp256r1::Fq::random(rng);
     let pk = generator * sk;
     let pk = pk.to_affine();
 
@@ -261,7 +272,8 @@ fn sign_with_rng(
     msg_hash: secp256k1::Fq,
 ) -> (secp256k1::Fq, secp256k1::Fq, u8) {
     let randomness = secp256k1::Fq::random(rng);
-    sign(randomness, sk, msg_hash)
+
+    sign::<secp256k1::Fp, secp256k1::Fq, Secp256k1Affine>(randomness, sk, msg_hash)
 }
 
 fn run<F: Field>(
