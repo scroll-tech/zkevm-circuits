@@ -11,6 +11,9 @@ pub use fs::{read_json, read_kzg_params};
 mod env;
 pub use env::read_env_or_default;
 
+/// The extension used for JSON files.
+pub const JSON_EXT: &str = ".json";
+
 /// The config parameters for non native field arithmetics are in a *.config file.
 pub const NON_NATIVE_PARAMS_EXT: &str = ".config";
 
@@ -25,6 +28,9 @@ pub const CACHE_PATH: &str = ".cache";
 
 /// The directory within cache to store proving tasks in JSON format.
 pub const CACHE_PATH_TASKS: &str = "tasks";
+
+/// The directory within cache to store SNARKs generated at intermediate proving layers.
+pub const CACHE_PATH_SNARKS: &str = "snarks";
 
 /// The directory within cache to store proof outputs.
 pub const CACHE_PATH_PROOFS: &str = "proofs";

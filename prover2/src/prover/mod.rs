@@ -34,12 +34,14 @@ impl<T> Prover<T> {
 impl<Type: ProverType> Prover<Type> {
     /// Generate a proof for the given task.
     #[instrument(name = "Prover::gen_proof", skip(self))]
-    pub fn gen_proof(&mut self, _task: Type::Task) -> Result<Proof, ProverError> {
-        // try to fetch proof from cache.
+    pub fn gen_proof(&mut self, task: Type::Task) -> Result<Proof, ProverError> {
+        // generate SNARKs for the different layers.
+        //
+        // - re-use SNARK if cache hit and early return
+        // - gen SNARK
+        // - write SNARK to cache
 
-        // generate SNARK.
-
-        // write proof to cache.
+        // dump outermost SNARK proof to cache.
 
         unimplemented!()
     }

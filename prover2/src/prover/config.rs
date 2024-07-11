@@ -1,6 +1,4 @@
-use std::{
-    collections::BTreeMap, fs::create_dir_all, iter::once, marker::PhantomData, path::PathBuf,
-};
+use std::{collections::BTreeMap, fs::create_dir_all, marker::PhantomData, path::PathBuf};
 
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
@@ -14,8 +12,8 @@ use crate::{
     util::{
         default_cache_dir, default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
         non_native_params_path as nn_params_path, read_env_or_default, read_json, read_kzg_params,
-        CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_TASKS, DEFAULT_DEGREE_LAYER0,
-        ENV_DEGREE_LAYER0,
+        CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_SNARKS, CACHE_PATH_TASKS,
+        DEFAULT_DEGREE_LAYER0, ENV_DEGREE_LAYER0, JSON_EXT,
     },
     Params, ProofLayer, ProverError,
 };
@@ -134,6 +132,7 @@ impl<Type: ProverType> ProverConfig<Type> {
         // Setup the cache directory's structure.
         trace!("setting up cache");
         create_dir_all(cache_dir.join(CACHE_PATH_TASKS))?;
+        create_dir_all(cache_dir.join(CACHE_PATH_SNARKS))?;
         create_dir_all(cache_dir.join(CACHE_PATH_PROOFS))?;
         create_dir_all(cache_dir.join(CACHE_PATH_PI))?;
         create_dir_all(cache_dir.join(CACHE_PATH_EVM))?;
@@ -146,6 +145,16 @@ impl<Type: ProverType> ProverConfig<Type> {
         info!("setup ProverConfig");
 
         Ok(self)
+    }
+}
+
+impl<Type> ProverConfig<Type> {
+    /// Returns the path to a proof with the given identifier if caching is enabled in the prover's
+    /// config.
+    pub fn path_proof(&self, id: &str) -> Option<PathBuf> {
+        self.cache_dir
+            .as_ref()
+            .map(|dir| dir.join(CACHE_PATH_PROOFS).join(id).join(JSON_EXT))
     }
 }
 
