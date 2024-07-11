@@ -8,10 +8,15 @@ pub trait ProverType: std::fmt::Debug {
     fn layers() -> Vec<ProofLayer>;
 }
 
+/// The chunk prover that constructs proofs at layer0, layer1 and layer2.
 #[derive(Default, Debug)]
 pub struct ProverTypeChunk;
+
+/// The batch prover that constructs proofs at layer3 and layer4.
 #[derive(Default, Debug)]
 pub struct ProverTypeBatch;
+
+/// The bundle prover that constructs proofs at layer5 and layer6.
 #[derive(Default, Debug)]
 pub struct ProverTypeBundle;
 

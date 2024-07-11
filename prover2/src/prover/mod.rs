@@ -22,6 +22,7 @@ pub struct Prover<T> {
 }
 
 impl<T> Prover<T> {
+    /// Construct a new prover.
     pub fn new(config: ProverConfig<T>) -> Self {
         Self { config }
     }
