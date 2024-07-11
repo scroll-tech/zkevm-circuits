@@ -8,8 +8,11 @@ pub trait ProverType {
     fn layers() -> Vec<ProofLayer>;
 }
 
+#[derive(Default)]
 pub struct ProverTypeChunk;
+#[derive(Default)]
 pub struct ProverTypeBatch;
+#[derive(Default)]
 pub struct ProverTypeBundle;
 
 impl ProverType for ProverTypeChunk {

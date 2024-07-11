@@ -1,12 +1,27 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 /// Represents error variants possibly encountered during the proof generation process.
 #[derive(Debug, Error)]
 pub enum ProverError {
-    /// Error encountered while doing I/O operations.
+    /// Error occurred while doing other I/O operations.
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    OtherIo(#[from] std::io::Error),
+    /// Error encountered while reading from or writing to files.
+    #[error("an error occurred while reading/writing {path}: {source}")]
+    IoReadWrite {
+        /// The path we tried to read from or write to.
+        path: PathBuf,
+        /// The source error.
+        source: std::io::Error,
+    },
     /// Error encountered during serialization/deserialization of JSON.
-    #[error(transparent)]
-    SerdeJsonError(#[from] serde_json::Error),
+    #[error("an error occurred while reading/writing json {path}: {source}")]
+    ReadWriteJson {
+        /// The path of the file we tried to serialize/deserialize.
+        path: PathBuf,
+        /// The source error.
+        source: serde_json::Error,
+    },
 }

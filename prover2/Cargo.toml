@@ -8,6 +8,7 @@ license.workspace = true
 aggregator = { path = "../aggregator" }
 zkevm-circuits = { path = "../zkevm-circuits" }
 
+anyhow.workspace = true
 halo2_proofs.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fs::{create_dir, create_dir_all, File},
-    io::BufReader,
+    fs::{create_dir, create_dir_all},
     marker::PhantomData,
     path::PathBuf,
 };
@@ -10,15 +9,14 @@ use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
     plonk::ProvingKey,
     poly::kzg::commitment::ParamsKZG,
-    SerdeFormat,
 };
 
 use crate::{
     types::ProverType,
     util::{
         default_cache_dir, default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
-        non_native_params_path as nn_params_path, CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS,
-        CACHE_PATH_TASKS,
+        non_native_params_path as nn_params_path, read_json, read_kzg_params, CACHE_PATH_EVM,
+        CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_TASKS,
     },
     Params, ProofLayer, ProverError,
 };
@@ -101,19 +99,15 @@ impl<Type: ProverType> ProverConfig<Type> {
 
         // Read and store non-native field arithmetic config params for each layer.
         for layer in proof_layers {
-            let params_file = File::open(nn_params_path(nn_params_dir.as_path(), layer))?;
-            let params = serde_json::from_reader(params_file)?;
+            let params_path = nn_params_path(nn_params_dir.as_path(), layer);
+            let params = read_json(params_path.as_path())?;
             self.nn_params.insert(layer, params);
         }
 
         // Read and store KZG setup params for each layer.
         for (&layer, nn_params) in self.nn_params.iter() {
-            let params_file =
-                File::open(kzg_params_path(kzg_params_dir.as_path(), nn_params.degree))?;
-            let params = ParamsKZG::<Bn256>::read_custom(
-                &mut BufReader::new(params_file),
-                SerdeFormat::RawBytesUnchecked,
-            )?;
+            let params_path = kzg_params_path(kzg_params_dir.as_path(), nn_params.degree);
+            let params = read_kzg_params(params_path.as_path())?;
             self.kzg_params.insert(layer, params);
         }
 
@@ -125,5 +119,38 @@ impl<Type: ProverType> ProverConfig<Type> {
         create_dir(cache_dir.join(CACHE_PATH_EVM))?;
 
         Ok(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env::current_dir;
+
+    use crate::{
+        types::{ProverTypeBatch, ProverTypeBundle, ProverTypeChunk},
+        ProverConfig,
+    };
+
+    #[test]
+    fn setup_prover() -> anyhow::Result<()> {
+        let test_dir = current_dir()?.join("test_data");
+
+        let _chunk_prover_config = ProverConfig::<ProverTypeChunk>::default()
+            .with_non_native_params_dir(test_dir.join(".config"))
+            .with_kzg_params_dir(test_dir.join(".params"))
+            .with_cache_dir(test_dir.join(".cache"))
+            .setup()?;
+        let _batch_prover_config = ProverConfig::<ProverTypeBatch>::default()
+            .with_non_native_params_dir(test_dir.join(".config"))
+            .with_kzg_params_dir(test_dir.join(".params"))
+            .with_cache_dir(test_dir.join(".cache"))
+            .setup()?;
+        let _bundle_prover_config = ProverConfig::<ProverTypeBundle>::default()
+            .with_non_native_params_dir(test_dir.join(".config"))
+            .with_kzg_params_dir(test_dir.join(".params"))
+            .with_cache_dir(test_dir.join(".cache"))
+            .setup()?;
+
+        Ok(())
     }
 }

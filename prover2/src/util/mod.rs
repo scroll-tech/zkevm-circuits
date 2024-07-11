@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::ProofLayer;
+use crate::{ProofLayer, ProverError};
+
+mod fs;
+pub use fs::{read_json, read_kzg_params};
 
 /// The config parameters for non native field arithmetics are in a *.config file.
 pub const NON_NATIVE_PARAMS_EXT: &str = ".config";
@@ -43,23 +46,28 @@ pub fn kzg_params_path(dir: &Path, degree: u32) -> PathBuf {
     dir.join(format!("params{degree}"))
 }
 
+/// Wrapper functionality for current working directory.
+pub fn pwd() -> Result<PathBuf, ProverError> {
+    Ok(current_dir()?)
+}
+
 /// The default path to find non-native field arithmetic config params.
 ///
 /// <PWD>/.config
-pub fn default_non_native_params_dir() -> Result<PathBuf, std::io::Error> {
-    Ok(current_dir()?.join(NON_NATIVE_PARAMS_DIR))
+pub fn default_non_native_params_dir() -> Result<PathBuf, ProverError> {
+    Ok(pwd()?.join(NON_NATIVE_PARAMS_DIR))
 }
 
 /// The default path to find KZG setup parameters.
 ///
 /// <PWD>/.params
-pub fn default_kzg_params_dir() -> Result<PathBuf, std::io::Error> {
-    Ok(current_dir()?.join(KZG_PARAMS_DIR))
+pub fn default_kzg_params_dir() -> Result<PathBuf, ProverError> {
+    Ok(pwd()?.join(KZG_PARAMS_DIR))
 }
 
 /// The default path to the cache directory.
 ///
 /// <PWD>/.cache
-pub fn default_cache_dir() -> Result<PathBuf, std::io::Error> {
-    Ok(current_dir()?.join(CACHE_PATH))
+pub fn default_cache_dir() -> Result<PathBuf, ProverError> {
+    Ok(pwd()?.join(CACHE_PATH))
 }
