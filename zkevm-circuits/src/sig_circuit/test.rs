@@ -230,6 +230,62 @@ fn sign_verify() {
     }
 }
 
+#[test]
+fn p256_sign_verify() {
+    use super::utils::LOG_TOTAL_NUM_ROWS;
+    use crate::sig_circuit::utils::MAX_NUM_SIG;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+    use sha3::{Digest, Keccak256};
+    let mut rng = XorShiftRng::seed_from_u64(1);
+
+    // TODO: enable this one(msg_hash == 0) later
+    // msg_hash == 0
+    // {
+    //     log::debug!("testing for msg_hash = 0");
+    //     let mut signatures = Vec::new();
+
+    //     let (sk, pk) = gen_key_pair_k1(&mut rng);
+    //     let msg = gen_msg(&mut rng);
+    //     let msg_hash = secp256k1::Fq::zero();
+    //     let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
+    //     signatures.push(SignData {
+    //         signature: (r, s, v),
+    //         pk,
+    //         msg: msg.into(),
+    //         msg_hash,
+    //     });
+
+    //     let k = LOG_TOTAL_NUM_ROWS as u32;
+    //     run::<Fr>(k, 1, signatures, vec![]);
+
+    //     log::debug!("end of testing for msg_hash = 0");
+    // }
+    // msg_hash == 1
+    {
+        log::debug!("testing for msg_hash = 1");
+        let mut signatures = Vec::new();
+
+        let (sk, pk) = gen_key_pair_r1(&mut rng);
+        let msg = gen_msg(&mut rng);
+        let msg_hash = secp256r1::Fq::one();
+        let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
+        signatures.push(SignData {
+            signature: (r, s, v),
+            pk,
+            msg: msg.into(),
+            msg_hash,
+        });
+
+        let k = LOG_TOTAL_NUM_ROWS as u32;
+        run::<Fr>(k, 1,  vec![], signatures);
+
+        log::debug!("end of testing for msg_hash = 1");
+    }
+    // TODO: add nrandom msg_hash tests like `sign_verify`.
+}
+
 // Generate a test key pair for secp256k1
 fn gen_key_pair_k1(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
     // generate a valid signature
@@ -274,6 +330,17 @@ fn sign_with_rng(
     let randomness = secp256k1::Fq::random(rng);
 
     sign::<secp256k1::Fp, secp256k1::Fq, Secp256k1Affine>(randomness, sk, msg_hash)
+}
+
+// Returns (r, s, v)
+fn sign_r1_with_rng(
+    rng: impl RngCore,
+    sk: secp256r1::Fq,
+    msg_hash: secp256r1::Fq,
+) -> (secp256r1::Fq, secp256r1::Fq, u8) {
+    let randomness = secp256r1::Fq::random(rng);
+
+    sign::<secp256r1::Fp, secp256r1::Fq, Secp256r1Affine>(randomness, sk, msg_hash)
 }
 
 fn run<F: Field>(
