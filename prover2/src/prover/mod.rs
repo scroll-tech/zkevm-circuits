@@ -1,5 +1,7 @@
+use tracing::instrument;
+
 use crate::{
-    types::{ProverTypeBatch, ProverTypeBundle, ProverTypeChunk},
+    types::{ProverType, ProverTypeBatch, ProverTypeBundle, ProverTypeChunk},
     Proof, ProverConfig, ProverError,
 };
 
@@ -16,6 +18,7 @@ pub type BatchProver = Prover<ProverTypeBatch>;
 pub type BundleProver = Prover<ProverTypeBundle>;
 
 /// A generic prover that is capable of generating proofs for given tasks.
+#[derive(Debug)]
 pub struct Prover<T> {
     /// Config for the prover.
     pub config: ProverConfig<T>,
@@ -28,8 +31,16 @@ impl<T> Prover<T> {
     }
 }
 
-impl<T> Prover<T> {
-    pub fn gen_proof() -> Result<Proof, ProverError> {
+impl<Type: ProverType> Prover<Type> {
+    /// Generate a proof for the given task.
+    #[instrument(name = "Prover::gen_proof", skip(self))]
+    pub fn gen_proof(&mut self, _task: Type::Task) -> Result<Proof, ProverError> {
+        // try to fetch proof from cache.
+
+        // generate SNARK.
+
+        // write proof to cache.
+
         unimplemented!()
     }
 }

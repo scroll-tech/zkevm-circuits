@@ -23,6 +23,8 @@ use crate::{
 /// Configuration for a generic prover.
 #[derive(Default, Debug)]
 pub struct ProverConfig<Type> {
+    /// Polynomial degree used by proof generation layer.
+    pub degrees: BTreeMap<ProofLayer, u32>,
     /// KZG setup parameters by proof layer.
     pub kzg_params: BTreeMap<ProofLayer, ParamsKZG<Bn256>>,
     /// Config parameters for non-native field arithmetics by proof layer.
@@ -32,7 +34,7 @@ pub struct ProverConfig<Type> {
     /// Optional directory to locate KZG setup parameters.
     pub kzg_params_dir: Option<PathBuf>,
     /// Optional directory to locate non-native field arithmetic config params.
-    pub non_native_params_dir: Option<PathBuf>,
+    pub nn_params_dir: Option<PathBuf>,
     /// Optional directory to cache proofs.
     pub cache_dir: Option<PathBuf>,
 
@@ -67,8 +69,8 @@ impl<Type> ProverConfig<Type> {
 
     /// Returns prover config with a directory to load non-native field arithmetic config params
     /// from.
-    pub fn with_non_native_params_dir(mut self, dir: impl Into<PathBuf>) -> Self {
-        self.non_native_params_dir = Some(dir.into());
+    pub fn with_nn_params_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.nn_params_dir = Some(dir.into());
         self
     }
 
@@ -90,7 +92,7 @@ impl<Type: ProverType> ProverConfig<Type> {
 
         // Use the configured directories or fallback to current working directory.
         let nn_params_dir = self
-            .non_native_params_dir
+            .nn_params_dir
             .clone()
             .unwrap_or(default_non_native_params_dir()?);
         let kzg_params_dir = self
@@ -106,22 +108,20 @@ impl<Type: ProverType> ProverConfig<Type> {
             if layer != ProofLayer::Layer0 {
                 let params_path = nn_params_path(nn_params_dir.as_path(), layer);
                 debug!("reading config params for {:?}: {:?}", layer, params_path);
-                let params = read_json(params_path.as_path())?;
+                let params = read_json::<Params>(params_path.as_path())?;
+                self.degrees.insert(layer, params.degree);
                 self.nn_params.insert(layer, params);
+            }
+
+            if layer == ProofLayer::Layer0 {
+                let layer0_degree = read_env_or_default(ENV_DEGREE_LAYER0, DEFAULT_DEGREE_LAYER0);
+                self.degrees.insert(ProofLayer::Layer0, layer0_degree);
             }
         }
 
         // Read and store KZG setup params for each layer.
         trace!("loading KZG setup params");
-        for (&layer, degree) in self
-            .nn_params
-            .iter()
-            .map(|(k, v)| (k, v.degree))
-            .chain(once((
-                &ProofLayer::Layer0,
-                read_env_or_default(ENV_DEGREE_LAYER0, DEFAULT_DEGREE_LAYER0),
-            )))
-        {
+        for (&layer, &degree) in self.degrees.iter() {
             let params_path = kzg_params_path(kzg_params_dir.as_path(), degree);
             debug!(
                 "reading kzg params for {:?} (degree = {:?}): {:?}",
@@ -137,6 +137,11 @@ impl<Type: ProverType> ProverConfig<Type> {
         create_dir_all(cache_dir.join(CACHE_PATH_PROOFS))?;
         create_dir_all(cache_dir.join(CACHE_PATH_PI))?;
         create_dir_all(cache_dir.join(CACHE_PATH_EVM))?;
+
+        // Update directories in self.
+        self.nn_params_dir.replace(nn_params_dir);
+        self.kzg_params_dir.replace(kzg_params_dir);
+        self.cache_dir.replace(cache_dir);
 
         info!("setup ProverConfig");
 
@@ -163,17 +168,17 @@ mod tests {
         let test_dir = current_dir()?.join("test_data");
 
         let _chunk_prover_config = ProverConfig::<ProverTypeChunk>::default()
-            .with_non_native_params_dir(test_dir.join(".config"))
+            .with_nn_params_dir(test_dir.join(".config"))
             .with_kzg_params_dir(test_dir.join(".params"))
             .with_cache_dir(test_dir.join(".cache"))
             .setup()?;
         let _batch_prover_config = ProverConfig::<ProverTypeBatch>::default()
-            .with_non_native_params_dir(test_dir.join(".config"))
+            .with_nn_params_dir(test_dir.join(".config"))
             .with_kzg_params_dir(test_dir.join(".params"))
             .with_cache_dir(test_dir.join(".cache"))
             .setup()?;
         let _bundle_prover_config = ProverConfig::<ProverTypeBundle>::default()
-            .with_non_native_params_dir(test_dir.join(".config"))
+            .with_nn_params_dir(test_dir.join(".config"))
             .with_kzg_params_dir(test_dir.join(".params"))
             .with_cache_dir(test_dir.join(".cache"))
             .setup()?;
