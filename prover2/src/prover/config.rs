@@ -1,5 +1,8 @@
 use std::{
-    collections::BTreeMap, env::current_dir, fs::File, io::BufReader, marker::PhantomData,
+    collections::BTreeMap,
+    fs::{create_dir, create_dir_all, File},
+    io::BufReader,
+    marker::PhantomData,
     path::PathBuf,
 };
 
@@ -12,7 +15,11 @@ use halo2_proofs::{
 
 use crate::{
     types::ProverType,
-    util::{kzg_params_path, non_native_params_path},
+    util::{
+        default_cache_dir, default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
+        non_native_params_path as nn_params_path, CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS,
+        CACHE_PATH_TASKS,
+    },
     Params, ProofLayer, ProverError,
 };
 
@@ -22,7 +29,7 @@ pub struct ProverConfig<Type> {
     /// KZG setup parameters by proof layer.
     pub kzg_params: BTreeMap<ProofLayer, ParamsKZG<Bn256>>,
     /// Config parameters for non-native field arithmetics by proof layer.
-    pub non_native_params: BTreeMap<ProofLayer, Params>,
+    pub nn_params: BTreeMap<ProofLayer, Params>,
     /// Proving keys by proof layer.
     pub pks: BTreeMap<ProofLayer, ProvingKey<G1Affine>>,
     /// Optional directory to locate KZG setup parameters.
@@ -38,8 +45,14 @@ pub struct ProverConfig<Type> {
 impl<Type> ProverConfig<Type> {
     /// Returns prover config after inserting the non-native field arithmetic config for the given
     /// proof layer.
-    pub fn with_params(mut self, layer: ProofLayer, params: Params) -> Self {
-        self.non_native_params.insert(layer, params);
+    pub fn with_nn_params(mut self, layer: ProofLayer, params: Params) -> Self {
+        self.nn_params.insert(layer, params);
+        self
+    }
+
+    /// Returns prover config after inserting KZG setup params for the given proof layer.
+    pub fn with_kzg_params(mut self, layer: ProofLayer, params: ParamsKZG<Bn256>) -> Self {
+        self.kzg_params.insert(layer, params);
         self
     }
 
@@ -70,36 +83,46 @@ impl<Type> ProverConfig<Type> {
 }
 
 impl<Type: ProverType> ProverConfig<Type> {
-    pub fn load(mut self) -> Result<Self, ProverError> {
+    /// Setup the prover config by reading relevant config files from storage.
+    pub fn setup(mut self) -> Result<Self, ProverError> {
         // The proof layers that this prover needs to generate proofs for.
         let proof_layers = Type::layers();
 
         // Use the configured directories or fallback to current working directory.
-        let non_native_params_dir = self.non_native_params_dir.clone().unwrap_or(current_dir()?);
-        let kzg_params_dir = self.kzg_params_dir.clone().unwrap_or(current_dir()?);
+        let nn_params_dir = self
+            .non_native_params_dir
+            .clone()
+            .unwrap_or(default_non_native_params_dir()?);
+        let kzg_params_dir = self
+            .kzg_params_dir
+            .clone()
+            .unwrap_or(default_kzg_params_dir()?);
+        let cache_dir = self.cache_dir.clone().unwrap_or(default_cache_dir()?);
 
         // Read and store non-native field arithmetic config params for each layer.
         for layer in proof_layers {
-            let params_file = File::open(non_native_params_path(
-                non_native_params_dir.as_path(),
-                layer,
-            ))?;
+            let params_file = File::open(nn_params_path(nn_params_dir.as_path(), layer))?;
             let params = serde_json::from_reader(params_file)?;
-            self.non_native_params.insert(layer, params);
+            self.nn_params.insert(layer, params);
         }
 
         // Read and store KZG setup params for each layer.
-        for (&layer, non_native_params) in self.non_native_params.iter() {
-            let params_file = File::open(kzg_params_path(
-                kzg_params_dir.as_path(),
-                non_native_params.degree,
-            ))?;
+        for (&layer, nn_params) in self.nn_params.iter() {
+            let params_file =
+                File::open(kzg_params_path(kzg_params_dir.as_path(), nn_params.degree))?;
             let params = ParamsKZG::<Bn256>::read_custom(
                 &mut BufReader::new(params_file),
                 SerdeFormat::RawBytesUnchecked,
             )?;
             self.kzg_params.insert(layer, params);
         }
+
+        // Setup the cache directory's structure.
+        create_dir_all(cache_dir.as_path())?;
+        create_dir(cache_dir.join(CACHE_PATH_TASKS))?;
+        create_dir(cache_dir.join(CACHE_PATH_PROOFS))?;
+        create_dir(cache_dir.join(CACHE_PATH_PI))?;
+        create_dir(cache_dir.join(CACHE_PATH_EVM))?;
 
         Ok(self)
     }
