@@ -3497,9 +3497,13 @@ name = "prover2"
 version = "0.11.0"
 dependencies = [
  "aggregator",
+ "halo2_proofs",
  "serde",
+ "serde_json",
  "snark-verifier",
  "snark-verifier-sdk",
+ "thiserror",
+ "tracing",
  "zkevm-circuits",
 ]
 

@@ -8,6 +8,11 @@ license.workspace = true
 aggregator = { path = "../aggregator" }
 zkevm-circuits = { path = "../zkevm-circuits" }
 
+halo2_proofs.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
+
+thiserror = "1.0"
+tracing = "0.1.40"
