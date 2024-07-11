@@ -4,15 +4,15 @@ pub mod layer;
 pub mod proof;
 pub mod task;
 
-pub trait ProverType {
+pub trait ProverType: std::fmt::Debug {
     fn layers() -> Vec<ProofLayer>;
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ProverTypeChunk;
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ProverTypeBatch;
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ProverTypeBundle;
 
 impl ProverType for ProverTypeChunk {

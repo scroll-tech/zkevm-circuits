@@ -24,4 +24,20 @@ pub enum ProverError {
         /// The source error.
         source: serde_json::Error,
     },
+    /// Error encountered while reading variable from the process environment.
+    #[error("an error occurred while reading variable from the environment {key}: {source}")]
+    EnvVar {
+        /// The key tried to be read.
+        key: String,
+        /// The source error.
+        source: std::env::VarError,
+    },
+    /// Error encountered while parsing a string.
+    #[error("an error occurred while parsing string {src}: {err}")]
+    Parse {
+        /// Source string that we tried to parse.
+        src: String,
+        /// Parsing error.
+        err: String,
+    },
 }

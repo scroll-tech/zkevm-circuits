@@ -1,8 +1,5 @@
 use std::{
-    collections::BTreeMap,
-    fs::{create_dir, create_dir_all},
-    marker::PhantomData,
-    path::PathBuf,
+    collections::BTreeMap, fs::create_dir_all, iter::once, marker::PhantomData, path::PathBuf,
 };
 
 use halo2_proofs::{
@@ -10,19 +7,21 @@ use halo2_proofs::{
     plonk::ProvingKey,
     poly::kzg::commitment::ParamsKZG,
 };
+use tracing::{debug, info, instrument, trace};
 
 use crate::{
     types::ProverType,
     util::{
         default_cache_dir, default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
-        non_native_params_path as nn_params_path, read_json, read_kzg_params, CACHE_PATH_EVM,
-        CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_TASKS,
+        non_native_params_path as nn_params_path, read_env_or_default, read_json, read_kzg_params,
+        CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_TASKS, DEFAULT_DEGREE_LAYER0,
+        ENV_DEGREE_LAYER0,
     },
     Params, ProofLayer, ProverError,
 };
 
 /// Configuration for a generic prover.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ProverConfig<Type> {
     /// KZG setup parameters by proof layer.
     pub kzg_params: BTreeMap<ProofLayer, ParamsKZG<Bn256>>,
@@ -82,7 +81,10 @@ impl<Type> ProverConfig<Type> {
 
 impl<Type: ProverType> ProverConfig<Type> {
     /// Setup the prover config by reading relevant config files from storage.
+    #[instrument(name = "ProverConfig::setup", skip(self))]
     pub fn setup(mut self) -> Result<Self, ProverError> {
+        info!("setting up ProverConfig");
+
         // The proof layers that this prover needs to generate proofs for.
         let proof_layers = Type::layers();
 
@@ -98,25 +100,45 @@ impl<Type: ProverType> ProverConfig<Type> {
         let cache_dir = self.cache_dir.clone().unwrap_or(default_cache_dir()?);
 
         // Read and store non-native field arithmetic config params for each layer.
+        trace!("loading non-native field arithmetic params");
         for layer in proof_layers {
-            let params_path = nn_params_path(nn_params_dir.as_path(), layer);
-            let params = read_json(params_path.as_path())?;
-            self.nn_params.insert(layer, params);
+            // Layer0 (SuperCircuit) does not have non-native field arithmetics.
+            if layer != ProofLayer::Layer0 {
+                let params_path = nn_params_path(nn_params_dir.as_path(), layer);
+                debug!("reading config params for {:?}: {:?}", layer, params_path);
+                let params = read_json(params_path.as_path())?;
+                self.nn_params.insert(layer, params);
+            }
         }
 
         // Read and store KZG setup params for each layer.
-        for (&layer, nn_params) in self.nn_params.iter() {
-            let params_path = kzg_params_path(kzg_params_dir.as_path(), nn_params.degree);
+        trace!("loading KZG setup params");
+        for (&layer, degree) in self
+            .nn_params
+            .iter()
+            .map(|(k, v)| (k, v.degree))
+            .chain(once((
+                &ProofLayer::Layer0,
+                read_env_or_default(ENV_DEGREE_LAYER0, DEFAULT_DEGREE_LAYER0),
+            )))
+        {
+            let params_path = kzg_params_path(kzg_params_dir.as_path(), degree);
+            debug!(
+                "reading kzg params for {:?} (degree = {:?}): {:?}",
+                layer, degree, params_path
+            );
             let params = read_kzg_params(params_path.as_path())?;
             self.kzg_params.insert(layer, params);
         }
 
         // Setup the cache directory's structure.
-        create_dir_all(cache_dir.as_path())?;
-        create_dir(cache_dir.join(CACHE_PATH_TASKS))?;
-        create_dir(cache_dir.join(CACHE_PATH_PROOFS))?;
-        create_dir(cache_dir.join(CACHE_PATH_PI))?;
-        create_dir(cache_dir.join(CACHE_PATH_EVM))?;
+        trace!("setting up cache");
+        create_dir_all(cache_dir.join(CACHE_PATH_TASKS))?;
+        create_dir_all(cache_dir.join(CACHE_PATH_PROOFS))?;
+        create_dir_all(cache_dir.join(CACHE_PATH_PI))?;
+        create_dir_all(cache_dir.join(CACHE_PATH_EVM))?;
+
+        info!("setup ProverConfig");
 
         Ok(self)
     }
@@ -133,6 +155,11 @@ mod tests {
 
     #[test]
     fn setup_prover() -> anyhow::Result<()> {
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .pretty()
+            .init();
+
         let test_dir = current_dir()?.join("test_data");
 
         let _chunk_prover_config = ProverConfig::<ProverTypeChunk>::default()

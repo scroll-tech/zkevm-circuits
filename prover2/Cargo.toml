@@ -16,4 +16,7 @@ snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
 thiserror = "1.0"
-tracing = "0.1.40"
+tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter", "std"] }

@@ -8,6 +8,9 @@ use crate::{ProofLayer, ProverError};
 mod fs;
 pub use fs::{read_json, read_kzg_params};
 
+mod env;
+pub use env::read_env_or_default;
+
 /// The config parameters for non native field arithmetics are in a *.config file.
 pub const NON_NATIVE_PARAMS_EXT: &str = ".config";
 
@@ -31,6 +34,12 @@ pub const CACHE_PATH_PI: &str = "pi";
 
 /// The directory within cache to store Verifier contract code.
 pub const CACHE_PATH_EVM: &str = "evm";
+
+/// The environment variable to be set to configure custom degree for the super circuit (layer0).
+pub const ENV_DEGREE_LAYER0: &str = "SUPER_CIRCUIT_DEGREE";
+
+/// The default degree for the super circuit (layer0).
+pub const DEFAULT_DEGREE_LAYER0: u32 = 20;
 
 /// The path to the config parameters for a given proof layer.
 ///

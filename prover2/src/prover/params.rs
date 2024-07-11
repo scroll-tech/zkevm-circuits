@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use snark_verifier::loader::halo2::halo2_ecc::fields::fp::FpStrategy;
 
 /// Parameters to configure the non-native field arithmetic chip.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Params {
     pub strategy: FpStrategy,
     pub degree: u32,
