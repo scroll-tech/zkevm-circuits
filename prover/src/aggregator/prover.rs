@@ -146,16 +146,44 @@ impl Prover {
 
         // Load or generate aggregation snark (layer-3).
         let batch_header = BatchHeader::construct_from_chunks(
-            batch.version,
-            batch.batch_index,
-            batch.l1_message_popped,
-            batch.total_l1_message_popped,
-            batch.parent_batch_hash,
-            batch.last_block_timestamp,
+            batch.batch_header.version,
+            batch.batch_header.batch_index,
+            batch.batch_header.l1_message_popped,
+            batch.batch_header.total_l1_message_popped,
+            batch.batch_header.parent_batch_hash,
+            batch.batch_header.last_block_timestamp,
             &chunk_hashes,
         );
+
+        // sanity check between:
+        // - BatchHeader supplied from infra
+        // - BatchHeader re-constructed by circuits
+        //
+        // for the fields data_hash, z, y, blob_versioned_hash.
+        assert_eq!(
+            batch_header.data_hash, batch.batch_header.data_hash,
+            "BatchHeader(sanity) mismatch data_hash expected={}, got={}",
+            batch.batch_header.data_hash, batch_header.data_hash
+        );
+        assert_eq!(
+            batch_header.blob_data_proof[0], batch.batch_header.blob_data_proof[0],
+            "BatchHeader(sanity) mismatch blob data proof (z) expected={}, got={}",
+            batch.batch_header.blob_data_proof[0], batch_header.blob_data_proof[0],
+        );
+        assert_eq!(
+            batch_header.blob_data_proof[1], batch.batch_header.blob_data_proof[1],
+            "BatchHeader(sanity) mismatch blob data proof (y) expected={}, got={}",
+            batch.batch_header.blob_data_proof[1], batch_header.blob_data_proof[1],
+        );
+        assert_eq!(
+            batch_header.blob_versioned_hash, batch.batch_header.blob_versioned_hash,
+            "BatchHeader(sanity) mismatch blob versioned hash expected={}, got={}",
+            batch.batch_header.blob_versioned_hash, batch_header.blob_versioned_hash,
+        );
+
         let batch_hash = batch_header.batch_hash();
         let batch_info: BatchHash<N_SNARKS> = BatchHash::construct(&chunk_hashes, batch_header);
+
         let layer3_snark = self.prover_impl.load_or_gen_agg_snark(
             name,
             LayerId::Layer3.id(),

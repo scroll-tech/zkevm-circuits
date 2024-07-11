@@ -1,5 +1,5 @@
-use aggregator::ChunkInfo;
-use eth_types::{l2_types::BlockTrace, H256};
+use aggregator::{BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
+use eth_types::l2_types::BlockTrace;
 use serde::{Deserialize, Serialize};
 use zkevm_circuits::evm_circuit::witness::Block;
 
@@ -43,13 +43,8 @@ impl ChunkProvingTask {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BatchProvingTask {
-    pub version: u8,
-    pub batch_index: u64,
-    pub l1_message_popped: u64,
-    pub total_l1_message_popped: u64,
-    pub parent_batch_hash: H256,
-    pub last_block_timestamp: u64,
     pub chunk_proofs: Vec<ChunkProof>,
+    pub batch_header: BatchHeader<MAX_AGG_SNARKS>,
 }
 
 impl BatchProvingTask {
