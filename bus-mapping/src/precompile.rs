@@ -28,9 +28,9 @@ pub(crate) fn execute_precompiled(
     );
     let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(&input.to_vec().into(), gas) {
         Ok(output) => (output.bytes.to_vec(), output.gas_used, false, true),
-        Err(PrecompileErrors::Error(PrecompileError::OutOfGas))
-        | Err(PrecompileErrors::Error(PrecompileError::NotImplemented)) => {
-            (vec![], gas, true, false)
+        Err(PrecompileErrors::Error(PrecompileError::OutOfGas)) => (vec![], gas, true, false),
+        Err(PrecompileErrors::Error(PrecompileError::NotImplemented)) => {
+            (vec![], gas, false, false)
         }
         Err(err) => {
             log::warn!("unknown precompile err {err:?}");
