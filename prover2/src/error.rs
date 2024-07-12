@@ -10,6 +10,9 @@ pub enum ProverError {
     /// Error occurred while doing other I/O operations.
     #[error(transparent)]
     OtherIo(#[from] std::io::Error),
+    /// Error occurred while doing other serialization/deserialization operations.
+    #[error(transparent)]
+    OtherSerde(#[from] serde_json::Error),
     /// Error encountered while reading from or writing to files.
     #[error("an error occurred while reading/writing {path}: {source}")]
     IoReadWrite {
@@ -46,6 +49,15 @@ pub enum ProverError {
     /// config.
     #[error("prover {0} missing KZG setup params for {1:?}")]
     MissingKzgParams(String, ProofLayer),
+    /// Error that indicates the proving key for specified layer is missing from prover config.
+    #[error("prover {0} missing proving key for {1:?}")]
+    MissingProvingKey(String, ProofLayer),
+    /// Error that has occurred during keygen process.
+    #[error("an error occurred during keygen process for prover={0} layer={1:?}: {2}")]
+    Keygen(String, ProofLayer, halo2_proofs::plonk::Error),
+    /// Error that has occurred during SNARK generation process.
+    #[error("an error occurred during SNARK generation for task={0} layer={1:?}: {2}")]
+    GenSnark(String, ProofLayer, halo2_proofs::plonk::Error),
     /// Custom error.
     #[error("custom error: {0}")]
     Custom(String),

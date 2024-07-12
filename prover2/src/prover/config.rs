@@ -1,8 +1,8 @@
-use std::{collections::BTreeMap, fs::create_dir_all, marker::PhantomData, path::PathBuf};
+use std::{collections::HashMap, fs::create_dir_all, marker::PhantomData, path::PathBuf};
 
 use halo2_proofs::{
-    halo2curves::bn256::{Bn256, G1Affine},
-    plonk::ProvingKey,
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    plonk::{keygen_pk2, Circuit, ProvingKey},
     poly::kzg::commitment::ParamsKZG,
 };
 use tracing::{debug, info, instrument, trace};
@@ -22,13 +22,13 @@ use crate::{
 #[derive(Default, Debug)]
 pub struct ProverConfig<Type> {
     /// Polynomial degree used by proof generation layer.
-    pub degrees: BTreeMap<ProofLayer, u32>,
+    pub degrees: HashMap<ProofLayer, u32>,
     /// KZG setup parameters by proof layer.
-    pub kzg_params: BTreeMap<ProofLayer, ParamsKZG<Bn256>>,
+    pub kzg_params: HashMap<ProofLayer, ParamsKZG<Bn256>>,
     /// Config parameters for non-native field arithmetics by proof layer.
-    pub nn_params: BTreeMap<ProofLayer, Params>,
+    pub nn_params: HashMap<ProofLayer, Params>,
     /// Proving keys by proof layer.
-    pub pks: BTreeMap<ProofLayer, ProvingKey<G1Affine>>,
+    pub pks: HashMap<ProofLayer, ProvingKey<G1Affine>>,
     /// Optional directory to locate KZG setup parameters.
     pub kzg_params_dir: Option<PathBuf>,
     /// Optional directory to locate non-native field arithmetic config params.
@@ -78,6 +78,9 @@ impl<Type> ProverConfig<Type> {
         self
     }
 }
+
+/// Convenience type.
+type KzgParamsAndPk<'a> = (&'a ParamsKZG<Bn256>, &'a ProvingKey<G1Affine>);
 
 impl<Type: ProverType> ProverConfig<Type> {
     /// Setup the prover config by reading relevant config files from storage.
@@ -146,6 +149,25 @@ impl<Type: ProverType> ProverConfig<Type> {
 
         Ok(self)
     }
+
+    /// Returns the proving key for the proof layer.
+    pub fn gen_proving_key<C: Circuit<Fr>>(
+        &mut self,
+        layer: ProofLayer,
+        circuit: &C,
+    ) -> Result<KzgParamsAndPk, ProverError> {
+        if self.pks.contains_key(&layer) {
+            return Ok((&self.kzg_params[&layer], &self.pks[&layer]));
+        }
+
+        // Generate proving key for the circuit and insert into the cached map.
+        let kzg_params = self.kzg_params(layer)?;
+        let pk = keygen_pk2(kzg_params, circuit)
+            .map_err(|e| ProverError::Keygen(Type::NAME.to_string(), layer, e))?;
+        self.pks.insert(layer, pk);
+
+        Ok((&self.kzg_params[&layer], &self.pks[&layer]))
+    }
 }
 
 impl<Type> ProverConfig<Type> {
@@ -156,6 +178,13 @@ impl<Type> ProverConfig<Type> {
             .as_ref()
             .map(|dir| dir.join(CACHE_PATH_PROOFS).join(id).join(JSON_EXT))
     }
+
+    /// Returns the path to cache the generated SNARK.
+    pub fn path_snark(&self, id: &str, layer: ProofLayer) -> Option<PathBuf> {
+        self.cache_dir
+            .as_ref()
+            .map(|dir| dir.join(CACHE_PATH_SNARKS).join(format!("{layer:?}-{id}")))
+    }
 }
 
 impl<Type: ProverType> ProverConfig<Type> {
@@ -164,6 +193,14 @@ impl<Type: ProverType> ProverConfig<Type> {
         self.kzg_params
             .get(&layer)
             .ok_or(ProverError::MissingKzgParams(Type::NAME.into(), layer))
+    }
+
+    /// Returns the proving key for the proof layer.
+    pub fn proving_key(&self, layer: ProofLayer) -> Result<&ProvingKey<G1Affine>, ProverError> {
+        self.pks.get(&layer).ok_or(ProverError::MissingProvingKey(
+            Type::NAME.to_string(),
+            layer,
+        ))
     }
 }
 

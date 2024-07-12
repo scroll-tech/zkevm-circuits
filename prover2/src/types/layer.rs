@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Various layers in the proof generation process.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum ProofLayer {
     /// The super circuit (ZkEVM) layer. This is the innermost proof layer.
     Layer0,
