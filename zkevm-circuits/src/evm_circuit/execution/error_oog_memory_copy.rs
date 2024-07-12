@@ -41,6 +41,8 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     external_address: Word<F>,
 
     addr_expansion_gadget: MemoryAddrExpandGadget<F>,
+    // mcopy expansion
+    memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     // other kind(CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY) expansion
     memory_expansion_normal: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
@@ -91,11 +93,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             cb.stack_pop(external_address.expr());
         });
 
-        let addr_expansion_gadget = MemoryAddrExpandGadget::construct(cb, is_mcopy.expr());
+        let addr_expansion_gadget = MemoryAddrExpandGadget::construct(cb);
 
         cb.stack_pop(addr_expansion_gadget.dst_memory_addr.offset_rlc());
         cb.stack_pop(addr_expansion_gadget.src_memory_addr.offset_rlc());
         cb.stack_pop(addr_expansion_gadget.dst_memory_addr.length_rlc());
+
+        // for mcopy
+        let memory_expansion_mcopy =
+            addr_expansion_gadget.build_memory_expansion_mcopy(cb, is_mcopy.expr());
 
         // for others (CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY)
         let memory_expansion_normal = cb.condition(not::expr(is_mcopy.expr()), |cb| {
@@ -107,7 +113,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let memory_expansion_cost = select::expr(
             is_mcopy.expr(),
-            addr_expansion_gadget.memory_expansion_mcopy.gas_cost(),
+            memory_expansion_mcopy.gas_cost(),
             memory_expansion_normal.gas_cost(),
         );
         let memory_copier_gas = MemoryCopierGasGadget::construct(
@@ -160,6 +166,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             tx_id,
             external_address,
             addr_expansion_gadget,
+            memory_expansion_mcopy,
             memory_expansion_normal,
             memory_copier_gas,
             insufficient_gas,
@@ -227,13 +234,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         )?;
 
         // assign memory_expansion_mcopy
-        let (_, memory_expansion_cost_mcopy) =
-            self.addr_expansion_gadget.memory_expansion_mcopy.assign(
-                region,
-                offset,
-                step.memory_word_size(),
-                [src_memory_addr, dst_memory_addr],
-            )?;
+        let (_, memory_expansion_cost_mcopy) = self.memory_expansion_mcopy.assign(
+            region,
+            offset,
+            step.memory_word_size(),
+            [src_memory_addr, dst_memory_addr],
+        )?;
 
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
@@ -291,33 +297,38 @@ pub(crate) struct MemoryAddrExpandGadget<F> {
     src_memory_addr: MemoryExpandedAddressGadget<F>,
     /// Destination offset and size to copy
     dst_memory_addr: MemoryExpandedAddressGadget<F>,
-    // mcopy expansion
-    memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
 // construct src_memory_addr, dst_memory_addr and memory_expansion_mcopy.
 impl<F: Field> MemoryAddrExpandGadget<F> {
-    fn construct(cb: &mut EVMConstraintBuilder<F>, is_mcopy: Expression<F>) -> Self {
+    fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
         // src can also be possible to overflow for mcopy.
         let src_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
-        // for mcopy
-        let memory_expansion_mcopy = cb.condition(is_mcopy.expr(), |cb| {
-            cb.require_equal(
-                "mcopy src_address length == dst_address length",
-                src_memory_addr.length_rlc(),
-                dst_memory_addr.length_rlc(),
-            );
-            MemoryExpansionGadget::construct(
-                cb,
-                [src_memory_addr.end_offset(), dst_memory_addr.end_offset()],
-            )
-        });
         Self {
             src_memory_addr,
             dst_memory_addr,
-            memory_expansion_mcopy,
         }
+    }
+    fn build_memory_expansion_mcopy(
+        &self,
+        cb: &mut EVMConstraintBuilder<F>,
+        is_mcopy: Expression<F>,
+    ) -> MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE> {
+        cb.condition(is_mcopy.expr(), |cb| {
+            cb.require_equal(
+                "mcopy src_address length == dst_address length",
+                self.src_memory_addr.length_rlc(),
+                self.dst_memory_addr.length_rlc(),
+            );
+            MemoryExpansionGadget::construct(
+                cb,
+                [
+                    self.src_memory_addr.end_offset(),
+                    self.dst_memory_addr.end_offset(),
+                ],
+            )
+        })
     }
 }
 
@@ -707,6 +718,7 @@ mod tests {
     #[derive(Clone)]
     struct ErrOOGMemoryCopyGadgetTestContainer<F> {
         gadget: MemoryAddrExpandGadget<F>,
+        memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
         is_mcopy: Cell<F>,
     }
 
@@ -714,9 +726,13 @@ mod tests {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let is_mcopy = cb.query_cell();
             cb.require_boolean("is_mcopy is bool", is_mcopy.expr());
-            let gadget = MemoryAddrExpandGadget::<F>::construct(cb, is_mcopy.expr());
-
-            ErrOOGMemoryCopyGadgetTestContainer { gadget, is_mcopy }
+            let gadget = MemoryAddrExpandGadget::<F>::construct(cb);
+            let memory_expansion_mcopy = gadget.build_memory_expansion_mcopy(cb, is_mcopy.expr());
+            ErrOOGMemoryCopyGadgetTestContainer {
+                gadget,
+                memory_expansion_mcopy,
+                is_mcopy,
+            }
         }
 
         fn assign_gadget_container(
@@ -743,12 +759,8 @@ mod tests {
                 copy_size.into(),
             )?;
             // assign memory_expansion_mcopy
-            self.gadget.memory_expansion_mcopy.assign(
-                region,
-                0,
-                0,
-                [src_memory_addr, dst_memory_addr],
-            )?;
+            self.memory_expansion_mcopy
+                .assign(region, 0, 0, [src_memory_addr, dst_memory_addr])?;
             Ok(())
         }
     }
