@@ -100,10 +100,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
 
 [[package]]
-name = "alloy-primitives"
-version = "0.7.4"
+name = "alloy-eips"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db8aa973e647ec336810a9356af8aea787249c9d00b1525359f3db29a68d231b"
+checksum = "f76ecab54890cdea1e4808fc0891c7e6cfcf71fe1a9fe26810c7280ef768f4ed"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "c-kzg",
+ "once_cell",
+ "serde",
+]
+
+[[package]]
+name = "alloy-primitives"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccb3ead547f4532bc8af961649942f0b9c16ee9226e26caa3f38420651cc0bf4"
 dependencies = [
  "alloy-rlp",
  "bytes",
@@ -127,8 +140,20 @@ version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d58d9f5da7b40e9bfff0b7e7816700be4019db97d4b6359fe7f94a9e22e42ac"
 dependencies = [
+ "alloy-rlp-derive",
  "arrayvec",
  "bytes",
+]
+
+[[package]]
+name = "alloy-rlp-derive"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d83524c1f6162fcb5b0decf775498a125066c86dda6066ed609531b0e912f85a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.60",
 ]
 
 [[package]]
@@ -3696,11 +3721,12 @@ dependencies = [
 
 [[package]]
 name = "revm-precompile"
-version = "8.0.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v37#7d5e8554ce3dbb17b5f0fa780ee9585b2a08cce5"
+version = "9.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v38#8297f0f943a6dc486f87b3f1531eedc4f5567148"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
+ "cfg-if 1.0.0",
  "k256",
  "once_cell",
  "revm-primitives",
@@ -3712,9 +3738,10 @@ dependencies = [
 
 [[package]]
 name = "revm-primitives"
-version = "5.0.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v37#7d5e8554ce3dbb17b5f0fa780ee9585b2a08cce5"
+version = "6.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v38#8297f0f943a6dc486f87b3f1531eedc4f5567148"
 dependencies = [
+ "alloy-eips",
  "alloy-primitives",
  "auto_impl",
  "bitflags 2.5.0",
@@ -3823,9 +3850,9 @@ dependencies = [
 
 [[package]]
 name = "ruint"
-version = "1.12.1"
+version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f308135fef9fc398342da5472ce7c484529df23743fb7c734e0f3d472971e62"
+checksum = "2c3cc4c2511671f327125da14133d0c5c5d137f006a1017a16f557bc85b16286"
 dependencies = [
  "alloy-rlp",
  "ark-ff 0.3.0",
@@ -3847,9 +3874,9 @@ dependencies = [
 
 [[package]]
 name = "ruint-macro"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f86854cf50259291520509879a5c294c3c9a4c334e9ff65071c51e42ef1e2343"
+checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
 name = "rustc-demangle"
