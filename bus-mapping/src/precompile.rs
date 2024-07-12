@@ -30,7 +30,7 @@ pub(crate) fn execute_precompiled(
         Ok(output) => (output.bytes.to_vec(), output.gas_used, false, true),
         Err(PrecompileErrors::Error(PrecompileError::OutOfGas))
         | Err(PrecompileErrors::Error(PrecompileError::NotImplemented)) => {
-            (vec![], gas, false, false)
+            (vec![], gas, true, false)
         }
         Err(err) => {
             log::warn!("unknown precompile err {err:?}");
