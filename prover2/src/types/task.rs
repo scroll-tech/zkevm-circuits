@@ -11,7 +11,7 @@ pub trait ProvingTask: Serialize + DeserializeOwned + std::fmt::Debug {
 pub struct ChunkProvingTask;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BatchProvingTask;
+pub struct BatchProvingTask<const N_SNARKS: usize>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BundleProvingTask;
@@ -22,7 +22,7 @@ impl ProvingTask for ChunkProvingTask {
     }
 }
 
-impl ProvingTask for BatchProvingTask {
+impl<const N_SNARKS: usize> ProvingTask for BatchProvingTask<N_SNARKS> {
     fn id(&self) -> String {
         "batch".into()
     }

@@ -162,8 +162,10 @@ impl<Type> ProverConfig<Type> {
 mod tests {
     use std::env::current_dir;
 
+    use aggregator::MAX_AGG_SNARKS;
+
     use crate::{
-        types::{ProverTypeBatch, ProverTypeBundle, ProverTypeChunk},
+        types::{ProverTypeBatch, ProverTypeChunk},
         ProverConfig,
     };
 
@@ -181,12 +183,8 @@ mod tests {
             .with_kzg_params_dir(test_dir.join(".params"))
             .with_cache_dir(test_dir.join(".cache"))
             .setup()?;
-        let _batch_prover_config = ProverConfig::<ProverTypeBatch>::default()
-            .with_nn_params_dir(test_dir.join(".config"))
-            .with_kzg_params_dir(test_dir.join(".params"))
-            .with_cache_dir(test_dir.join(".cache"))
-            .setup()?;
-        let _bundle_prover_config = ProverConfig::<ProverTypeBundle>::default()
+
+        let _batch_prover_config = ProverConfig::<ProverTypeBatch<MAX_AGG_SNARKS>>::default()
             .with_nn_params_dir(test_dir.join(".config"))
             .with_kzg_params_dir(test_dir.join(".params"))
             .with_cache_dir(test_dir.join(".cache"))

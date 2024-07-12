@@ -40,4 +40,7 @@ pub enum ProverError {
         /// Parsing error.
         err: String,
     },
+    /// Custom error.
+    #[error("custom error: {0}")]
+    Custom(String),
 }

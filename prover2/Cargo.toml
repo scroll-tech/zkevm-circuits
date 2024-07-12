@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 aggregator = { path = "../aggregator" }
+gadgets = { path = "../gadgets" }
 zkevm-circuits = { path = "../zkevm-circuits" }
 
 anyhow.workspace = true

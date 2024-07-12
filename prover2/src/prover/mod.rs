@@ -1,3 +1,4 @@
+use aggregator::MAX_AGG_SNARKS;
 use tracing::instrument;
 
 use crate::{
@@ -12,7 +13,7 @@ pub mod params;
 pub type ChunkProver = Prover<ProverTypeChunk>;
 
 /// Convenience type for batch prover.
-pub type BatchProver = Prover<ProverTypeBatch>;
+pub type BatchProver = Prover<ProverTypeBatch<MAX_AGG_SNARKS>>;
 
 /// Convenience type for bundle prover.
 pub type BundleProver = Prover<ProverTypeBundle>;
@@ -40,6 +41,8 @@ impl<Type: ProverType> Prover<Type> {
         // - re-use SNARK if cache hit and early return
         // - gen SNARK
         // - write SNARK to cache
+        let _base_layer = Type::base_layer()?;
+        let _compression_layers = Type::compression_layers();
 
         // dump outermost SNARK proof to cache.
 

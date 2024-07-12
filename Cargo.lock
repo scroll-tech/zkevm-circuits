@@ -3523,6 +3523,7 @@ version = "0.11.0"
 dependencies = [
  "aggregator",
  "anyhow",
+ "gadgets",
  "halo2_proofs",
  "serde",
  "serde_json",
