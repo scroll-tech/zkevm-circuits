@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::ProofLayer;
+
 /// Represents error variants possibly encountered during the proof generation process.
 #[derive(Debug, Error)]
 pub enum ProverError {
@@ -40,6 +42,10 @@ pub enum ProverError {
         /// Parsing error.
         err: String,
     },
+    /// Error that indicates the KZG setup parameters for specified layer are missing from prover
+    /// config.
+    #[error("prover {0} missing KZG setup params for {1:?}")]
+    MissingKzgParams(String, ProofLayer),
     /// Custom error.
     #[error("custom error: {0}")]
     Custom(String),

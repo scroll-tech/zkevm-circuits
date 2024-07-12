@@ -1,9 +1,11 @@
 use aggregator::MAX_AGG_SNARKS;
+use halo2_proofs::{halo2curves::bn256::Fr, plonk::Circuit};
+use snark_verifier_sdk::{CircuitExt, Snark};
 use tracing::instrument;
 
 use crate::{
     types::{ProverType, ProverTypeBatch, ProverTypeBundle, ProverTypeChunk},
-    Proof, ProverConfig, ProverError,
+    Proof, ProofLayer, ProverConfig, ProverError,
 };
 
 pub mod config;
@@ -36,16 +38,27 @@ impl<Type: ProverType> Prover<Type> {
     /// Generate a proof for the given task.
     #[instrument(name = "Prover::gen_proof", skip(self))]
     pub fn gen_proof(&mut self, task: Type::Task) -> Result<Proof, ProverError> {
-        // generate SNARKs for the different layers.
-        //
-        // - re-use SNARK if cache hit and early return
-        // - gen SNARK
-        // - write SNARK to cache
-        let _base_layer = Type::base_layer()?;
-        let _compression_layers = Type::compression_layers();
+        // Generate SNARKs for all the layers at which the prover operates. We start from the base
+        // layer, i.e. the innermost layer and compress SNARKs until we have the SNARK of the
+        // outermost layer for this prover.
+        let base_layer = Type::base_layer()?;
+        let base_circuit = Type::build_base(task);
+        let mut snark = self.gen_snark(base_layer, &base_circuit)?;
 
-        // dump outermost SNARK proof to cache.
+        for layer in Type::compression_layers() {
+            let kzg_params = self.config.kzg_params(layer)?;
+            let compression_circuit = Type::build_compression(kzg_params, snark, layer);
+            snark = self.gen_snark(layer, &compression_circuit)?;
+        }
 
+        unimplemented!()
+    }
+
+    /// Generate a SNARK for the given circuit.
+    fn gen_snark<C>(&mut self, _layer: ProofLayer, _circuit: &C) -> Result<Snark, ProverError>
+    where
+        C: Circuit<Fr> + CircuitExt<Fr>,
+    {
         unimplemented!()
     }
 }

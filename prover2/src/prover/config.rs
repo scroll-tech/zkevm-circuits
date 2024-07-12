@@ -158,6 +158,15 @@ impl<Type> ProverConfig<Type> {
     }
 }
 
+impl<Type: ProverType> ProverConfig<Type> {
+    /// Returns the KZG setup parameters for the proof layer.
+    pub fn kzg_params(&self, layer: ProofLayer) -> Result<&ParamsKZG<Bn256>, ProverError> {
+        self.kzg_params
+            .get(&layer)
+            .ok_or(ProverError::MissingKzgParams(Type::NAME.into(), layer))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env::current_dir;
