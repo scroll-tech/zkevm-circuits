@@ -36,8 +36,14 @@ pub static ZKEVM_DEGREES: LazyLock<Vec<u32>> = LazyLock::new(|| {
     ]))
 });
 
-pub static AGG_DEGREES: LazyLock<Vec<u32>> =
-    LazyLock::new(|| Vec::from_iter(HashSet::from([*LAYER3_DEGREE, *LAYER4_DEGREE])));
+pub static AGG_DEGREES: LazyLock<Vec<u32>> = LazyLock::new(|| {
+    Vec::from_iter(HashSet::from([
+        *LAYER3_DEGREE,
+        *LAYER4_DEGREE,
+        *LAYER5_DEGREE,
+        *LAYER6_DEGREE,
+    ]))
+});
 
 #[derive(Clone, Copy, Debug)]
 pub enum LayerId {

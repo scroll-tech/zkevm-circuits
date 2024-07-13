@@ -1,7 +1,7 @@
 use crate::{
     common,
     config::{LayerId, AGG_DEGREES},
-    consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
+    consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
     io::{force_to_read, try_to_read},
     proof::BundleProof,
     types::BundleProvingTask,
@@ -19,7 +19,8 @@ pub struct Prover {
     // Make it public for testing with inner functions (unnecessary for FFI).
     pub prover_impl: common::Prover,
     pub chunk_protocol: Vec<u8>,
-    raw_vk: Option<Vec<u8>>,
+    raw_vk_batch: Option<Vec<u8>>,
+    raw_vk_bundle: Option<Vec<u8>>,
 }
 
 impl Prover {
@@ -30,11 +31,19 @@ impl Prover {
         let prover_impl = common::Prover::from_params_dir(params_dir, &AGG_DEGREES);
         let chunk_protocol = force_to_read(assets_dir, &CHUNK_PROTOCOL_FILENAME);
 
-        let raw_vk = try_to_read(assets_dir, &BATCH_VK_FILENAME);
-        if raw_vk.is_none() {
+        let raw_vk_batch = try_to_read(assets_dir, &BATCH_VK_FILENAME);
+        let raw_vk_bundle = try_to_read(assets_dir, &BUNDLE_VK_FILENAME);
+        if raw_vk_batch.is_none() {
             log::warn!(
                 "batch-prover: {} doesn't exist in {}",
                 *BATCH_VK_FILENAME,
+                assets_dir
+            );
+        }
+        if raw_vk_bundle.is_none() {
+            log::warn!(
+                "batch-prover: {} doesn't exist in {}",
+                *BUNDLE_VK_FILENAME,
                 assets_dir
             );
         }
@@ -42,7 +51,8 @@ impl Prover {
         Self {
             prover_impl,
             chunk_protocol,
-            raw_vk,
+            raw_vk_batch,
+            raw_vk_bundle,
         }
     }
 
@@ -66,13 +76,13 @@ impl Prover {
     pub fn get_batch_vk(&self) -> Option<Vec<u8>> {
         self.prover_impl
             .raw_vk(LayerId::Layer4.id())
-            .or_else(|| self.raw_vk.clone())
+            .or_else(|| self.raw_vk_batch.clone())
     }
 
     pub fn get_bundle_vk(&self) -> Option<Vec<u8>> {
         self.prover_impl
-            .raw_vk(LayerId::Layer5.id())
-            .or_else(|| self.raw_vk.clone())
+            .raw_vk(LayerId::Layer6.id())
+            .or_else(|| self.raw_vk_bundle.clone())
     }
 
     // Return the EVM proof for verification.
@@ -244,7 +254,7 @@ impl Prover {
 
     /// Check vk generated is same with vk loaded from assets
     fn check_batch_vk(&self) {
-        if self.raw_vk.is_some() {
+        if self.raw_vk_batch.is_some() {
             let gen_vk = self
                 .prover_impl
                 .raw_vk(LayerId::Layer4.id())
@@ -253,7 +263,7 @@ impl Prover {
                 log::warn!("no gen_vk found, skip check_vk");
                 return;
             }
-            let init_vk = self.raw_vk.clone().unwrap_or_default();
+            let init_vk = self.raw_vk_batch.clone().unwrap_or_default();
             if gen_vk != init_vk {
                 log::error!(
                     "batch-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",
@@ -266,7 +276,7 @@ impl Prover {
 
     /// Check vk generated is same with vk loaded from assets
     fn check_bundle_vk(&self) {
-        if self.raw_vk.is_some() {
+        if self.raw_vk_bundle.is_some() {
             let gen_vk = self
                 .prover_impl
                 .raw_vk(LayerId::Layer6.id())
@@ -275,7 +285,7 @@ impl Prover {
                 log::warn!("no gen_vk found, skip check_vk");
                 return;
             }
-            let init_vk = self.raw_vk.clone().unwrap_or_default();
+            let init_vk = self.raw_vk_bundle.clone().unwrap_or_default();
             if gen_vk != init_vk {
                 log::error!(
                     "bundle-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",
