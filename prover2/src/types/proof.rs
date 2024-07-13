@@ -39,7 +39,7 @@ pub struct Proof<Aux> {
 
 impl<Aux> Proof<Aux> {
     /// Construct a new [`Proof`] given the SNARK for the proof layer and some auxiliary data.
-    pub fn new(
+    pub fn new_from_snark(
         layer: ProofLayer,
         snark: Snark,
         pk: &ProvingKey<G1Affine>,
@@ -63,6 +63,29 @@ impl<Aux> Proof<Aux> {
             proof,
             aux,
         })
+    }
+
+    /// Construct a new [`Proof`] given the raw proof and instances for an EVM-verifiable proof.
+    pub fn new_from_raw(
+        layer: ProofLayer,
+        instances: &[Fr],
+        proof: &[u8],
+        pk: &ProvingKey<G1Affine>,
+        aux: Aux,
+    ) -> Self {
+        let git_version = GIT_VERSION.to_string();
+        let vk = pk.get_vk().to_bytes(SerdeFormat::Processed);
+        let instances = instances.iter().flat_map(serialize_be).collect::<Vec<_>>();
+
+        Self {
+            git_version,
+            layer,
+            vk,
+            protocol: vec![],
+            instances,
+            proof: proof.to_vec(),
+            aux,
+        }
     }
 }
 
