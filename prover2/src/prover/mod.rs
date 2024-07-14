@@ -1,7 +1,7 @@
 use aggregator::MAX_AGG_SNARKS;
 use halo2_proofs::halo2curves::bn256::Fr;
 use snark_verifier_sdk::{CircuitExt, Snark};
-use tracing::instrument;
+use tracing::{info, instrument, trace};
 
 use crate::{
     types::{ProverType, ProverTypeBatch, ProverTypeBundle, ProverTypeChunk},
@@ -42,28 +42,36 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
     pub fn gen_proof(
         &mut self,
         task: Type::Task,
-    ) -> Result<Proof<Type::ProofAuxData>, ProverError> {
+    ) -> Result<Proof<Type::ProofAuxData, EVM_VERIFY>, ProverError> {
+        info!(name = "gen proof", prover = ?Type::NAME.to_string(), ?task);
+
         // Early return if the proof for the given task is already available in cache.
         let id = task.id();
 
         let path_proof = self.config.path_proof(&id);
         if let Some(path) = &path_proof {
+            trace!(name = "read proof from cache", ?path);
             if let Ok(proof) = read_json(path) {
+                trace!(name = "early return cache hit", ?proof);
                 return Ok(proof);
             }
         }
 
         let proof = if EVM_VERIFY {
+            trace!(name = "gen evm proof", ?task);
             self.gen_proof_evm(task)?
         } else {
+            trace!(name = "gen halo2 proof", ?task);
             self.gen_proof_halo2(task)?
         };
 
         // Dump the proof if caching is enabled.
         if let Some(path) = &path_proof {
+            trace!(name = "dump proof", ?path, ?proof);
             write_json(path, &proof)?;
         }
 
+        info!(name = "gen proof OK", prover = ?Type::NAME.to_string(), ?proof);
         Ok(proof)
     }
 
@@ -73,19 +81,24 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
     fn gen_proof_halo2(
         &mut self,
         task: Type::Task,
-    ) -> Result<Proof<Type::ProofAuxData>, ProverError> {
+    ) -> Result<Proof<Type::ProofAuxData, EVM_VERIFY>, ProverError> {
         let id = task.id();
 
         // Generate SNARKs for all the layers at which the prover operates.
         //
         // We start from the base layer, i.e. the innermost layer for the prover.
-        let (mut snark, aux_data) = self.gen_base_snark(task)?;
+        let layer = Type::base_layer()?;
+        trace!(name = "gen base snark", ?layer);
+        let (mut snark, aux_data) = self.gen_base_snark(layer, task)?;
+        trace!(name = "gen base snark OK", ?aux_data);
 
         // The base layer's SNARK is compressed for every layer of compression.
         for layer in Type::compression_layers() {
             let kzg_params = self.config.kzg_params(layer)?;
             let compression_circuit = Type::build_compression(kzg_params, snark, layer);
+            trace!(name = "gen compression snark", ?layer);
             snark = self.gen_halo2_snark(&id, layer, compression_circuit)?;
+            trace!(name = "gen compression snark OK", ?layer);
         }
 
         // We have the final compressed SNARK for the proof generation process under the prover.
@@ -102,20 +115,25 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
     fn gen_proof_evm(
         &mut self,
         task: Type::Task,
-    ) -> Result<Proof<Type::ProofAuxData>, ProverError> {
+    ) -> Result<Proof<Type::ProofAuxData, EVM_VERIFY>, ProverError> {
         let id = task.id();
 
         // Generate SNARKs for all the layers at which the prover operates.
         //
         // We start from the base layer, i.e. the innermost layer for the prover.
-        let (mut snark, aux_data) = self.gen_base_snark(task)?;
+        let layer = Type::base_layer()?;
+        trace!(name = "gen base snark", ?layer);
+        let (mut snark, aux_data) = self.gen_base_snark(layer, task)?;
+        trace!(name = "gen base snark OK", ?aux_data);
 
         // The base layer's SNARK is compressed for every layer of compression, except the last
         // (final) layer. The final layer of compression is supposed to be EVM-verifiable.
         for &layer in Type::compression_layers().iter().rev().skip(1).rev() {
             let kzg_params = self.config.kzg_params(layer)?;
             let compression_circuit = Type::build_compression(kzg_params, snark, layer);
+            trace!(name = "gen compression snark", ?layer);
             snark = self.gen_halo2_snark(&id, layer, compression_circuit)?;
+            trace!(name = "gen compression snark OK", ?layer);
         }
 
         // We have the final compressed SNARK for the proof generation process under the prover.
@@ -127,6 +145,7 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
             .config
             .gen_proving_key(outermost_layer, &compression_circuit)?;
         let mut rng = gen_rng();
+        trace!(name = "gen evm proof", layer = ?outermost_layer);
         let raw_proof = snark_verifier_sdk::gen_evm_proof_shplonk(
             kzg_params,
             pk,
@@ -134,6 +153,7 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
             instances.clone(),
             &mut rng,
         );
+        trace!(name = "gen evm proof OK", layer = ?outermost_layer);
 
         let proof = Proof::new_from_raw(outermost_layer, &instances[0], &raw_proof, pk, aux_data);
 
@@ -144,9 +164,9 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
     /// with larger number of advice columns while being of lower degree. The SNARK of the base
     /// circuit is then compressed using the compression layer to produce a proof that's cheaper to
     /// verify.
-    #[instrument(name = "Prover::gen_base_snark", skip(self))]
     fn gen_base_snark(
         &mut self,
+        base_layer: ProofLayer,
         task: Type::Task,
     ) -> Result<(Snark, Type::ProofAuxData), ProverError> {
         let id = task.id();
@@ -154,13 +174,10 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
         // Generate SNARKs for all the layers at which the prover operates.
         //
         // We start from the base layer, i.e. the innermost layer for the prover.
-        let base_layer = Type::base_layer()?;
-        let (base_circuit, aux_data) = Type::build_base(task);
+        let (base_circuit, aux_data) = Type::build_base(&task);
+        let snark = self.gen_halo2_snark(&id, base_layer, base_circuit)?;
 
-        Ok((
-            self.gen_halo2_snark(&id, base_layer, base_circuit)?,
-            aux_data,
-        ))
+        Ok((snark, aux_data))
     }
 
     /// Generate a SNARK for the given circuit.

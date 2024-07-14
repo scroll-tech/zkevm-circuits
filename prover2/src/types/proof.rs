@@ -13,8 +13,8 @@ use crate::{
 };
 
 /// Describes an output from a [`Prover`]'s proof generation process when given a [`ProvingTask`].
-#[derive(Serialize, Deserialize)]
-pub struct Proof<Aux> {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Proof<Aux, const EVM_VERIFY: bool> {
     /// Version of the source code (git describe --abbrev=8) used for proof generation.
     git_version: String,
     /// The proof layer.
@@ -37,7 +37,7 @@ pub struct Proof<Aux> {
     aux: Aux,
 }
 
-impl<Aux> Proof<Aux> {
+impl<Aux, const EVM_VERIFY: bool> Proof<Aux, EVM_VERIFY> {
     /// Construct a new [`Proof`] given the SNARK for the proof layer and some auxiliary data.
     pub fn new_from_snark(
         layer: ProofLayer,
@@ -89,7 +89,7 @@ impl<Aux> Proof<Aux> {
     }
 }
 
-impl<Aux> Proof<Aux> {
+impl<Aux, const EVM_VERIFY: bool> Proof<Aux, EVM_VERIFY> {
     /// Deserialize and return the verifying key.
     pub fn verifying_key<C: Circuit<Fr>>(&self) -> Result<VerifyingKey<G1Affine>, ProverError> {
         Ok(VerifyingKey::from_bytes::<C>(
@@ -99,7 +99,7 @@ impl<Aux> Proof<Aux> {
     }
 }
 
-impl<Aux> TryInto<Snark> for Proof<Aux> {
+impl<Aux, const EVM_VERIFY: bool> TryInto<Snark> for Proof<Aux, EVM_VERIFY> {
     type Error = serde_json::Error;
 
     fn try_into(self) -> Result<Snark, Self::Error> {

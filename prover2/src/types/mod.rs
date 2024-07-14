@@ -34,7 +34,7 @@ pub trait ProverType: std::fmt::Debug {
 
     /// The auxiliary data attached to the final proof from the prover type. For instance, a [`ChunkProver`] needs to attach the [`ChunkInfo`],
     /// which is then used by the [`BatchProver`] to construct its [`BatchProvingTask`].
-    type ProofAuxData: Serialize + DeserializeOwned;
+    type ProofAuxData: Serialize + DeserializeOwned + std::fmt::Debug;
 
     /// The prover supports proof generation at the following layers.
     fn layers() -> Vec<ProofLayer>;
@@ -63,7 +63,7 @@ pub trait ProverType: std::fmt::Debug {
     }
 
     /// Builds the base circuit given witness in the proving task.
-    fn build_base(task: Self::Task) -> (Self::BaseCircuit, Self::ProofAuxData);
+    fn build_base(task: &Self::Task) -> (Self::BaseCircuit, Self::ProofAuxData);
 
     /// Builds the compression circuit given the previous layer's SNARK.
     fn build_compression(
@@ -85,12 +85,12 @@ pub struct ProverTypeBatch<const N_SNARKS: usize>;
 #[derive(Default, Debug)]
 pub struct ProverTypeBundle;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ChunkProofAuxData {
     chunk_infos: Vec<ChunkInfo>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BatchProofAuxData {
     batch_hash: H256,
 }
@@ -110,7 +110,7 @@ impl ProverType for ProverTypeChunk {
         vec![ProofLayer::Layer0, ProofLayer::Layer1, ProofLayer::Layer2]
     }
 
-    fn build_base(_task: Self::Task) -> (Self::BaseCircuit, Self::ProofAuxData) {
+    fn build_base(_task: &Self::Task) -> (Self::BaseCircuit, Self::ProofAuxData) {
         unimplemented!()
     }
 
@@ -138,7 +138,7 @@ impl<const N_SNARKS: usize> ProverType for ProverTypeBatch<N_SNARKS> {
         vec![ProofLayer::Layer3, ProofLayer::Layer4]
     }
 
-    fn build_base(_task: Self::Task) -> (Self::BaseCircuit, Self::ProofAuxData) {
+    fn build_base(_task: &Self::Task) -> (Self::BaseCircuit, Self::ProofAuxData) {
         unimplemented!()
     }
 
