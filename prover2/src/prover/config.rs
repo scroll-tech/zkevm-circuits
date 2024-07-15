@@ -8,6 +8,7 @@ use halo2_proofs::{
 use tracing::{debug, info, instrument, trace};
 
 use crate::{
+    prover::params::NonNativeParams,
     types::ProverType,
     util::{
         default_cache_dir, default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
@@ -15,7 +16,7 @@ use crate::{
         CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_SNARKS, CACHE_PATH_TASKS,
         DEFAULT_DEGREE_LAYER0, ENV_DEGREE_LAYER0, JSON_EXT,
     },
-    Params, ProofLayer, ProverError,
+    ProofLayer, ProverError,
 };
 
 /// Configuration for a generic prover.
@@ -26,7 +27,7 @@ pub struct ProverConfig<Type> {
     /// KZG setup parameters by proof layer.
     pub kzg_params: HashMap<ProofLayer, ParamsKZG<Bn256>>,
     /// Config parameters for non-native field arithmetics by proof layer.
-    pub nn_params: HashMap<ProofLayer, Params>,
+    pub nn_params: HashMap<ProofLayer, NonNativeParams>,
     /// Proving keys by proof layer.
     pub pks: HashMap<ProofLayer, ProvingKey<G1Affine>>,
     /// Optional directory to locate KZG setup parameters.
@@ -42,7 +43,7 @@ pub struct ProverConfig<Type> {
 impl<Type> ProverConfig<Type> {
     /// Returns prover config after inserting the non-native field arithmetic config for the given
     /// proof layer.
-    pub fn with_nn_params(mut self, layer: ProofLayer, params: Params) -> Self {
+    pub fn with_nn_params(mut self, layer: ProofLayer, params: NonNativeParams) -> Self {
         self.nn_params.insert(layer, params);
         self
     }
@@ -109,7 +110,7 @@ impl<Type: ProverType> ProverConfig<Type> {
             if layer != ProofLayer::Layer0 {
                 let params_path = nn_params_path(nn_params_dir.as_path(), layer);
                 debug!("reading config params for {:?}: {:?}", layer, params_path);
-                let params = read_json::<Params>(params_path.as_path())?;
+                let params = read_json::<NonNativeParams>(params_path.as_path())?;
                 self.degrees.insert(layer, params.degree);
                 self.nn_params.insert(layer, params);
             }

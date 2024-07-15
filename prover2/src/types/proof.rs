@@ -12,33 +12,40 @@ use crate::{
     ProofLayer, ProverError,
 };
 
-/// Describes an output from a [`Prover`]'s proof generation process when given a [`ProvingTask`].
+/// Describes an output from a [`Prover`][prover]'s proof generation process when
+/// given a [`ProvingTask`][proving_task].
+///
+/// [prover]: crate::prover::Prover
+/// [proving_task]: crate::ProvingTask
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Proof<Aux, const EVM_VERIFY: bool> {
     /// Version of the source code (git describe --abbrev=8) used for proof generation.
-    git_version: String,
+    pub git_version: String,
     /// The proof layer.
-    layer: ProofLayer,
-    /// Verification key for this SNARK proof.
+    pub layer: ProofLayer,
+    /// The raw [`VerificationKey`][vk] for this [`SNARK`][snark] proof.
+    ///
+    /// [vk]: halo2_proofs::plonk::VerifyingKey
+    /// [snark]: snark_verifier_sdk::Snark
     #[serde(with = "base64")]
-    vk: Vec<u8>,
+    pub vk: Vec<u8>,
     /// The public instances (flattened bytes) to the SNARK.
     #[serde(with = "base64")]
-    instances: Vec<u8>,
+    pub instances: Vec<u8>,
     /// The protocol computed for SNARK.
     #[serde(with = "base64")]
-    protocol: Vec<u8>,
+    pub protocol: Vec<u8>,
     /// The inner proof.
     #[serde(with = "base64")]
-    proof: Vec<u8>,
-    /// Auxiliary data to attach with the proof. This data would generally be required by the next
-    /// layer's proof generation process.
+    pub proof: Vec<u8>,
+    /// Auxiliary data to attach with the proof. This data would generally be required
+    /// by the next layer's proof generation process.
     #[serde(flatten)]
-    aux: Aux,
+    pub aux: Aux,
 }
 
 impl<Aux, const EVM_VERIFY: bool> Proof<Aux, EVM_VERIFY> {
-    /// Construct a new [`Proof`] given the SNARK for the proof layer and some auxiliary data.
+    /// Construct a new proof given the SNARK for the proof layer and some auxiliary data.
     pub fn new_from_snark(
         layer: ProofLayer,
         snark: Snark,
@@ -65,7 +72,7 @@ impl<Aux, const EVM_VERIFY: bool> Proof<Aux, EVM_VERIFY> {
         })
     }
 
-    /// Construct a new [`Proof`] given the raw proof and instances for an EVM-verifiable proof.
+    /// Construct a new proof given the raw proof and instances for an EVM-verifiable proof.
     pub fn new_from_raw(
         layer: ProofLayer,
         instances: &[Fr],
