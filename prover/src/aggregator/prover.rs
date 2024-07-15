@@ -1,3 +1,11 @@
+use std::{env, iter::repeat};
+
+use aggregator::{BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
+use anyhow::{bail, Result};
+use eth_types::H256;
+use sha2::{Digest, Sha256};
+use snark_verifier_sdk::Snark;
+
 use crate::{
     common,
     config::{LayerId, AGG_DEGREES},
@@ -7,12 +15,6 @@ use crate::{
     types::BundleProvingTask,
     BatchProof, BatchProvingTask, ChunkProof,
 };
-use aggregator::{BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
-use anyhow::{bail, Result};
-use eth_types::H256;
-use sha2::{Digest, Sha256};
-use snark_verifier_sdk::Snark;
-use std::{env, iter::repeat};
 
 #[derive(Debug)]
 pub struct Prover {
@@ -220,8 +222,7 @@ impl Prover {
 
         let bundle_snarks = bundle
             .batch_proofs
-            .clone()
-            .into_iter()
+            .iter()
             .map(|proof| proof.into())
             .collect::<Vec<_>>();
 

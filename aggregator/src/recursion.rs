@@ -5,18 +5,20 @@
 
 /// Circuit implementation of recursion circuit.
 mod circuit;
+
+/// Common functionality utilised by the recursion circuit.
 mod common;
+
 /// Config for recursion circuit
 mod config;
+
+/// Some utility functions.
 mod util;
 
+pub use circuit::RecursionCircuit;
 pub(crate) use common::dynamic_verify;
 pub use util::{gen_recursion_pk, initial_recursion_snark};
 
-// define the halo2base importing from snark_verifier;
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base as sv_halo2_base;
-use sv_halo2_base::halo2_proofs;
-// fix the circuit on Bn256
 use halo2_proofs::{
     halo2curves::{
         bn256::{Bn256, Fq, Fr, G1Affine},
@@ -24,22 +26,25 @@ use halo2_proofs::{
     },
     plonk::{Circuit, ConstraintSystem, Error, ProvingKey, Selector, VerifyingKey},
 };
-// exports Snark and specs for F-S scheme
+use itertools::Itertools;
+use rand::Rng;
+use snark_verifier::{
+    loader::{
+        halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader, Loader, ScalarLoader,
+    },
+    system::halo2::{compile, Config},
+    verifier::{PlonkProof, PlonkVerifier},
+};
 use snark_verifier_sdk::{
     types::{PoseidonTranscript, POSEIDON_SPEC},
     CircuitExt, Snark,
 };
+use sv_halo2_base::halo2_proofs;
 
 use crate::constants::{BITS, LIMBS};
 
-use itertools::Itertools;
-use rand::Rng;
-use snark_verifier::{
-    loader::{native::NativeLoader, Loader, ScalarLoader},
-    system::halo2::{compile, Config},
-    verifier::{PlonkProof, PlonkVerifier},
-};
-
+/// Any data that can be recursively bundled must implement the described state transition
+/// trait.
 pub trait StateTransition: Sized {
     type Input: Clone;
     type Circuit: CircuitExt<Fr>;
@@ -109,5 +114,3 @@ pub trait StateTransition: Sized {
         (start..end).collect()
     }
 }
-
-pub use circuit::RecursionCircuit;

@@ -16,14 +16,14 @@ pub struct BatchProof {
     pub batch_hash: H256,
 }
 
-impl From<BatchProof> for Snark {
-    fn from(value: BatchProof) -> Self {
+impl From<&BatchProof> for Snark {
+    fn from(value: &BatchProof) -> Self {
         let instances = value.proof.instances();
         let protocol = serde_json::from_slice::<Protocol<G1Affine>>(&value.protocol).unwrap();
 
         Self {
             protocol,
-            proof: value.proof.proof,
+            proof: value.proof.proof.clone(),
             instances,
         }
     }

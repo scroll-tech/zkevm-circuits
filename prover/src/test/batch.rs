@@ -52,7 +52,7 @@ pub fn batch_prove(test: &str, batch: BatchProvingTask) {
     let verified = BATCH_VERIFIER
         .lock()
         .expect("poisoned batch-verifier")
-        .verify_batch_proof(proof);
+        .verify_batch_proof(&proof);
     assert!(verified, "{test}: failed to verify batch proof");
 
     log::info!("{test}: batch-prove END");

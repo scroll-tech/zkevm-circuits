@@ -3,55 +3,67 @@ use halo2_proofs::halo2curves::bn256::Fr;
 use aggregator::{BatchCircuit, StateTransition};
 use snark_verifier_sdk::Snark;
 
-#[derive(Clone, Debug)]
-pub struct AggregatedBatchProvingTask<'a, const N_SNARK: usize> {
-    agg_snarks: &'a [Snark],
-}
-
-// 4 fields for 2 hashes (Hi, Lo)
+/// 4 fields for 2 hashes (Hi, Lo)
 const ST_INSTANCE: usize = 4;
-// and then 3 fields for 1 hash (withdraw root) and chainID
+
+/// Additional public input that are unchanged over all the SNARKs, specifically:
+/// - withdraw root (hi, lo)
+/// - chain ID
 const ADD_INSTANCE: usize = 3;
+
+/// Number of public inputs to describe the state.
 const NUM_INSTANCES: usize = ST_INSTANCE + ADD_INSTANCE;
+
+/// Number of public inputs to describe the initial state.
 const NUM_INIT_INSTANCES: usize = ST_INSTANCE;
 
-impl<const N_SNARK: usize> AggregatedBatchProvingTask<'_, N_SNARK> {
+#[derive(Clone, Debug)]
+pub struct RecursionTask<'a, const N_SNARK: usize> {
+    /// The [`snarks`][snark] from the [`BatchCircuit`][batch_circuit].
+    ///
+    /// [snark]: snark_verifier_sdk::Snark
+    /// [batch_circuit]: aggregator::BatchCircuit
+    snarks: &'a [Snark],
+}
+
+impl<const N_SNARK: usize> RecursionTask<'_, N_SNARK> {
     pub fn init_instances(&self) -> [Fr; NUM_INIT_INSTANCES] {
-        self.agg_snarks.first().unwrap().instances[0][..ST_INSTANCE]
+        self.snarks.first().unwrap().instances[0][..ST_INSTANCE]
             .try_into()
             .unwrap()
     }
 
     pub fn state_instances(&self) -> [Fr; NUM_INSTANCES] {
-        self.agg_snarks.first().unwrap().instances[0][ST_INSTANCE..]
+        self.snarks.first().unwrap().instances[0][ST_INSTANCE..]
             .try_into()
             .unwrap()
     }
 
     pub fn iter_snark(&self) -> Snark {
-        self.agg_snarks.first().unwrap().clone()
+        self.snarks.first().unwrap().clone()
     }
 
     pub fn completed(&self) -> bool {
-        self.agg_snarks.is_empty()
+        self.snarks.is_empty()
     }
 }
 
-impl<'a, const N_SNARK: usize> StateTransition for AggregatedBatchProvingTask<'a, N_SNARK> {
+impl<'a, const N_SNARK: usize> StateTransition for RecursionTask<'a, N_SNARK> {
     type Input = &'a [Snark];
     type Circuit = BatchCircuit<N_SNARK>;
 
     fn new(state: Self::Input) -> Self {
-        Self { agg_snarks: state }
+        Self { snarks: state }
     }
 
     fn state_transition(&self, _round: usize) -> Self::Input {
-        &self.agg_snarks[1..]
+        &self.snarks[1..]
     }
 
     fn num_transition_instance() -> usize {
         ST_INSTANCE
     }
+
     fn num_additional_instance() -> usize {
         ADD_INSTANCE
     }

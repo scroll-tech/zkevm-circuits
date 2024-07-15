@@ -1,7 +1,6 @@
 #![allow(clippy::type_complexity)]
+use std::{fs::File, iter, marker::PhantomData, rc::Rc};
 
-use super::*;
-use crate::param::ConfigParams as BatchCircuitConfigParams;
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
@@ -21,11 +20,14 @@ use snark_verifier_sdk::{
     types::{Halo2Loader, Plonk},
     SnarkWitness,
 };
-use std::{fs::File, iter, marker::PhantomData, rc::Rc};
 use sv_halo2_base::{
     gates::GateInstructions, halo2_proofs, AssignedValue, Context, ContextParams,
     QuantumCell::Existing,
 };
+
+use crate::param::ConfigParams as BatchCircuitConfigParams;
+
+use super::*;
 
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 type Pcs = Kzg<Bn256, Bdfg21>;

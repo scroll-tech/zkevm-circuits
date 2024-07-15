@@ -1,6 +1,3 @@
-use super::*;
-use crate::param::ConfigParams as BatchCircuitConfigParams;
-
 use halo2_proofs::plonk::{Column, Instance};
 use snark_verifier::loader::halo2::halo2_ecc::{
     ecc::{BaseFieldEccChip, EccChip},
@@ -8,14 +5,23 @@ use snark_verifier::loader::halo2::halo2_ecc::{
     halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig},
 };
 
+use crate::param::ConfigParams as RecursionCircuitConfigParams;
+
+use super::*;
+
 #[derive(Clone)]
 pub struct RecursionConfig {
+    /// The non-native field arithmetic config from halo2-lib.
     pub base_field_config: FpConfig<Fr, Fq>,
+    /// The single instance column to hold the public input to the [`RecursionCircuit`].
     pub instance: Column<Instance>,
 }
 
 impl RecursionConfig {
-    pub fn configure(meta: &mut ConstraintSystem<Fr>, params: BatchCircuitConfigParams) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<Fr>,
+        params: RecursionCircuitConfigParams,
+    ) -> Self {
         assert!(
             params.limb_bits == BITS && params.num_limbs == LIMBS,
             "For now we fix limb_bits = {}, otherwise change code",

@@ -1,16 +1,17 @@
-use super::*;
+use std::path::Path;
+
 use halo2_proofs::{
     circuit::Layouter,
     plonk::keygen_vk,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use snark_verifier_sdk::{gen_pk, CircuitExt, Snark};
-// required by kzg specific implements
 use snark_verifier::{
     pcs::kzg::{Bdfg21, Kzg},
     util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
 };
-use std::path::Path;
+use snark_verifier_sdk::{gen_pk, CircuitExt, Snark};
+
+use super::*;
 
 mod dummy_circuit {
     use super::*;
@@ -43,14 +44,19 @@ mod dummy_circuit {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            // when `C` has simple selectors, we tell `CsProxy` not to over-optimize the selectors (e.g., compressing them  all into one) by turning all selectors on in the first row
-            // currently this only works if all simple selector columns are used in the actual circuit and there are overlaps amongst all enabled selectors (i.e., the actual circuit will not optimize constraint system further)
+            // when `C` has simple selectors, we tell `CsProxy` not to over-optimize
+            // the selectors (e.g., compressing them  all into one) by turning all
+            // selectors on in the first row currently this only works if all simple
+            // selector columns are used in the actual circuit and there are overlaps
+            // amongst all enabled selectors (i.e., the actual circuit will not
+            // optimize constraint system further)
             layouter.assign_region(
-                || "",
+                || "proxy constraint system",
                 |mut region| {
                     for q in C::selectors(&config).iter() {
                         q.enable(&mut region, 0)?;
                     }
+
                     Ok(())
                 },
             )?;
@@ -59,14 +65,14 @@ mod dummy_circuit {
     }
 }
 
-// gen a "dummy" snark in case we need to "skip" the verify part
-// inside the recursive circuit: cost would be high if we apply conditional
-// selection above the verify circuits (it is in fact a ecc chip, and
-// selection increase the maximum degree by 1).
-// Instead, a "dummy" snark ensure the ecc chip is valid with providen
-// witness and we just skip the output accumulator later
-// it can "mock" any circuit (with vk being provided in argument)
-// specified by ConcreteCircuit
+/// Generate a "dummy" snark in case we need to "skip" the verify part
+/// inside the recursive circuit: cost would be high if we apply conditional
+/// selection above the verify circuits (it is in fact a ecc chip, and
+/// selection increase the maximum degree by 1).
+///
+/// Instead, a "dummy" snark ensure the ecc chip is valid with providen
+/// witness and we just skip the output accumulator later it can "mock" any circuit
+/// (with vk being provided in argument) specified by ConcreteCircuit.
 fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
     params: &ParamsKZG<Bn256>,
     vk: &VerifyingKey<G1Affine>,
@@ -115,7 +121,7 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
     Snark::new(protocol, instances, proof)
 }
 
-/// gen a dummy snark for construct the first recursion snark
+/// Generate a dummy snark for construct the first recursion snark
 /// we should allow it is been generated even without the corresponding
 /// vk, which is required when constructing a circuit to generate the pk
 pub fn initial_recursion_snark<ST: StateTransition>(
@@ -162,7 +168,7 @@ pub fn initial_recursion_snark<ST: StateTransition>(
     snark
 }
 
-/// gen the pk for recursion
+/// Generate the proving key for recursion.
 pub fn gen_recursion_pk<ST: StateTransition>(
     recursion_params: &ParamsKZG<Bn256>,
     app_params: &ParamsKZG<Bn256>,
