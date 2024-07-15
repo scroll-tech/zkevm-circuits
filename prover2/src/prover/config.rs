@@ -191,6 +191,19 @@ impl<Type> ProverConfig<Type> {
             .as_ref()
             .map(|dir| dir.join(CACHE_PATH_SNARKS).join(format!("{layer:?}-{id}")))
     }
+
+    /// Returns the paths to dump the EVM plonk verifier contract (in YUL) and the deployment code
+    /// for the verifier contract.
+    pub fn path_evm(&self, commit_ref: &str) -> Option<(PathBuf, PathBuf)> {
+        self.cache_dir.as_ref().map(|dir| {
+            (
+                dir.join(CACHE_PATH_EVM)
+                    .join(format!("evm_verifier_{commit_ref}.yul")),
+                dir.join(CACHE_PATH_EVM)
+                    .join(format!("evm_verifier_{commit_ref}.bin")),
+            )
+        })
+    }
 }
 
 impl<Type: ProverType> ProverConfig<Type> {

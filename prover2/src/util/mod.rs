@@ -10,11 +10,11 @@ pub use dir::{
     JSON_EXT,
 };
 
-mod io;
-pub use io::{read_json, read_kzg_params, write_json};
-
 mod env;
 pub use env::read_env_or_default;
+
+mod io;
+pub use io::{read_json, read_kzg_params, write, write_json};
 
 mod serde;
 pub use serde::{deserialize_be, serialize_be};

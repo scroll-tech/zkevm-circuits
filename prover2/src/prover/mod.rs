@@ -1,5 +1,7 @@
 use aggregator::MAX_AGG_SNARKS;
-use halo2_proofs::halo2curves::bn256::Fr;
+use ethers_core::utils::keccak256;
+use halo2_proofs::halo2curves::bn256::{Bn256, Fr};
+use snark_verifier::pcs::kzg::{Bdfg21, Kzg};
 use snark_verifier_sdk::{CircuitExt, Snark};
 use tracing::{info, instrument, trace};
 
@@ -9,7 +11,7 @@ use crate::{
         layer::ProofLayer, proof::Proof, task::ProvingTask, ProverType, ProverTypeBatch,
         ProverTypeBundle, ProverTypeChunk,
     },
-    util::{gen_rng, read_json, write_json},
+    util::{gen_rng, read_json, write, write_json, GIT_VERSION},
     ProverError,
 };
 
@@ -127,6 +129,8 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
         task: Type::Task,
     ) -> Result<Proof<Type::ProofAuxData, EVM_VERIFY>, ProverError> {
         let id = task.id();
+        let commit_ref = *GIT_VERSION;
+        let evm_paths = self.config.path_evm(commit_ref);
 
         // Generate SNARKs for all the layers at which the prover operates.
         //
@@ -151,6 +155,7 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
         let kzg_params = self.config.kzg_params(outermost_layer)?;
         let compression_circuit = Type::build_compression(kzg_params, snark, outermost_layer);
         let instances = compression_circuit.instances();
+        let num_instances = compression_circuit.num_instance();
         let (kzg_params, pk) = self
             .config
             .gen_proving_key(outermost_layer, &compression_circuit)?;
@@ -164,6 +169,23 @@ impl<Type: ProverType, const EVM_VERIFY: bool> Prover<Type, EVM_VERIFY> {
             &mut rng,
         );
         trace!(name = "gen evm proof OK", layer = ?outermost_layer);
+
+        // At this point we know the verifying key, KZG setup parameters and the proof. We can
+        // build the Plonk verifier contract (EVM-verifier).
+        if let Some((evm_yul_path, evm_deployment_code_path)) = evm_paths {
+            trace!(name = "gen evm verifier", path = ?evm_yul_path);
+            let evm_deployment_code = snark_verifier_sdk::gen_evm_verifier::<
+                Type::CompressionCircuit,
+                Kzg<Bn256, Bdfg21>,
+            >(
+                kzg_params,
+                pk.get_vk(),
+                num_instances,
+                Some(evm_yul_path.as_path()),
+            );
+            trace!(name = "write evm verifier deployment code", path = ?evm_deployment_code_path, code_hash = ?keccak256(&evm_deployment_code));
+            write(evm_deployment_code_path.as_path(), &evm_deployment_code)?;
+        }
 
         let proof = Proof::new_from_raw(outermost_layer, &instances[0], &raw_proof, pk, aux_data);
 
