@@ -5,18 +5,18 @@ use halo2_proofs::{
     plonk::{keygen_pk2, Circuit, ProvingKey},
     poly::kzg::commitment::ParamsKZG,
 };
-use tracing::{debug, info, instrument, trace};
+use tracing::{info, instrument, trace, warn};
 
 use crate::{
     prover::params::NonNativeParams,
-    types::ProverType,
+    types::{layer::ProofLayer, ProverType},
     util::{
-        default_cache_dir, default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
+        default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
         non_native_params_path as nn_params_path, read_env_or_default, read_json, read_kzg_params,
         CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_SNARKS, CACHE_PATH_TASKS,
         DEFAULT_DEGREE_LAYER0, ENV_DEGREE_LAYER0, JSON_EXT,
     },
-    ProofLayer, ProverError,
+    ProverError,
 };
 
 /// Configuration for a generic prover.
@@ -87,7 +87,7 @@ impl<Type: ProverType> ProverConfig<Type> {
     /// Setup the prover config by reading relevant config files from storage.
     #[instrument(name = "ProverConfig::setup", skip(self))]
     pub fn setup(mut self) -> Result<Self, ProverError> {
-        info!("setting up ProverConfig");
+        info!(name = "setup prover config", prover_type = ?Type::NAME.to_string());
 
         // The proof layers that this prover needs to generate proofs for.
         let proof_layers = Type::layers();
@@ -101,52 +101,57 @@ impl<Type: ProverType> ProverConfig<Type> {
             .kzg_params_dir
             .clone()
             .unwrap_or(default_kzg_params_dir()?);
-        let cache_dir = self.cache_dir.clone().unwrap_or(default_cache_dir()?);
+        trace!(name = "config directories", non_native_params = ?nn_params_dir, kzg_params = ?kzg_params_dir, caching = ?self.cache_dir);
+        if self.cache_dir.is_none() {
+            warn!(name = "setup prover without caching");
+        }
 
         // Read and store non-native field arithmetic config params for each layer.
-        trace!("loading non-native field arithmetic params");
         for layer in proof_layers {
             // Layer0 (SuperCircuit) does not have non-native field arithmetics.
             if layer != ProofLayer::Layer0 {
                 let params_path = nn_params_path(nn_params_dir.as_path(), layer);
-                debug!("reading config params for {:?}: {:?}", layer, params_path);
+                trace!(name = "read config for non-native field arithmetics", ?layer, path = ?params_path);
                 let params = read_json::<NonNativeParams>(params_path.as_path())?;
                 self.degrees.insert(layer, params.degree);
                 self.nn_params.insert(layer, params);
             }
 
             if layer == ProofLayer::Layer0 {
+                trace!(name = "read environment variable", ?layer, key = ?ENV_DEGREE_LAYER0, default = ?DEFAULT_DEGREE_LAYER0);
                 let layer0_degree = read_env_or_default(ENV_DEGREE_LAYER0, DEFAULT_DEGREE_LAYER0);
+                trace!(name = "configured degree", ?layer, degree = ?layer0_degree);
                 self.degrees.insert(ProofLayer::Layer0, layer0_degree);
             }
         }
 
         // Read and store KZG setup params for each layer.
-        trace!("loading KZG setup params");
         for (&layer, &degree) in self.degrees.iter() {
             let params_path = kzg_params_path(kzg_params_dir.as_path(), degree);
-            debug!(
-                "reading kzg params for {:?} (degree = {:?}): {:?}",
-                layer, degree, params_path
+            trace!(
+                name = "read KZG setup parameters",
+                ?layer,
+                ?degree,
+                path = ?params_path,
             );
             let params = read_kzg_params(params_path.as_path())?;
             self.kzg_params.insert(layer, params);
         }
 
         // Setup the cache directory's structure.
-        trace!("setting up cache");
-        create_dir_all(cache_dir.join(CACHE_PATH_TASKS))?;
-        create_dir_all(cache_dir.join(CACHE_PATH_SNARKS))?;
-        create_dir_all(cache_dir.join(CACHE_PATH_PROOFS))?;
-        create_dir_all(cache_dir.join(CACHE_PATH_PI))?;
-        create_dir_all(cache_dir.join(CACHE_PATH_EVM))?;
+        if let Some(ref cache_dir) = self.cache_dir {
+            create_dir_all(cache_dir.join(CACHE_PATH_TASKS))?;
+            create_dir_all(cache_dir.join(CACHE_PATH_SNARKS))?;
+            create_dir_all(cache_dir.join(CACHE_PATH_PROOFS))?;
+            create_dir_all(cache_dir.join(CACHE_PATH_PI))?;
+            create_dir_all(cache_dir.join(CACHE_PATH_EVM))?;
+        }
 
         // Update directories in self.
         self.nn_params_dir.replace(nn_params_dir);
         self.kzg_params_dir.replace(kzg_params_dir);
-        self.cache_dir.replace(cache_dir);
 
-        info!("setup ProverConfig");
+        info!(name = "setup prover config OK", prover_type = ?Type::NAME.to_string());
 
         Ok(self)
     }
@@ -212,8 +217,8 @@ mod tests {
     use aggregator::MAX_AGG_SNARKS;
 
     use crate::{
+        prover::ProverConfig,
         types::{ProverTypeBatch, ProverTypeChunk},
-        ProverConfig,
     };
 
     #[test]
@@ -226,15 +231,14 @@ mod tests {
         let test_dir = current_dir()?.join("test_data");
 
         let _chunk_prover_config = ProverConfig::<ProverTypeChunk>::default()
-            .with_nn_params_dir(test_dir.join(".config"))
+            .with_nn_params_dir(test_dir.join(".configs"))
             .with_kzg_params_dir(test_dir.join(".params"))
             .with_cache_dir(test_dir.join(".cache"))
             .setup()?;
 
         let _batch_prover_config = ProverConfig::<ProverTypeBatch<MAX_AGG_SNARKS>>::default()
-            .with_nn_params_dir(test_dir.join(".config"))
+            .with_nn_params_dir(test_dir.join(".configs"))
             .with_kzg_params_dir(test_dir.join(".params"))
-            .with_cache_dir(test_dir.join(".cache"))
             .setup()?;
 
         Ok(())

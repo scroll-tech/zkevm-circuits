@@ -5,9 +5,9 @@ use rand_xorshift::XorShiftRng;
 
 mod dir;
 pub use dir::{
-    default_cache_dir, default_kzg_params_dir, default_non_native_params_dir, kzg_params_path,
-    non_native_params_path, CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_SNARKS,
-    CACHE_PATH_TASKS, JSON_EXT,
+    default_kzg_params_dir, default_non_native_params_dir, kzg_params_path, non_native_params_path,
+    CACHE_PATH_EVM, CACHE_PATH_PI, CACHE_PATH_PROOFS, CACHE_PATH_SNARKS, CACHE_PATH_TASKS,
+    JSON_EXT,
 };
 
 mod io;

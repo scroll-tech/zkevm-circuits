@@ -8,7 +8,10 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use snark_verifier_sdk::{CircuitExt, Snark};
 use zkevm_circuits::super_circuit::params::ScrollSuperCircuit;
 
-use crate::{ProofLayer, ProverError, ProvingTask};
+use crate::{
+    types::{layer::ProofLayer, task::ProvingTask},
+    ProverError,
+};
 
 pub mod layer;
 
@@ -29,13 +32,13 @@ use task::{BatchProvingTask, ChunkProvingTask};
 ///    and compress it ([`layer6`][layer6]) where this outermost proof (`layer6`) is the `BundleProof`.
 ///    The `BundleProof` is an EVM-verifiable proof.
 ///
-/// [layer0]: crate::ProofLayer::Layer0
-/// [layer1]: crate::ProofLayer::Layer1
-/// [layer2]: crate::ProofLayer::Layer2
-/// [layer3]: crate::ProofLayer::Layer3
-/// [layer4]: crate::ProofLayer::Layer4
-/// [layer5]: crate::ProofLayer::Layer5
-/// [layer6]: crate::ProofLayer::Layer6
+/// [layer0]: crate::types::layer::ProofLayer::Layer0
+/// [layer1]: crate::types::layer::ProofLayer::Layer1
+/// [layer2]: crate::types::layer::ProofLayer::Layer2
+/// [layer3]: crate::types::layer::ProofLayer::Layer3
+/// [layer4]: crate::types::layer::ProofLayer::Layer4
+/// [layer5]: crate::types::layer::ProofLayer::Layer5
+/// [layer6]: crate::types::layer::ProofLayer::Layer6
 pub trait ProverType: std::fmt::Debug {
     /// The name of the prover.
     const NAME: &'static str;
@@ -60,7 +63,7 @@ pub trait ProverType: std::fmt::Debug {
     /// which is then used by the [`BatchProver`][batch_prover] to construct its
     /// [`BatchProvingTask`].
     ///
-    /// [proof]: crate::Proof
+    /// [proof]: crate::types::proof::Proof
     /// [chunk_prover]: crate::prover::ChunkProver
     /// [batch_prover]: crate::prover::BatchProver
     type ProofAuxData: Serialize + DeserializeOwned + std::fmt::Debug;
@@ -111,29 +114,29 @@ pub trait ProverType: std::fmt::Debug {
 
 /// The chunk prover that constructs proofs at [`layer0`][layer0], [`layer1`][layer1] and [`layer2`][layer2].
 ///
-/// [layer0]: crate::ProofLayer::Layer0
-/// [layer1]: crate::ProofLayer::Layer1
-/// [layer2]: crate::ProofLayer::Layer2
+/// [layer0]: crate::types::layer::ProofLayer::Layer0
+/// [layer1]: crate::types::layer::ProofLayer::Layer1
+/// [layer2]: crate::types::layer::ProofLayer::Layer2
 #[derive(Default, Debug)]
 pub struct ProverTypeChunk;
 
 /// The batch prover that constructs proofs at [`layer3`][layer3] and [`layer4`][layer4].
 ///
-/// [layer3]: crate::ProofLayer::Layer3
-/// [layer4]: crate::ProofLayer::Layer4
+/// [layer3]: crate::types::layer::ProofLayer::Layer3
+/// [layer4]: crate::types::layer::ProofLayer::Layer4
 #[derive(Default, Debug)]
 pub struct ProverTypeBatch<const N_SNARKS: usize>;
 
 /// The bundle prover that constructs proofs at [`layer5`][layer5] and [`layer6`][layer6].
 ///
-/// [layer5]: crate::ProofLayer::Layer5
-/// [layer6]: crate::ProofLayer::Layer6
+/// [layer5]: crate::types::layer::ProofLayer::Layer5
+/// [layer6]: crate::types::layer::ProofLayer::Layer6
 #[derive(Default, Debug)]
 pub struct ProverTypeBundle;
 
 /// Auxiliary data attached to a [`ChunkProof`][proof]
 ///
-/// [proof]: crate::Proof
+/// [proof]: crate::types::proof::Proof
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ChunkProofAuxData {
     /// The chunk's information, that is eventually needed by the [`BatchProver`][batch_prover]'s
@@ -145,7 +148,7 @@ pub struct ChunkProofAuxData {
 
 /// Auxiliary data attached to a [`BatchProof`][proof]
 ///
-/// [proof]: crate::Proof
+/// [proof]: crate::types::proof::Proof
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BatchProofAuxData {
     /// The hash of the [`BatchHeader`][batch_header]

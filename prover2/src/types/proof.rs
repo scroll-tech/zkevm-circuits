@@ -8,15 +8,16 @@ use serde::{Deserialize, Serialize};
 use snark_verifier_sdk::Snark;
 
 use crate::{
+    types::layer::ProofLayer,
     util::{deserialize_be, serialize_be, GIT_VERSION},
-    ProofLayer, ProverError,
+    ProverError,
 };
 
 /// Describes an output from a [`Prover`][prover]'s proof generation process when
 /// given a [`ProvingTask`][proving_task].
 ///
 /// [prover]: crate::prover::Prover
-/// [proving_task]: crate::ProvingTask
+/// [proving_task]: crate::types::task::ProvingTask
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Proof<Aux, const EVM_VERIFY: bool> {
     /// Version of the source code (git describe --abbrev=8) used for proof generation.

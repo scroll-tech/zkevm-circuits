@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{ProofLayer, ProverError};
+use crate::{types::layer::ProofLayer, ProverError};
+
+/// Test data directory.
+pub const TEST_DATA_DIR: &str = "test_data";
 
 /// The extension used for JSON files.
 pub const JSON_EXT: &str = ".json";
@@ -12,13 +15,10 @@ pub const JSON_EXT: &str = ".json";
 pub const NON_NATIVE_PARAMS_EXT: &str = ".config";
 
 /// The config parameters for non native field arithmetics are by default in this directory.
-pub const NON_NATIVE_PARAMS_DIR: &str = ".config";
+pub const NON_NATIVE_PARAMS_DIR: &str = ".configs";
 
 /// The KZG setup parameters are by default in this directory.
 pub const KZG_PARAMS_DIR: &str = ".params";
-
-/// The default directory used for cached data.
-pub const CACHE_PATH: &str = ".cache";
 
 /// The directory within cache to store proving tasks in JSON format.
 pub const CACHE_PATH_TASKS: &str = "tasks";
@@ -58,19 +58,12 @@ pub fn pwd() -> Result<PathBuf, ProverError> {
 ///
 /// <PWD>/.config
 pub fn default_non_native_params_dir() -> Result<PathBuf, ProverError> {
-    Ok(pwd()?.join(NON_NATIVE_PARAMS_DIR))
+    Ok(pwd()?.join(TEST_DATA_DIR).join(NON_NATIVE_PARAMS_DIR))
 }
 
 /// The default path to find KZG setup parameters.
 ///
 /// <PWD>/.params
 pub fn default_kzg_params_dir() -> Result<PathBuf, ProverError> {
-    Ok(pwd()?.join(KZG_PARAMS_DIR))
-}
-
-/// The default path to the cache directory.
-///
-/// <PWD>/.cache
-pub fn default_cache_dir() -> Result<PathBuf, ProverError> {
-    Ok(pwd()?.join(CACHE_PATH))
+    Ok(pwd()?.join(TEST_DATA_DIR).join(KZG_PARAMS_DIR))
 }

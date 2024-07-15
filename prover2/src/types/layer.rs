@@ -12,7 +12,7 @@ pub enum ProofLayer {
     /// The compression layer on top of layer1. The proof from this layer is the [`Proof`][proof] returned
     /// by the [`ChunkProver`][gen_proof].
     ///
-    /// [proof]: crate::Proof
+    /// [proof]: crate::types::proof::Proof
     /// [gen_proof]: crate::prover::ChunkProver::gen_proof
     Layer2,
     /// The batch circuit layer. At this layer, we batch multiple `ChunkProof`s.
@@ -20,7 +20,7 @@ pub enum ProofLayer {
     /// The compression layer on top of layer3. The proof from this layer is the [`Proof`][proof] returned
     /// by the [`BatchProver`][gen_proof].
     ///
-    /// [proof]: crate::Proof
+    /// [proof]: crate::types::proof::Proof
     /// [gen_proof]: crate::prover::BatchProver::gen_proof
     Layer4,
     /// The recursion circuit layer. At this layer, we construct proofs recursively over a previous
@@ -29,7 +29,7 @@ pub enum ProofLayer {
     /// The compression layer on top of layer5. The proof from this layer is the [`Proof`][proof] returned
     /// by the [`BundleProver`][gen_proof].
     ///
-    /// [proof]: crate::Proof
+    /// [proof]: crate::types::proof::Proof
     /// [gen_proof]: crate::prover::BundleProver::gen_proof
     Layer6,
 }

@@ -4,12 +4,22 @@ use snark_verifier_sdk::{CircuitExt, Snark};
 use tracing::{info, instrument, trace};
 
 use crate::{
-    types::{ProverType, ProverTypeBatch, ProverTypeBundle, ProverTypeChunk},
+    prover::config::ProverConfig,
+    types::{
+        layer::ProofLayer, proof::Proof, task::ProvingTask, ProverType, ProverTypeBatch,
+        ProverTypeBundle, ProverTypeChunk,
+    },
     util::{gen_rng, read_json, write_json},
-    Proof, ProofLayer, ProverConfig, ProverError, ProvingTask,
+    ProverError,
 };
 
+/// Includes the configuration setup related to a [`Prover`].
 pub mod config;
+
+/// Config parameters for non-native field arithmetics, that will be used to configure the
+/// [`FpConfig`][fp_config] chip from halo2-lib.
+///
+/// [fp_config]: snark_verifier::loader::halo2::halo2_ecc::fields::fp::FpConfig
 pub mod params;
 
 /// Convenience type for chunk prover.

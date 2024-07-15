@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::ProofLayer;
+use crate::types::layer::ProofLayer;
 
 /// Represents error variants possibly encountered during the proof generation process.
 #[derive(Debug, Error)]
