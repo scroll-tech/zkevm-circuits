@@ -57,7 +57,7 @@ batchHash := keccak256(version || batch_index || l1_message_popped || total_l1_m
 ```
 All preimage fields' values are provided to the batch through the `BatchHeader` struct, so it can correctly construct the hash state transition from `parent_batch_hash` to `batch_hash` (for current batch). 
 
-Note there are also implicitly represents of state roots before/after batch from the states of chunks it has aggregated:
+Note that there are also implicit constraints between state roots before/after batch and the state roots of the chunks it has aggregated:
 ```
 prev_state_root := c_0.prev_state_root
 post_state_root := c_k.post_state_root
