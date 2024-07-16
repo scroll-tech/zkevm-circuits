@@ -6,7 +6,7 @@ use snark_verifier_sdk::Snark;
 /// 4 fields for 2 hashes (Hi, Lo)
 const ST_INSTANCE: usize = 4;
 
-/// Additional public input that are unchanged over all the SNARKs, specifically:
+/// Additional public inputs, specifically:
 /// - withdraw root (hi, lo)
 /// - chain ID
 const ADD_INSTANCE: usize = 3;
