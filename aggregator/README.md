@@ -149,7 +149,7 @@ for i in 1 ... k-1
 for i in 1 ... n
     batch.chain_id == chunk[i].chain_id
 ```
-5. The last `(n-k)` chunk[i] are padding
+5. The last `(n-k)` chunk[i] are padded chunks
 ```
 for i in 1 ... n:
     if is_padding:
