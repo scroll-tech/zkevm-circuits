@@ -43,7 +43,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
         let challenges = Challenges::construct_p1(meta);
 
         // hash config
-        // hash configuration for aggregation circuit
+        // hash configuration for batch circuit
         let keccak_circuit_config = {
             let keccak_table = KeccakTable::construct(meta);
             let challenges_exprs = challenges.exprs(meta);
@@ -221,7 +221,8 @@ fn test_dynamic_hash_circuit() {
 
     // pk verifies the original circuit
     {
-        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>).unwrap();
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>)
+            .expect("Snark generated successfully");
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
             snark,
@@ -234,7 +235,8 @@ fn test_dynamic_hash_circuit() {
         let a: Vec<u8> = (0..LEN * 3).map(|x| x as u8).collect::<Vec<u8>>();
         let circuit = DynamicHashCircuit { inputs: a };
 
-        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>).unwrap();
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>)
+            .expect("Snark generated successfully");
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
             snark,
