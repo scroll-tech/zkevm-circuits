@@ -118,7 +118,7 @@ The public input of the batch circuit consists of
 - 1 element of `chain_id`
 - 2 elements of `current_withdraw_root`
 
-Note that `parent_state_root` is the same as `chunk[0].prev_state_root` and `current_state_root` is the same as `chunk[k].post_state_root`. When these chunk fields are assigned into keccak preimages, their cells are constrained against the public input to ensure equality. If any public input appears in the preimage of the `batch_hash`, their corresponding assigned preimage cells will be equality contrained as well. 
+Note that `parent_state_root` is the same as `chunk[0].prev_state_root` and `current_state_root` is the same as `chunk[k].post_state_root`. When these chunk fields are assigned into keccak preimages, their cells are constrained against the public input to ensure equality. If any public input appears in the preimage of the `batch_hash`, their corresponding assigned preimage cells will be equality constrained as well. 
 
 ### Statements
 For snarks $s_1,\dots,s_k,\dots, s_n$ the batch circuit argues the following statements.
