@@ -111,7 +111,7 @@ There are several configuration subcomponents for batch circuit.
 - KeccakConfig: used to build keccak table.
 - RlcConfig: used to compute RLC of hash inputs.
 - BlobDataConfig: used for representing the zstd-encoded form of batch data, with `4096 * 31` rows. Each row is a byte value. An EIP-4844 blob consists of `4096 * 32` bytes, where we set the most-significant byte in each 32-bytes chunk as `0` to guarantee that each 32-bytes chunk is a valid BLS12-381 scalar field element.
-- BatchDataConfig: used for representing plain bytes as preimage for `batch_hash`.
+- BatchDataConfig: used for representing the raw batch bytes, effectively constructing the random challenge point `z` for the KZG opening proof.
 - DecoderConfig: used for describing how the blob data is decoded into plain bytes (batch data).
 - BarycentricEvaluationConfig: used for evaluate the interpolated blob polynomial at an arbitrary challenge point.
 
