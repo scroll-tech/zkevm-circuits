@@ -113,7 +113,7 @@ There are several configuration subcomponents for batch circuit.
 - BlobDataConfig: used for representing the zstd-encoded form of batch data, with `4096 * 31` rows. Each row is a byte value. An EIP-4844 blob consists of `4096 * 32` bytes, where we set the most-significant byte in each 32-bytes chunk as `0` to guarantee that each 32-bytes chunk is a valid BLS12-381 scalar field element.
 - BatchDataConfig: used for representing the raw batch bytes, effectively constructing the random challenge point `z` for the KZG opening proof.
 - DecoderConfig: implements an in-circuit zstd-decoder that decodes blob data into batch data
-- BarycentricEvaluationConfig: used for evaluate the interpolated blob polynomial at an arbitrary challenge point.
+- BarycentricEvaluationConfig: used for evaluating the interpolated blob polynomial at an arbitrary challenge point `z`, where both `z` and the evaluation `y` are included in the `BatchHeader`.
 
 ### Public Input
 The public input of the batch circuit consists of
