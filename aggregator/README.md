@@ -51,11 +51,17 @@ If $k< n$, $(n-k)$ padded chunks are padded to the list. A padded chunk has the 
 
 ## Batch
 
-A __batch__ is a list of `chunks` of size `k` that will be aggregated using the `BatchCircuit`. If the input chunks' size `k` is less than `n`, we pad the input with `(n-k)` chunks identical to `chunk[k]`. The batch is represented by the preimage fields to the `batch_hash`, which is constructed as:
+A __batch__ is a list of continuous `chunks` of size `k` that will be aggregated using the `BatchCircuit`. If the input chunks' size `k` is less than `n`, we pad the input with `(n-k)` chunks identical to `chunk[k]`. The batch is represented by the preimage fields to the `batch_hash`, which is constructed as:
 ```
 batchHash := keccak256(version || batch_index || l1_message_popped || total_l1_message_popped || batch_data_hash || versioned_hash || parent_batch_hash || last_block_timestamp || z || y)
 ```
 All preimage fields' values are provided to the batch through the `BatchHeader` struct, so it can correctly construct the hash state transition from `parent_batch_hash` to `batch_hash` (for current batch). 
+
+Note there are also implicitly represents of state roots before/after batch from the states of chunks it has aggregated:
+```
+prev_state_root := c_0.prev_state_root
+post_state_root := c_k.post_state_root
+```
 
 ## BatchHeader
 The current schema for batch header is:
@@ -75,13 +81,14 @@ The current schema for batch header is:
 ## Continuous batches
 A list of continuous batches $b_1, \dots, b_k$ satisfy
 ```
-b_i.batch_hash == b_{i+1}.parent_batch_hash
+b_i.batch_hash == b_{i+1}.parent_batch_hash AND
+b_i.post_state_root == b_{i+1}.prev_state_root
 ```
 for $i \in [1, k-1]$.
 Unlike chunks aggregation, the last layer of recursive batch aggregation can accept an arbitrary number of batches. There's no explicit upper limit. Instead, the number of rounds of recursion can solely be defined by the latency target on L1 for those batches. As a result, continuous batches are never padded. 
 
 ## Bundle
-A __bundle__ is a list of `batches` that will be aggregated recursively using the `RecursionCircuit`. The __bundle__ is the current apex entity whose proof will be verified on-chain.
+A __bundle__ is a list of continuous `batches` that will be aggregated recursively using the `RecursionCircuit`. The __bundle__ is the current apex entity whose proof will be verified on-chain.
 
 # Circuits
 
