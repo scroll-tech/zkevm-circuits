@@ -131,9 +131,6 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
 /// - the first k chunks are from real traces
 /// - the last (#N_SNARKS-k) chunks are from empty traces
 /// A BatchHash consists of 2 hashes.
-/// - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
-///   chunk_k-1.withdraw_root || batch_data_hash || z || y || versioned_hash)
-///
 /// - batchHash := keccak256(version || batch_index || l1_message_popped || total_l1_message_popped ||
 ///   batch_data_hash || versioned_hash || parent_batch_hash || last_block_timestamp || z || y)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
