@@ -708,7 +708,7 @@ mod tests {
                 vec![vec![]; MAX_AGG_SNARKS],
             ),
             (
-                "max number of chunkks all non-empty",
+                "max number of chunks all non-empty",
                 (0..MAX_AGG_SNARKS)
                     .map(|i| (10u8..11 + u8::try_from(i).unwrap()).collect())
                     .collect(),
@@ -742,15 +742,33 @@ mod tests {
         ]
         .iter()
         {
+            // batch header
+            let batch_header = crate::batch::BatchHeader {
+                version: 3,
+                batch_index: 6789,
+                l1_message_popped: 101,
+                total_l1_message_popped: 10101,
+                parent_batch_hash: H256::repeat_byte(1),
+                last_block_timestamp: 192837,
+                ..Default::default()
+            };
+            let chunks_without_padding = crate::chunk::ChunkInfo::mock_chunk_infos(tcase);
+            let batch_hash = BatchHash::<MAX_AGG_SNARKS>::construct_with_unpadded(
+                &chunks_without_padding,
+                batch_header,
+            );
+
+            // blob data
             let batch_data: BatchData<MAX_AGG_SNARKS> = tcase.into();
             let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
             let versioned_hash = batch_data.get_versioned_hash();
             println!(
-                "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}\n\n",
+                "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}, batch_hash = {:0>64x}\n\n",
                 annotation,
                 point_evaluation_assignments.challenge,
                 point_evaluation_assignments.evaluation,
                 versioned_hash,
+                batch_hash.current_batch_hash,
             );
         }
     }

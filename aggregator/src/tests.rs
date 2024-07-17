@@ -2,6 +2,7 @@ mod aggregation;
 mod blob;
 mod compression;
 mod mock_chunk;
+mod recursion;
 mod rlc;
 
 #[macro_export]
@@ -23,8 +24,8 @@ macro_rules! layer_0 {
         );
         log::trace!("finished layer 0 pk generation for circuit");
 
-        let snark =
-            gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>).unwrap();
+        let snark = gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>)
+            .expect("Snark generated successfully");
         log::trace!("finished layer 0 snark generation for circuit");
 
         assert!(verify_snark_shplonk::<$circuit_type>(
@@ -76,7 +77,7 @@ macro_rules! compression_layer_snark {
             &mut rng,
             None::<String>, // Some(&$path.join(Path::new("layer_1.snark"))),
         )
-        .unwrap();
+        .expect("Snark generated successfully");
         log::trace!(
             "finished layer {} snark generation for circuit",
             $layer_index
@@ -159,19 +160,19 @@ macro_rules! aggregation_layer_snark {
 
         let mut rng = test_rng();
 
-        let aggregation_circuit = AggregationCircuit::new(
+        let batch_circuit = BatchCircuit::new(
             &$param,
             $previous_snarks.as_ref(),
             &mut rng,
             $chunks.as_ref(),
         );
 
-        let pk = gen_pk(&$param, &aggregation_circuit, None);
+        let pk = gen_pk(&$param, &batch_circuit, None);
         // build the snark for next layer
         let snark = gen_snark_shplonk(
             &param,
             &pk,
-            aggregation_circuit.clone(),
+            batch_circuit.clone(),
             &mut rng,
             None::<String>, // Some(&$path.join(Path::new("layer_3.snark"))),
         );
@@ -180,7 +181,7 @@ macro_rules! aggregation_layer_snark {
             $layer_index
         );
 
-        assert!(verify_snark_shplonk::<AggregationCircuit>(
+        assert!(verify_snark_shplonk::<BatchCircuit>(
             &param,
             snark.clone(),
             pk.get_vk()

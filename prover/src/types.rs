@@ -1,4 +1,4 @@
-use aggregator::ChunkInfo;
+use aggregator::{BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
 use eth_types::l2_types::BlockTrace;
 use serde::{Deserialize, Serialize};
 use zkevm_circuits::evm_circuit::witness::Block;
@@ -11,7 +11,7 @@ pub struct BlockTraceJsonRpcResult {
 }
 pub use eth_types::base64;
 
-use crate::ChunkProof;
+use crate::{BatchProof, ChunkProof};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChunkProvingTask {
@@ -44,6 +44,7 @@ impl ChunkProvingTask {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BatchProvingTask {
     pub chunk_proofs: Vec<ChunkProof>,
+    pub batch_header: BatchHeader<MAX_AGG_SNARKS>,
 }
 
 impl BatchProvingTask {
@@ -56,5 +57,16 @@ impl BatchProvingTask {
             .public_input_hash()
             .to_low_u64_le()
             .to_string()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BundleProvingTask {
+    pub batch_proofs: Vec<BatchProof>,
+}
+
+impl BundleProvingTask {
+    pub fn identifier(&self) -> String {
+        self.batch_proofs.last().unwrap().batch_hash.to_string()
     }
 }

@@ -7,18 +7,22 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 
 use crate::{
-    aggregation::AggregationCircuit, batch::BatchHash, constants::MAX_AGG_SNARKS, layer_0,
-    tests::mock_chunk::MockChunkCircuit, ChunkInfo,
+    aggregation::BatchCircuit,
+    batch::{BatchHash, BatchHeader},
+    constants::MAX_AGG_SNARKS,
+    layer_0,
+    tests::mock_chunk::MockChunkCircuit,
+    ChunkInfo,
 };
 
 // See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866
 #[ignore]
 #[test]
-fn test_max_agg_snarks_aggregation_circuit() {
+fn test_max_agg_snarks_batch_circuit() {
     let k = 21;
 
     // This set up requires one round of keccak for chunk's data hash
-    let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(2, k);
+    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -26,10 +30,10 @@ fn test_max_agg_snarks_aggregation_circuit() {
 
 #[ignore]
 #[test]
-fn test_2_snark_aggregation_circuit() {
+fn test_2_snark_batch_circuit() {
     let k = 21;
 
-    let circuit: AggregationCircuit<2> = build_new_aggregation_circuit(1, k);
+    let circuit: BatchCircuit<2> = build_new_batch_circuit(1, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -37,10 +41,10 @@ fn test_2_snark_aggregation_circuit() {
 
 #[ignore]
 #[test]
-fn test_14_snark_aggregation_circuit() {
+fn test_14_snark_batch_circuit() {
     let k = 21;
 
-    let circuit: AggregationCircuit<14> = build_new_aggregation_circuit(12, k);
+    let circuit: BatchCircuit<14> = build_new_batch_circuit(12, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -48,7 +52,7 @@ fn test_14_snark_aggregation_circuit() {
 
 #[ignore = "it takes too much time"]
 #[test]
-fn test_aggregation_circuit_all_possible_num_snarks() {
+fn test_batch_circuit_all_possible_num_snarks() {
     //env_logger::init();
 
     let k = 20;
@@ -56,18 +60,18 @@ fn test_aggregation_circuit_all_possible_num_snarks() {
     for i in 1..=MAX_AGG_SNARKS {
         println!("{i} real chunks and {} padded chunks", MAX_AGG_SNARKS - i);
         // This set up requires one round of keccak for chunk's data hash
-        let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(i, k);
+        let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(i, k);
         let instance = circuit.instances();
         let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         mock_prover.assert_satisfied_par();
     }
 }
 
-/// - Test aggregation proof generation and verification.
+/// - Test batch aggregation proof generation and verification.
 /// - Test a same pk can be used for various number of chunk proofs.
 #[ignore = "it takes too much time"]
 #[test]
-fn test_aggregation_circuit_full() {
+fn test_batch_circuit_full() {
     //env_logger::init();
     let process_id = process::id();
     let k = 25;
@@ -77,7 +81,7 @@ fn test_aggregation_circuit_full() {
     fs::create_dir(path).unwrap();
 
     // This set up requires one round of keccak for chunk's data hash
-    let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(2, k);
+    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -90,10 +94,11 @@ fn test_aggregation_circuit_full() {
     let pk = gen_pk(&param, &circuit, None);
     log::trace!("finished pk generation for circuit");
 
-    let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>).unwrap();
+    let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>)
+        .expect("Snark generated successfully");
     log::trace!("finished snark generation for circuit");
 
-    assert!(verify_snark_shplonk::<AggregationCircuit<MAX_AGG_SNARKS>>(
+    assert!(verify_snark_shplonk::<BatchCircuit<MAX_AGG_SNARKS>>(
         &param,
         snark,
         pk.get_vk()
@@ -101,11 +106,12 @@ fn test_aggregation_circuit_full() {
     log::trace!("finished verification for circuit");
 
     // This set up requires two rounds of keccak for chunk's data hash
-    let circuit: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(5, k);
-    let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>).unwrap();
+    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(5, k);
+    let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>)
+        .expect("Snark generated successfully");
     log::trace!("finished snark generation for circuit");
 
-    assert!(verify_snark_shplonk::<AggregationCircuit<MAX_AGG_SNARKS>>(
+    assert!(verify_snark_shplonk::<BatchCircuit<MAX_AGG_SNARKS>>(
         &param,
         snark,
         pk.get_vk()
@@ -115,14 +121,14 @@ fn test_aggregation_circuit_full() {
 
 #[test]
 #[ignore = "it takes too much time"]
-fn test_aggregation_circuit_variadic() {
+fn test_batch_circuit_variadic() {
     let k = 20;
 
-    let circuit1: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(5, k);
+    let circuit1: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(5, k);
     let instance1 = circuit1.instances();
     let prover1 = MockProver::<Fr>::run(k, &circuit1, instance1).unwrap();
 
-    let circuit2: AggregationCircuit<MAX_AGG_SNARKS> = build_new_aggregation_circuit(10, k);
+    let circuit2: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(10, k);
     let instance2 = circuit2.instances();
     let prover2 = MockProver::<Fr>::run(k, &circuit2, instance2).unwrap();
 
@@ -130,10 +136,10 @@ fn test_aggregation_circuit_variadic() {
     assert_eq!(prover1.permutation(), prover2.permutation());
 }
 
-fn build_new_aggregation_circuit<const N_SNARKS: usize>(
+fn build_new_batch_circuit<const N_SNARKS: usize>(
     num_real_chunks: usize,
     _k: u32,
-) -> AggregationCircuit<N_SNARKS> {
+) -> BatchCircuit<N_SNARKS> {
     // inner circuit: Mock circuit
     let k0 = 8;
 
@@ -180,9 +186,9 @@ fn build_new_aggregation_circuit<const N_SNARKS: usize>(
     // ==========================
     // batch
     // ==========================
-    let batch_hash = BatchHash::construct(&chunks_with_padding);
+    let batch_hash = BatchHash::construct(&chunks_with_padding, BatchHeader::default());
 
-    AggregationCircuit::new(
+    BatchCircuit::new(
         &params,
         [real_snarks, padded_snarks].concat().as_ref(),
         rng,

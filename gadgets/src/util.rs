@@ -2,7 +2,7 @@
 use crate::Field;
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    U256,
+    H256, U256,
 };
 use halo2_proofs::plonk::Expression;
 
@@ -245,4 +245,61 @@ pub fn split_u256_limb64(value: &U256) -> [U256; 4] {
         U256([value.0[2], 0, 0, 0]),
         U256([value.0[3], 0, 0, 0]),
     ]
+}
+
+/// Split a 32-bytes hash into (hi, lo) Field elements.
+pub fn split_h256<F: Field>(value: H256) -> (F, F) {
+    let be_bytes = value.to_fixed_bytes();
+    let mut hi_le_bytes = [0u8; 32];
+    let mut lo_le_bytes = [0u8; 32];
+    hi_le_bytes[0x10..0x20].copy_from_slice(&be_bytes[0x00..0x10]);
+    lo_le_bytes[0x10..0x20].copy_from_slice(&be_bytes[0x10..0x20]);
+    hi_le_bytes.reverse();
+    lo_le_bytes.reverse();
+    (
+        F::from_repr(hi_le_bytes).expect("try F from 128-bits should not fail"),
+        F::from_repr(lo_le_bytes).expect("try F from 128-bits should not fail"),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use eth_types::H256;
+    use halo2_proofs::halo2curves::bn256::Fr;
+
+    use super::split_h256;
+
+    #[test]
+    fn test_split_h256() {
+        let zero = Fr::zero();
+        let in_outs = [
+            // all zeroes
+            (H256::zero(), zero, zero),
+            (
+                H256([
+                    0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0x01,
+                ]),
+                Fr::from_raw([0, 1 << 56 /* 256 ^ 7 */, 0, 0]),
+                Fr::from_raw([0x01, 0, 0, 0]),
+            ),
+            // 0xFB, 0xFC, 0, 0, 0, 0, 0, 0,
+            // 0, 0, 0, 0, 0, 0, 0xFD, 0xFE,
+            // 0x01, 0x02, 0, 0, 0, 0, 0, 0,
+            // 0, 0, 0, 0, 0, 0, 0x03, 0x04
+            (
+                H256([
+                    0xfb, 0xfc, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfd, 0xfe, 0x01, 0x02, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x03, 0x04,
+                ]),
+                Fr::from_raw([0xfd * 256 + 0xfe, 0xfb * (1 << 56) + 0xfc * (1 << 48), 0, 0]),
+                Fr::from_raw([0x03 * 256 + 0x04, (1 << 56) + 0x02 * (1 << 48), 0, 0]),
+            ),
+        ];
+        for (hash_in, expected_hi, expected_lo) in in_outs {
+            let (hi, lo) = split_h256::<Fr>(hash_in);
+            assert_eq!(hi, expected_hi);
+            assert_eq!(lo, expected_lo);
+        }
+    }
 }
