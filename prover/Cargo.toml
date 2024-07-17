@@ -13,6 +13,8 @@ eth-types = { path = "../eth-types" }
 mpt-zktrie = { path = "../zktrie" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
 
+gadgets = { path = "../gadgets/" }
+
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 

@@ -166,7 +166,9 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
                 ST::additional_indices()
                     .into_iter()
                     .map(|i| &app.instances[0][i]),
-            );
+            )
+            .cloned()
+            .collect::<Vec<_>>();
 
         let preprocessed_digest = {
             let inputs = previous
@@ -214,7 +216,7 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
         .chain(iter::once(preprocessed_digest))
         .chain(init_instances)
-        .chain(state_instances.copied())
+        .chain(state_instances)
         .chain(iter::once(Fr::from(round as u64)))
         .collect();
 

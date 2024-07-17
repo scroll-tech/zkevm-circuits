@@ -1,5 +1,6 @@
 use std::{env, iter::repeat};
 
+use halo2_proofs::halo2curves::bn256::Fr;
 use aggregator::{BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{bail, Result};
 use eth_types::H256;
@@ -194,6 +195,10 @@ impl Prover {
         );
 
         let batch_hash = batch_header.batch_hash();
+        let (batch_hash_hi, batch_hash_lo): (Fr, Fr) = gadgets::util::split_h256(batch_hash);
+        log::info!("BatchCircuit(batch_hash)    = {:?}", batch_hash);
+        log::info!("BatchCircuit(batch_hash_hi) = {:?}", batch_hash_hi);
+        log::info!("BatchCircuit(batch_hash_lo) = {:?}", batch_hash_lo);
         let batch_info: BatchHash<N_SNARKS> = BatchHash::construct(&chunk_hashes, batch_header);
 
         let layer3_snark = self.prover_impl.load_or_gen_agg_snark(
