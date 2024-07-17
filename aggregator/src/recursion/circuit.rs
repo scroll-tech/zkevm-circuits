@@ -182,6 +182,28 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
             hasher.squeeze()
         };
 
+        log::info!("RecursionCircuit(new): round           = {:?}", round);
+        log::info!(
+            "RecursionCircuit(new): init_instances  = {:?}",
+            init_instances
+        );
+        log::info!(
+            "RecursionCircuit(new): state_instances = {:?}",
+            state_instances
+        );
+        log::info!(
+            "RecursionCircuit(new): preproc_digest  = {:?}",
+            preprocessed_digest
+        );
+        log::info!(
+            "RecursionCircuit(new): prev snark      = {:?}",
+            previous.protocol
+        );
+        log::info!(
+            "RecursionCircuit(new): curr snark      = {:?}",
+            app.protocol
+        );
+
         let instances = [
             accumulator.lhs.x,
             accumulator.lhs.y,
@@ -489,8 +511,9 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 .chain(verify_app_state)
                 .chain(verify_app_init_state)
                 {
-                    log::info!("RecursionCircuit: equality constraint check");
-                    log::info!("{annotation}: lhs={lhs:?}, rhs={rhs:?}");
+                    log::info!("RecursionCircuit(equality_constraint_check): {annotation}");
+                    log::info!("lhs={:?}", lhs.value());
+                    log::info!("rhs={:?}", rhs.value());
                     ctx.region.constrain_equal(lhs.cell(), rhs.cell())?;
                 }
 
