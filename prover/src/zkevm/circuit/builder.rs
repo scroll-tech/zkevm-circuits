@@ -119,8 +119,8 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
         bail!(
             "tx num overflow {}, block range {} to {}",
             total_tx_num,
-            block_traces[0].header.number.unwrap(),
-            block_traces[block_num - 1].header.number.unwrap()
+            block_traces[0].eth_block.number.unwrap(),
+            block_traces[block_num - 1].eth_block.number.unwrap()
         );
     }
     log::info!(
@@ -142,7 +142,7 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
         log::debug!(
             "add_more_l2_trace idx {}, block num {:?}",
             idx + 1,
-            block_trace.header.number
+            block_trace.eth_block.number
         );
         builder.add_more_l2_trace(block_trace)?;
     }

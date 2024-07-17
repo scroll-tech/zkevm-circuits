@@ -39,8 +39,7 @@ pub fn memory_copier_gas_cost(
 pub fn eip150_gas(gas_left: u64, gas_specified: Word) -> u64 {
     let capped_gas = gas_left - gas_left / 64;
 
-    if gas_specified.bits() <= 64 {
-        let gas_specified = gas_specified.low_u64();
+    if let Ok(gas_specified) = u64::try_from(gas_specified) {
         if gas_specified < capped_gas {
             return gas_specified;
         }

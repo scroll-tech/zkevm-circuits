@@ -1,7 +1,6 @@
 //! Helper constants and utility functions for block
 
-use crate::{U256, U64};
-use ethers_core::utils::keccak256;
+use crate::{keccak256, U256};
 
 /// Maximum range of previous blocks allowed inside BLOCKHASH opcode
 pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
@@ -11,10 +10,12 @@ pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 pub fn calculate_block_hash(chain_id: u64, block_number: U256) -> (Vec<u8>, U256) {
     let mut input = vec![0; 16];
 
-    U64([chain_id]).to_big_endian(&mut input[..8]);
-    U64([block_number.low_u64()]).to_big_endian(&mut input[8..]);
+    let chain_id = chain_id.to_be_bytes();
+    let block_number = block_number.to::<u64>().to_be_bytes();
+    input[..8].copy_from_slice(&chain_id);
+    input[8..].copy_from_slice(&block_number);
 
-    let output = U256::from_big_endian(&keccak256(&input));
+    let output = U256::from_be_slice(keccak256(&input).as_slice());
 
     (input, output)
 }
@@ -24,6 +25,6 @@ pub fn is_valid_block_number(block_number: U256, current_block_number: U256) -> 
     block_number < current_block_number
         && block_number
             >= current_block_number
-                .checked_sub(NUM_PREV_BLOCK_ALLOWED.into())
+                .checked_sub(U256::from_limbs([NUM_PREV_BLOCK_ALLOWED, 0, 0, 0]))
                 .unwrap_or_default()
 }

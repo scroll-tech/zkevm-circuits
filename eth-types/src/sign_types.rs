@@ -3,17 +3,10 @@
 use crate::{
     address,
     geth_types::{Transaction, TxType},
-    word, Error, Word, H256,
+    keccak256, uint, Address, Bytes, Error, Signature, TransactionInput, TransactionRequest,
+    TypedTransaction, Word, H256, U256,
 };
-use ethers_core::{
-    k256::{
-        ecdsa::{RecoveryId, Signature as K256Signature, SigningKey, VerifyingKey},
-        elliptic_curve::{consts::U32, sec1::ToEncodedPoint},
-        PublicKey as K256PublicKey,
-    },
-    types::{Address, Bytes, Signature, TransactionRequest, U256},
-    utils::keccak256,
-};
+use alloy::signers::local::PrivateKeySigner;
 use halo2curves::{
     ff::FromUniformBytes,
     group::{
@@ -68,32 +61,33 @@ pub struct SignData {
 /// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="")
 /// using the dummy private key = 1
 pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
-    let mut sk_be_scalar = [0u8; 32];
-    sk_be_scalar[31] = 1_u8;
+    let sk_be_scalar = H256::with_last_byte(1);
 
-    let sk = SigningKey::from_bytes((&sk_be_scalar).into()).expect("sign key = 1");
-    let wallet = ethers_signers::Wallet::from(sk);
+    let sk = PrivateKeySigner::from_bytes(&sk_be_scalar).expect("sign key = 1");
 
-    let tx = TransactionRequest::new()
+    let mut tx = TransactionRequest::default()
         .nonce(0)
-        .gas(0)
-        .gas_price(U256::zero())
-        .to(Address::zero())
-        .value(U256::zero())
-        .data(Bytes::default());
-    let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
+        .gas_limit(0)
+        .to(Address::with_last_byte(0))
+        .value(U256::ZERO)
+        .input(TransactionInput::both(Bytes::default()))
+        .transaction_type(0);
+    tx.set_gas_price(0);
+    tx.complete_legacy().unwrap();
+    let TypedTransaction::Legacy(mut tx_built) = tx.clone().build_unsigned().unwrap() else {
+        panic!("Failed to build typed tx");
+    };
 
-    let sig = wallet
-        .sign_hash(sighash)
-        .expect("sign dummy tx using dummy sk");
-    assert_eq!(sig.v, 28);
+    let sig = sk.sign_transaction_sync(&mut tx_built).unwrap();
+
+    assert_eq!(sig.v().to_u64(), 1);
     assert_eq!(
-        sig.r,
-        word!("4faabf49beea23083894651a6f34baaf3dc29b396fb5baf8b8454773f328df61")
+        sig.r(),
+        uint!(0x4faabf49beea23083894651a6f34baaf3dc29b396fb5baf8b8454773f328df61_U256)
     );
     assert_eq!(
-        sig.s,
-        word!("0x75ae2dd5e4e688c9dbc6db7e75bafcb04ea141ca20332be9809a444d541272c1")
+        sig.s(),
+        uint!(0x75ae2dd5e4e688c9dbc6db7e75bafcb04ea141ca20332be9809a444d541272c1_U256)
     );
 
     (tx, sig)
@@ -126,7 +120,7 @@ static SIGN_DATA_DEFAULT: LazyLock<SignData> = LazyLock::new(|| {
     let sign_data = tx.sign_data().unwrap();
     assert_eq!(
         sign_data.get_addr(),
-        address!("0x7e5f4552091a69125d5dfcb7b8c2659029395bdf")
+        address!("7e5f4552091a69125d5dfcb7b8c2659029395bdf")
     );
 
     sign_data
@@ -222,4 +216,37 @@ pub fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
     pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
     pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
     pk_le
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use ethers_core::{
+        k256::ecdsa::SigningKey,
+        types::{Address, Bytes, Signature, TransactionRequest, H256, U256},
+        utils::keccak256,
+    };
+
+    pub fn get_dummy_tx_ethers() -> (TransactionRequest, Signature) {
+        let mut sk_be_scalar = [0u8; 32];
+        sk_be_scalar[31] = 1_u8;
+
+        let sk = SigningKey::from_bytes((&sk_be_scalar).into()).expect("sign key = 1");
+        let wallet = ethers_signers::Wallet::from(sk);
+
+        let tx = TransactionRequest::new()
+            .chain_id(2)
+            .nonce(0)
+            .gas(0)
+            .gas_price(U256::zero())
+            .to(Address::zero())
+            .value(U256::zero())
+            .data(Bytes::default());
+        let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
+
+        let sig = wallet
+            .sign_hash(sighash)
+            .expect("sign dummy tx using dummy sk");
+
+        (tx, sig)
+    }
 }

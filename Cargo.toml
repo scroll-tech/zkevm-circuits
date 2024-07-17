@@ -22,6 +22,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+alloy = { version = "0.2", default-features = false }
 anyhow = "1.0"
 ark-std = "0.3"
 base64 = "0.13.0"

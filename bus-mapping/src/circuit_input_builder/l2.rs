@@ -24,7 +24,7 @@ impl CircuitInputBuilder {
     fn apply_l2_trace(&mut self, block_trace: BlockTrace) -> Result<(), Error> {
         log::trace!(
             "apply_l2_trace start, block num {:?}",
-            block_trace.header.number
+            block_trace.eth_block.number
         );
         //self.sdb.list_accounts();
         //dump_code_db(&self.code_db);
@@ -120,7 +120,7 @@ impl CircuitInputBuilder {
         let old_root = l2_trace.storage_trace.root_before;
         log::debug!(
             "building zktrie state for block {:?}, old root {}",
-            l2_trace.header.number,
+            l2_trace.eth_block.number,
             hex::encode(old_root),
         );
 

@@ -1,16 +1,6 @@
 //! Some handy helpers
 
-use crate::{Address, Hash};
-use revm_precompile::Precompiles;
-
-/// Check if address is a precompiled or not.
-pub fn is_precompiled(address: &Address) -> bool {
-    #[cfg(feature = "scroll")]
-    let precompiles = Precompiles::bernoulli();
-    #[cfg(not(feature = "scroll"))]
-    let precompiles = Precompiles::berlin();
-    precompiles.get(address.as_fixed_bytes().into()).is_some()
-}
+use crate::Hash;
 
 /// Default number of bytes to pack into a field element.
 pub const POSEIDON_HASH_BYTES_IN_FIELD: usize = 31;
@@ -25,7 +15,7 @@ pub fn hash_code(code: &[u8]) -> Hash {
 
 /// Keccak code hash
 pub fn hash_code_keccak(code: &[u8]) -> Hash {
-    crate::H256(ethers_core::utils::keccak256(code))
+    crate::keccak256(code)
 }
 
 /// Poseidon code hash
@@ -38,8 +28,7 @@ pub fn hash_code_poseidon(code: &[u8]) -> Hash {
     let fls = (0..(code.len() / bytes_in_field))
         .map(|i| i * bytes_in_field)
         .map(|i| {
-            let mut buf: [u8; 32] = [0; 32];
-            U256::from_big_endian(&code[i..i + bytes_in_field]).to_little_endian(&mut buf);
+            let buf: [u8; 32] = U256::from_be_slice(&code[i..i + bytes_in_field]).to_le_bytes();
             Fr::from_bytes(&buf).unwrap()
         });
     let msgs: Vec<_> = fls
@@ -50,8 +39,7 @@ pub fn hash_code_poseidon(code: &[u8]) -> Hash {
             // pad to bytes_in_field
             let mut last_buf = vec![0u8; bytes_in_field];
             last_buf.as_mut_slice()[..last_code.len()].copy_from_slice(last_code);
-            let mut buf: [u8; 32] = [0; 32];
-            U256::from_big_endian(&last_buf).to_little_endian(&mut buf);
+            let buf: [u8; 32] = U256::from_be_slice(&last_buf).to_le_bytes();
             Some(Fr::from_bytes(&buf).unwrap())
         })
         .collect();
@@ -64,9 +52,9 @@ pub fn hash_code_poseidon(code: &[u8]) -> Hash {
         Fr::hash_msg(&msgs, Some(code.len() as u128 * HASHABLE_DOMAIN_SPEC))
     };
 
-    let mut buf: [u8; 32] = [0; 32];
-    U256::from_little_endian(h.to_repr().as_ref()).to_big_endian(&mut buf);
-    Hash::from_slice(&buf)
+    U256::from_le_slice(h.to_repr().as_ref())
+        .to_be_bytes()
+        .into()
 }
 
 #[test]

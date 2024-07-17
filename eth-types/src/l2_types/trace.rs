@@ -3,9 +3,8 @@ use crate::{
     l2_types::BlockTrace,
     state_db::{CodeDB, StateDB},
     utils::is_precompiled,
-    Address, Error, H256,
+    Address, Bytes, Error, H256,
 };
-use ethers_core::types::Bytes;
 use itertools::Itertools;
 
 use super::ExecStep;
@@ -24,7 +23,10 @@ pub fn collect_codes(
             .collect_vec());
     }
 
-    log::debug!("collect_codes for block {:?}", block.header.number);
+    log::debug!(
+        "collect_codes for block {:?}",
+        block.eth_block.header.number
+    );
     if sdb.is_none() {
         log::warn!("collect_codes without sdb can be slow");
     }
@@ -115,7 +117,10 @@ pub fn collect_codes(
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
-                        log::info!("trace extcodecopy! block {:?}", block.header.number);
+                        log::info!(
+                            "trace extcodecopy! block {:?}",
+                            block.eth_block.header.number
+                        );
                         trace_code(&mut codes, code.unwrap(), step, None, sdb, block);
                     }
 
@@ -157,7 +162,7 @@ fn trace_code(
                 &code.len(),
                 step.op,
                 step.gas,
-                block.header.number,
+                block.eth_block.header.number,
             );
             hash
         }

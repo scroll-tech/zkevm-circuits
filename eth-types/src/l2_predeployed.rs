@@ -2,52 +2,47 @@
 
 // Copied from https://github.com/scroll-tech/go-ethereum/blob/8dc419a70b94f5ca185dcf818a48a3bd2eefc392/rollup/rcfg/config.go#L42
 
-use crate::Address;
+use crate::{address, Address, U256};
 
 /// helper for L2MessageQueue contract
 pub mod message_queue {
     use super::*;
-    use crate::U256;
-    use std::{str::FromStr, sync::LazyLock};
 
     /// address of L2MessageQueue predeploy
-    pub static ADDRESS: LazyLock<Address> =
-        LazyLock::new(|| Address::from_str("0x5300000000000000000000000000000000000000").unwrap());
+    pub const ADDRESS: Address = address!("5300000000000000000000000000000000000000");
     /// the slot of withdraw root in L2MessageQueue
-    pub static WITHDRAW_TRIE_ROOT_SLOT: U256 = U256::zero();
+    pub const WITHDRAW_TRIE_ROOT_SLOT: U256 = U256::ZERO;
 }
 
 /// Helper for L1GasPriceOracle contract
 #[allow(missing_docs)]
 pub mod l1_gas_price_oracle {
-    use revm_primitives::HashMap;
+    use super::*;
 
-    use crate::{geth_types::Account, Address, U256};
-    use std::{str::FromStr, sync::LazyLock};
+    use crate::{geth_types::Account, Bytes};
+    use std::sync::LazyLock;
 
     /// L1GasPriceOracle predeployed address
-    pub static ADDRESS: LazyLock<Address> =
-        LazyLock::new(|| Address::from_str("0x5300000000000000000000000000000000000002").unwrap());
+    pub const ADDRESS: Address = address!("5300000000000000000000000000000000000002");
     /// L1 base fee slot in L1GasPriceOracle
-    pub static BASE_FEE_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(1));
+    pub const BASE_FEE_SLOT: U256 = U256::from_limbs([1, 0, 0, 0]);
 
     /// The following 2 slots will be depreciated after curie fork
     /// L1 overhead slot in L1GasPriceOracle
-    pub static OVERHEAD_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(2));
+    pub const OVERHEAD_SLOT: U256 = U256::from_limbs([2, 0, 0, 0]);
     /// L1 scalar slot in L1GasPriceOracle
-    pub static SCALAR_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(3));
+    pub const SCALAR_SLOT: U256 = U256::from_limbs([3, 0, 0, 0]);
 
     /// THe following 3 slots plus `BASE_FEE_SLOT` will be used for l1 fee after curie fork
     /// L1 BlobBaseFee slot in L1GasPriceOracle after Curie fork
-    pub static L1_BLOB_BASEFEE_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(5));
+    pub const L1_BLOB_BASEFEE_SLOT: U256 = U256::from_limbs([5, 0, 0, 0]);
     /// L1 commitScalar slot in L1GasPriceOracle after Curie fork
-    pub static COMMIT_SCALAR_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(6));
+    pub const COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6, 0, 0, 0]);
     /// L1 blob_scalar slot in L1GasPriceOracle after Curie fork
-    pub static BLOB_SCALAR_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(7));
-    pub static IS_CURIE_SLOT: LazyLock<U256> = LazyLock::new(|| U256::from(8));
-    pub static INITIAL_COMMIT_SCALAR: LazyLock<U256> =
-        LazyLock::new(|| U256::from(230759955285u64));
-    pub static INITIAL_BLOB_SCALAR: LazyLock<U256> = LazyLock::new(|| U256::from(417565260));
+    pub const BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7, 0, 0, 0]);
+    pub const IS_CURIE_SLOT: U256 = U256::from_limbs([8, 0, 0, 0]);
+    pub const INITIAL_COMMIT_SCALAR: U256 = U256::from_limbs([230759955285, 0, 0, 0]);
+    pub const INITIAL_BLOB_SCALAR: U256 = U256::from_limbs([417565260, 0, 0, 0]);
 
     /// Bytecode before curie hardfork
     /// curl 127.0.0.1:8545 -X POST -H "Content-Type: application/json" --data
@@ -64,18 +59,19 @@ pub mod l1_gas_price_oracle {
 
     /// Default contract state for testing
     pub fn default_contract_account() -> Account {
-        let storages: Vec<(U256, U256)> = vec![
-            (*BASE_FEE_SLOT, U256::from(1u64)),
-            (*L1_BLOB_BASEFEE_SLOT, U256::from(1u64)),
-            (*COMMIT_SCALAR_SLOT, *INITIAL_COMMIT_SCALAR),
-            (*BLOB_SCALAR_SLOT, *INITIAL_BLOB_SCALAR),
+        const STORAGES: [(U256, U256); 4] = [
+            (BASE_FEE_SLOT, U256::from_limbs([1, 0, 0, 0])),
+            (L1_BLOB_BASEFEE_SLOT, U256::from_limbs([1, 0, 0, 0])),
+            (COMMIT_SCALAR_SLOT, INITIAL_COMMIT_SCALAR),
+            (BLOB_SCALAR_SLOT, INITIAL_BLOB_SCALAR),
         ];
+
         Account {
-            address: *ADDRESS,
-            nonce: U256::zero(),
-            balance: U256::from(1u64),
-            code: Vec::new().into(),
-            storage: HashMap::from_iter(storages),
+            address: ADDRESS,
+            nonce: U256::ZERO,
+            balance: U256::from_limbs([1, 0, 0, 0]),
+            code: Bytes::new(),
+            storage: std::collections::HashMap::from_iter(STORAGES),
         }
     }
 }

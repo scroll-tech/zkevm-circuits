@@ -2,9 +2,7 @@
 
 use std::str::FromStr;
 
-use ethers_core::types::{Address, U256};
-
-use crate::l2_types::BlockTrace;
+use crate::{address, l2_types::BlockTrace, Address, U256};
 
 /// Read env var with default value
 pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
@@ -14,14 +12,14 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
 }
 
 /// Scroll coinbase
-pub const SCROLL_COINBASE: &str = "0x5300000000000000000000000000000000000005";
+pub const SCROLL_COINBASE: Address = address!("5300000000000000000000000000000000000005");
 
 /// Get COINBASE constant used for circuit
 pub fn get_coinbase_constant() -> Address {
     let default_coinbase = if cfg!(feature = "scroll") {
-        Address::from_str(SCROLL_COINBASE).unwrap()
+        SCROLL_COINBASE
     } else {
-        Address::zero()
+        Address::ZERO
     };
     read_env_var("COINBASE", default_coinbase)
 }
@@ -35,12 +33,12 @@ pub fn set_env_coinbase(coinbase: &Address) -> String {
 
 /// Get DIFFICULTY constant used for circuit
 pub fn get_difficulty_constant() -> U256 {
-    read_env_var("DIFFICULTY", U256::zero())
+    read_env_var("DIFFICULTY", U256::ZERO)
 }
 
 ///  Set scroll block constants using trace
 pub fn set_scroll_block_constants_with_trace(trace: &BlockTrace) {
-    set_scroll_block_constants(&trace.coinbase.address, trace.chain_id, U256::zero())
+    set_scroll_block_constants(&trace.coinbase.address, trace.chain_id, U256::ZERO)
 }
 
 /// Set scroll block constants

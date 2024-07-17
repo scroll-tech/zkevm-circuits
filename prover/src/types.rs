@@ -35,7 +35,7 @@ impl ChunkProvingTask {
         self.block_traces
             .first()
             .map_or(0, |trace: &BlockTrace| {
-                trace.header.number.expect("block num").low_u64()
+                trace.eth_block.number.expect("block num").low_u64()
             })
             .to_string()
     }
