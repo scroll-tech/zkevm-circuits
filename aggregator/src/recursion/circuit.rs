@@ -410,11 +410,13 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                             // Verify initial_state is same as the first application snark in the
                             // first round of recursion.
                             (
+                                "initial state same as first app snark (round = 0)",
                                 main_gate.mul(&mut ctx, Existing(st), Existing(first_round)),
                                 main_gate.mul(&mut ctx, Existing(app_inst), Existing(first_round)),
                             ),
                             // Propagate initial_state for subsequent rounds of recursion.
                             (
+                                "propagate initial state",
                                 main_gate.mul(&mut ctx, Existing(st), Existing(not_first_round)),
                                 previous_st,
                             ),
@@ -436,7 +438,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                                     .map(|i| &app_instances[i]),
                             ),
                     )
-                    .map(|(&st, &app_inst)| (st, app_inst))
+                    .map(|(&st, &app_inst)| ("curr state same as state in app snark", st, app_inst))
                     .collect::<Vec<_>>();
 
                 // Verify that the "previous state" (additional state not included) is the same
@@ -451,6 +453,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     )
                     .map(|(&st, &app_inst)| {
                         (
+                            "prev state matches (round > 0)",
                             main_gate.mul(&mut ctx, Existing(app_inst), Existing(not_first_round)),
                             st,
                         )
@@ -459,9 +462,10 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
 
                 // Finally apply the equality constraints between the (LHS, RHS) values constructed
                 // above.
-                for (lhs, rhs) in [
+                for (annotation, lhs, rhs) in [
                     // Propagate the preprocessed digest.
                     (
+                        "propagate preprocessed digest",
                         main_gate.mul(
                             &mut ctx,
                             Existing(preprocessed_digest),
@@ -471,6 +475,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     ),
                     // Verify that "round" increments by 1 when not the first round of recursion.
                     (
+                        "increment round",
                         round,
                         main_gate.add(
                             &mut ctx,
@@ -484,6 +489,8 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 .chain(verify_app_state)
                 .chain(verify_app_init_state)
                 {
+                    log::info!("RecursionCircuit: equality constraint check");
+                    log::info!("{annotation}: lhs={lhs:?}, rhs={rhs:?}");
                     ctx.region.constrain_equal(lhs.cell(), rhs.cell())?;
                 }
 
