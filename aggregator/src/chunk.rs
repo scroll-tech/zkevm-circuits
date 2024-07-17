@@ -72,7 +72,7 @@ impl ChunkInfo {
         let post_state_root = traces
             .last()
             .expect("at least 1 block needed")
-            .header
+            .eth_block
             .state_root;
         let withdraw_root = traces.last().unwrap().withdraw_trie_root;
         let chain_id = traces.first().unwrap().chain_id;

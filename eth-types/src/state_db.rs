@@ -15,12 +15,12 @@ static ACCOUNT_ZERO: LazyLock<Account> = LazyLock::new(Account::zero);
 static EMPTY_CODE_HASH: LazyLock<Hash> = LazyLock::new(|| CodeDB::hash(&[]));
 /// bytes of empty code hash, in little endian order.
 pub static EMPTY_CODE_HASH_LE: LazyLock<[u8; 32]> = LazyLock::new(|| {
-    let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
+    let mut bytes = EMPTY_CODE_HASH.0;
     bytes.reverse();
     bytes
 });
 
-const VALUE_ZERO: Word = Word::zero();
+const VALUE_ZERO: Word = Word::ZERO;
 
 /// Memory storage for contract code by code hash.
 #[derive(Debug)]
@@ -62,7 +62,7 @@ impl CodeDB {
 
     /// Compute hash of given code.
     pub fn hash(code: &[u8]) -> Hash {
-        H256(hash_code(code).into())
+        hash_code(code)
     }
 }
 
@@ -88,12 +88,12 @@ impl Account {
     /// Return an empty account, with all values set at zero.
     pub fn zero() -> Self {
         Self {
-            nonce: Word::zero(),
-            balance: Word::zero(),
+            nonce: Word::ZERO,
+            balance: Word::ZERO,
             storage: HashMap::new(),
             code_hash: CodeDB::empty_code_hash(),
-            keccak_code_hash: *KECCAK_CODE_HASH_EMPTY,
-            code_size: Word::zero(),
+            keccak_code_hash: KECCAK_CODE_HASH_EMPTY,
+            code_size: Word::ZERO,
         }
     }
 
@@ -101,12 +101,12 @@ impl Account {
     pub fn is_empty(&self) -> bool {
         debug_assert_ne!(
             self.code_hash,
-            Hash::zero(),
+            Hash::ZERO,
             "codehash inside statedb should never be 0, {self:?}"
         );
         let is_code_hash_empty = self.code_hash.eq(&CodeDB::empty_code_hash());
         if is_code_hash_empty {
-            debug_assert_eq!(Word::zero(), self.code_size);
+            debug_assert_eq!(Word::ZERO, self.code_size);
         }
         self.nonce.is_zero() && self.balance.is_zero() && is_code_hash_empty
     }
@@ -116,7 +116,7 @@ impl Account {
     /// to be 0
     pub fn code_hash_read(&self) -> Hash {
         if self.is_empty() {
-            Hash::zero()
+            Hash::ZERO
         } else {
             self.code_hash
         }
@@ -251,7 +251,7 @@ impl StateDB {
         let found = if acc.storage.contains_key(key) {
             true
         } else {
-            acc.storage.insert(*key, Word::zero());
+            acc.storage.insert(*key, Word::ZERO);
             false
         };
         (found, acc.storage.get_mut(key).expect("key not inserted"))
@@ -280,14 +280,14 @@ impl StateDB {
     /// Get nonce of account with `addr`.
     pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
-        account.nonce.as_u64()
+        account.nonce.to()
     }
 
     /// Increase nonce of account with `addr` and return the previous value.
     pub fn increase_nonce(&mut self, addr: &Address) -> u64 {
         let (_, account) = self.get_account_mut(addr);
-        let nonce = account.nonce.as_u64();
-        account.nonce = account.nonce + 1;
+        let nonce: u64 = account.nonce.to();
+        account.nonce = account.nonce + Word::from_limbs([1, 0, 0, 0]);
         nonce
     }
 
@@ -388,7 +388,7 @@ mod statedb_tests {
         // Get non-existing storage key for non-existing account
         let (found, value) = statedb.get_storage(&addr_a, &Word::from(2));
         assert!(!found);
-        assert_eq!(value, &Word::zero());
+        assert_eq!(value, &Word::ZERO);
 
         // Get mut non-existing account and set nonce
         let (found, acc) = statedb.get_account_mut(&addr_a);
@@ -404,7 +404,7 @@ mod statedb_tests {
         // Get non-existing storage key for existing account and set value
         let (found, value) = statedb.get_storage_mut(&addr_a, &Word::from(2));
         assert!(!found);
-        assert_eq!(value, &Word::zero());
+        assert_eq!(value, &Word::ZERO);
         *value = Word::from(101);
 
         // Get existing storage key and check value
@@ -415,13 +415,13 @@ mod statedb_tests {
         // Get non-existing storage key for non-existing account and set value
         let (found, value) = statedb.get_storage_mut(&addr_b, &Word::from(3));
         assert!(!found);
-        assert_eq!(value, &Word::zero());
+        assert_eq!(value, &Word::ZERO);
         *value = Word::from(102);
 
         // Get existing account and check nonce
         let (found, acc) = statedb.get_account(&addr_b);
         assert!(found);
-        assert_eq!(acc.nonce, Word::zero());
+        assert_eq!(acc.nonce, Word::ZERO);
 
         // Get existing storage key and check value
         let (found, value) = statedb.get_storage(&addr_b, &Word::from(3));

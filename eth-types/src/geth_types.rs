@@ -4,12 +4,8 @@
 use crate::l2_types::BlockTrace;
 use crate::{
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk2, SignData, SECP256K1_Q},
-    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
-    Word, U64,
-};
-use ethers_core::types::{
-    transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, Eip2930TransactionRequest,
-    NameOrAddress, TransactionRequest, H256,
+    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, SignableTransaction,
+    TransactionRequest, TxKind, TxSignature, TypedTransaction, Word, H256,
 };
 use halo2curves::{group::ff::PrimeField, secp256k1::Fq};
 use num::Integer;
@@ -76,27 +72,35 @@ impl TxType {
 
     /// Get the type of transaction
     pub fn get_tx_type(tx: &crate::Transaction) -> Self {
+        // Transaction type:
+        // - Some(3) for EIP-4844 transaction
+        // - Some(2) for EIP-1559 transaction
+        // - Some(1) for AccessList transaction
+        // - None or Some(0) for Legacy
         match tx.transaction_type {
-            Some(x) if x == U64::from(1) => Self::Eip2930,
-            Some(x) if x == U64::from(2) => Self::Eip1559,
-            Some(x) if x == U64::from(0x7e) => Self::L1Msg,
-            _ => {
+            Some(1) => Self::Eip2930,
+            Some(2) => Self::Eip1559,
+            Some(0x7e) => Self::L1Msg,
+            None | Some(0) => {
+                let sig = tx.signature.unwrap_or_default();
+                let v = sig.v.to::<u64>();
                 if cfg!(feature = "scroll") {
-                    if tx.v.is_zero() && tx.r.is_zero() && tx.s.is_zero() {
+                    if v == 0 && sig.r.is_zero() && sig.s.is_zero() {
                         Self::L1Msg
                     } else {
-                        match tx.v.as_u64() {
+                        match v {
                             0 | 1 | 27 | 28 => Self::PreEip155,
                             _ => Self::Eip155,
                         }
                     }
                 } else {
-                    match tx.v.as_u64() {
+                    match v {
                         0 | 1 | 27 | 28 => Self::PreEip155,
                         _ => Self::Eip155,
                     }
                 }
             }
+            Some(x) => panic!("Unknown transaction type: {}", x), // panics on 4844
         }
     }
 
@@ -122,39 +126,6 @@ impl TxType {
         };
 
         recovery_id as u8
-    }
-}
-
-/// Get the RLP bytes for signing
-pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
-    let sig_v = tx.v;
-    match TxType::get_tx_type(tx) {
-        TxType::Eip155 => {
-            let mut tx: TransactionRequest = tx.into();
-            tx.chain_id = Some(tx.chain_id.unwrap_or_else(|| {
-                let recv_v = TxType::Eip155.get_recovery_id(sig_v.as_u64()) as u64;
-                (sig_v - recv_v - 35) / 2
-            }));
-            tx.rlp().to_vec()
-        }
-        TxType::PreEip155 => {
-            let tx: TransactionRequest = tx.into();
-            tx.rlp_unsigned().to_vec()
-        }
-        TxType::Eip1559 => {
-            let tx: Eip1559TransactionRequest = tx.into();
-            let typed_tx: TypedTransaction = tx.into();
-            typed_tx.rlp().to_vec()
-        }
-        TxType::Eip2930 => {
-            let tx: Eip2930TransactionRequest = tx.into();
-            let typed_tx: TypedTransaction = tx.into();
-            typed_tx.rlp().to_vec()
-        }
-        TxType::L1Msg => {
-            // L1 msg does not have signature
-            vec![]
-        }
     }
 }
 
@@ -205,7 +176,7 @@ pub struct BlockConstants {
     /// time
     pub timestamp: Word,
     /// number
-    pub number: U64,
+    pub number: u64,
     /// difficulty
     pub difficulty: Word,
     /// gas limit
@@ -218,13 +189,17 @@ impl<TX> TryFrom<&Block<TX>> for BlockConstants {
     type Error = Error;
 
     fn try_from(block: &Block<TX>) -> Result<Self, Self::Error> {
+        let header = &block.header;
         Ok(Self {
-            coinbase: block.author.ok_or(Error::IncompleteBlock)?,
-            timestamp: block.timestamp,
-            number: block.number.ok_or(Error::IncompleteBlock)?,
-            difficulty: block.difficulty,
-            gas_limit: block.gas_limit,
-            base_fee: block.base_fee_per_gas.ok_or(Error::IncompleteBlock)?,
+            coinbase: header.miner,
+            timestamp: Word::from(header.timestamp),
+            number: header.number.ok_or(Error::IncompleteBlock)?,
+            difficulty: header.difficulty,
+            gas_limit: Word::from(header.gas_limit),
+            base_fee: header
+                .base_fee_per_gas
+                .map(Word::from)
+                .ok_or(Error::IncompleteBlock)?,
         })
     }
 }
@@ -234,7 +209,7 @@ impl BlockConstants {
     pub fn new(
         coinbase: Address,
         timestamp: Word,
-        number: U64,
+        number: u64,
         difficulty: Word,
         gas_limit: Word,
         base_fee: Word,
@@ -299,17 +274,20 @@ impl From<&Transaction> for crate::Transaction {
         crate::Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
-            gas: tx.gas_limit,
+            nonce: tx.nonce.to(),
+            gas: tx.gas_limit.to(),
             value: tx.value,
-            gas_price: tx.gas_price,
-            max_priority_fee_per_gas: tx.gas_tip_cap,
-            max_fee_per_gas: tx.gas_fee_cap,
+            gas_price: tx.gas_price.map(|g| g.to()),
+            max_priority_fee_per_gas: tx.gas_tip_cap.map(|g| g.to()),
+            max_fee_per_gas: tx.gas_fee_cap.map(|g| g.to()),
             input: tx.call_data.clone(),
             access_list: tx.access_list.clone(),
-            v: tx.v.into(),
-            r: tx.r,
-            s: tx.s,
+            signature: Some(TxSignature {
+                v: Word::from(tx.v),
+                r: tx.r,
+                s: tx.s,
+                ..Default::default()
+            }),
             hash: tx.hash,
             ..Default::default()
         }
@@ -318,21 +296,22 @@ impl From<&Transaction> for crate::Transaction {
 
 impl From<&crate::Transaction> for Transaction {
     fn from(tx: &crate::Transaction) -> Transaction {
+        let signature = tx.signature.unwrap_or_default();
         Transaction {
             tx_type: TxType::get_tx_type(tx),
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
-            gas_limit: tx.gas,
+            nonce: Word::from(tx.nonce),
+            gas_limit: Word::from(tx.gas),
             value: tx.value,
-            gas_price: tx.gas_price,
-            gas_tip_cap: tx.max_priority_fee_per_gas,
-            gas_fee_cap: tx.max_fee_per_gas,
+            gas_price: tx.gas_price.map(Word::from),
+            gas_tip_cap: tx.max_priority_fee_per_gas.map(Word::from),
+            gas_fee_cap: tx.max_fee_per_gas.map(Word::from),
             call_data: tx.input.clone(),
             access_list: tx.access_list.clone(),
-            v: tx.v.as_u64(),
-            r: tx.r,
-            s: tx.s,
+            v: signature.v.to(),
+            r: signature.r,
+            s: signature.s,
             rlp_bytes: tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(tx),
             hash: tx.hash,
@@ -344,12 +323,12 @@ impl From<&Transaction> for TransactionRequest {
     fn from(tx: &Transaction) -> TransactionRequest {
         TransactionRequest {
             from: Some(tx.from),
-            to: tx.to.map(NameOrAddress::Address),
-            gas: Some(tx.gas_limit),
-            gas_price: tx.gas_price,
+            to: tx.to.map(TxKind::Call),
+            gas: Some(tx.gas_limit.to()),
+            gas_price: tx.gas_price.map(|g| g.to()),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
-            nonce: Some(tx.nonce),
+            nonce: Some(tx.nonce.to()),
             ..Default::default()
         }
     }

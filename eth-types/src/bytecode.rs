@@ -108,8 +108,7 @@ impl Bytecode {
         // Write the op code
         self.write_op((OpcodeId::push_n(n)).expect("valid push size"));
 
-        let mut bytes = [0u8; 32];
-        value.to_little_endian(&mut bytes);
+        let mut bytes = value.to_le_bytes();
         // Write the bytes MSB to LSB
         for i in 0..n {
             self.write(bytes[(n - 1 - i) as usize], false);
@@ -275,7 +274,8 @@ impl<'a> Iterator for BytecodeIterator<'a> {
                     *value_byte = self.0.next().unwrap().value;
                 }
 
-                OpcodeWithData::PushWithData(n as u8, Word::from(value.as_slice()))
+                OpcodeWithData::PushWithData(n as u8, Word::from_le_slice(value.as_slice()))
+            // FIXME: le or be?
             } else {
                 OpcodeWithData::Opcode(op)
             }
@@ -355,7 +355,7 @@ macro_rules! bytecode_internal {
 impl Bytecode {
     /// Helper function for `PUSH0`
     pub fn op_push0(&mut self) -> &mut Self {
-        self.push(0, Word::zero())
+        self.push(0, Word::ZERO)
     }
 }
 

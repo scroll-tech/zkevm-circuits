@@ -36,19 +36,20 @@ pub mod state_db;
 pub mod utils;
 
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
-pub use bytecode::Bytecode;
-pub use error::Error;
-use ethers_core::types;
-pub use ethers_core::{
-    abi::ethereum_types::{BigEndianHash, U512},
-    types::{
-        transaction::{
-            eip2930::{AccessList, AccessListItem},
-            response::Transaction,
-        },
-        Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
+pub use alloy::{
+    consensus::{SignableTransaction, TypedTransaction},
+    core::primitives::{
+        address, b256 as h256, keccak256, ruint::uint, Address, Bytes, ChainId, Signature, TxKind,
+        B256 as H256, B64 as H64, U256, U512, U64,
+    },
+    rpc::types::{
+        transaction::Signature as TxSignature, AccessList, AccessListItem, Block,
+        BlockTransactions, Header as EthBlockHeader, Transaction, TransactionInput,
+        TransactionRequest,
     },
 };
+pub use bytecode::Bytecode;
+pub use error::Error;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -103,18 +104,6 @@ pub trait ToAddress {
     fn to_address(&self) -> Address;
 }
 
-/// Trait used do convert a scalar value to a 32 byte array in big endian.
-pub trait ToBigEndian {
-    /// Convert the value to a 32 byte array in big endian.
-    fn to_be_bytes(&self) -> [u8; 32];
-}
-
-/// Trait used to convert a scalar value to a 32 byte array in little endian.
-pub trait ToLittleEndian {
-    /// Convert the value to a 32 byte array in little endian.
-    fn to_le_bytes(&self) -> [u8; 32];
-}
-
 /// Trait used to convert a scalar value to a 16x u16 array in little endian.
 pub trait ToU16LittleEndian {
     /// Convert the value to a 16x u16 array in little endian.
@@ -143,41 +132,14 @@ impl<'de> Deserialize<'de> for DebugU256 {
     }
 }
 
-impl ToBigEndian for DebugU256 {
-    /// Encode the value as byte array in big endian.
-    fn to_be_bytes(&self) -> [u8; 32] {
-        let mut bytes = [0u8; 32];
-        self.to_big_endian(&mut bytes);
-        bytes
-    }
-}
-
 impl ToWord for DebugU256 {
     fn to_word(&self) -> Word {
-        U256(self.0)
+        U256::from_limbs(self.0)
     }
 }
 
 /// Ethereum Word (256 bits).
 pub type Word = U256;
-
-impl ToBigEndian for U256 {
-    /// Encode the value as byte array in big endian.
-    fn to_be_bytes(&self) -> [u8; 32] {
-        let mut bytes = [0u8; 32];
-        self.to_big_endian(&mut bytes);
-        bytes
-    }
-}
-
-impl ToLittleEndian for U256 {
-    /// Encode the value as byte array in little endian.
-    fn to_le_bytes(&self) -> [u8; 32] {
-        let mut bytes = [0u8; 32];
-        self.to_little_endian(&mut bytes);
-        bytes
-    }
-}
 
 impl ToU16LittleEndian for U256 {
     /// Encode the value as 16x u16 array in little endian.
@@ -189,7 +151,7 @@ impl ToU16LittleEndian for U256 {
     ///   ]
     fn to_le_u16_array(&self) -> [u16; 16] {
         let mut u16_array: [u16; 16] = [0; 16];
-        for (idx, u64_cell) in self.0.into_iter().enumerate() {
+        for (idx, u64_cell) in self.as_limbs().iter().copied().enumerate() {
             u16_array[idx * 4] = (u64_cell & 0xffff) as u16;
             u16_array[idx * 4 + 1] = ((u64_cell >> 16) & 0xffff) as u16;
             u16_array[idx * 4 + 2] = ((u64_cell >> 32) & 0xffff) as u16;
@@ -206,28 +168,28 @@ impl ToAddress for U256 {
 }
 
 /// Ethereum Hash (256 bits).
-pub type Hash = types::H256;
+pub type Hash = alloy::core::primitives::B256;
 
 impl ToWord for Hash {
     fn to_word(&self) -> Word {
-        Word::from(self.as_bytes())
+        Word::from_be_slice(self.as_slice())
     }
 }
 
 impl ToWord for Address {
     fn to_word(&self) -> Word {
         let mut bytes = [0u8; 32];
-        bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
-        Word::from(bytes)
+        bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_slice());
+        Word::from_be_bytes(bytes)
     }
 }
 
 impl ToWord for bool {
     fn to_word(&self) -> Word {
         if *self {
-            Word::one()
+            Word::from_limbs([1, 0, 0, 0])
         } else {
-            Word::zero()
+            Word::ZERO
         }
     }
 }
@@ -271,13 +233,11 @@ impl ToWord for Word {
 
 /// Code hash related
 /// the empty keccak code hash
-pub static KECCAK_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
-    Hash::from_str("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470").unwrap()
-});
+pub const KECCAK_CODE_HASH_EMPTY: Hash =
+    h256!("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
 /// the empty poseidon code hash
-pub static POSEIDON_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
-    Hash::from_str("0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864").unwrap()
-});
+pub const POSEIDON_CODE_HASH_EMPTY: Hash =
+    h256!("2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864");
 /// Struct used to define the storage proof
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct StorageProof {
@@ -847,23 +807,6 @@ impl GethCallTrace {
 }
 
 #[macro_export]
-/// Create an [`Address`] from a hex string.  Panics on invalid input.
-macro_rules! address {
-    ($addr_hex:expr) => {{
-        use std::str::FromStr;
-        $crate::Address::from_str(&$addr_hex).expect("invalid hex Address")
-    }};
-}
-
-#[macro_export]
-/// Create a [`Word`] from a hex string.  Panics on invalid input.
-macro_rules! word {
-    ($word_hex:expr) => {
-        $crate::Word::from_str_radix(&$word_hex, 16).expect("invalid hex Word")
-    };
-}
-
-#[macro_export]
 /// Create a [`Word`] to [`Word`] HashMap from pairs of hex strings.  Panics on
 /// invalid input.
 macro_rules! word_map {
@@ -873,7 +816,7 @@ macro_rules! word_map {
     ($($key_hex:expr => $value_hex:expr),*) => {
         {
             std::collections::HashMap::from_iter([(
-                    $(word!($key_hex), word!($value_hex)),*
+                    $(uint!($key_hex), uint!($value_hex)),*
             )])
         }
     }

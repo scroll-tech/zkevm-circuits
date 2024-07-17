@@ -155,7 +155,7 @@ impl CircuitCapacityChecker {
                     .as_ref()
                     .map(|state| state.root())
                     .map(|root| H256(*root))
-                    .unwrap_or(trace.header.state_root);
+                    .unwrap_or(trace.eth_block.state_root);
                 // notice the trace has included all code required for builidng witness block,
                 // so we do not need to pick them from previous one, but we still keep the
                 // old codedb in previous run for some dedup work

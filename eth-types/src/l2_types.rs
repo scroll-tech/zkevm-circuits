@@ -2,12 +2,9 @@
 
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    EthBlock, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
-    ToBigEndian, Transaction, H256,
-};
-use ethers_core::types::{
-    transaction::eip2930::{AccessList, AccessListItem},
-    Address, Bytes, U256, U64,
+    AccessList, AccessListItem, Address, BlockTransactions, Bytes, ChainId, EthBlock,
+    GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash, ToWord,
+    Transaction, TxSignature, H256, U256, U64,
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -33,7 +30,8 @@ pub struct BlockTraceV2 {
     /// coinbase's status AFTER execution
     pub coinbase: AccountTrace,
     /// block
-    pub header: EthBlock,
+    #[serde(rename = "header")]
+    pub eth_block: EthBlock,
     /// txs
     pub transactions: Vec<TransactionTrace>,
     /// Accessed bytecodes with hashes
@@ -60,7 +58,7 @@ impl From<BlockTrace> for BlockTraceV2 {
             codes,
             chain_id: b.chain_id,
             coinbase: b.coinbase,
-            header: b.header,
+            eth_block: b.eth_block,
             transactions: b.transactions,
             storage_trace: b.storage_trace,
             start_l1_queue_index: b.start_l1_queue_index,
@@ -88,7 +86,8 @@ pub struct BlockTrace {
     /// coinbase's status AFTER execution
     pub coinbase: AccountTrace,
     /// block
-    pub header: EthBlock,
+    #[serde(rename = "header")]
+    pub eth_block: EthBlock,
     /// txs
     pub transactions: Vec<TransactionTrace>,
     /// execution results
@@ -136,17 +135,13 @@ impl BlockTrace {
     pub fn da_encode_header(&self) -> Vec<u8> {
         // https://github.com/scroll-tech/da-codec/blob/b842a0f961ad9180e16b50121ef667e15e071a26/encoding/codecv2/codecv2.go#L97
         let num_txs = (self.num_l1_txs() + self.num_l2_txs()) as u16;
+        let header = &self.eth_block.header;
         std::iter::empty()
             // Block Values
-            .chain(self.header.number.unwrap().as_u64().to_be_bytes())
-            .chain(self.header.timestamp.as_u64().to_be_bytes())
-            .chain(
-                self.header
-                    .base_fee_per_gas
-                    .unwrap_or_default()
-                    .to_be_bytes(),
-            )
-            .chain(self.header.gas_limit.as_u64().to_be_bytes())
+            .chain(header.number.unwrap().to_be_bytes())
+            .chain(header.timestamp.to_be_bytes())
+            .chain(header.base_fee_per_gas.unwrap_or_default().to_be_bytes())
+            .chain((header.gas_limit as u64).to_be_bytes())
             .chain(num_txs.to_be_bytes())
             .collect_vec()
         // the `num_l1_txs` is not used for chunk hashing yet.
@@ -154,22 +149,22 @@ impl BlockTrace {
 }
 
 impl From<BlockTrace> for EthBlock {
-    fn from(b: BlockTrace) -> Self {
+    fn from(mut b: BlockTrace) -> Self {
         let mut txs = Vec::new();
         for (idx, tx_data) in b.transactions.iter().enumerate() {
-            let tx_idx = Some(U64::from(idx));
+            let header = &b.eth_block.header;
             let tx = tx_data.to_eth_tx(
-                b.header.hash,
-                b.header.number,
-                tx_idx,
-                b.header.base_fee_per_gas,
+                header.hash,
+                header.number,
+                Some(idx as u64),
+                header.base_fee_per_gas,
             );
             txs.push(tx)
         }
+        b.eth_block.header.difficulty = U256::ZERO;
         EthBlock {
-            transactions: txs,
-            difficulty: 0.into(),
-            ..b.header
+            transactions: BlockTransactions::Full(txs),
+            ..b.eth_block
         }
     }
 }
@@ -178,42 +173,35 @@ impl From<&BlockTrace> for EthBlock {
     fn from(b: &BlockTrace) -> Self {
         let mut txs = Vec::new();
         for (idx, tx_data) in b.transactions.iter().enumerate() {
-            let tx_idx = Some(U64::from(idx));
+            let header = &b.eth_block.header;
             let tx = tx_data.to_eth_tx(
-                b.header.hash,
-                b.header.number,
-                tx_idx,
-                b.header.base_fee_per_gas,
+                header.hash,
+                header.number,
+                Some(idx as u64),
+                header.base_fee_per_gas,
             );
             txs.push(tx)
         }
+        let mut blk = b.eth_block.clone();
+        blk.header.difficulty = U256::ZERO;
         EthBlock {
-            transactions: txs,
-            difficulty: 0.into(),
-            ..b.header.clone()
+            transactions: BlockTransactions::Full(txs),
+            ..b.eth_block.clone()
         }
     }
 }
 
 impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
     fn from(block: &BlockTraceV2) -> Self {
+        let header = &block.eth_block.header;
         revm_primitives::BlockEnv {
-            number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
-            coinbase: block.coinbase.address.0.into(),
-            timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
-            gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
-            basefee: revm_primitives::U256::from_be_bytes(
-                block
-                    .header
-                    .base_fee_per_gas
-                    .unwrap_or_default()
-                    .to_be_bytes(),
-            ),
-            difficulty: revm_primitives::U256::from_be_bytes(block.header.difficulty.to_be_bytes()),
-            prevrandao: block
-                .header
-                .mix_hash
-                .map(|h| revm_primitives::B256::from(h.to_fixed_bytes())),
+            number: U256::from(header.number.unwrap()),
+            coinbase: block.coinbase.address,
+            timestamp: U256::from(header.timestamp),
+            gas_limit: U256::from(header.gas_limit),
+            basefee: U256::from(header.base_fee_per_gas.unwrap()),
+            difficulty: header.difficulty,
+            prevrandao: header.mix_hash,
             blob_excess_gas_and_price: None,
         }
     }
@@ -221,23 +209,15 @@ impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
 
 impl From<&BlockTrace> for revm_primitives::BlockEnv {
     fn from(block: &BlockTrace) -> Self {
+        let header = &block.eth_block.header;
         revm_primitives::BlockEnv {
-            number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
-            coinbase: block.coinbase.address.0.into(),
-            timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
-            gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
-            basefee: revm_primitives::U256::from_be_bytes(
-                block
-                    .header
-                    .base_fee_per_gas
-                    .unwrap_or_default()
-                    .to_be_bytes(),
-            ),
-            difficulty: revm_primitives::U256::from_be_bytes(block.header.difficulty.to_be_bytes()),
-            prevrandao: block
-                .header
-                .mix_hash
-                .map(|h| revm_primitives::B256::from(h.to_fixed_bytes())),
+            number: U256::from(header.number.unwrap()),
+            coinbase: block.coinbase.address,
+            timestamp: U256::from(header.timestamp),
+            gas_limit: U256::from(header.gas_limit),
+            basefee: U256::from(header.base_fee_per_gas.unwrap()),
+            difficulty: header.difficulty,
+            prevrandao: header.mix_hash,
             blob_excess_gas_and_price: None,
         }
     }
@@ -296,27 +276,28 @@ impl TransactionTrace {
     pub fn is_l1_tx(&self) -> bool {
         self.type_ == 0x7e
     }
+
     /// transfer to eth type tx
     pub fn to_eth_tx(
         &self,
         block_hash: Option<H256>,
-        block_number: Option<U64>,
-        transaction_index: Option<U64>,
-        base_fee_per_gas: Option<U256>,
+        block_number: Option<u64>,
+        transaction_index: Option<u64>,
+        base_fee_per_gas: Option<u128>,
     ) -> Transaction {
         let gas_price = if self.type_ == 2 {
-            let priority_fee_per_gas = std::cmp::min(
-                self.gas_tip_cap.unwrap(),
-                self.gas_fee_cap.unwrap() - base_fee_per_gas.unwrap(),
-            );
-            let effective_gas_price = priority_fee_per_gas + base_fee_per_gas.unwrap();
+            let gas_tip_cap = self.gas_tip_cap.unwrap().to::<u128>();
+            let gas_fee_cap = self.gas_fee_cap.unwrap().to::<u128>();
+            let base_fee_per_gas = base_fee_per_gas.unwrap();
+            let priority_fee_per_gas = std::cmp::min(gas_tip_cap, gas_fee_cap - base_fee_per_gas);
+            let effective_gas_price = priority_fee_per_gas + base_fee_per_gas;
             effective_gas_price
         } else {
-            self.gas_price
+            self.gas_price.to::<u128>()
         };
         Transaction {
             hash: self.tx_hash,
-            nonce: U256::from(self.nonce),
+            nonce: self.nonce,
             block_hash,
             block_number,
             transaction_index,
@@ -324,18 +305,21 @@ impl TransactionTrace {
             to: self.to,
             value: self.value,
             gas_price: Some(gas_price),
-            gas: U256::from(self.gas),
+            gas: self.gas as u128,
             input: self.data.clone(),
-            v: self.v,
-            r: self.r,
-            s: self.s,
+            signature: Some(TxSignature {
+                v: self.v.to(),
+                r: self.r,
+                s: self.s,
+                ..Default::default()
+            }),
             // FIXME: is this correct? None for legacy?
-            transaction_type: Some(U64::from(self.type_ as u64)),
+            transaction_type: Some(self.type_),
             access_list: self.access_list.as_ref().map(|al| AccessList(al.clone())),
-            max_priority_fee_per_gas: self.gas_tip_cap,
-            max_fee_per_gas: self.gas_fee_cap,
-            chain_id: Some(self.chain_id),
-            other: Default::default(),
+            max_priority_fee_per_gas: self.gas_tip_cap.map(|v| v.to::<u128>()),
+            max_fee_per_gas: self.gas_fee_cap.map(|v| v.to::<u128>()),
+            chain_id: Some(self.chain_id.to::<ChainId>()),
+            ..Default::default()
         }
     }
 }
@@ -343,17 +327,17 @@ impl TransactionTrace {
 impl From<&TransactionTrace> for revm_primitives::TxEnv {
     fn from(tx: &TransactionTrace) -> Self {
         revm_primitives::TxEnv {
-            caller: tx.from.0.into(),
+            caller: tx.from,
             gas_limit: tx.gas,
-            gas_price: revm_primitives::U256::from_be_bytes(tx.gas_price.to_be_bytes()),
+            gas_price: tx.gas_price,
             transact_to: match tx.to {
                 Some(to) => revm_primitives::TransactTo::Call(to.0.into()),
                 None => revm_primitives::TransactTo::Create,
             },
-            value: revm_primitives::U256::from_be_bytes(tx.value.to_be_bytes()),
-            data: revm_primitives::Bytes::copy_from_slice(tx.data.as_ref()),
+            value: tx.value,
+            data: tx.data.clone(),
             nonce: Some(tx.nonce),
-            chain_id: Some(tx.chain_id.as_u64()),
+            chain_id: Some(tx.chain_id.to()),
             access_list: tx
                 .access_list
                 .as_ref()
@@ -361,21 +345,14 @@ impl From<&TransactionTrace> for revm_primitives::TxEnv {
                     v.iter()
                         .map(|e| {
                             (
-                                e.address.0.into(),
-                                e.storage_keys
-                                    .iter()
-                                    .map(|s| {
-                                        revm_primitives::U256::from_be_bytes(s.to_fixed_bytes())
-                                    })
-                                    .collect(),
+                                e.address,
+                                e.storage_keys.iter().map(|s| s.to_word()).collect(),
                             )
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
-            gas_priority_fee: tx
-                .gas_tip_cap
-                .map(|g| revm_primitives::U256::from_be_bytes(g.to_be_bytes())),
+            gas_priority_fee: tx.gas_tip_cap,
             ..Default::default()
         }
     }
@@ -452,7 +429,7 @@ impl From<ExecutionResult> for GethExecTrace {
     fn from(e: ExecutionResult) -> Self {
         let struct_logs = e.exec_steps.into_iter().map(GethExecStep::from).collect();
         GethExecTrace {
-            l1_fee: e.l1_fee.as_u64(),
+            l1_fee: e.l1_fee.to(),
             gas: Gas(e.gas),
             failed: e.failed,
             return_value: e.return_value,

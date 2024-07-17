@@ -1,5 +1,5 @@
 //! Doc this
-use crate::{DebugWord, Error, ToBigEndian, Word};
+use crate::{DebugWord, Error, Word};
 use serde::{ser::SerializeMap, Serialize, Serializer};
 use std::{collections::HashMap, fmt};
 

@@ -1,5 +1,5 @@
 //! Doc this
-use crate::{DebugByte, Error, ToBigEndian, Word};
+use crate::{DebugByte, Error, Word};
 use core::{
     ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign},
     str::FromStr,
@@ -74,10 +74,9 @@ impl TryFrom<Word> for MemoryAddress {
     type Error = Error;
 
     fn try_from(word: Word) -> Result<Self, Self::Error> {
-        if word.bits() > core::mem::size_of::<usize>() * 8 {
-            return Err(Error::WordToMemAddr);
-        }
-        Ok(MemoryAddress(word.as_usize()))
+        usize::try_from(word)
+            .map(MemoryAddress)
+            .map_err(|_| Error::WordToMemAddr)
     }
 }
 
@@ -297,7 +296,7 @@ impl Memory {
     /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`]
     /// `addr` and finnishes at `addr + 32`.
     pub fn read_word(&self, addr: MemoryAddress) -> Word {
-        Word::from_big_endian(&self.read_chunk(MemoryRange::new_with_length(addr, 32)))
+        Word::from_be_slice(&self.read_chunk(MemoryRange::new_with_length(addr, 32)))
     }
 
     /// Reads an chunk of memory[offset..offset+length]. Zeros will be padded if
@@ -341,10 +340,10 @@ impl Memory {
     /// then do nothing.
     pub fn extend_for_range(&mut self, offset: Word, length: Word) {
         // `length` should be checked for overflow during gas cost calculation.
-        let length = length.as_usize();
+        let length: usize = length.to();
         if length != 0 {
             // `dst_offset` should be within range if length is non-zero.
-            let offset = offset.as_usize();
+            let offset: usize = offset.to();
             self.extend_at_least(offset + length);
         }
     }
@@ -356,11 +355,11 @@ impl Memory {
 
         // `length` should be checked for overflow during gas cost calculation.
         // Otherwise should return an out of gas error previously.
-        let length = length.as_usize();
+        let length: usize = length.to();
         if length != 0 {
             // `dst_offset` should be within range if length is non-zero.
             // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/common.go#L37
-            let dst_offset = dst_offset.as_u64();
+            let dst_offset: u64 = dst_offset.to();
 
             // Reset data offset to the maximum value of Uint64 if overflow.
             let src_offset = u64::try_from(src_offset).unwrap_or(u64::MAX);

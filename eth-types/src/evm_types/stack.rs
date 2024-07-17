@@ -1,5 +1,5 @@
 //! Doc this
-use crate::{DebugWord, Error, ToBigEndian, Word};
+use crate::{DebugWord, Error, Word};
 use core::str::FromStr;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
