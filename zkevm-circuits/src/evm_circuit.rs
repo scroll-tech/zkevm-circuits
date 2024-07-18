@@ -66,6 +66,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub rw_table: RwTable,
     /// BytecodeTable
     pub bytecode_table: BytecodeTable,
+    /// BytecodeTable
+    pub bytecode_table1: BytecodeTable,
     /// BlockTable
     pub block_table: BlockTable,
     /// CopyTable
@@ -105,6 +107,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            bytecode_table1,
             block_table,
             copy_table,
             keccak_table,
@@ -126,6 +129,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &tx_table,
             &rw_table,
             &bytecode_table,
+            &bytecode_table1,
             &block_table,
             &copy_table,
             &keccak_table,
@@ -452,6 +456,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let rw_table = RwTable::construct(meta);
         let tx_table = TxTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
+        let bytecode_table1 = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
@@ -470,6 +475,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     tx_table,
                     rw_table,
                     bytecode_table,
+                    bytecode_table1,
                     block_table,
                     copy_table,
                     keccak_table,

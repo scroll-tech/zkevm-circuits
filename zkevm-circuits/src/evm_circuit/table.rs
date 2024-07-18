@@ -169,6 +169,7 @@ pub(crate) enum Table {
     Tx,
     Rw,
     Bytecode,
+    Bytecode1,
     Block,
     Copy,
     Keccak,
@@ -256,6 +257,26 @@ pub(crate) enum Lookup<F> {
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.
     Bytecode {
+        /// Hash to specify which code to read.
+        hash: Expression<F>,
+        /// Tag to specify whether its the bytecode length or byte value in the
+        /// bytecode.
+        tag: Expression<F>,
+        /// Index to specify which byte of bytecode.
+        index: Expression<F>,
+        /// A boolean value to specify if the value is executable opcode or the
+        /// data portion of PUSH* operations.
+        is_code: Expression<F>,
+        /// Value corresponding to the tag.
+        value: Expression<F>,
+        /// The RLC of the PUSH data (LE order), or 0.
+        /// Warning: If the bytecode is truncated, this is the actual data, without zero-padding.
+        push_rlc: Expression<F>,
+    },
+
+     /// Lookup to second bytecode table, which contains all used creation code and
+    /// contract code.
+    Bytecode1 {
         /// Hash to specify which code to read.
         hash: Expression<F>,
         /// Tag to specify whether its the bytecode length or byte value in the
@@ -382,6 +403,7 @@ impl<F: Field> Lookup<F> {
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
+            Self::Bytecode1 { .. } => Table::Bytecode1,
             Self::Block { .. } => Table::Block,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
