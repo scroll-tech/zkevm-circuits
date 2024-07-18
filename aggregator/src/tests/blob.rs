@@ -20,6 +20,7 @@ use zkevm_circuits::{
     table::{KeccakTable, RangeTable, U8Table},
     util::Challenges,
 };
+use std::fs;
 
 #[derive(Default)]
 struct BlobCircuit {
