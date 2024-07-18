@@ -184,6 +184,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "poseidon table");
 
         let bytecode_table = BytecodeTable::construct(meta);
+        let bytecode_table1 = BytecodeTable::construct(meta);
+
         log_circuit_info(meta, "bytecode table");
         let block_table = BlockTable::construct(meta);
         log_circuit_info(meta, "block table");
@@ -350,6 +352,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table,
+                bytecode_table1,
                 block_table: block_table.clone(),
                 copy_table,
                 keccak_table: keccak_table.clone(),

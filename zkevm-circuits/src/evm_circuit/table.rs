@@ -274,7 +274,7 @@ pub(crate) enum Lookup<F> {
         push_rlc: Expression<F>,
     },
 
-     /// Lookup to second bytecode table, which contains all used creation code and
+    /// Lookup to second bytecode table, which contains all used creation code and
     /// contract code.
     Bytecode1 {
         /// Hash to specify which code to read.
@@ -454,6 +454,24 @@ impl<F: Field> Lookup<F> {
                 ]
             }
             Self::Bytecode {
+                hash,
+                tag,
+                index,
+                is_code,
+                value,
+                push_rlc,
+            } => {
+                vec![
+                    1.expr(), // q_enable
+                    hash.clone(),
+                    tag.clone(),
+                    index.clone(),
+                    is_code.clone(),
+                    value.clone(),
+                    push_rlc.clone(),
+                ]
+            }
+            Self::Bytecode1 {
                 hash,
                 tag,
                 index,
