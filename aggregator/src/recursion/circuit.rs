@@ -410,11 +410,13 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                             // Verify initial_state is same as the first application snark in the
                             // first round of recursion.
                             (
+                                "initial state equal to app's initial (first round)",
                                 main_gate.mul(&mut ctx, Existing(st), Existing(first_round)),
                                 main_gate.mul(&mut ctx, Existing(app_inst), Existing(first_round)),
                             ),
                             // Propagate initial_state for subsequent rounds of recursion.
                             (
+                                "initial state equal to prev_recursion's initial (not first round)",
                                 main_gate.mul(&mut ctx, Existing(st), Existing(not_first_round)),
                                 previous_st,
                             ),
@@ -436,7 +438,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                                     .map(|i| &app_instances[i]),
                             ),
                     )
-                    .map(|(&st, &app_inst)| (st, app_inst))
+                    .map(|(&st, &app_inst)| ("passing cur state to app", st, app_inst))
                     .collect::<Vec<_>>();
 
                 // Verify that the "previous state" (additional state not included) is the same
@@ -451,6 +453,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     )
                     .map(|(&st, &app_inst)| {
                         (
+                            "chain prev state with cur init state (not first round)",
                             main_gate.mul(&mut ctx, Existing(app_inst), Existing(not_first_round)),
                             st,
                         )
@@ -459,9 +462,10 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
 
                 // Finally apply the equality constraints between the (LHS, RHS) values constructed
                 // above.
-                for (lhs, rhs) in [
+                for (comment, lhs, rhs) in [
                     // Propagate the preprocessed digest.
                     (
+                        "chain preprocessed digest",
                         main_gate.mul(
                             &mut ctx,
                             Existing(preprocessed_digest),
@@ -471,6 +475,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     ),
                     // Verify that "round" increments by 1 when not the first round of recursion.
                     (
+                        "round increment",
                         round,
                         main_gate.add(
                             &mut ctx,
@@ -484,6 +489,13 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 .chain(verify_app_state)
                 .chain(verify_app_init_state)
                 {
+                    use halo2_proofs::dev::unwrap_value;
+                    debug_assert_eq!(
+                        unwrap_value(lhs.value()),
+                        unwrap_value(rhs.value()),
+                        "equality constraint fail: {}",
+                        comment
+                    );
                     ctx.region.constrain_equal(lhs.cell(), rhs.cell())?;
                 }
 
