@@ -304,7 +304,10 @@ pub fn check_chunk_hashes(
 ) -> Result<()> {
     for (idx, (in_arg, chunk_proof)) in chunk_hashes_proofs.iter().enumerate() {
         let in_proof = &chunk_proof.chunk_info;
-        crate::proof::compare_chunk_info(&format!("{name} chunk num {idx}"), in_arg, in_proof)?;
+        if let Err(e) = crate::proof::compare_chunk_info(&format!("{name} chunk num {idx}"), in_arg, in_proof) {
+            log::error!("compare_chunk_info(e)={:?}", e);
+            bail!("compare_chunk_info(e)={:?}", e);
+        }
     }
     Ok(())
 }
