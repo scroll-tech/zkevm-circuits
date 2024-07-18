@@ -64,7 +64,18 @@ impl Prover {
         );
         let instances = circuit.instances();
         let num_instance = circuit.num_instance();
+
+        let timer = std::time::Instant::now();
+        log::info!("prover(BatchProver::gen_evm_proof): compression START");
+
         let proof = gen_evm_proof_shplonk(params, pk, circuit, instances.clone(), rng);
+
+        let duration = timer.elapsed().as_millis();
+        log::info!(
+            "prover(BatchProver::gen_evm_proof): compression END (took {:?} milliseconds)",
+            duration
+        );
+
         let evm_proof = EvmProof::new(proof, &instances, num_instance, Some(pk))?;
 
         if read_env_var("SCROLL_PROVER_DUMP_YUL", false) {

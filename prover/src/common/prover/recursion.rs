@@ -59,6 +59,8 @@ impl Prover {
 
         while !task.completed() {
             log::debug!("construct recursion circuit for round {}", n_rounds);
+            log::info!("prover(BatchProver::gen_recursion_snark): round {n_rounds} START");
+            let timer = std::time::Instant::now();
 
             let circuit = RecursionCircuit::<RecursionTask<MAX_AGG_SNARKS>>::new(
                 params,
@@ -70,6 +72,11 @@ impl Prover {
             cur_snark = gen_snark_shplonk(params, pk, circuit, &mut rng, None::<String>)?;
 
             log::info!("construct recursion snark for round {} ...done", n_rounds);
+            let duration = timer.elapsed().as_millis();
+            log::info!(
+                "prover(BatchProver::gen_recursion_snark): round {n_rounds} END (took {:?} milliseconds)",
+                duration,
+            );
 
             // Increment the round of recursion and transition to the next state.
             n_rounds += 1;

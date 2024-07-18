@@ -96,10 +96,19 @@ impl Prover {
     ) -> Result<BatchProof> {
         let name = name.map_or_else(|| batch.identifier(), |name| name.to_string());
 
+        let timer = std::time::Instant::now();
+        log::info!("prover(BatchProver::gen_batch_proof): layer-3 START");
         let (layer3_snark, batch_hash) =
             self.load_or_gen_last_agg_snark::<MAX_AGG_SNARKS>(&name, batch, output_dir)?;
+        let duration = timer.elapsed().as_millis();
+        log::info!(
+            "prover(BatchProver::gen_batch_proof): layer-3 END (took {:?} millis)",
+            duration
+        );
 
         // Load or generate final compression thin EVM proof (layer-4).
+        let timer = std::time::Instant::now();
+        log::info!("prover(BatchProver::gen_batch_proof): layer-4 START");
         let layer4_snark = self.prover_impl.load_or_gen_comp_snark(
             &name,
             LayerId::Layer4.id(),
@@ -108,6 +117,11 @@ impl Prover {
             layer3_snark,
             output_dir,
         )?;
+        let duration = timer.elapsed().as_millis();
+        log::info!(
+            "prover(BatchProver::gen_batch_proof): layer-4 END (took {:?} millis)",
+            duration
+        );
         log::info!("Got final compression thin EVM proof (layer-4): {name}");
 
         self.check_batch_vk();
@@ -226,6 +240,7 @@ impl Prover {
             .map(|proof| proof.into())
             .collect::<Vec<_>>();
 
+        log::info!("prover(BundleProver::gen_bundle_proof): layer-5 START");
         let layer5_snark = self.prover_impl.load_or_gen_recursion_snark(
             &name,
             LayerId::Layer5.id(),
@@ -233,7 +248,9 @@ impl Prover {
             &bundle_snarks,
             output_dir,
         )?;
+        log::info!("prover(BundleProver::gen_bundle_proof): layer-5 END");
 
+        log::info!("prover(BundleProver::gen_bundle_proof): layer-6 START");
         let layer6_evm_proof = self.prover_impl.load_or_gen_comp_evm_proof(
             &name,
             LayerId::Layer6.id(),
@@ -242,6 +259,7 @@ impl Prover {
             layer5_snark,
             output_dir,
         )?;
+        log::info!("prover(BundleProver::gen_bundle_proof): layer-6 END");
 
         self.check_bundle_vk();
 
