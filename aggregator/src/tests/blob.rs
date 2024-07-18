@@ -16,11 +16,11 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use std::fs;
 use zkevm_circuits::{
     table::{KeccakTable, RangeTable, U8Table},
     util::Challenges,
 };
-use std::fs;
 
 #[derive(Default)]
 struct BlobCircuit {
