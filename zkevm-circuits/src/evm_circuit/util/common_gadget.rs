@@ -50,6 +50,9 @@ pub(crate) use tx_l1_msg::TxL1MsgGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct SameContextGadget<F> {
     opcode: Cell<F>,
+    // indicates current op code belongs to first or second bytecode table.
+    // should be bool type.
+    is_first_bytecode_table: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
@@ -57,18 +60,32 @@ impl<F: Field> SameContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         opcode: Cell<F>,
+        is_first_bytecode_table: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
-        Self::construct2(cb, opcode, step_state_transition, 0.expr())
+        Self::construct2(
+            cb,
+            opcode,
+            is_first_bytecode_table,
+            step_state_transition,
+            0.expr(),
+        )
     }
 
     pub(crate) fn construct2(
         cb: &mut EVMConstraintBuilder<F>,
         opcode: Cell<F>,
+        is_first_bytecode_table: Cell<F>,
         step_state_transition: StepStateTransition<F>,
         push_rlc: Expression<F>,
     ) -> Self {
-        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
+        cb.condition(is_first_bytecode_table.expr(), |cb| {
+            cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
+        });
+        cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+            cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
+        });
+
         cb.add_lookup(
             "Responsible opcode lookup",
             Lookup::Fixed {
