@@ -302,7 +302,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         // We only consider the data from `valid` chunks and ignore the padded chunks.
         let blob_bytes = self.get_encoded_batch_data_bytes();
         assert!(
-            blob_bytes.len() < N_BLOB_BYTES,
+            blob_bytes.len() <= N_BLOB_BYTES,
             "too many bytes in batch data"
         );
 
