@@ -21,6 +21,11 @@ use zkevm_circuits::{
     util::Challenges,
 };
 
+// test_debug
+use crate::aggregation::witgen::{process, MultiBlockProcessResult};
+use std::io::Write;
+use std::{fs, io};
+
 #[derive(Default)]
 struct BlobCircuit {
     data: BatchData<MAX_AGG_SNARKS>,
@@ -257,7 +262,14 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 #[test]
 fn blob_circuit_completeness() {
     // single chunk in batch, but the chunk has a size of N_ROWS_DATA
-    let full_blob = vec![vec![123; BatchData::<MAX_AGG_SNARKS>::n_rows_data()]];
+    let full_blob = vec![
+        // batch274 contains batch bytes that will produce a full blob
+        hex::decode(
+            fs::read_to_string("./data/test_batches/batch274.hex").expect("file path exists"),
+        )
+        .expect("should load full blob batch bytes"),
+    ];
+
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
     let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
