@@ -21,11 +21,6 @@ use zkevm_circuits::{
     util::Challenges,
 };
 
-// test_debug
-use crate::aggregation::witgen::{process, MultiBlockProcessResult};
-use std::io::Write;
-use std::{fs, io};
-
 #[derive(Default)]
 struct BlobCircuit {
     data: BatchData<MAX_AGG_SNARKS>,
