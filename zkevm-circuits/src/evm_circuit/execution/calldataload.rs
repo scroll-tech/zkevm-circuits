@@ -70,6 +70,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let is_frist_bytecode_table = cb.query_bool();
 
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
@@ -242,7 +243,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             ..Default::default()
         };
 
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            is_frist_bytecode_table,
+            step_state_transition,
+        );
 
         Self {
             same_context,

@@ -35,6 +35,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let is_frist_bytecode_table = cb.query_bool();
 
         let a = cb.query_word_rlc();
         let b = cb.query_word_rlc();
@@ -90,7 +91,12 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
             gas_left: Delta(-OpcodeId::LT.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            is_frist_bytecode_table,
+            step_state_transition,
+        );
 
         Self {
             same_context,
