@@ -359,16 +359,13 @@ impl From<&TransactionTrace> for revm_primitives::TxEnv {
                 .as_ref()
                 .map(|v| {
                     v.iter()
-                        .map(|e| {
-                            (
-                                e.address.0.into(),
-                                e.storage_keys
-                                    .iter()
-                                    .map(|s| {
-                                        revm_primitives::U256::from_be_bytes(s.to_fixed_bytes())
-                                    })
-                                    .collect(),
-                            )
+                        .map(|e| revm_primitives::AccessListItem {
+                            address: e.address.0.into(),
+                            storage_keys: e
+                                .storage_keys
+                                .iter()
+                                .map(|s| s.to_fixed_bytes().into())
+                                .collect(),
                         })
                         .collect()
                 })
