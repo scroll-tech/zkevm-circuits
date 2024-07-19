@@ -52,7 +52,21 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
                 1.expr(),
             );
 
-            cb.opcode_lookup_at(dest.valid_value(), OpcodeId::JUMPDEST.expr(), 1.expr());
+            // Lookup opcode at destination
+            cb.condition(same_context.is_first_bytecode_table(), |cb| {
+                cb.opcode_lookup_at(
+                    from_bytes::expr(&destination.cells),
+                    OpcodeId::JUMPDEST.expr(),
+                    1.expr(),
+                );
+            });
+            cb.condition(not::expr(same_context.is_first_bytecode_table()), |cb| {
+                cb.opcode_lookup2_at(
+                    from_bytes::expr(&destination.cells),
+                    OpcodeId::JUMPDEST.expr(),
+                    1.expr(),
+                );
+            });
         });
 
         // Transit program_counter to destination when should_jump, otherwise by
