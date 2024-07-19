@@ -30,7 +30,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_frist_bytecode_table = cb.query_bool();
 
         // Add lookup constraint in the call context for the calldatasize field.
         let call_data_size = cb.query_word_rlc();
@@ -52,12 +51,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
             ..Default::default()
         };
 
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            is_frist_bytecode_table,
-            step_state_transition,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -71,12 +65,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
         self.same_context
-            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
+            .assign_exec_step(region, offset, step, block, call)?;
 
         let call_data_size = block.rws[step.rw_indices[1]].stack_value();
 

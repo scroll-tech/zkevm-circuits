@@ -51,14 +51,8 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         };
 
         let opcode = cb.query_cell();
-        let is_frist_bytecode_table = cb.query_bool();
 
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            is_frist_bytecode_table,
-            step_state_transition,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,

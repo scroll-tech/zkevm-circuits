@@ -31,7 +31,6 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_frist_bytecode_table = cb.query_bool();
 
         let a = cb.query_word_rlc();
         let b = cb.query_word_rlc();
@@ -68,12 +67,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
             gas_left: Delta(-OpcodeId::AND.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            is_frist_bytecode_table,
-            step_state_transition,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -89,12 +83,11 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
         self.same_context
-            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
+            .assign_exec_step(region, offset, step, block, call)?;
 
         let [a, b, c] = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());

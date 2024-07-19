@@ -45,7 +45,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_frist_bytecode_table = cb.query_bool();
 
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
@@ -155,12 +154,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            is_frist_bytecode_table,
-            step_state_transition,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -184,9 +178,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
         self.same_context
-            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
+            .assign_exec_step(region, offset, step, block, call)?;
 
         let [memory_offset, data_offset, length] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]

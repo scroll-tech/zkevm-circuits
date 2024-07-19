@@ -60,25 +60,18 @@ impl<F: Field> SameContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         opcode: Cell<F>,
-        is_first_bytecode_table: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
-        Self::construct2(
-            cb,
-            opcode,
-            is_first_bytecode_table,
-            step_state_transition,
-            0.expr(),
-        )
+        Self::construct2(cb, opcode, step_state_transition, 0.expr())
     }
 
     pub(crate) fn construct2(
         cb: &mut EVMConstraintBuilder<F>,
         opcode: Cell<F>,
-        is_first_bytecode_table: Cell<F>,
         step_state_transition: StepStateTransition<F>,
         push_rlc: Expression<F>,
     ) -> Self {
+        let is_first_bytecode_table = cb.query_bool();
         cb.condition(is_first_bytecode_table.expr(), |cb| {
             cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
         });
@@ -106,6 +99,7 @@ impl<F: Field> SameContextGadget<F> {
 
         Self {
             opcode,
+            is_first_bytecode_table,
             sufficient_gas_left,
         }
     }
@@ -115,9 +109,12 @@ impl<F: Field> SameContextGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         step: &ExecStep,
-        is_first_bytecode_table: bool,
+        block: &Block,
+        call: &Call,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
+
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_first_bytecode_table.assign(
