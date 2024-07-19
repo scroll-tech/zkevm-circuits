@@ -73,7 +73,7 @@ impl<F: Field> SameContextGadget<F> {
     ) -> Self {
         let is_first_bytecode_table = cb.query_bool();
         cb.condition(is_first_bytecode_table.expr(), |cb| {
-            cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
+            cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
         });
         cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
             cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
@@ -102,6 +102,10 @@ impl<F: Field> SameContextGadget<F> {
             is_first_bytecode_table,
             sufficient_gas_left,
         }
+    }
+
+    pub(crate) fn is_first_bytecode_table(&self) -> Expression<F> {
+        self.is_first_bytecode_table.expr()
     }
 
     pub(crate) fn assign_exec_step(

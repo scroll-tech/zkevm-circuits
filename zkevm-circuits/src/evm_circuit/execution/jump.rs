@@ -9,7 +9,7 @@ use crate::{
                 EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes, CachedRegion, RandomLinearCombination,
+            from_bytes, not, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,13 +35,6 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
 
-        // Lookup opcode at destination
-        cb.opcode_lookup_at(
-            from_bytes::expr(&destination.cells),
-            OpcodeId::JUMPDEST.expr(),
-            1.expr(),
-        );
-
         // State transition
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
@@ -52,6 +45,21 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        // Lookup opcode at destination
+        cb.condition(same_context.is_first_bytecode_table(), |cb| {
+            cb.opcode_lookup_at(
+                from_bytes::expr(&destination.cells),
+                OpcodeId::JUMPDEST.expr(),
+                1.expr(),
+            );
+        });
+        cb.condition(not::expr(same_context.is_first_bytecode_table()), |cb| {
+            cb.opcode_lookup2_at(
+                from_bytes::expr(&destination.cells),
+                OpcodeId::JUMPDEST.expr(),
+                1.expr(),
+            );
+        });
 
         Self {
             same_context,

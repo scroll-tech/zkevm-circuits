@@ -666,6 +666,16 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.opcode_lookup_at_rlc(index, opcode, 0.expr());
     }
 
+    pub(crate) fn opcode_lookup2_at(
+        &mut self,
+        index: Expression<F>,
+        opcode: Expression<F>,
+        is_code: Expression<F>,
+    ) {
+        assert_eq!(is_code, 1.expr());
+        self.opcode_lookup_at_rlc2(index, opcode, 0.expr());
+    }
+
     pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
         self.opcode_lookup_at_rlc(
             self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
