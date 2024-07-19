@@ -166,7 +166,7 @@ impl CircuitInputBuilder {
         let mut code_db = CodeDB::new();
         code_db.insert(Vec::new());
 
-        let codes = collect_codes(&l2_trace, Some(&sdb))?;
+        let codes = collect_codes(&l2_trace)?;
         for (hash, code) in codes {
             code_db.insert_with_hash(hash, code);
         }
@@ -240,7 +240,7 @@ impl CircuitInputBuilder {
             *self.sdb.get_storage_mut(&addr, &key).1 = val;
         }
 
-        let codes = collect_codes(&l2_trace, Some(&self.sdb))?;
+        let codes = collect_codes(&l2_trace)?;
         for (hash, code) in codes {
             self.code_db.insert_with_hash(hash, code);
         }
