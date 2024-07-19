@@ -149,7 +149,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context
-            .assign_exec_step(region, offset, step, block, call)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         // get stack values
         let [mut r, n, b, a] = [3, 2, 1, 0]

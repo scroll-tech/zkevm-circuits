@@ -142,12 +142,11 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         offset: usize,
         block: &Block,
         tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
         self.same_context
-            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
+            .assign_exec_step(region, offset, step, block, call)?;
 
         let chain_id = block.chain_id;
         let current_block_number = block.context.ctxs[&tx.block_number].number;

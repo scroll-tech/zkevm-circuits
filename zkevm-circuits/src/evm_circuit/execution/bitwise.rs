@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context
-            .assign_exec_step(region, offset, step, block, call)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [a, b, c] = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());

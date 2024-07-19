@@ -109,7 +109,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context
-            .assign_exec_step(region, offset, step, block, call)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let address = block.rws[step.rw_indices[0]].stack_value();
         self.address_word

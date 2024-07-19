@@ -80,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context
-            .assign_exec_step(region, offset, step, block, call)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let opcode = step.opcode.unwrap();
         let indices = if opcode == OpcodeId::SUB {

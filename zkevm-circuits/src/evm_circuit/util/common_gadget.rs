@@ -108,9 +108,9 @@ impl<F: Field> SameContextGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        step: &ExecStep,
         block: &Block,
         call: &Call,
+        step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
