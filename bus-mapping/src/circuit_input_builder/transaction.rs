@@ -194,7 +194,8 @@ pub struct Transaction {
     pub signature: Signature,
     /// RLP bytes
     pub rlp_bytes: Vec<u8>,
-    /// RLP bytes for signing
+    /// RLP bytes for signing, only used for PreEip155 tx without chain_id
+    /// for other tx types: rlp == rlp_unsigned.
     pub rlp_unsigned_bytes: Vec<u8>,
     /// RLP bytes for signed tx
     pub rlp_signed_bytes: Vec<u8>,
