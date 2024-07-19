@@ -75,7 +75,9 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
+        self.same_context
+            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
 
         let address = block.rws[step.rw_indices[1]].stack_value();
         debug_assert_eq!(call.callee_address, address.to_address());

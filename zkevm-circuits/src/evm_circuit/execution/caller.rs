@@ -45,6 +45,8 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
 
         // State transition
         let opcode = cb.query_cell();
+        let is_frist_bytecode_table = cb.query_bool();
+
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
             program_counter: Delta(1.expr()),
@@ -52,7 +54,12 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
             gas_left: Delta(-OpcodeId::CALLER.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            is_frist_bytecode_table,
+            step_state_transition,
+        );
 
         Self {
             same_context,
@@ -69,7 +76,9 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
+        self.same_context
+            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
 
         let caller = block.rws[step.rw_indices[1]].stack_value();
 

@@ -145,7 +145,9 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
+        self.same_context
+            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
 
         let chain_id = block.chain_id;
         let current_block_number = block.context.ctxs[&tx.block_number].number;

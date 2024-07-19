@@ -105,7 +105,9 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
+        self.same_context
+            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
 
         // Inputs/Outputs
         let index = block.rws[step.rw_indices[0]].stack_value().to_le_bytes();

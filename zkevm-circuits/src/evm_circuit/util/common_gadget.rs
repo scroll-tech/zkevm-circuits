@@ -115,10 +115,16 @@ impl<F: Field> SameContextGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         step: &ExecStep,
+        is_first_bytecode_table: bool,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(is_first_bytecode_table.as_u64())),
+        )?;
 
         self.sufficient_gas_left
             .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;

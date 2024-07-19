@@ -92,7 +92,9 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
+        self.same_context
+            .assign_exec_step(region, offset, step, is_first_bytecode_table)?;
 
         let [a, b, c] = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());
