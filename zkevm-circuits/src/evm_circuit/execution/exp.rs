@@ -190,7 +190,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, block, call, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [base, exponent, exponentiation] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]

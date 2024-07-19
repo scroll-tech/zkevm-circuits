@@ -17,6 +17,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::plonk::Error;
+use rand_chacha::rand_core::block;
 
 #[derive(Clone, Debug)]
 pub(crate) struct MsizeGadget<F> {
@@ -63,12 +64,13 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _: &Block,
+        block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
         self.value
             .assign(region, offset, Some((step.memory_size).to_le_bytes()))?;
 

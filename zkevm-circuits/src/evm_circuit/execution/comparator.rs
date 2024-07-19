@@ -114,7 +114,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context
-            .assign_exec_step(region, offset, step, block, call)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let opcode = step.opcode.unwrap();
 

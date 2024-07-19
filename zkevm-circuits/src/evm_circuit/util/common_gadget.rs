@@ -120,7 +120,7 @@ impl<F: Field> SameContextGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(is_first_bytecode_table.as_u64())),
+            Value::known(F::from(is_first_bytecode_table as u64)),
         )?;
 
         self.sufficient_gas_left

@@ -278,34 +278,34 @@ impl Block {
         return 0;
     }
 
-    pub(crate) fn find_closest_sum_partition(nums: Vec<i32>) -> (Vec<i32>, Vec<i32>) {
-        let total_sum = nums.iter().sum();
-        let n = nums.len();
-        let mut closest_diff = std::i32::MAX;
-        let mut result_left = Vec::new();
-        let mut result_right = Vec::new();
+    // pub(crate) fn find_closest_sum_partition(nums: Vec<i32>) -> (Vec<i32>, Vec<i32>) {
+    //     let total_sum = nums.iter().sum();
+    //     let n = nums.len();
+    //     let mut closest_diff = std::i32::MAX;
+    //     let mut result_left = Vec::new();
+    //     let mut result_right = Vec::new();
 
-        for i in 0..n {
-            let left_sum: i32 = nums[..i].iter().sum();
-            let right_sum = total_sum - left_sum;
+    //     for i in 0..n {
+    //         let left_sum: i32 = nums[..i].iter().sum();
+    //         let right_sum = total_sum - left_sum;
 
-            // calculate left and right abs value.
-            let diff = (left_sum as i64 - right_sum as i64).abs() as i32;
+    //         // calculate left and right abs value.
+    //         let diff = (left_sum as i64 - right_sum as i64).abs() as i32;
 
-            // if find more close diff, then update.
-            if diff < closest_diff {
-                closest_diff = diff;
-                result_left = nums[..i].to_vec();
-                result_right = nums[i..].to_vec();
-            }
-            // if diff is already 0, exit.
-            if diff == 0 {
-                break;
-            }
-        }
+    //         // if find more close diff, then update.
+    //         if diff < closest_diff {
+    //             closest_diff = diff;
+    //             result_left = nums[..i].to_vec();
+    //             result_right = nums[i..].to_vec();
+    //         }
+    //         // if diff is already 0, exit.
+    //         if diff == 0 {
+    //             break;
+    //         }
+    //     }
 
-        (result_left, result_right)
-    }
+    //     (result_left, result_right)
+    // }
 }
 
 #[cfg(feature = "test")]
