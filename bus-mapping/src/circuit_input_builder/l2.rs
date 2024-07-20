@@ -138,7 +138,7 @@ impl CircuitInputBuilder {
             .map_err(Error::IoError)?;
 
             log::debug!(
-                "building partial statedb done, root {}",
+                "building partial ZktrieState done, root {}",
                 hex::encode(mpt_init_state.root())
             );
 
@@ -152,6 +152,7 @@ impl CircuitInputBuilder {
             &l2_trace.storage_trace,
         )) {
             let (addr, acc) = parsed.map_err(Error::IoError)?;
+            log::trace!("sdb trace {:?} {:?}", addr, acc);
             sdb.set_account(&addr, state_db::Account::from(&acc));
         }
 
@@ -160,6 +161,7 @@ impl CircuitInputBuilder {
         )) {
             let ((addr, key), val) = parsed.map_err(Error::IoError)?;
             let key = key.to_word();
+            log::trace!("sdb trace storage {:?} {:?} {:?}", addr, key, val);
             *sdb.get_storage_mut(&addr, &key).1 = val.into();
         }
 
