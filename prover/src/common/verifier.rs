@@ -11,13 +11,13 @@ mod evm;
 mod utils;
 
 #[derive(Debug)]
-pub struct Verifier<C: CircuitExt<Fr>> {
+pub struct Verifier<C: CircuitExt<Fr, Params = ()>> {
     params: ParamsKZG<Bn256>,
     vk: VerifyingKey<G1Affine>,
     phantom: PhantomData<C>,
 }
 
-impl<C: CircuitExt<Fr>> Verifier<C> {
+impl<C: CircuitExt<Fr, Params = ()>> Verifier<C> {
     pub fn new(params: ParamsKZG<Bn256>, vk: VerifyingKey<G1Affine>) -> Self {
         Self {
             params,

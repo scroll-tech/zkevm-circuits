@@ -69,6 +69,7 @@ impl MockChunkCircuit {
 impl Circuit<Fr> for MockChunkCircuit {
     type Config = MockConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

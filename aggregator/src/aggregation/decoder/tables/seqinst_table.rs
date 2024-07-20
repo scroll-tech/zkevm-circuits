@@ -1003,6 +1003,8 @@ mod tests {
     impl Circuit<Fr> for SeqTable {
         type Config = SeqInstTable<Fr>;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
+
         fn without_witnesses(&self) -> Self {
             unimplemented!()
         }

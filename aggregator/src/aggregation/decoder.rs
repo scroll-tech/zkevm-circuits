@@ -5463,6 +5463,7 @@ mod tests {
     impl<const L: usize, const R: usize> Circuit<Fr> for DecoderConfigTester<L, R> {
         type Config = (DecoderConfig<L, R>, U8Table, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             unimplemented!()

@@ -159,7 +159,6 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
 impl<F: Field> Circuit<F> for TxCircuitTester<F> {
     type Config = (TxCircuitTesterConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    #[cfg(feature = "circuit-params")]
     type Params = ();
 
     fn without_witnesses(&self) -> Self {
