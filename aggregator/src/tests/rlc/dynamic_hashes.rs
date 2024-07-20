@@ -34,6 +34,7 @@ struct DynamicHashCircuitConfig {
 impl Circuit<Fr> for DynamicHashCircuit {
     type Config = (DynamicHashCircuitConfig, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         unimplemented!()

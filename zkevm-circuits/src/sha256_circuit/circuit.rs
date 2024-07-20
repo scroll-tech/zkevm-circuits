@@ -1134,6 +1134,7 @@ mod tests {
     impl Circuit<Fr> for MyCircuit {
         type Config = CircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             unimplemented!()

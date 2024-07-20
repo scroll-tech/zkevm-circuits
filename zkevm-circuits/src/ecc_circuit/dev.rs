@@ -14,6 +14,7 @@ use super::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs};
 impl<F: Field, const XI_0: i64> Circuit<F> for EccCircuit<F, XI_0> {
     type Config = (EccCircuitConfig<F>, Challenges<Challenge>);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

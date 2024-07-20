@@ -92,7 +92,7 @@ impl Proof {
         &self.vk
     }
 
-    pub fn vk<C: Circuit<Fr>>(&self) -> VerifyingKey<G1Affine> {
+    pub fn vk<C: Circuit<Fr, Params = ()>>(&self) -> VerifyingKey<G1Affine> {
         deserialize_vk::<C>(&self.vk)
     }
 }
