@@ -1438,6 +1438,7 @@ name = "eth-types"
 version = "0.12.0"
 dependencies = [
  "base64 0.13.1",
+ "bincode",
  "ethers-core",
  "ethers-signers",
  "halo2curves",
