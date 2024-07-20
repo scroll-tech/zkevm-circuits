@@ -82,7 +82,7 @@ pub struct BlockHeader {
 
 impl From<BlockTrace> for BlockTraceV2 {
     fn from(b: BlockTrace) -> Self {
-        let codes = collect_codes(&b, None)
+        let codes = collect_codes(&b)
             .expect("collect codes should not fail")
             .into_iter()
             .map(|(hash, code)| BytecodeTrace {
@@ -531,8 +531,6 @@ pub struct ExecStep {
     pub memory: Option<Vec<crate::Word>>,
     #[cfg(feature = "enable-storage")]
     pub storage: Option<HashMap<crate::Word, crate::Word>>,
-    #[serde(rename = "extraData")]
-    pub extra_data: Option<ExtraData>,
 }
 
 impl From<ExecStep> for GethExecStep {
@@ -553,20 +551,6 @@ impl From<ExecStep> for GethExecStep {
             #[cfg(feature = "enable-storage")]
             storage: e.storage.map_or_else(Storage::empty, Storage::from),
         }
-    }
-}
-
-/// extra data for some steps
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[doc(hidden)]
-pub struct ExtraData {
-    #[serde(rename = "codeList")]
-    pub code_list: Option<Vec<Bytes>>,
-}
-
-impl ExtraData {
-    pub fn get_code_at(&self, i: usize) -> Option<Bytes> {
-        self.code_list.as_ref().and_then(|c| c.get(i)).cloned()
     }
 }
 
