@@ -261,7 +261,9 @@ fn blob_circuit_completeness() {
     let full_blob = vec![
         // batch274 contains batch bytes that will produce a full blob
         hex::decode(
-            fs::read_to_string("./data/test_batches/batch274.hex").expect("file path exists"),
+            fs::read_to_string("./data/test_batches/batch274.hex")
+                .expect("file path exists")
+                .trim(),
         )
         .expect("should load full blob batch bytes"),
     ];
