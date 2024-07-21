@@ -1626,7 +1626,6 @@ version = "2.0.7"
 source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd62e7cdec31160b91c5a646883594a586ba"
 dependencies = [
  "ethers-core",
- "ethers-solc",
  "reqwest",
  "semver 1.0.22",
  "serde",
