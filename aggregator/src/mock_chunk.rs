@@ -1,20 +1,17 @@
-use std::iter;
-
-use ark_std::test_rng;
 use ce_snark_verifier_sdk::CircuitExt as CeCircuitExt;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
-    dev::MockProver,
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::SKIP_FIRST_PASS;
 use snark_verifier_sdk::CircuitExt;
+use std::iter;
 use zkevm_circuits::{table::KeccakTable, util::Challenges};
 
 use crate::{
     constants::{ACC_LEN, DIGEST_LEN},
-    ChunkInfo, RlcConfig, LOG_DEGREE,
+    ChunkInfo, RlcConfig,
 };
 
 /// This config is used to compute RLCs for bytes.
@@ -41,6 +38,7 @@ pub struct MockChunkCircuit {
 }
 
 impl MockChunkCircuit {
+    #[cfg(test)]
     pub(crate) fn new(has_accumulator: bool, chunk: ChunkInfo) -> Self {
         MockChunkCircuit {
             has_accumulator,
@@ -159,22 +157,29 @@ impl CeCircuitExt<Fr> for MockChunkCircuit {
     }
 }
 
-#[ignore = "heavy"]
-#[test]
-fn test_mock_chunk_prover() {
-    test_mock_chunk_prover_helper(true, true);
-    test_mock_chunk_prover_helper(true, false);
-    test_mock_chunk_prover_helper(false, true);
-    test_mock_chunk_prover_helper(false, false);
-}
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::constants::LOG_DEGREE;
+    use ark_std::test_rng;
+    use halo2_proofs::dev::MockProver;
+    fn test_mock_chunk_prover_helper(hash_accumulator: bool, is_padding: bool) {
+        let mut rng = test_rng();
 
-fn test_mock_chunk_prover_helper(hash_accumulator: bool, is_padding: bool) {
-    let mut rng = test_rng();
+        let circuit = MockChunkCircuit::random(&mut rng, hash_accumulator, is_padding);
+        let instance = CircuitExt::instances(&circuit);
 
-    let circuit = MockChunkCircuit::random(&mut rng, hash_accumulator, is_padding);
-    let instance = CircuitExt::instances(&circuit);
+        let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();
 
-    let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();
+        mock_prover.assert_satisfied_par();
+    }
 
-    mock_prover.assert_satisfied_par();
+    #[test]
+    #[ignore = "heavy"]
+    fn test_mock_chunk_prover() {
+        test_mock_chunk_prover_helper(true, true);
+        test_mock_chunk_prover_helper(true, false);
+        test_mock_chunk_prover_helper(false, true);
+        test_mock_chunk_prover_helper(false, false);
+    }
 }
