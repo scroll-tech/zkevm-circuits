@@ -11,7 +11,7 @@ use crate::{
     batch::{BatchHash, BatchHeader},
     constants::MAX_AGG_SNARKS,
     layer_0,
-    tests::mock_chunk::MockChunkCircuit,
+    MockChunkCircuit,
     ChunkInfo,
 };
 

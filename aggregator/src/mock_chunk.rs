@@ -33,7 +33,7 @@ pub struct MockConfig {
 /// This mock chunk circuit simulates a zkEVM circuit.
 /// It's public inputs consists of 32 elements:
 /// - public input hash
-pub(crate) struct MockChunkCircuit {
+pub struct MockChunkCircuit {
     // This circuit has an accumulator if it has already gone through compression
     pub(crate) has_accumulator: bool,
     pub(crate) chunk: ChunkInfo,
@@ -49,7 +49,7 @@ impl MockChunkCircuit {
 }
 
 impl MockChunkCircuit {
-    pub(crate) fn random<R: rand::RngCore>(
+    pub fn random<R: rand::RngCore>(
         r: &mut R,
         has_accumulator: bool,
         is_padding: bool,

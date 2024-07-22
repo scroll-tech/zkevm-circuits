@@ -32,3 +32,6 @@ pub use constants::MAX_AGG_SNARKS;
 pub(crate) use constants::*;
 pub use param::*;
 pub use recursion::*;
+
+mod mock_chunk;
+pub use mock_chunk::MockChunkCircuit;
