@@ -414,6 +414,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             rw_counter_start,
                             copy_bytes: CopyBytes::new(copy_steps, None, None),
                             access_list: vec![],
+                            // default value is true, will set it to correct value in block_convert.
+                            is_first_bytecode_circuit: true,
                         },
                     );
                     Some(input_bytes)
@@ -445,6 +447,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             rw_counter_start,
                             copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
                             access_list: vec![],
+                            // default value is true, will set it to correct value in block_convert.
+                            is_first_bytecode_circuit: true,
                         },
                     );
                     Some(output_bytes)
@@ -485,6 +489,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                                 Some(prev_bytes),
                             ),
                             access_list: vec![],
+                            // default value is true, will set it to correct value in block_convert.
+                            is_first_bytecode_circuit: true,
                         },
                     );
                     Some(returned_bytes)

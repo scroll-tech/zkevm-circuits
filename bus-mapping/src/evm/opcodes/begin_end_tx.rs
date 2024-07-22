@@ -318,6 +318,8 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 rw_counter_start,
                 copy_bytes: CopyBytes::new(bytes, None, None),
                 access_list: vec![],
+                // default value is true, will set it to correct value  in block_convert.
+                is_first_bytecode_circuit: true,
             },
         );
     }
@@ -465,6 +467,8 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                     rw_counter_start,
                     copy_bytes: CopyBytes::new(copy_steps, None, None),
                     access_list: vec![],
+                    // default value is true, will set it to correct value in block_convert.
+                    is_first_bytecode_circuit: true,
                 },
             );
 
@@ -906,6 +910,8 @@ fn add_access_list_address_copy_event(
         copy_bytes,
         access_list,
         log_id: None,
+        // default value is true, will set it to correct value in block_convert.
+        is_first_bytecode_circuit: true,
     };
 
     state.push_copy(exec_step, copy_event);
@@ -991,6 +997,8 @@ fn add_access_list_storage_key_copy_event(
         copy_bytes,
         access_list,
         log_id: None,
+        // default value is true, will set it to correct value in block_convert.
+        is_first_bytecode_circuit: true,
     };
 
     state.push_copy(exec_step, copy_event);

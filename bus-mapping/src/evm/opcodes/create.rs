@@ -397,6 +397,8 @@ fn handle_copy(
             log_id: None,
             copy_bytes: CopyBytes::new(copy_steps, None, None),
             access_list: vec![],
+            // default value is true, will set it to correct value in block_convert.
+            is_first_bytecode_circuit: true,
         },
     );
 
