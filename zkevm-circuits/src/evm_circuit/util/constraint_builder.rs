@@ -656,6 +656,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.opcode_lookup_rlc(opcode, 0.expr());
     }
 
+    // TODO: refactor opcode_lookup_at and opcode_lookup2_at into one helper ?
     pub(crate) fn opcode_lookup_at(
         &mut self,
         index: Expression<F>,
