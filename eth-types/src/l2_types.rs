@@ -25,7 +25,19 @@ use crate::evm_types::Stack;
 use crate::evm_types::Storage;
 
 /// l2 block full trace
-#[derive(Deserialize, Serialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Deserialize,
+    Serialize,
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[archive_attr(derive(Debug, PartialEq, Eq))]
 pub struct BlockTraceV2 {
     /// chain id
     #[serde(rename = "chainID", default)]
@@ -47,7 +59,20 @@ pub struct BlockTraceV2 {
 }
 
 /// Block header used by l2 block
-#[derive(Deserialize, Serialize, Default, Debug, Clone, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Deserialize,
+    Serialize,
+    Default,
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+)]
+#[archive(compare(PartialEq))]
+#[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 pub struct BlockHeader {
     /// Hash of the block
     pub hash: H256,
@@ -120,7 +145,20 @@ impl From<EthBlock> for BlockHeader {
     }
 }
 /// Bytecode
-#[derive(Deserialize, Serialize, Default, Debug, Clone, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Deserialize,
+    Serialize,
+    Default,
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+)]
+#[archive(compare(PartialEq))]
+#[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 pub struct BytecodeTrace {
     /// poseidon code hash
     pub hash: H256,
@@ -246,56 +284,20 @@ impl From<&BlockTrace> for EthBlock {
     }
 }
 
-impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
-    fn from(block: &BlockTraceV2) -> Self {
-        revm_primitives::BlockEnv {
-            number: revm_primitives::U256::from(block.header.number.as_u64()),
-            coinbase: block.coinbase.address.0.into(),
-            timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
-            gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
-            basefee: revm_primitives::U256::from_be_bytes(
-                block
-                    .header
-                    .base_fee_per_gas
-                    .unwrap_or_default()
-                    .to_be_bytes(),
-            ),
-            difficulty: revm_primitives::U256::from_be_bytes(block.header.difficulty.to_be_bytes()),
-            prevrandao: block
-                .header
-                .mix_hash
-                .map(|h| revm_primitives::B256::from(h.to_fixed_bytes())),
-            blob_excess_gas_and_price: None,
-        }
-    }
-}
-
-impl From<&BlockTrace> for revm_primitives::BlockEnv {
-    fn from(block: &BlockTrace) -> Self {
-        revm_primitives::BlockEnv {
-            number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
-            coinbase: block.coinbase.address.0.into(),
-            timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
-            gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
-            basefee: revm_primitives::U256::from_be_bytes(
-                block
-                    .header
-                    .base_fee_per_gas
-                    .unwrap_or_default()
-                    .to_be_bytes(),
-            ),
-            difficulty: revm_primitives::U256::from_be_bytes(block.header.difficulty.to_be_bytes()),
-            prevrandao: block
-                .header
-                .mix_hash
-                .map(|h| revm_primitives::B256::from(h.to_fixed_bytes())),
-            blob_excess_gas_and_price: None,
-        }
-    }
-}
-
 /// l2 tx trace
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Deserialize,
+    Serialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[archive(compare(PartialEq))]
+#[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 pub struct TransactionTrace {
     // FIXME after traces upgraded
     /// tx hash
@@ -347,6 +349,7 @@ impl TransactionTrace {
     pub fn is_l1_tx(&self) -> bool {
         self.type_ == 0x7e
     }
+
     /// transfer to eth type tx
     pub fn to_eth_tx(
         &self,
@@ -391,51 +394,25 @@ impl TransactionTrace {
     }
 }
 
-impl From<&TransactionTrace> for revm_primitives::TxEnv {
-    fn from(tx: &TransactionTrace) -> Self {
-        revm_primitives::TxEnv {
-            caller: tx.from.0.into(),
-            gas_limit: tx.gas,
-            gas_price: revm_primitives::U256::from_be_bytes(tx.gas_price.to_be_bytes()),
-            transact_to: match tx.to {
-                Some(to) => revm_primitives::TransactTo::Call(to.0.into()),
-                None => revm_primitives::TransactTo::Create,
-            },
-            value: revm_primitives::U256::from_be_bytes(tx.value.to_be_bytes()),
-            data: revm_primitives::Bytes::copy_from_slice(tx.data.as_ref()),
-            nonce: Some(tx.nonce),
-            chain_id: Some(tx.chain_id.as_u64()),
-            access_list: tx
-                .access_list
-                .as_ref()
-                .map(|v| {
-                    v.iter()
-                        .map(|e| revm_primitives::AccessListItem {
-                            address: e.address.0.into(),
-                            storage_keys: e
-                                .storage_keys
-                                .iter()
-                                .map(|s| s.to_fixed_bytes().into())
-                                .collect(),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            gas_priority_fee: tx
-                .gas_tip_cap
-                .map(|g| revm_primitives::U256::from_be_bytes(g.to_be_bytes())),
-            ..Default::default()
-        }
-    }
-}
-
 /// account trie proof in storage proof
 pub type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
 /// storage trie proof in storage proof
 pub type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 /// storage trace
-#[derive(Deserialize, Serialize, Default, Debug, Clone, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Deserialize,
+    Serialize,
+    Default,
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+)]
+#[archive_attr(derive(Debug, PartialEq, Eq))]
 pub struct StorageTrace {
     /// root before
     #[serde(rename = "rootBefore")]
@@ -555,7 +532,20 @@ impl From<ExecStep> for GethExecStep {
 }
 
 /// account wrapper for account status
-#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Serialize,
+    Deserialize,
+    Clone,
+    Default,
+    Debug,
+    PartialEq,
+    Eq,
+)]
+#[archive(compare(PartialEq))]
+#[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 #[doc(hidden)]
 pub struct AccountTrace {
     pub address: Address,
@@ -595,5 +585,18 @@ mod tests {
         let decoded: BlockTraceV2 = bincode::deserialize(&encoded).unwrap();
 
         assert_eq!(trace, decoded);
+    }
+
+    #[test]
+    fn test_rkyv_trace_v2() {
+        let trace = BlockTraceV2::from(L2_TRACE.clone());
+        let bytes = rkyv::to_bytes::<_, 256>(&trace).unwrap();
+        let archived = unsafe { rkyv::archived_root::<BlockTraceV2>(&bytes[..]) };
+        assert_eq!(archived.chain_id, trace.chain_id);
+        assert_eq!(archived.coinbase, trace.coinbase);
+        assert_eq!(archived.header, trace.header);
+        assert_eq!(archived.transactions, trace.transactions);
+        assert_eq!(archived.codes, trace.codes);
+        assert_eq!(archived.start_l1_queue_index, trace.start_l1_queue_index);
     }
 }
