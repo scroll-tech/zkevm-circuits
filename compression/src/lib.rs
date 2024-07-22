@@ -7,4 +7,7 @@
 mod circuit;
 mod params;
 
+#[cfg(test)]
+mod tests;
+
 pub use circuit::CompressionCircuit;

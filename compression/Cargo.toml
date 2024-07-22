@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 ark-std.workspace = true
+env_logger.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -15,4 +16,7 @@ halo2curves.workspace = true
 ce-snark-verifier.workspace = true
 ce-snark-verifier-sdk.workspace = true
 snark-verifier-sdk.workspace = true
+
+[dev-dependencies]
+aggregator = { path = "../aggregator" }
 

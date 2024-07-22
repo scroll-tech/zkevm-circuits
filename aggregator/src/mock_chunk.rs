@@ -1,6 +1,7 @@
 use std::iter;
 
 use ark_std::test_rng;
+use ce_snark_verifier_sdk::CircuitExt as CeCircuitExt;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     dev::MockProver,
@@ -49,11 +50,7 @@ impl MockChunkCircuit {
 }
 
 impl MockChunkCircuit {
-    pub fn random<R: rand::RngCore>(
-        r: &mut R,
-        has_accumulator: bool,
-        is_padding: bool,
-    ) -> Self {
+    pub fn random<R: rand::RngCore>(r: &mut R, has_accumulator: bool, is_padding: bool) -> Self {
         let chunk = ChunkInfo::mock_random_chunk_info_for_testing(r);
         Self {
             has_accumulator,
@@ -151,6 +148,17 @@ impl CircuitExt<Fr> for MockChunkCircuit {
     }
 }
 
+// Implement community edition CircuitExt by calling existing implementation
+impl CeCircuitExt<Fr> for MockChunkCircuit {
+    fn num_instance(&self) -> Vec<usize> {
+        CircuitExt::num_instance(self)
+    }
+
+    fn instances(&self) -> Vec<Vec<Fr>> {
+        CircuitExt::instances(self)
+    }
+}
+
 #[ignore = "heavy"]
 #[test]
 fn test_mock_chunk_prover() {
@@ -164,7 +172,7 @@ fn test_mock_chunk_prover_helper(hash_accumulator: bool, is_padding: bool) {
     let mut rng = test_rng();
 
     let circuit = MockChunkCircuit::random(&mut rng, hash_accumulator, is_padding);
-    let instance = circuit.instances();
+    let instance = CircuitExt::instances(&circuit);
 
     let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();
 
