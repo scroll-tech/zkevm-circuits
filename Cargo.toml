@@ -28,7 +28,7 @@ base64 = "0.13.0"
 bincode = "1"
 ctor = "0.1"
 env_logger = "0.10"
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
+ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv", features = ["rkyv", "scroll"] }
 ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }

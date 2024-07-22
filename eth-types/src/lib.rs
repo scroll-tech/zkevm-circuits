@@ -40,13 +40,14 @@ pub use bytecode::Bytecode;
 pub use error::Error;
 use ethers_core::types;
 pub use ethers_core::{
-    abi::ethereum_types::{BigEndianHash, U512},
+    abi::ethereum_types::{ArchivedH512, BigEndianHash, U512},
     types::{
         transaction::{
-            eip2930::{AccessList, AccessListItem},
+            eip2930::{AccessList, AccessListItem, ArchivedAccessListItem},
             response::Transaction,
         },
-        Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
+        Address, ArchivedAddress, ArchivedBytes, ArchivedH160, ArchivedH256, ArchivedH64,
+        ArchivedU256, ArchivedU64, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
 use serde::{de, Deserialize, Deserializer, Serialize};
