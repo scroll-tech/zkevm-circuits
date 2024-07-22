@@ -1,0 +1,18 @@
+[package]
+name = "compression"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ark-std.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+halo2_proofs.workspace = true
+halo2curves.workspace = true
+ce-snark-verifier.workspace = true
+ce-snark-verifier-sdk.workspace = true
+snark-verifier-sdk.workspace = true
+

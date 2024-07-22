@@ -5,7 +5,7 @@ use crate::{
     io::{force_to_read, try_to_read},
     proof::BundleProof,
 };
-use aggregator::CompressionCircuit;
+use compression::CompressionCircuit;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
     plonk::VerifyingKey,

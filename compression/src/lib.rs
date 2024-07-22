@@ -5,10 +5,6 @@
 
 /// Circuit implementation of compression circuit.
 mod circuit;
-/// CircuitExt implementation of compression circuit.
-mod circuit_ext;
-/// Config for compression circuit
-mod config;
+mod params;
 
 pub use circuit::CompressionCircuit;
-pub use config::CompressionConfig;
