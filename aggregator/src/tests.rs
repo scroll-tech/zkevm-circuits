@@ -1,6 +1,5 @@
 mod aggregation;
 mod blob;
-mod mock_chunk;
 mod recursion;
 mod rlc;
 
@@ -46,102 +45,6 @@ macro_rules! layer_0 {
         }
         end_timer!(timer);
         snark
-    }};
-}
-
-#[macro_export]
-macro_rules! compression_layer_snark {
-    // generate a snark for compression layer
-    ($previous_snark: ident, $param: ident, $degree: ident, $path: ident, $layer_index: expr) => {{
-        let timer = start_timer!(|| format!("gen layer {} snark", $layer_index));
-
-        let param = {
-            let mut param = $param.clone();
-            param.downsize($degree);
-            param
-        };
-
-        let mut rng = test_rng();
-
-        let is_fresh = if $layer_index == 1 { true } else { false };
-        let compression_circuit =
-            CompressionCircuit::new(&$param, $previous_snark.clone(), is_fresh, &mut rng).unwrap();
-
-        let pk = gen_pk(&$param, &compression_circuit, None);
-        // build the snark for next layer
-        let snark = gen_snark_shplonk(
-            &param,
-            &pk,
-            compression_circuit.clone(),
-            &mut rng,
-            None::<String>, // Some(&$path.join(Path::new("layer_1.snark"))),
-        )
-        .expect("Snark generated successfully");
-        log::trace!(
-            "finished layer {} snark generation for circuit",
-            $layer_index
-        );
-
-        assert!(verify_snark_shplonk::<CompressionCircuit>(
-            &param,
-            snark.clone(),
-            pk.get_vk()
-        ));
-
-        end_timer!(timer);
-        snark
-    }};
-}
-
-#[macro_export]
-macro_rules! compression_layer_evm {
-    // generate a evm proof and verify it for compression layer
-    ($previous_snark: ident, $param: ident, $degree: ident, $path: ident,$layer_index: expr) => {{
-        let timer = start_timer!(|| format!("gen layer {} snark", $layer_index));
-
-        let param = {
-            let mut param = $param.clone();
-            param.downsize($degree);
-            param
-        };
-
-        let mut rng = test_rng();
-
-        let compression_circuit =
-            CompressionCircuit::new(&$param, $previous_snark, false, &mut rng).unwrap();
-
-        let instances = compression_circuit.instances();
-
-        let pk = gen_pk(&$param, &compression_circuit, None);
-        // build the snark for next layer
-        let proof = gen_evm_proof_shplonk(
-            &param,
-            &pk,
-            compression_circuit.clone(),
-            instances.clone(),
-            &mut rng,
-        );
-
-        log::trace!("finished layer 4 aggregation generation");
-        log::trace!("proof size: {}", proof.len());
-
-        // verify proof via EVM
-        let deployment_code = gen_evm_verifier::<CompressionCircuit, Kzg<Bn256, Bdfg21>>(
-            &param,
-            pk.get_vk(),
-            compression_circuit.num_instance(),
-            Some(&$path.join(Path::new("contract.sol"))),
-        );
-        log::trace!("finished layer 4 bytecode generation");
-
-        evm_verify(
-            deployment_code,
-            compression_circuit.instances(),
-            proof.clone(),
-        );
-        log::trace!("layer 2 evm verification finished");
-
-        end_timer!(timer);
     }};
 }
 
