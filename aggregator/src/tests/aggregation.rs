@@ -10,9 +10,7 @@ use crate::{
     aggregation::BatchCircuit,
     batch::{BatchHash, BatchHeader},
     constants::MAX_AGG_SNARKS,
-    layer_0,
-    MockChunkCircuit,
-    ChunkInfo,
+    layer_0, ChunkInfo, MockChunkCircuit,
 };
 
 // See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866

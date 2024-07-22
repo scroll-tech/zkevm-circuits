@@ -93,13 +93,22 @@ impl CompressionCircuit {
         params: &ParamsKZG<Bn256>,
         snark: snark_verifier_sdk::Snark,
         has_accumulator: bool,
+        rng: impl Rng + Send,
+    ) -> Result<Self, ce_snark_verifier::Error> {
+        Self::new_from_ce_snark(params, convert(&snark), has_accumulator, rng)
+    }
+
+    pub fn new_from_ce_snark(
+        params: &ParamsKZG<Bn256>,
+        snark: ce_snark_verifier_sdk::Snark,
+        has_accumulator: bool,
         _rng: impl Rng + Send, // TODO: hook this up to the rng in AggregationCircuit? is that even needed?
     ) -> Result<Self, ce_snark_verifier::Error> {
         let mut inner = AggregationCircuit::new::<SHPLONK>(
             CircuitBuilderStage::Prover,
             load_params(),
             params,
-            [convert(&snark)],
+            [snark],
             VerifierUniversality::None,
         );
         inner.expose_previous_instances(has_accumulator);
