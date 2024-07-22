@@ -9,7 +9,7 @@ use ce_snark_verifier_sdk::{
     evm::{evm_verify, gen_evm_proof_shplonk, gen_evm_verifier},
     gen_pk,
     halo2::gen_snark_shplonk,
-    CircuitExt, Snark
+    CircuitExt, Snark,
 };
 use halo2_proofs::{dev::MockProver, poly::commitment::Params, poly::kzg::commitment::ParamsKZG};
 use halo2curves::bn256::{Bn256, Fr};
@@ -178,7 +178,7 @@ fn verify_compression_layer_evm(
     previous_snark: Snark,
     param: ParamsKZG<Bn256>,
     degree: u32,
-        path: &Path,
+    path: &Path,
     layer_index: usize,
 ) {
     let timer = start_timer!(|| format!("gen layer {} snark", $layer_index));
@@ -198,12 +198,7 @@ fn verify_compression_layer_evm(
 
     let pk = gen_pk(&param, &compression_circuit, None);
     // build the snark for next layer
-    let proof = gen_evm_proof_shplonk(
-        &param,
-        &pk,
-        compression_circuit.clone(),
-        instances.clone(),
-    );
+    let proof = gen_evm_proof_shplonk(&param, &pk, compression_circuit.clone(), instances.clone());
 
     log::trace!("finished layer 4 aggregation generation");
     log::trace!("proof size: {}", proof.len());
