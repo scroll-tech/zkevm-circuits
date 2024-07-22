@@ -306,10 +306,11 @@ fn blob_circuit_completeness() {
 
         // First blob is purposely constructed to take full blob space
         if idx == 0 {
+            let encoded_len = batch_data.get_encoded_batch_data_bytes().len();
             assert_eq!(
-                batch_data.get_encoded_batch_data_bytes().len(),
+                encoded_len,
                 N_BLOB_BYTES,
-                "should be full blob"
+                "should be full blob: expected={N_BLOB_BYTES}, got={encoded_len}",
             );
         }
 
