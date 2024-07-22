@@ -4,8 +4,8 @@ use crate::{
     io::{load_snark, write_snark},
     utils::gen_rng,
 };
-use aggregator::CompressionCircuit;
 use anyhow::{anyhow, Result};
+use compression::CompressionCircuit;
 use rand::Rng;
 use snark_verifier_sdk::Snark;
 use std::env;
