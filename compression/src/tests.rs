@@ -94,10 +94,14 @@ fn test_two_layer_proof_compression() {
     verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
 }
 
-fn layer_0(circuit: &MockChunkCircuit, param: ParamsKZG<Bn256>, degree: u32, path: &Path) -> Snark {
+fn layer_0(
+    circuit: &MockChunkCircuit,
+    param: ParamsKZG<Bn256>,
+    degree: u32,
+    _path: &Path,
+) -> Snark {
     let timer = start_timer!(|| "gen layer 0 snark");
 
-    let mut rng = test_rng();
     let param = {
         let mut param = param;
         param.downsize(degree);
@@ -141,12 +145,11 @@ fn compression_layer_snark(
         param
     };
 
-    let mut rng = test_rng();
     let compression_circuit = CompressionCircuit::new_from_ce_snark(
         &param,
         previous_snark.clone(),
         layer_index == 1,
-        &mut rng,
+        test_rng(),
     )
     .unwrap();
 
@@ -181,7 +184,7 @@ fn verify_compression_layer_evm(
     path: &Path,
     layer_index: usize,
 ) {
-    let timer = start_timer!(|| format!("gen layer {} snark", $layer_index));
+    let timer = start_timer!(|| format!("gen layer {} snark", layer_index));
 
     let param = {
         let mut param = param.clone();
@@ -189,10 +192,8 @@ fn verify_compression_layer_evm(
         param
     };
 
-    let mut rng = test_rng();
-
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(&param, previous_snark, false, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(&param, previous_snark, false, test_rng()).unwrap();
 
     let instances = compression_circuit.instances();
 

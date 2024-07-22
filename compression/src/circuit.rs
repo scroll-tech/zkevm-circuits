@@ -2,9 +2,7 @@
 
 use crate::params::ConfigParams;
 use ark_std::{end_timer, start_timer};
-use ce_snark_verifier::halo2_base::gates::circuit::{
-    builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig, CircuitBuilderStage,
-};
+use ce_snark_verifier::halo2_base::gates::circuit::{BaseConfig, CircuitBuilderStage};
 use ce_snark_verifier_sdk::{
     halo2::aggregation::{AggregationCircuit, AggregationConfigParams, VerifierUniversality},
     CircuitExt as CeCircuitExt, SHPLONK,
@@ -36,14 +34,10 @@ impl Circuit<Fr> for CompressionCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        AggregationCircuit::configure_with_params(meta, load_params().into())
+        AggregationCircuit::configure_with_params(meta, load_params())
     }
 
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<Fr>,
-    ) -> Result<(), Error> {
+    fn synthesize(&self, config: Self::Config, layouter: impl Layouter<Fr>) -> Result<(), Error> {
         let witness_time = start_timer!(|| "synthesize | compression Circuit");
         let result = self.0.synthesize(config, layouter);
         end_timer!(witness_time);
