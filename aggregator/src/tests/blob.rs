@@ -2,7 +2,7 @@ use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
     },
-    blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
+    blob::{BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256},
     param::ConfigParams,
     BatchDataConfig, MAX_AGG_SNARKS,
 };
@@ -288,7 +288,7 @@ fn blob_circuit_completeness() {
         .chain(std::iter::once(vec![3, 100, 24, 30]))
         .collect::<Vec<_>>();
 
-    for blob in [
+    for (idx, blob) in [
         full_blob,
         one_chunk,
         two_chunks,
@@ -298,8 +298,22 @@ fn blob_circuit_completeness() {
         nonempty_chunk_followed_by_empty_chunk,
         empty_and_nonempty_chunks,
         all_empty_except_last,
-    ] {
-        assert_eq!(check_data(BatchData::from(&blob)), Ok(()), "{:?}", blob);
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let batch_data = BatchData::from(&blob);
+
+        // First blob is purposely constructed to take full blob space
+        if idx == 0 {
+            assert_eq!(
+                batch_data.get_encoded_batch_data_bytes().len(),
+                N_BLOB_BYTES,
+                "should be full blob"
+            );
+        }
+
+        assert_eq!(check_data(batch_data), Ok(()), "{:?}", blob);
     }
 }
 
