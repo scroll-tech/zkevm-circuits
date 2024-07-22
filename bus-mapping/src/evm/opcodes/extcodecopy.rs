@@ -136,7 +136,7 @@ fn gen_copy_event(
         copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
         access_list: vec![],
         // default value is true, will set it to correct value in block_convert.
-        is_first_bytecode_circuit: true,
+        is_first_bytecode_table: true,
     })
 }
 

@@ -1726,7 +1726,7 @@ pub struct CopyTable {
     /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
     /// Whether the row is the first read-write pair for a copy event.
-    pub is_first_bytecode_circuit: Column<Advice>,
+    pub is_first_bytecode_table: Column<Advice>,
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below:
     /// 1. Call ID/Caller ID for CopyDataType::Memory
@@ -1760,7 +1760,7 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+type CopyTableRow<F> = [(Value<F>, &'static str); 9];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
 
 /// CopyThread is the state used while generating rows of the copy table.
@@ -1783,7 +1783,7 @@ impl CopyTable {
         Self {
             q_enable,
             is_first: meta.advice_column(),
-            is_first_bytecode_circuit: meta.advice_column_in(SecondPhase),
+            is_first_bytecode_table: meta.advice_column_in(SecondPhase),
             id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
@@ -1988,8 +1988,8 @@ impl CopyTable {
                 [
                     (Value::known(F::from(is_first)), "is_first"),
                     (
-                        Value::known(F::from(copy_event.is_first_bytecode_circuit)),
-                        "is_first_bytecode_circuit",
+                        Value::known(F::from(copy_event.is_first_bytecode_table)),
+                        "is_first_bytecode_table",
                     ),
                     (thread.id, "id"),
                     (Value::known(addr), "addr"),
@@ -2102,7 +2102,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
         vec![
             self.q_enable.into(),
             self.is_first.into(),
-            self.is_first_bytecode_circuit.into(),
+            self.is_first_bytecode_table.into(),
             self.id.into(),
             self.addr.into(),
             self.src_addr_end.into(),
@@ -2132,7 +2132,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.is_first, Rotation::cur()),
-            meta.query_advice(self.is_first_bytecode_circuit, Rotation::cur()),
+            meta.query_advice(self.is_first_bytecode_table, Rotation::cur()),
             meta.query_advice(self.id, Rotation::cur()), // src_id
             self.tag.value(Rotation::cur())(meta),       // src_tag
             meta.query_advice(self.id, Rotation::next()), // dst_id

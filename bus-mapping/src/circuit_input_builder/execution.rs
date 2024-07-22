@@ -473,7 +473,7 @@ pub struct CopyEvent {
     /// Represents transaction access list
     pub access_list: Vec<CopyAccessList>,
     /// Represents whether current execution bytecodes belong to first bytecode circuit.
-    pub is_first_bytecode_circuit: bool,
+    pub is_first_bytecode_table: bool,
 }
 
 pub type CopyEventSteps = Vec<(u8, bool, bool)>;
