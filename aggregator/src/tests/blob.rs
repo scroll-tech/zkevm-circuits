@@ -308,8 +308,7 @@ fn blob_circuit_completeness() {
         if idx == 0 {
             let encoded_len = batch_data.get_encoded_batch_data_bytes().len();
             assert_eq!(
-                encoded_len,
-                N_BLOB_BYTES,
+                encoded_len, N_BLOB_BYTES,
                 "should be full blob: expected={N_BLOB_BYTES}, got={encoded_len}",
             );
         }
