@@ -1519,7 +1519,7 @@ dependencies = [
 [[package]]
 name = "ethereum-types"
 version = "0.14.1"
-source = "git+https://github.com/scroll-tech/parity-common.git?branch=feat/rkyv#3c9294bf598e3580a84c24265ffb45d99eb8fe63"
+source = "git+https://github.com/scroll-tech/parity-common.git?branch=feat/rkyv#1fb41c018fe0a3525951fb9d5e1a50b3c17ca855"
 dependencies = [
  "ethbloom",
  "fixed-hash",
@@ -1535,7 +1535,7 @@ dependencies = [
 [[package]]
 name = "ethers"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "ethers-addressbook",
  "ethers-contract",
@@ -1550,7 +1550,7 @@ dependencies = [
 [[package]]
 name = "ethers-addressbook"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "ethers-core",
  "once_cell",
@@ -1561,7 +1561,7 @@ dependencies = [
 [[package]]
 name = "ethers-contract"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "ethers-contract-abigen",
  "ethers-contract-derive",
@@ -1579,7 +1579,7 @@ dependencies = [
 [[package]]
 name = "ethers-contract-abigen"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "Inflector",
  "dunce",
@@ -1602,7 +1602,7 @@ dependencies = [
 [[package]]
 name = "ethers-contract-derive"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "Inflector",
  "ethers-contract-abigen",
@@ -1617,7 +1617,7 @@ dependencies = [
 [[package]]
 name = "ethers-core"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "arrayvec",
  "bytes",
@@ -1649,7 +1649,7 @@ dependencies = [
 [[package]]
 name = "ethers-etherscan"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "ethers-core",
  "reqwest",
@@ -1663,7 +1663,7 @@ dependencies = [
 [[package]]
 name = "ethers-middleware"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -1689,7 +1689,7 @@ dependencies = [
 [[package]]
 name = "ethers-providers"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -1725,7 +1725,7 @@ dependencies = [
 [[package]]
 name = "ethers-signers"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "async-trait",
  "coins-bip32",
@@ -1743,7 +1743,7 @@ dependencies = [
 [[package]]
 name = "ethers-solc"
 version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#61c82c83a44087dbcf43916dc77845702f9c2b15"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=feat/rkyv#15042b06489717ae3490c528f484f37ecba5155e"
 dependencies = [
  "cfg-if 1.0.0",
  "dunce",
@@ -3491,7 +3491,7 @@ dependencies = [
 [[package]]
 name = "primitive-types"
 version = "0.12.2"
-source = "git+https://github.com/scroll-tech/parity-common.git?branch=feat/rkyv#3c9294bf598e3580a84c24265ffb45d99eb8fe63"
+source = "git+https://github.com/scroll-tech/parity-common.git?branch=feat/rkyv#1fb41c018fe0a3525951fb9d5e1a50b3c17ca855"
 dependencies = [
  "fixed-hash",
  "impl-codec",
