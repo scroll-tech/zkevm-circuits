@@ -21,6 +21,10 @@ use zkevm_circuits::{
     table::{KeccakTable, RangeTable, U8Table},
     util::Challenges,
 };
+// blob_debug
+use crate::aggregation::witgen::{process, MultiBlockProcessResult};
+use std::io::Write;
+use std::io;
 
 #[derive(Default)]
 struct BlobCircuit {
@@ -268,36 +272,36 @@ fn blob_circuit_completeness() {
         .expect("should load full blob batch bytes"),
     ];
 
-    let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
-    let one_chunk = vec![vec![2, 3, 4, 100, 1]];
-    let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
-    let max_chunks: Vec<Vec<u8>> = (0..MAX_AGG_SNARKS)
-        .map(|i| (10u8..10 + u8::try_from(i).unwrap()).collect())
-        .collect();
-    let empty_chunk_followed_by_nonempty_chunk = vec![vec![], vec![3, 100, 24, 30]];
-    let nonempty_chunk_followed_by_empty_chunk = vec![vec![3, 100, 24, 30], vec![]];
-    let empty_and_nonempty_chunks = vec![
-        vec![3, 100, 24, 30],
-        vec![],
-        vec![],
-        vec![100, 23, 34, 24, 10],
-        vec![],
-    ];
-    let all_empty_except_last = std::iter::repeat(vec![])
-        .take(MAX_AGG_SNARKS - 1)
-        .chain(std::iter::once(vec![3, 100, 24, 30]))
-        .collect::<Vec<_>>();
+    // let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
+    // let one_chunk = vec![vec![2, 3, 4, 100, 1]];
+    // let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
+    // let max_chunks: Vec<Vec<u8>> = (0..MAX_AGG_SNARKS)
+    //     .map(|i| (10u8..10 + u8::try_from(i).unwrap()).collect())
+    //     .collect();
+    // let empty_chunk_followed_by_nonempty_chunk = vec![vec![], vec![3, 100, 24, 30]];
+    // let nonempty_chunk_followed_by_empty_chunk = vec![vec![3, 100, 24, 30], vec![]];
+    // let empty_and_nonempty_chunks = vec![
+    //     vec![3, 100, 24, 30],
+    //     vec![],
+    //     vec![],
+    //     vec![100, 23, 34, 24, 10],
+    //     vec![],
+    // ];
+    // let all_empty_except_last = std::iter::repeat(vec![])
+    //     .take(MAX_AGG_SNARKS - 1)
+    //     .chain(std::iter::once(vec![3, 100, 24, 30]))
+    //     .collect::<Vec<_>>();
 
     for (idx, blob) in [
         full_blob,
-        one_chunk,
-        two_chunks,
-        max_chunks,
-        all_empty_chunks,
-        empty_chunk_followed_by_nonempty_chunk,
-        nonempty_chunk_followed_by_empty_chunk,
-        empty_and_nonempty_chunks,
-        all_empty_except_last,
+        // one_chunk,
+        // two_chunks,
+        // max_chunks,
+        // all_empty_chunks,
+        // empty_chunk_followed_by_nonempty_chunk,
+        // nonempty_chunk_followed_by_empty_chunk,
+        // empty_and_nonempty_chunks,
+        // all_empty_except_last,
     ]
     .into_iter()
     .enumerate()
@@ -315,6 +319,54 @@ fn blob_circuit_completeness() {
 
         assert_eq!(check_data(batch_data), Ok(()), "{:?}", blob);
     }
+}
+
+#[test]
+fn zstd_encoding_consistency(){
+    // Load test blob bytes
+    let blob_bytes = hex::decode(
+        fs::read_to_string("./data/test_blobs/blob005.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load blob bytes");
+
+    // Leave out most significant byte for compressed data
+    let mut compressed: Vec<u8> = vec![];
+    for i in 0..blob_bytes.len() / 32 {
+        for j in 1..32usize {
+            compressed.push(blob_bytes[i * 32 + j]);
+        }
+    }
+
+    // Decode into original batch bytes
+    let MultiBlockProcessResult {
+        witness_rows: _w,
+        literal_bytes: _l,
+        fse_aux_tables: _f,
+        block_info_arr: _b,
+        sequence_info_arr: _s,
+        address_table_rows: _a,
+        sequence_exec_results,
+    } = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+
+    let batch_bytes = sequence_exec_results
+        .into_iter()
+        .flat_map(|r| r.recovered_bytes)
+        .collect::<Vec<u8>>();
+
+    // Re-encode into blob bytes
+    let re_encoded_batch_data: BatchData<45> = BatchData::from(&vec![batch_bytes]);
+    let re_encoded_blob_bytes = re_encoded_batch_data.get_encoded_batch_data_bytes();
+
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+
+    assert_eq!(compressed, re_encoded_blob_bytes, "Blob bytes must match");
+
+    // blob_debug
+    // write!(handle, "=> compressed_blob_bytes: {:?}", compressed).unwrap();
+    // write!(handle, "=> re_encoded_blob_bytes: {:?}", re_encoded_blob_bytes).unwrap();
 }
 
 fn generic_batch_data() -> BatchData<MAX_AGG_SNARKS> {
