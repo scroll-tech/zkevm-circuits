@@ -35,7 +35,7 @@ ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch
 ff = "0.13"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
 halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "feat/sp1", features = [ "derive_serde" ] }
-poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
+poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "feat/sp1" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
 halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
