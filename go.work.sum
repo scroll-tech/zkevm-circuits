@@ -331,6 +331,8 @@ github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQD
 github.com/schollz/closestmatch v2.1.0+incompatible/go.mod h1:RtP1ddjLong6gTkbtmuhtR2uUrrJOpYzYRvbcPAid+g=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20231108100028-cb76ecd42bf7 h1:xDtuJk3CjD46kHw87Xe9o/1PcvTVgNZYoT2vGgRmO5s=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20231108100028-cb76ecd42bf7/go.mod h1:4HrFcoStbViFVy/9l/rvKl1XmizVAaPdgqI8v0U8hOc=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20240717120140-0360eba83660 h1:pSFXa3YwuzNiMJAzYDQ4XDml2b5ioDVZ5FJsDPTu/4c=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20240717120140-0360eba83660/go.mod h1:e3uA1ySy33Pl+B0PBW5/TbHoLhUtojzjPCYT2a7YdJc=
 github.com/sirupsen/logrus v1.2.0 h1:juTguoYk5qI21pwyTXY3B3Y5cOTH3ZUyZCg1v/mihuo=
 github.com/sirupsen/logrus v1.9.0/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72 h1:qLC7fQah7D6K1B0ujays3HV9gkFtllcxhzImRR7ArPQ=

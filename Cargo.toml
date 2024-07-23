@@ -25,6 +25,7 @@ license = "MIT OR Apache-2.0"
 anyhow = "1.0"
 ark-std = "0.3"
 base64 = "0.13.0"
+bincode = "1"
 ctor = "0.1"
 env_logger = "0.10"
 ethers = { version = "=2.0.7", features = ["ethers-solc"] }
