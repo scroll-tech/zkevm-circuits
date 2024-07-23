@@ -28,10 +28,10 @@ base64 = "0.13.0"
 bincode = "1"
 ctor = "0.1"
 env_logger = "0.10"
-ethers = { version = "=2.0.7", features = ["ethers-solc"] }
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7", features = ["scroll"] }
-ethers-providers = "=2.0.7"
-ethers-signers = "=2.0.7"
+ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv", features = ["rkyv", "scroll"] }
+ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
+ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
+ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 ff = "0.13"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
 halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
@@ -53,6 +53,7 @@ rand_chacha = "0.3"
 rand_xorshift = "0.3"
 rayon = "1.5"
 regex = "1.5"
+rkyv = { version = "0.7.44" }
 serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_stacker = "0.1"
@@ -67,15 +68,19 @@ url = "2.2"
 revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v40", default-features = false, features = ["std"] } # v40
 revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v40", default-features = false, features = ["std"] } # v40
 c-kzg = "1.0.2"
+primitive-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }
+ethereum-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }
 
 [patch.crates-io]
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
+ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
+ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
+ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
+ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "v0.1.0" }
+primitive-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv" }
+ethereum-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }

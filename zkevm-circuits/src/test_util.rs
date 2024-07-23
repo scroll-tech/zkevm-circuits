@@ -27,6 +27,8 @@ fn init_env_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 
+pub(crate) type FnBlockChecker = Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>;
+
 #[allow(clippy::type_complexity)]
 /// Struct used to easily generate tests for EVM &| State circuits being able to
 /// customize all of the steps involved in the testing itself.
@@ -82,9 +84,9 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<CircuitsParams>,
     block: Option<Block>,
-    evm_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
-    state_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
-    copy_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
+    evm_checks: FnBlockChecker,
+    state_checks: FnBlockChecker,
+    copy_checks: FnBlockChecker,
     block_modifiers: Vec<Box<dyn Fn(&mut Block)>>,
 }
 
@@ -199,10 +201,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
-    /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
-    /// into a [`Block`] and apply the default or provided block_modifiers or
-    /// circuit checks to the provers generated for the State and EVM circuits.
-    pub fn run(self) {
+    /// Return the witness block
+    pub fn build_witness_block(self) -> (Block, FnBlockChecker, FnBlockChecker, FnBlockChecker) {
         let mut params = if let Some(block) = self.block.as_ref() {
             block.circuits_params
         } else {
@@ -254,10 +254,17 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         } else {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
+        (block, self.evm_checks, self.state_checks, self.copy_checks)
+    }
+    /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
+    /// into a [`Block`] and apply the default or provided block_modifiers or
+    /// circuit checks to the provers generated for the State and EVM circuits.
+    pub fn run(self) {
+        let (block, evm_checks, state_checks, copy_checks) = self.build_witness_block();
 
         const NUM_BLINDING_ROWS: usize = 64;
         // Run evm circuit test
-        if let Some(evm_checks) = &self.evm_checks {
+        if let Some(evm_checks) = &evm_checks {
             let k = block.get_evm_test_circuit_degree();
             assert!(k <= 20);
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
@@ -269,7 +276,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         }
 
         // Run state circuit test
-        if let Some(state_checks) = &self.state_checks {
+        if let Some(state_checks) = &state_checks {
             let (_, rows_needed) = StateCircuit::<Fr>::min_num_rows_block(&block);
             let k: u32 = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
             assert!(k <= 20);
@@ -288,7 +295,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         }
 
         // Run copy circuit test
-        if let Some(copy_checks) = &self.copy_checks {
+        if let Some(copy_checks) = &copy_checks {
             let (active_rows, max_rows) = CopyCircuit::<Fr>::min_num_rows_block(&block);
             let k1 = block.get_evm_test_circuit_degree();
             let k2 = log2_ceil(max_rows + NUM_BLINDING_ROWS);
