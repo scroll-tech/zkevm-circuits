@@ -37,6 +37,7 @@ use crate::evm_types::Storage;
     PartialEq,
     Eq,
 )]
+#[archive(check_bytes)]
 #[archive_attr(derive(Debug, PartialEq, Eq))]
 pub struct BlockTraceV2 {
     /// chain id
@@ -71,7 +72,7 @@ pub struct BlockTraceV2 {
     Eq,
     PartialEq,
 )]
-#[archive(compare(PartialEq))]
+#[archive(compare(PartialEq), check_bytes)]
 #[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 pub struct BlockHeader {
     /// Hash of the block
@@ -157,7 +158,7 @@ impl From<EthBlock> for BlockHeader {
     Eq,
     PartialEq,
 )]
-#[archive(compare(PartialEq))]
+#[archive(compare(PartialEq), check_bytes)]
 #[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 pub struct BytecodeTrace {
     /// poseidon code hash
@@ -296,7 +297,7 @@ impl From<&BlockTrace> for EthBlock {
     PartialEq,
     Eq,
 )]
-#[archive(compare(PartialEq))]
+#[archive(compare(PartialEq), check_bytes)]
 #[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 pub struct TransactionTrace {
     // FIXME after traces upgraded
@@ -412,6 +413,7 @@ pub type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
     Eq,
     PartialEq,
 )]
+#[archive(check_bytes)]
 #[archive_attr(derive(Debug, PartialEq, Eq))]
 pub struct StorageTrace {
     /// root before
@@ -544,7 +546,7 @@ impl From<ExecStep> for GethExecStep {
     PartialEq,
     Eq,
 )]
-#[archive(compare(PartialEq))]
+#[archive(compare(PartialEq), check_bytes)]
 #[archive_attr(derive(Debug, Hash, PartialEq, Eq))]
 #[doc(hidden)]
 pub struct AccountTrace {
