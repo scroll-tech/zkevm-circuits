@@ -89,7 +89,7 @@ impl CompressionCircuit {
         has_accumulator: bool,
         rng: impl Rng + Send,
     ) -> Result<Self, ce_snark_verifier::Error> {
-        Self::new_from_ce_snark(params, convert(&snark), has_accumulator, rng)
+        Self::new_from_ce_snark(params, to_ce_snark(&snark), has_accumulator, rng)
     }
 
     pub fn new_from_ce_snark(
@@ -106,7 +106,6 @@ impl CompressionCircuit {
             VerifierUniversality::None,
         );
         inner.expose_previous_instances(has_accumulator);
-
         Ok(Self(inner))
     }
 }
@@ -134,6 +133,6 @@ fn load_params() -> AggregationConfigParams {
     }
 }
 
-fn convert(snark: &snark_verifier_sdk::Snark) -> ce_snark_verifier_sdk::Snark {
+pub fn to_ce_snark(snark: &snark_verifier_sdk::Snark) -> ce_snark_verifier_sdk::Snark {
     serde_json::from_str(&serde_json::to_string(&snark).unwrap()).unwrap()
 }

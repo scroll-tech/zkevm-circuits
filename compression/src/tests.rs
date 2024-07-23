@@ -1,4 +1,4 @@
-use crate::CompressionCircuit;
+use crate::{circuit::to_ce_snark, CompressionCircuit};
 use aggregator::MockChunkCircuit;
 use ark_std::{end_timer, start_timer, test_rng};
 use ce_snark_verifier::{
@@ -92,6 +92,29 @@ fn test_two_layer_proof_compression() {
 
     std::env::set_var("COMPRESSION_CONFIG", "./configs/compression_thin.config");
     verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
+}
+
+#[test]
+fn test_to_ce_snark() {
+    let mut rng = test_rng();
+    let k0 = 8;
+
+    let path = Path::new("unused");
+
+    let circuit = MockChunkCircuit::random(&mut rng, false, false);
+    let base_snark = layer_0(&circuit, gen_srs(8), k0, path);
+    assert_snark_roundtrip(&base_snark);
+}
+
+fn from_ce_snark(snark: &Snark) -> snark_verifier_sdk::Snark {
+    serde_json::from_str(&serde_json::to_string(snark).unwrap()).unwrap()
+}
+
+fn assert_snark_roundtrip(snark: &Snark) {
+    assert_eq!(
+        serde_json::to_string(&snark).unwrap(),
+        serde_json::to_string(&to_ce_snark(&from_ce_snark(&snark))).unwrap()
+    );
 }
 
 fn layer_0(
