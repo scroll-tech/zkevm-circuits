@@ -11,6 +11,7 @@ use ethers_core::types::{
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, Map};
 use std::collections::HashMap;
 use trace::collect_codes;
 
@@ -396,11 +397,12 @@ impl TransactionTrace {
 }
 
 /// account trie proof in storage proof
-pub type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
+pub type AccountTrieProofs = Vec<(Address, Vec<Bytes>)>;
 /// storage trie proof in storage proof
-pub type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
+pub type StorageTrieProofs = Vec<(Address, Vec<(H256, Vec<Bytes>)>)>;
 
 /// storage trace
+#[serde_as]
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
@@ -423,8 +425,11 @@ pub struct StorageTrace {
     #[serde(rename = "rootAfter")]
     pub root_after: Hash,
     /// account proofs
-    pub proofs: Option<AccountTrieProofs>,
+    #[serde(default)]
+    #[serde_as(as = "Map<_, _>")]
+    pub proofs: AccountTrieProofs,
     #[serde(rename = "storageProofs", default)]
+    #[serde_as(as = "Map<_, Map<_, _>>")]
     /// storage proofs for each account
     pub storage_proofs: StorageTrieProofs,
     #[serde(rename = "deletionProofs", default)]
@@ -564,6 +569,7 @@ pub struct AccountTrace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::array;
     use std::sync::LazyLock;
 
     #[derive(serde::Deserialize, Default, Debug, Clone)]
@@ -593,12 +599,23 @@ mod tests {
     fn test_rkyv_trace_v2() {
         let trace = BlockTraceV2::from(L2_TRACE.clone());
         let bytes = rkyv::to_bytes::<_, 256>(&trace).unwrap();
-        let archived = unsafe { rkyv::archived_root::<BlockTraceV2>(&bytes[..]) };
+        // let archived = unsafe { rkyv::archived_root::<BlockTraceV2>(&bytes[..]) };
+        let archived = rkyv::check_archived_root::<BlockTraceV2>(&bytes[..]).unwrap();
         assert_eq!(archived.chain_id, trace.chain_id);
         assert_eq!(archived.coinbase, trace.coinbase);
         assert_eq!(archived.header, trace.header);
         assert_eq!(archived.transactions, trace.transactions);
         assert_eq!(archived.codes, trace.codes);
         assert_eq!(archived.start_l1_queue_index, trace.start_l1_queue_index);
+    }
+
+    #[ignore = "expected to fail, rkyv HashMap has issue"]
+    #[test]
+    fn test_rkyv_hashmap() {
+        let map = HashMap::from(array::from_fn::<_, 10, _>(|idx| {
+            (Address::from_low_u64_be(idx as u64), idx)
+        }));
+        let bytes = rkyv::to_bytes::<_, 256>(&map).unwrap();
+        rkyv::check_archived_root::<HashMap<Address, usize>>(&bytes[..]).unwrap();
     }
 }

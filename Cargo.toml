@@ -71,6 +71,17 @@ c-kzg = "1.0.2"
 primitive-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }
 ethereum-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }
 
+# for local development
+#ethers-core = { path = "../ethers-rs/ethers-core", features = ["rkyv", "scroll"] }
+#ethers-providers = { path = "../ethers-rs/ethers-providers" }
+#ethers = { path = "../ethers-rs/ethers" }
+#ethers-signers  = { path = "../ethers-rs/ethers-signers" }
+#primitive-types = { path = "../parity-common/primitive-types", features = ["rkyv"] }
+#ethereum-types = { path = "../parity-common/ethereum-types", features = ["rkyv"] }
+#snark-verifier = { path = "../snark-verifier/snark-verifier" }
+#snark-verifier-sdk = { path = "../snark-verifier/snark-verifier-sdk", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+
+
 [patch.crates-io]
 ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
@@ -81,6 +92,16 @@ gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "feat/sp1" }
 primitive-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv" }
 ethereum-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv" }
+
+# for local development
+#ethers-core = { path = "../ethers-rs/ethers-core" }
+#ethers-providers = { path = "../ethers-rs/ethers-providers" }
+#ethers = { path = "../ethers-rs/ethers" }
+#ethers-etherscan = { path = "../ethers-rs/ethers-etherscan" }
+#ethers-signers  = { path = "../ethers-rs/ethers-signers" }
+#primitive-types = { path = "../parity-common/primitive-types" }
+#ethereum-types = { path = "../parity-common/ethereum-types" }
+
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
