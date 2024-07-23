@@ -687,7 +687,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             // lt chip
             if is_read {
-                let addr = table_row[2].0;
+                let addr = table_row[3].0;
                 is_src_end_chip.assign(
                     region,
                     *offset,
