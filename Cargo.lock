@@ -589,19 +589,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 
 [[package]]
-name = "bls12_381"
-version = "0.8.0"
-source = "git+https://github.com/scroll-tech/bls12_381?branch=feat/impl_scalar_field#2c515f73a2462fef8681c8e884edf1710f52b22a"
-dependencies = [
- "ff",
- "group",
- "pairing",
- "pasta_curves",
- "rand_core",
- "subtle",
-]
-
-[[package]]
 name = "blst"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1344,7 +1331,7 @@ dependencies = [
  "base16ct",
  "crypto-bigint",
  "digest 0.10.7",
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "generic-array",
  "group",
  "pkcs8",
@@ -1475,7 +1462,7 @@ dependencies = [
  "ethereum-types",
  "ethers-core",
  "ethers-signers",
- "halo2curves",
+ "halo2curves 0.3.3",
  "hex",
  "itertools 0.11.0",
  "log",
@@ -1834,6 +1821,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ff"
+version = "0.13.0"
+source = "git+https://github.com/scroll-tech/ff?branch=feat/sp1#244b1098f6be1d19c5fd3f0ec60117ac2940e6ca"
+dependencies = [
+ "bitvec",
+ "rand_core",
+ "subtle",
+]
+
+[[package]]
 name = "fixed-hash"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2112,7 +2109,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
 dependencies = [
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand_core",
  "subtle",
 ]
@@ -2141,7 +2138,7 @@ name = "halo2-base"
 version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
 dependencies = [
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "halo2_proofs",
  "itertools 0.10.5",
  "num-bigint",
@@ -2156,7 +2153,7 @@ name = "halo2-ecc"
 version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
 dependencies = [
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "group",
  "halo2-base",
  "itertools 0.10.5",
@@ -2216,10 +2213,10 @@ source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#6c5e9eec5088d
 dependencies = [
  "arrayvec",
  "bitvec",
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "group",
  "halo2_proofs",
- "halo2curves",
+ "halo2curves 0.1.0",
  "lazy_static",
  "rand",
  "subtle",
@@ -2235,9 +2232,9 @@ dependencies = [
  "blake2b_simd",
  "cfg-if 0.1.10",
  "crossbeam",
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "group",
- "halo2curves",
+ "halo2curves 0.1.0",
  "log",
  "maybe-rayon",
  "num-bigint",
@@ -2254,14 +2251,13 @@ dependencies = [
 [[package]]
 name = "halo2curves"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2curves?branch=v0.1.0#112f5b9bf27f6b1708ba7d1c2fc14cb3c6e55604"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6b1142bd1059aacde1b477e0c80c142910f1ceae67fc619311d6a17428007ab"
 dependencies = [
  "blake2b_simd",
- "bls12_381",
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "group",
  "lazy_static",
- "maybe-rayon",
  "num-bigint",
  "num-traits",
  "pasta_curves",
@@ -2270,6 +2266,25 @@ dependencies = [
  "rand_core",
  "serde",
  "serde_arrays",
+ "static_assertions",
+ "subtle",
+]
+
+[[package]]
+name = "halo2curves"
+version = "0.3.3"
+source = "git+https://github.com/scroll-tech/halo2curves?branch=feat/sp1#acae565b82093989f112557ab0f59f3d53a4d83a"
+dependencies = [
+ "ff 0.13.0 (git+https://github.com/scroll-tech/ff?branch=feat/sp1)",
+ "group",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "pasta_curves",
+ "paste",
+ "rand",
+ "rand_core",
+ "serde",
  "static_assertions",
  "subtle",
 ]
@@ -2890,7 +2905,7 @@ version = "0.12.0"
 dependencies = [
  "env_logger",
  "eth-types",
- "halo2curves",
+ "halo2curves 0.3.3",
  "hex",
  "log",
  "num-bigint",
@@ -3099,15 +3114,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pairing"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81fec4625e73cf41ef4bb6846cafa6d44736525f442ba45e407c4a000a13996f"
-dependencies = [
- "group",
-]
-
-[[package]]
 name = "parity-scale-codec"
 version = "3.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3174,7 +3180,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3e57598f73cc7e1b2ac63c79c517b31a0877cd7c402cdcaa311b5208de7a095"
 dependencies = [
  "blake2b_simd",
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "group",
  "lazy_static",
  "rand",
@@ -3391,7 +3397,7 @@ name = "poseidon"
 version = "0.2.0"
 source = "git+https://github.com/scroll-tech/poseidon.git?branch=main#5787dd3d2ce7a9e9601a035c396ac0c03449b54d"
 dependencies = [
- "halo2curves",
+ "halo2curves 0.1.0",
  "subtle",
 ]
 
@@ -3401,7 +3407,7 @@ version = "0.1.0"
 source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#7b96835c6201afdbfaf3d13d641efbaaf5db2d20"
 dependencies = [
  "bitvec",
- "halo2curves",
+ "halo2curves 0.1.0",
  "lazy_static",
 ]
 
@@ -3410,7 +3416,7 @@ name = "poseidon-circuit"
 version = "0.1.0"
 source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#7b96835c6201afdbfaf3d13d641efbaaf5db2d20"
 dependencies = [
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "halo2_proofs",
  "log",
  "poseidon-base",
@@ -3829,7 +3835,7 @@ dependencies = [
  "derive_more",
  "dyn-clone",
  "enumn",
- "halo2curves",
+ "halo2curves 0.1.0",
  "hashbrown 0.14.3",
  "hex",
  "once_cell",
@@ -4479,7 +4485,7 @@ source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#fe1f8
 dependencies = [
  "bincode",
  "ethereum-types",
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "halo2-base",
  "hex",
  "itertools 0.12.1",
@@ -5647,7 +5653,7 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "ethers-signers",
- "ff",
+ "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "gadgets",
  "halo2-base",
  "halo2-ecc",
@@ -5755,3 +5761,8 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "bls12_381"
+version = "0.8.0"
+source = "git+https://github.com/scroll-tech/bls12_381?branch=feat/impl_scalar_field#2c515f73a2462fef8681c8e884edf1710f52b22a"

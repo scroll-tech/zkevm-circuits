@@ -34,7 +34,7 @@ ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/
 ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 ff = "0.13"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
-halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
+halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "feat/sp1", features = [ "derive_serde" ] }
 poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
@@ -78,7 +78,7 @@ ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "feat/rkyv" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
-halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "v0.1.0" }
+halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "feat/sp1" }
 primitive-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv" }
 ethereum-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv" }
 
