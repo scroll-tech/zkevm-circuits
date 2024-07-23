@@ -1468,7 +1468,7 @@ dependencies = [
  "log",
  "num",
  "num-bigint",
- "poseidon-base",
+ "poseidon-base 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
  "primitive-types",
  "regex",
  "revm-precompile",
@@ -2013,7 +2013,7 @@ version = "0.12.0"
 dependencies = [
  "eth-types",
  "halo2_proofs",
- "poseidon-base",
+ "poseidon-base 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
  "rand",
  "rand_xorshift",
  "sha3 0.10.8",
@@ -2909,7 +2909,7 @@ dependencies = [
  "hex",
  "log",
  "num-bigint",
- "poseidon-base",
+ "poseidon-base 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
  "serde",
  "serde_json",
  "zktrie",
@@ -3404,6 +3404,17 @@ dependencies = [
 [[package]]
 name = "poseidon-base"
 version = "0.1.0"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=feat/sp1#cb43e4bb400e9e0b30776abd02b04fce9e12a2fb"
+dependencies = [
+ "bitvec",
+ "halo2curves 0.3.3",
+ "lazy_static",
+ "subtle",
+]
+
+[[package]]
+name = "poseidon-base"
+version = "0.1.0"
 source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#7b96835c6201afdbfaf3d13d641efbaaf5db2d20"
 dependencies = [
  "bitvec",
@@ -3419,7 +3430,7 @@ dependencies = [
  "ff 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "halo2_proofs",
  "log",
- "poseidon-base",
+ "poseidon-base 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main)",
  "rand",
  "rand_xorshift",
  "thiserror",
@@ -3806,7 +3817,7 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 version = "9.2.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#03b072906faf3f826e4daf38ca0be69a73d90ce3"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/feat/v40/sp1#7e136525abf0ed718a4195c10fdf4c0f7218b3a5"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
@@ -3823,7 +3834,7 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 version = "7.1.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#03b072906faf3f826e4daf38ca0be69a73d90ce3"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/feat/v40/sp1#7e136525abf0ed718a4195c10fdf4c0f7218b3a5"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -3835,11 +3846,11 @@ dependencies = [
  "derive_more",
  "dyn-clone",
  "enumn",
- "halo2curves 0.1.0",
+ "halo2curves 0.3.3",
  "hashbrown 0.14.3",
  "hex",
  "once_cell",
- "poseidon-base",
+ "poseidon-base 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=feat/sp1)",
  "serde",
 ]
 

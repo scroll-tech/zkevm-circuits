@@ -65,8 +65,8 @@ strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
-revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v40", default-features = false, features = ["std"] } # v40
-revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v40", default-features = false, features = ["std"] } # v40
+revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/feat/v40/sp1", default-features = false, features = ["std"] } # v40
+revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/feat/v40/sp1", default-features = false, features = ["std"] } # v40
 c-kzg = "1.0.2"
 primitive-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }
 ethereum-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }
