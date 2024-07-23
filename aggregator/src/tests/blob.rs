@@ -369,6 +369,43 @@ fn zstd_encoding_consistency(){
     // write!(handle, "=> re_encoded_blob_bytes: {:?}", re_encoded_blob_bytes).unwrap();
 }
 
+#[test]
+fn zstd_encoding_consistency_from_batch(){
+    // Load test batch bytes
+    let batch_bytes = hex::decode(
+        fs::read_to_string("./data/test_batches/batch274.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load batch bytes");
+
+    // Re-encode into blob bytes
+    let encoded_batch_data: BatchData<45> = BatchData::from(&vec![batch_bytes.clone()]);
+    let encoded_blob_bytes = encoded_batch_data.get_encoded_batch_data_bytes();
+
+    // Decode into original batch bytes
+    let MultiBlockProcessResult {
+        witness_rows: _w,
+        literal_bytes: _l,
+        fse_aux_tables: _f,
+        block_info_arr: _b,
+        sequence_info_arr: _s,
+        address_table_rows: _a,
+        sequence_exec_results,
+    } = process::<Fr>(&encoded_blob_bytes, Value::known(Fr::from(123456789)));
+
+    let decoded_batch_bytes = sequence_exec_results
+        .into_iter()
+        .flat_map(|r| r.recovered_bytes)
+        .skip(182)
+        .collect::<Vec<u8>>();
+
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+
+    assert_eq!(batch_bytes, decoded_batch_bytes, "batch bytes must match");
+}
+
 fn generic_batch_data() -> BatchData<MAX_AGG_SNARKS> {
     BatchData::from(&vec![
         vec![3, 100, 24, 30],
