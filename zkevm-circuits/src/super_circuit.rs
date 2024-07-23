@@ -330,6 +330,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table: bytecode_table.clone(),
+                bytecode_table1: bytecode_table1.clone(),
                 copy_table,
                 q_enable: q_copy_table,
                 challenges: challenges_expr.clone(),

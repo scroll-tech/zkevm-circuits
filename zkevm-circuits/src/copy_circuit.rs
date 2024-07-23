@@ -48,10 +48,10 @@ use crate::{
 
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_first_last,
-    constrain_forward_parameters, constrain_is_memory_copy, constrain_is_pad, constrain_mask,
-    constrain_masked_value, constrain_must_terminate, constrain_non_pad_non_mask,
-    constrain_rw_counter, constrain_rw_word_complete, constrain_tag, constrain_value_rlc,
-    constrain_word_index, constrain_word_rlc,
+    constrain_forward_parameters, constrain_is_first_bytecode_table, constrain_is_memory_copy,
+    constrain_is_pad, constrain_mask, constrain_masked_value, constrain_must_terminate,
+    constrain_non_pad_non_mask, constrain_rw_counter, constrain_rw_word_complete, constrain_tag,
+    constrain_value_rlc, constrain_word_index, constrain_word_rlc,
 };
 
 /// The current row.
@@ -139,6 +139,8 @@ pub struct CopyCircuitConfigArgs<F: Field> {
     pub rw_table: RwTable,
     /// BytecodeTable
     pub bytecode_table: BytecodeTable,
+    /// BytecodeTable1
+    pub bytecode_table1: BytecodeTable,
     /// CopyTable
     pub copy_table: CopyTable,
     /// q_enable
@@ -158,6 +160,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            bytecode_table1,
             copy_table,
             q_enable,
             challenges,
@@ -176,6 +179,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let [is_pad, is_tx_calldata, is_bytecode, is_memory, is_memory_copy, is_tx_log, is_access_list_address, is_access_list_storage_key] =
             array_init(|_| meta.advice_column());
         let is_first = copy_table.is_first;
+        let is_first_bytecode_table = copy_table.is_first_bytecode_table;
         let id = copy_table.id;
         let addr = copy_table.addr;
         let src_addr_end = copy_table.src_addr_end;
@@ -193,6 +197,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         tx_table.annotate_columns(meta);
         rw_table.annotate_columns(meta);
         bytecode_table.annotate_columns(meta);
+        bytecode_table1.annotate_columns(meta);
+
         copy_table.annotate_columns(meta);
 
         let is_id_unchange = IsEqualChip::configure_with_value_inv(
@@ -384,6 +390,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     is_memory_copy,
                 );
                 constrain_rw_word_complete(cb, is_last_step, is_rw_word_type.expr(), is_word_end);
+
+                constrain_is_first_bytecode_table(cb, meta, is_first_bytecode_table, is_last_col);
             }
 
             cb.gate(meta.query_fixed(q_enable, CURRENT))
@@ -448,6 +456,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_bytecode, CURRENT)
                 * meta.query_advice(non_pad_non_mask, CURRENT);
+            //* meta.query_advice(is_first_bytecode_table, CURRENT);
 
             vec![
                 1.expr(),

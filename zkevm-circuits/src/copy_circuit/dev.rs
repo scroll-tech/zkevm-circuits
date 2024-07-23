@@ -24,6 +24,8 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
+        let bytecode_table1 = BytecodeTable::construct(meta);
+
         let q_enable = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_enable);
         let challenges = Challenges::construct(meta);
@@ -36,6 +38,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
                     tx_table,
                     rw_table,
                     bytecode_table,
+                    bytecode_table1,
                     copy_table,
                     q_enable,
                     challenges: challenge_exprs,

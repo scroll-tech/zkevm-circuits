@@ -608,3 +608,28 @@ pub fn constrain_rw_word_complete<F: Field>(
         ]),
     );
 }
+
+/// Ensure the 'is_first_bytecode_table' column is bool and not changed in one copy event.
+pub fn constrain_is_first_bytecode_table<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    is_first_bytecode_col: Column<Advice>,
+    is_last_col: Column<Advice>,
+) {
+    let is_first_bytecode_table = meta.query_advice(is_first_bytecode_col, CURRENT);
+    let is_first_bytecode_table_next = meta.query_advice(is_first_bytecode_col, NEXT_ROW);
+
+    cb.require_boolean(
+        "is_first_bytecode_table is bool type",
+        is_first_bytecode_table.clone(),
+    );
+
+    let is_next_last_step = meta.query_advice(is_last_col, NEXT_ROW);
+    cb.condition(not::expr(is_next_last_step), |cb| {
+        cb.require_equal(
+            "is_first_bytecode_table doesn't change in one copy event ",
+            is_first_bytecode_table,
+            is_first_bytecode_table_next,
+        );
+    });
+}
