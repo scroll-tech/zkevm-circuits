@@ -148,7 +148,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         // 1. `dest_offset` is the bytes offset in the memory where we start to
         // write.
