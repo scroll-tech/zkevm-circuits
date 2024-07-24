@@ -452,11 +452,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
+        // lookup first bytecode table
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_bytecode, CURRENT)
-                * meta.query_advice(non_pad_non_mask, CURRENT);
-            //* meta.query_advice(is_first_bytecode_table, CURRENT);
+                * meta.query_advice(non_pad_non_mask, CURRENT)
+                * meta.query_advice(is_first_bytecode_table, CURRENT);
 
             vec![
                 1.expr(),
@@ -471,7 +472,28 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        meta.lookup_any("rw lookup", |meta| {
+        // lookup second bytecode table
+        // TODO: refactor these two bytecode lookups into one helper.
+        meta.lookup_any("Bytecode1 lookup", |meta| {
+            let cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_bytecode, CURRENT)
+                * meta.query_advice(non_pad_non_mask, CURRENT)
+                * not::expr(meta.query_advice(is_first_bytecode_table, CURRENT));
+
+            vec![
+                1.expr(),
+                meta.query_advice(id, CURRENT),
+                BytecodeFieldTag::Byte.expr(),
+                meta.query_advice(addr, CURRENT),
+                meta.query_advice(value, CURRENT),
+            ]
+            .into_iter()
+            .zip_eq(bytecode_table1.table_exprs_mini(meta))
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
+        });
+
+        meta.lookup_any("tx table calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_tx_calldata, CURRENT)
                 * meta.query_advice(non_pad_non_mask, CURRENT);
@@ -915,6 +937,13 @@ impl<F: Field> CopyCircuitConfig<F> {
         region.assign_advice(
             || format!("assign is_first {}", *offset),
             self.copy_table.is_first,
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        // is_first_bytecode_table
+        region.assign_advice(
+            || format!("assign is_first_bytecode_table {}", *offset),
+            self.copy_table.is_first_bytecode_table,
             *offset,
             || Value::known(F::zero()),
         )?;
