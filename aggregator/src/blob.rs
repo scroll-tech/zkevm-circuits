@@ -102,10 +102,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
 
         // length segments sanity check
         let valid_chunks = metadata_bytes[1] as usize;
-        let calculated_len = chunk_lens
-            .iter()
-            .take(valid_chunks)
-            .sum::<usize>();
+        let calculated_len = chunk_lens.iter().take(valid_chunks).sum::<usize>();
         assert_eq!(
             batch_data_len, calculated_len,
             "chunk segmentation len must add up to the correct value"
