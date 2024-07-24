@@ -1,3 +1,4 @@
+use crate::aggregation::witgen::{process, MultiBlockProcessResult};
 use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
@@ -21,10 +22,6 @@ use zkevm_circuits::{
     table::{KeccakTable, RangeTable, U8Table},
     util::Challenges,
 };
-// blob_debug
-use crate::aggregation::witgen::{process, MultiBlockProcessResult};
-use std::io::Write;
-use std::io;
 
 #[derive(Default)]
 struct BlobCircuit {
@@ -261,47 +258,47 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 
 #[test]
 fn blob_circuit_completeness() {
-    // single chunk in batch, but the chunk has a size of N_ROWS_DATA
-    let full_blob = vec![
-        // batch274 contains batch bytes that will produce a full blob
-        hex::decode(
-            fs::read_to_string("./data/test_batches/batch274.hex")
-                .expect("file path exists")
-                .trim(),
-        )
-        .expect("should load full blob batch bytes"),
-    ];
+    // Full blob test case
+    // batch274 contains batch bytes that will produce a full blob
+    let full_blob = hex::decode(
+        fs::read_to_string("./data/test_batches/batch274.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load full blob batch bytes");
+    // batch274 contains metadata
+    let segmented_full_blob_src = BatchData::<45>::segment_with_metadata(full_blob);
 
-    // let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
-    // let one_chunk = vec![vec![2, 3, 4, 100, 1]];
-    // let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
-    // let max_chunks: Vec<Vec<u8>> = (0..MAX_AGG_SNARKS)
-    //     .map(|i| (10u8..10 + u8::try_from(i).unwrap()).collect())
-    //     .collect();
-    // let empty_chunk_followed_by_nonempty_chunk = vec![vec![], vec![3, 100, 24, 30]];
-    // let nonempty_chunk_followed_by_empty_chunk = vec![vec![3, 100, 24, 30], vec![]];
-    // let empty_and_nonempty_chunks = vec![
-    //     vec![3, 100, 24, 30],
-    //     vec![],
-    //     vec![],
-    //     vec![100, 23, 34, 24, 10],
-    //     vec![],
-    // ];
-    // let all_empty_except_last = std::iter::repeat(vec![])
-    //     .take(MAX_AGG_SNARKS - 1)
-    //     .chain(std::iter::once(vec![3, 100, 24, 30]))
-    //     .collect::<Vec<_>>();
+    let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
+    let one_chunk = vec![vec![2, 3, 4, 100, 1]];
+    let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
+    let max_chunks: Vec<Vec<u8>> = (0..MAX_AGG_SNARKS)
+        .map(|i| (10u8..10 + u8::try_from(i).unwrap()).collect())
+        .collect();
+    let empty_chunk_followed_by_nonempty_chunk = vec![vec![], vec![3, 100, 24, 30]];
+    let nonempty_chunk_followed_by_empty_chunk = vec![vec![3, 100, 24, 30], vec![]];
+    let empty_and_nonempty_chunks = vec![
+        vec![3, 100, 24, 30],
+        vec![],
+        vec![],
+        vec![100, 23, 34, 24, 10],
+        vec![],
+    ];
+    let all_empty_except_last = std::iter::repeat(vec![])
+        .take(MAX_AGG_SNARKS - 1)
+        .chain(std::iter::once(vec![3, 100, 24, 30]))
+        .collect::<Vec<_>>();
 
     for (idx, blob) in [
-        full_blob,
-        // one_chunk,
-        // two_chunks,
-        // max_chunks,
-        // all_empty_chunks,
-        // empty_chunk_followed_by_nonempty_chunk,
-        // nonempty_chunk_followed_by_empty_chunk,
-        // empty_and_nonempty_chunks,
-        // all_empty_except_last,
+        segmented_full_blob_src,
+        one_chunk,
+        two_chunks,
+        max_chunks,
+        all_empty_chunks,
+        empty_chunk_followed_by_nonempty_chunk,
+        nonempty_chunk_followed_by_empty_chunk,
+        empty_and_nonempty_chunks,
+        all_empty_except_last,
     ]
     .into_iter()
     .enumerate()
@@ -322,7 +319,7 @@ fn blob_circuit_completeness() {
 }
 
 #[test]
-fn zstd_encoding_consistency(){
+fn zstd_encoding_consistency() {
     // Load test blob bytes
     let blob_bytes = hex::decode(
         fs::read_to_string("./data/test_blobs/blob005.hex")
@@ -353,51 +350,41 @@ fn zstd_encoding_consistency(){
     // The decoded batch data consists of:
     // - [0..182] bytes of metadata
     // - [182..] remaining bytes of chunk data
-    let batch_bytes = sequence_exec_results
+    let recovered_bytes = sequence_exec_results
         .into_iter()
         .flat_map(|r| r.recovered_bytes)
         .collect::<Vec<u8>>();
+    let segmented_batch_data = BatchData::<45>::segment_with_metadata(recovered_bytes);
 
     // Re-encode into blob bytes
-    //
-    // TODO: we cannot simply pass `batch_bytes` to the From<Vec<Vec<u8>>> for BatchData.
-    // because this data is considered _only_ the chunk data. The Vec<Vec<u8>> represents different
-    // chunks, but excluding metadata.
-    //
-    // TODO: we cannot even pass batch_bytes[182..] into this function, as that would indicate
-    // there is a single chunk with those chunk data bytes.
-    //
-    // TODO: the right approach is to:
-    // - decode num_chunks (23 in this case)
-    // - decode chunk sizes (for the 23 chunks)
-    // - split batch_bytes[182..] into its 23 Vec<u8> chunks
-    // - pass those 23 Vec<u8> to BatchData::from(&Vec<Vec<u8>>)
-    let re_encoded_batch_data: BatchData<45> = BatchData::from(&vec![batch_bytes]);
+    let re_encoded_batch_data: BatchData<45> = BatchData::from(&segmented_batch_data);
     let re_encoded_blob_bytes = re_encoded_batch_data.get_encoded_batch_data_bytes();
 
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-
     assert_eq!(compressed, re_encoded_blob_bytes, "Blob bytes must match");
-
-    // blob_debug
-    // write!(handle, "=> compressed_blob_bytes: {:?}", compressed).unwrap();
-    // write!(handle, "=> re_encoded_blob_bytes: {:?}", re_encoded_blob_bytes).unwrap();
 }
 
 #[test]
-fn zstd_encoding_consistency_from_batch(){
+fn zstd_encoding_consistency_from_batch() {
     // Load test batch bytes
+    // batch274 contains batch bytes that will produce a full blob
     let batch_bytes = hex::decode(
         fs::read_to_string("./data/test_batches/batch274.hex")
             .expect("file path exists")
             .trim(),
     )
     .expect("should load batch bytes");
+    let segmented_batch_bytes = BatchData::<45>::segment_with_metadata(batch_bytes.clone());
 
     // Re-encode into blob bytes
-    let encoded_batch_data: BatchData<45> = BatchData::from(&vec![batch_bytes.clone()]);
+    let encoded_batch_data: BatchData<45> = BatchData::from(&segmented_batch_bytes);
     let encoded_blob_bytes = encoded_batch_data.get_encoded_batch_data_bytes();
+
+    // full blob len sanity check
+    assert_eq!(
+        encoded_blob_bytes.len(),
+        N_BLOB_BYTES,
+        "full blob is the correct len"
+    );
 
     // Decode into original batch bytes
     let MultiBlockProcessResult {
@@ -413,11 +400,7 @@ fn zstd_encoding_consistency_from_batch(){
     let decoded_batch_bytes = sequence_exec_results
         .into_iter()
         .flat_map(|r| r.recovered_bytes)
-        .skip(182)
         .collect::<Vec<u8>>();
-
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
 
     assert_eq!(batch_bytes, decoded_batch_bytes, "batch bytes must match");
 }

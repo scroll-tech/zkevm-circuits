@@ -74,6 +74,65 @@ pub struct BatchData<const N_SNARKS: usize> {
     pub chunk_data: [Vec<u8>; N_SNARKS],
 }
 
+impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
+    /// For raw batch bytes with metadata, this function segments the byte stream into chunk segments.
+    /// Metadata will be removed from the result.
+    pub fn segment_with_metadata(batch_bytes_with_metadata: Vec<u8>) -> Vec<Vec<u8>> {
+        let metadata_bytes = batch_bytes_with_metadata
+            .clone()
+            .into_iter()
+            .take(182)
+            .collect::<Vec<u8>>();
+        let batch_bytes = batch_bytes_with_metadata
+            .clone()
+            .into_iter()
+            .skip(182)
+            .collect::<Vec<u8>>();
+
+        // Decoded batch bytes require segmentation based on chunk length
+        let batch_data_len = batch_bytes.len();
+        let chunk_lens = metadata_bytes[2..]
+            .chunks(4)
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .fold(0usize, |acc, d| acc * 256usize + *d as usize)
+            })
+            .collect::<Vec<usize>>();
+
+        // length segments sanity check
+        let valid_chunks = metadata_bytes[1] as usize;
+        let calculated_len = chunk_lens
+            .iter()
+            .take(valid_chunks)
+            .sum::<usize>();
+        assert_eq!(
+            batch_data_len, calculated_len,
+            "chunk segmentation len must add up to the correct value"
+        );
+
+        // reconstruct segments
+        let mut segmented_batch_data: Vec<Vec<u8>> = Vec::new();
+        let mut offset: usize = 0;
+        let mut segment: usize = 0;
+        while offset < batch_data_len {
+            segmented_batch_data.push(
+                batch_bytes
+                    .clone()
+                    .into_iter()
+                    .skip(offset)
+                    .take(chunk_lens[segment])
+                    .collect::<Vec<u8>>(),
+            );
+
+            offset += chunk_lens[segment];
+            segment += 1;
+        }
+
+        segmented_batch_data
+    }
+}
+
 impl<const N_SNARKS: usize> From<&BatchHash<N_SNARKS>> for BatchData<N_SNARKS> {
     fn from(batch_hash: &BatchHash<N_SNARKS>) -> Self {
         Self::new(
