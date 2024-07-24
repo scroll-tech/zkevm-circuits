@@ -170,10 +170,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [dest_offset, data_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
