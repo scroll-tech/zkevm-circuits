@@ -350,12 +350,28 @@ fn zstd_encoding_consistency(){
         sequence_exec_results,
     } = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
 
+    // The decoded batch data consists of:
+    // - [0..182] bytes of metadata
+    // - [182..] remaining bytes of chunk data
     let batch_bytes = sequence_exec_results
         .into_iter()
         .flat_map(|r| r.recovered_bytes)
         .collect::<Vec<u8>>();
 
     // Re-encode into blob bytes
+    //
+    // TODO: we cannot simply pass `batch_bytes` to the From<Vec<Vec<u8>>> for BatchData.
+    // because this data is considered _only_ the chunk data. The Vec<Vec<u8>> represents different
+    // chunks, but excluding metadata.
+    //
+    // TODO: we cannot even pass batch_bytes[182..] into this function, as that would indicate
+    // there is a single chunk with those chunk data bytes.
+    //
+    // TODO: the right approach is to:
+    // - decode num_chunks (23 in this case)
+    // - decode chunk sizes (for the 23 chunks)
+    // - split batch_bytes[182..] into its 23 Vec<u8> chunks
+    // - pass those 23 Vec<u8> to BatchData::from(&Vec<Vec<u8>>)
     let re_encoded_batch_data: BatchData<45> = BatchData::from(&vec![batch_bytes]);
     let re_encoded_blob_bytes = re_encoded_batch_data.get_encoded_batch_data_bytes();
 
