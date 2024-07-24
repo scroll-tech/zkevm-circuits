@@ -454,10 +454,22 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         // lookup first bytecode table
         meta.lookup_any("Bytecode lookup", |meta| {
+            let is_first_bytecode = meta.query_advice(is_first_bytecode_table, CURRENT);
+
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_bytecode, CURRENT)
-                * meta.query_advice(non_pad_non_mask, CURRENT)
-                * meta.query_advice(is_first_bytecode_table, CURRENT);
+                * meta.query_advice(non_pad_non_mask, CURRENT);
+
+            // construct table for lookup
+            let table_expr: Vec<Expression<F>> = bytecode_table
+                .table_exprs_mini(meta)
+                .into_iter()
+                .zip_eq(bytecode_table1.table_exprs_mini(meta))
+                .map(|(first_table_item, second_table_item)| {
+                    first_table_item * is_first_bytecode.clone()
+                        + not::expr(is_first_bytecode.clone()) * second_table_item
+                })
+                .collect();
 
             vec![
                 1.expr(),
@@ -467,28 +479,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value, CURRENT),
             ]
             .into_iter()
-            .zip_eq(bytecode_table.table_exprs_mini(meta))
-            .map(|(arg, table)| (cond.clone() * arg, table))
-            .collect()
-        });
-
-        // lookup second bytecode table
-        // TODO: refactor these two bytecode lookups into one helper.
-        meta.lookup_any("Bytecode1 lookup", |meta| {
-            let cond = meta.query_fixed(q_enable, CURRENT)
-                * meta.query_advice(is_bytecode, CURRENT)
-                * meta.query_advice(non_pad_non_mask, CURRENT)
-                * not::expr(meta.query_advice(is_first_bytecode_table, CURRENT));
-
-            vec![
-                1.expr(),
-                meta.query_advice(id, CURRENT),
-                BytecodeFieldTag::Byte.expr(),
-                meta.query_advice(addr, CURRENT),
-                meta.query_advice(value, CURRENT),
-            ]
-            .into_iter()
-            .zip_eq(bytecode_table1.table_exprs_mini(meta))
+            .zip_eq(table_expr)
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });

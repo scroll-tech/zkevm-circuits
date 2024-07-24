@@ -624,12 +624,16 @@ pub fn constrain_is_first_bytecode_table<F: Field>(
         is_first_bytecode_table.clone(),
     );
 
+    let is_last_step = meta.query_advice(is_last_col, CURRENT);
     let is_next_last_step = meta.query_advice(is_last_col, NEXT_ROW);
-    cb.condition(not::expr(is_next_last_step), |cb| {
-        cb.require_equal(
-            "is_first_bytecode_table doesn't change in one copy event ",
-            is_first_bytecode_table,
-            is_first_bytecode_table_next,
-        );
-    });
+    cb.condition(
+        not::expr(is_last_step) * not::expr(is_next_last_step),
+        |cb| {
+            cb.require_equal(
+                "is_first_bytecode_table doesn't change in one copy event ",
+                is_first_bytecode_table,
+                is_first_bytecode_table_next,
+            );
+        },
+    );
 }
