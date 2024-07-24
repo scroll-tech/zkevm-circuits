@@ -97,8 +97,8 @@ impl<F: Field> SameContextGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block,
-        call: &Call,
+        _block: &Block,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
