@@ -1,6 +1,8 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
+use std::collections::HashMap;
+
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -20,7 +22,11 @@ pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
 use crate::{
-    evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
+    evm_circuit::{
+        param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
+        table::Table,
+        util::CellType,
+    },
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
         ModExpTable, PowOfRandTable, RwTable, SHA256Table, SigTable, TxTable,
@@ -118,24 +124,22 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
-        let execution = Box::new(ExecutionConfig::configure(
-            meta,
-            challenges,
-            &fixed_table,
-            &byte_table,
-            &tx_table,
-            &rw_table,
-            &bytecode_table,
-            &block_table,
-            &copy_table,
-            &keccak_table,
-            &sha256_table,
-            &exp_table,
-            &sig_table,
-            &modexp_table,
-            &ecc_table,
-            &pow_of_rand_table,
-        ));
+        let mut tables: HashMap<&str, &dyn LookupTable<F>> = HashMap::new();
+        tables.insert(Table::Fixed.as_ref(), &fixed_table);
+        tables.insert(CellType::LookupByte.as_ref(), &byte_table);
+        tables.insert(Table::Tx.as_ref(), &tx_table);
+        tables.insert(Table::Rw.as_ref(), &rw_table);
+        tables.insert(Table::Bytecode.as_ref(), &bytecode_table);
+        tables.insert(Table::Block.as_ref(), &block_table);
+        tables.insert(Table::Copy.as_ref(), &copy_table);
+        tables.insert(Table::Keccak.as_ref(), &keccak_table);
+        tables.insert(Table::Sha256.as_ref(), &sha256_table);
+        tables.insert(Table::Exp.as_ref(), &exp_table);
+        tables.insert(Table::Sig.as_ref(), &sig_table);
+        tables.insert(Table::ModExp.as_ref(), &modexp_table);
+        tables.insert(Table::Ecc.as_ref(), &ecc_table);
+        tables.insert(Table::PowOfRand.as_ref(), &pow_of_rand_table);
+        let execution = Box::new(ExecutionConfig::configure(meta, challenges, tables));
 
         meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
         fixed_table.iter().enumerate().for_each(|(idx, &col)| {

@@ -12,7 +12,6 @@ use crate::{
     evm_circuit::{
         param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
-        table::Table,
         util::{
             constraint_builder::{
                 BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
@@ -381,25 +380,11 @@ pub(crate) struct ExecutionConfig<F> {
 }
 
 impl<F: Field> ExecutionConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::redundant_closure_call)]
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         challenges: Challenges<Expression<F>>,
-        fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
-        tx_table: &dyn LookupTable<F>,
-        rw_table: &dyn LookupTable<F>,
-        bytecode_table: &dyn LookupTable<F>,
-        block_table: &dyn LookupTable<F>,
-        copy_table: &dyn LookupTable<F>,
-        keccak_table: &dyn LookupTable<F>,
-        sha256_table: &dyn LookupTable<F>,
-        exp_table: &dyn LookupTable<F>,
-        sig_table: &dyn LookupTable<F>,
-        modexp_table: &dyn LookupTable<F>,
-        ecc_table: &dyn LookupTable<F>,
-        pow_of_rand_table: &dyn LookupTable<F>,
+        tables: HashMap<&str, &dyn LookupTable<F>>,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.fixed_column();
@@ -680,25 +665,7 @@ impl<F: Field> ExecutionConfig<F> {
             instrument,
         };
 
-        Self::configure_lookup(
-            meta,
-            fixed_table,
-            byte_table,
-            tx_table,
-            rw_table,
-            bytecode_table,
-            block_table,
-            copy_table,
-            keccak_table,
-            sha256_table,
-            exp_table,
-            sig_table,
-            modexp_table,
-            ecc_table,
-            pow_of_rand_table,
-            &challenges,
-            &cell_manager,
-        );
+        Self::configure_lookup(meta, tables, &challenges, &cell_manager);
         config
     }
 
@@ -948,23 +915,9 @@ impl<F: Field> ExecutionConfig<F> {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn configure_lookup(
         meta: &mut ConstraintSystem<F>,
-        fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
-        tx_table: &dyn LookupTable<F>,
-        rw_table: &dyn LookupTable<F>,
-        bytecode_table: &dyn LookupTable<F>,
-        block_table: &dyn LookupTable<F>,
-        copy_table: &dyn LookupTable<F>,
-        keccak_table: &dyn LookupTable<F>,
-        sha256_table: &dyn LookupTable<F>,
-        exp_table: &dyn LookupTable<F>,
-        sig_table: &dyn LookupTable<F>,
-        modexp_table: &dyn LookupTable<F>,
-        ecc_table: &dyn LookupTable<F>,
-        pow_of_rand_table: &dyn LookupTable<F>,
+        tables: HashMap<&str, &dyn LookupTable<F>>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
@@ -972,22 +925,7 @@ impl<F: Field> ExecutionConfig<F> {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{table:?}");
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
-                    let table_expressions = match table {
-                        Table::Fixed => fixed_table,
-                        Table::Tx => tx_table,
-                        Table::Rw => rw_table,
-                        Table::Bytecode => bytecode_table,
-                        Table::Block => block_table,
-                        Table::Copy => copy_table,
-                        Table::Keccak => keccak_table,
-                        Table::Sha256 => sha256_table,
-                        Table::Exp => exp_table,
-                        Table::Sig => sig_table,
-                        Table::ModExp => modexp_table,
-                        Table::Ecc => ecc_table,
-                        Table::PowOfRand => pow_of_rand_table,
-                    }
-                    .table_exprs(meta);
+                    let table_expressions = tables.get(table.as_ref()).unwrap().table_exprs(meta);
                     vec![(
                         column.expr(),
                         rlc::expr(&table_expressions, challenges.lookup_input()),
@@ -998,7 +936,11 @@ impl<F: Field> ExecutionConfig<F> {
         for column in cell_manager.columns().iter() {
             if let CellType::LookupByte = column.cell_type {
                 meta.lookup_any("Byte lookup", |meta| {
-                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
+                    let byte_table_expression = tables
+                        .get(CellType::LookupByte.as_ref())
+                        .unwrap()
+                        .table_exprs(meta)[0]
+                        .clone();
                     vec![(column.expr(), byte_table_expression)]
                 });
             }
