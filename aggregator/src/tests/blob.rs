@@ -267,7 +267,7 @@ fn blob_circuit_completeness() {
     )
     .expect("should load full blob batch bytes");
     // batch274 contains metadata
-    let segmented_full_blob_src = BatchData::<45>::segment_with_metadata(full_blob);
+    let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
 
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
@@ -354,10 +354,10 @@ fn zstd_encoding_consistency() {
         .into_iter()
         .flat_map(|r| r.recovered_bytes)
         .collect::<Vec<u8>>();
-    let segmented_batch_data = BatchData::<45>::segment_with_metadata(recovered_bytes);
+    let segmented_batch_data = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(recovered_bytes);
 
     // Re-encode into blob bytes
-    let re_encoded_batch_data: BatchData<45> = BatchData::from(&segmented_batch_data);
+    let re_encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_data);
     let re_encoded_blob_bytes = re_encoded_batch_data.get_encoded_batch_data_bytes();
 
     assert_eq!(compressed, re_encoded_blob_bytes, "Blob bytes must match");
@@ -373,10 +373,11 @@ fn zstd_encoding_consistency_from_batch() {
             .trim(),
     )
     .expect("should load batch bytes");
-    let segmented_batch_bytes = BatchData::<45>::segment_with_metadata(batch_bytes.clone());
+    let segmented_batch_bytes =
+        BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(batch_bytes.clone());
 
     // Re-encode into blob bytes
-    let encoded_batch_data: BatchData<45> = BatchData::from(&segmented_batch_bytes);
+    let encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_bytes);
     let encoded_blob_bytes = encoded_batch_data.get_encoded_batch_data_bytes();
 
     // full blob len sanity check
