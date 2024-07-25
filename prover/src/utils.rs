@@ -91,23 +91,37 @@ fn post_process_tx_storage_proof(trace: &mut BlockTrace) {
         *bus_mapping::l2_predeployed::l1_gas_price_oracle::ADDRESS,
     ];
     for tx_storage_trace in &mut trace.tx_storage_trace {
-        if let Some(proof) = tx_storage_trace.proofs.as_mut() {
-            for addr in &addrs {
-                proof.insert(
-                    *addr,
-                    trace
-                        .storage_trace
-                        .proofs
-                        .as_ref()
-                        .map(|p| p[addr].clone())
-                        .unwrap(),
-                );
+        for addr in &addrs {
+            let pos = tx_storage_trace.proofs.iter().position(|p| &p.0 == addr);
+            let proofs = trace
+                .storage_trace
+                .proofs
+                .iter()
+                .find(|p| &p.0 == addr)
+                .unwrap()
+                .1
+                .clone();
+            match pos {
+                Some(pos) => {
+                    tx_storage_trace.proofs[pos].1.extend(proofs);
+                }
+                None => {
+                    tx_storage_trace.proofs.push((*addr, proofs));
+                }
             }
         }
         for addr in &addrs {
-            tx_storage_trace
-                .storage_proofs
-                .insert(*addr, trace.storage_trace.storage_proofs[addr].clone());
+            tx_storage_trace.storage_proofs.push((
+                *addr,
+                trace
+                    .storage_trace
+                    .storage_proofs
+                    .iter()
+                    .find(|p| &p.0 == addr)
+                    .unwrap()
+                    .1
+                    .clone(),
+            ));
         }
     }
 }

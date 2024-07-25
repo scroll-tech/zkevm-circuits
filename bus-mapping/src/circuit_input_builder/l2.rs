@@ -75,11 +75,10 @@ impl CircuitInputBuilder {
     fn collect_account_proofs(
         storage_trace: &StorageTrace,
     ) -> impl Iterator<Item = (&Address, impl IntoIterator<Item = &[u8]>)> + Clone {
-        storage_trace.proofs.iter().flat_map(|kv_map| {
-            kv_map
-                .iter()
-                .map(|(k, bts)| (k, bts.iter().map(Bytes::as_ref)))
-        })
+        storage_trace
+            .proofs
+            .iter()
+            .map(|(k, bts)| (k, bts.iter().map(Bytes::as_ref)))
     }
 
     fn collect_storage_proofs(
