@@ -63,10 +63,11 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let opcode = step.opcode.unwrap();
         self.is_push0.assign(
