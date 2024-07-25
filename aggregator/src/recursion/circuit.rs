@@ -82,7 +82,7 @@ pub struct RecursionCircuit<ST> {
     default_accumulator: KzgAccumulator<G1Affine, NativeLoader>,
     /// The SNARK witness from the k-th BatchCircuit.
     app: SnarkWitness,
-    /// The SNARK witness from the (k-1)-th BatchCircuit.
+    /// The SNARK witness from the previous RecursionCircuit, i.e. RecursionCircuit up to the (k-1)-th BatchCircuit.
     previous: SnarkWitness,
     /// The recursion round, starting at round=0 and incrementing at every subsequent recursion.
     round: usize,
@@ -302,7 +302,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 // The index of the "state", i.e. the state achieved post the current batch.
                 let index_state = index_init_state + ST::num_transition_instance();
                 // The index where the "additional" fields required to define the state are
-                // present.
+                // present. The first field in the "additional" fields is the chain ID.
                 let index_additional_state = index_state + ST::num_transition_instance();
                 // The index to find the "round" of recursion in the current instance of the
                 // Recursion Circuit.
@@ -317,8 +317,9 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 );
 
                 // Get the field elements representing the "preprocessed digest" and "recursion round".
-                let [preprocessed_digest, round] = [
+                let [preprocessed_digest, chain_id, round] = [
                     self.instances[Self::PREPROCESSED_DIGEST_ROW],
+                    self.instances[index_additional_state],
                     self.instances[index_round],
                 ]
                 .map(|instance| {
@@ -465,7 +466,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 for (comment, lhs, rhs) in [
                     // Propagate the preprocessed digest.
                     (
-                        "chain preprocessed digest",
+                        "propagate preprocessed digest",
                         main_gate.mul(
                             &mut ctx,
                             Existing(preprocessed_digest),
@@ -473,9 +474,15 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                         ),
                         previous_instances[Self::PREPROCESSED_DIGEST_ROW],
                     ),
+                    // Propagate chain ID, i.e. chain ID is the same for every batch.
+                    (
+                        "propagate chain id",
+                        main_gate.mul(&mut ctx, Existing(chain_id), Existing(not_first_round)),
+                        previous_instances[index_additional_state],
+                    ),
                     // Verify that "round" increments by 1 when not the first round of recursion.
                     (
-                        "round increment",
+                        "increment recursion round",
                         round,
                         main_gate.add(
                             &mut ctx,
