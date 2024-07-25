@@ -140,8 +140,6 @@ fn gen_copy_event(
         rw_counter_start,
         copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
         access_list: vec![],
-        // default value is true, will set it to correct value in block_convert.
-        is_first_bytecode_table: true,
     })
 }
 

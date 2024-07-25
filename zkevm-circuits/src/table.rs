@@ -1988,7 +1988,8 @@ impl CopyTable {
                 [
                     (Value::known(F::from(is_first)), "is_first"),
                     (
-                        Value::known(F::from(copy_event.is_first_bytecode_table)),
+                        // TODO: will set value from block get bytecode circuit.
+                        Value::known(F::from(true)),
                         "is_first_bytecode_table",
                     ),
                     (thread.id, "id"),
