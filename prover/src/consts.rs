@@ -4,19 +4,17 @@ use std::sync::LazyLock;
 // TODO: is it a good design to use LazyLock? Why not read env var each time?
 
 pub fn bundle_vk_filename() -> String {
-    read_env_var("BUNDLE_VK_FILENAME", "bundle_vk.vkey".to_string())
+    read_env_var("BUNDLE_VK_FILENAME", "vk_bundle.vkey".to_string())
 }
 pub fn batch_vk_filename() -> String {
-    read_env_var("BATCH_VK_FILENAME", "batch_vk.vkey".to_string())
+    read_env_var("BATCH_VK_FILENAME", "vk_batch.vkey".to_string())
 }
 pub fn chunk_vk_filename() -> String {
-    read_env_var("CHUNK_VK_FILENAME", "chunk_vk.vkey".to_string())
+    read_env_var("CHUNK_VK_FILENAME", "vk_chunk.vkey".to_string())
 }
 
 pub static CHUNK_PROTOCOL_FILENAME: LazyLock<String> =
     LazyLock::new(|| read_env_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol".to_string()));
-pub static BATCH_PROTOCOL_FILENAME: LazyLock<String> =
-    LazyLock::new(|| read_env_var("BATCH_PROTOCOL_FILENAME", "batch.protocol".to_string()));
 
 pub static CHUNK_VK_FILENAME: LazyLock<String> = LazyLock::new(chunk_vk_filename);
 pub static BATCH_VK_FILENAME: LazyLock<String> = LazyLock::new(batch_vk_filename);
