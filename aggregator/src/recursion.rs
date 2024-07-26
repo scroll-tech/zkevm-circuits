@@ -82,7 +82,7 @@ pub trait StateTransition: Sized {
     /// Following is the indices of the layout of instance
     /// for StateTransition circuit, the default suppose
     /// single col of instance, and the layout is:
-    /// accumulator | prev_state | state | additional
+    /// accumulator | prev_state | state | additional (propagated) | additional (free)
     ///
     /// Notice we do not verify the layout of accumulator
     /// simply suppose they are put in the beginning
@@ -112,5 +112,11 @@ pub trait StateTransition: Sized {
         let start = Self::num_accumulator_instance() + 2 * Self::num_transition_instance();
         let end = Self::num_instance();
         (start..end).collect()
+    }
+
+    /// The indices of any "other instances" which should be propagated, i.e. must remain
+    /// unchanged in PI of each app circuit.
+    fn propagate_indices() -> Vec<usize> {
+        Vec::new()
     }
 }
