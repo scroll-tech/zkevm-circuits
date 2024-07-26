@@ -395,8 +395,8 @@ pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
 
 /// The function of this algorithm： Split a vec into two subsets such that
 /// the sums of the two subsets are as close as possible。
-pub(crate) fn find_two_closest_subset(vec: &[i32]) -> (Vec<i32>, Vec<i32>) {
-    let total_sum: i32 = vec.iter().sum();
+pub(crate) fn find_two_closest_subset(vec: &Vec<usize>) -> (Vec<usize>, Vec<usize>) {
+    let total_sum: usize = vec.iter().sum();
     let n = vec.len();
 
     // dp[i][j]：indicates whether it is possible to achieve a sum of j using the first i elements.
@@ -422,7 +422,7 @@ pub(crate) fn find_two_closest_subset(vec: &[i32]) -> (Vec<i32>, Vec<i32>) {
     let mut sum1 = 0;
     for j in (0..=(total_sum / 2) as usize).rev() {
         if dp[n][j] {
-            sum1 = j as i32;
+            sum1 = j;
             break;
         }
     }

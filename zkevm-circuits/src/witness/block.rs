@@ -1,4 +1,4 @@
-use ethers_core::{k256::pkcs8::der::Length, types::Signature};
+use ethers_core::types::Signature;
 use gadgets::ToScalar;
 use std::collections::{BTreeMap, HashMap};
 
@@ -9,7 +9,7 @@ use crate::{
     evm_circuit::util::rlc,
     super_circuit::params::get_super_circuit_params,
     table::{BlockContextFieldTag, RwTableTag},
-    util::{Field, SubCircuit},
+    util::{find_two_closest_subset, Field, SubCircuit},
     witness::keccak::keccak_inputs,
 };
 use bus_mapping::{
@@ -50,6 +50,8 @@ pub struct Block {
     pub rws: RwMap,
     /// Bytecode used in the block
     pub bytecodes: BTreeMap<Word, Bytecode>,
+    /// Bytecode map <code_hash, sub_bytecode_table_index> in the block
+    pub bytecode_map: BTreeMap<Word, usize>,
     /// The block context
     pub context: BlockContexts,
     /// Copy events for the copy circuit's table.
@@ -573,6 +575,47 @@ pub fn block_convert(
         log::error!("withdraw root is not available");
     }
 
+    let bytecodes: BTreeMap<Word, Bytecode> = code_db
+        .0
+        .iter()
+        .map(|(code_hash, bytes)| {
+            let hash = Word::from_big_endian(code_hash.as_bytes());
+            (
+                hash,
+                Bytecode {
+                    hash,
+                    bytes: bytes.clone(),
+                },
+            )
+        })
+        .collect();
+    let bytecode_lens = bytecodes
+        .values()
+        .into_iter()
+        .map(|codes| codes.bytes.len())
+        .collect_vec();
+    let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
+
+    let bytecode_map: BTreeMap<Word, usize> = bytecodes
+        .iter()
+        .filter_map(|(hash, codes)| {
+            let len = codes.bytes.len();
+            if first_set.contains(&len) {
+                let index = first_set.iter().position(|x| *x == len).unwrap();
+                first_set.remove(index);
+                Some((*hash, 0))
+            } else if second_set.contains(&len) {
+                let index = second_set.iter().position(|x| *x == len).unwrap();
+                second_set.remove(index);
+                Some((*hash, 1))
+            } else {
+                // here should be not reachable, panic or return a placeholder.
+                //panic!("“Find an unexpected element that is not present in either first_set or second_set”)
+                Some((U256::zero(), 1000))
+            }
+        })
+        .collect();
+
     let block = Block {
         context: BlockContexts::from(block),
         rws,
@@ -592,20 +635,8 @@ pub fn block_convert(
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
         padding_step,
         end_block_step,
-        bytecodes: code_db
-            .0
-            .iter()
-            .map(|(code_hash, bytes)| {
-                let hash = Word::from_big_endian(code_hash.as_bytes());
-                (
-                    hash,
-                    Bytecode {
-                        hash,
-                        bytes: bytes.clone(),
-                    },
-                )
-            })
-            .collect(),
+        bytecodes,
+        bytecode_map,
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),

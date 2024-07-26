@@ -519,6 +519,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .bytecode_table
             .dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
+        // TODO: assign bytecode_table1
         config
             .block_table
             .dev_load(&mut layouter, &block.context, &block.txs, &challenges)?;
