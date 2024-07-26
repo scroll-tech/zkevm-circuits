@@ -16,7 +16,7 @@ link to the original HackMD file: https://hackmd.io/@dieGzUCgSGmRZFQ7SDxXCA/BJF7
 
 ## Purpose and Design
 
-The [Ethereum Virtual Machine] (EVM) is a state machine that defines the rules of valid state transition in the Ethereum protocol. This means that it specifies a deterministic function under which the next valid EVM state is computed from the current EVM state. The execution part of EVM uses [opcodes] to realize these state transitions, which results in an <i>Execution trace</i>.
+The [Ethereum Virtual Machine] (EVM) is a decentralized virtual environment that executes code consistently and securely across all Ethereum nodes. Nodes run the EVM to execute smart contracts, using "gas" to measure the computational effort required for operations, ensuring efficient resource allocation and network security.
 
 ![EVMExecutionTrace-Circuit](https://hackmd.io/_uploads/SJyjmfR_3.png)
 
