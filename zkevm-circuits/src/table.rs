@@ -48,6 +48,7 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
 use std::array;
+use std::collections::BTreeMap;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used to define lookup tables
@@ -1800,6 +1801,7 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
+        bytecode_map: &BTreeMap<Word, bool>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
         assert!(
@@ -1983,13 +1985,24 @@ impl CopyTable {
                 (rw_counter, rwc_inc_left)
             };
 
+            // Currently only codecopy & extcodecopy copy bytecodes. both of the two's src_type == Bytecode.
+            let is_first_bytecode_table = if copy_event.src_type == CopyDataType::Bytecode {
+                let code_hash = Word::from_big_endian(copy_event.src_id.get_hash().as_bytes());
+                // bytecode_map includes all the code_hash, here unwrap would be safe.
+                *bytecode_map.get(&code_hash).unwrap()
+            } else {
+                // if not (ext)codecopy case, default value is true, copy circuit will not do lookup if not
+                // bytecode type.
+                true
+            };
+
             assignments.push((
                 thread.tag,
                 [
                     (Value::known(F::from(is_first)), "is_first"),
                     (
-                        // TODO: will set value from block get bytecode circuit.
-                        Value::known(F::from(true)),
+                        // set value from block get bytecode circuit.
+                        Value::known(F::from(is_first_bytecode_table)),
                         "is_first_bytecode_table",
                     ),
                     (thread.id, "id"),
@@ -2072,7 +2085,9 @@ impl CopyTable {
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row, _) in Self::assignments(copy_event, *challenges) {
+                    for (tag, row, _) in
+                        Self::assignments(copy_event, *challenges, &block.bytecode_map)
+                    {
                         region.assign_fixed(
                             || format!("q_enable at row: {offset}"),
                             self.q_enable,

@@ -50,8 +50,8 @@ pub struct Block {
     pub rws: RwMap,
     /// Bytecode used in the block
     pub bytecodes: BTreeMap<Word, Bytecode>,
-    /// Bytecode map <code_hash, sub_bytecode_table_index> in the block
-    pub bytecode_map: BTreeMap<Word, usize>,
+    /// Bytecode map <code_hash, is_first_bytecode_circuit> in the block
+    pub bytecode_map: BTreeMap<Word, bool>,
     /// The block context
     pub context: BlockContexts,
     /// Copy events for the copy circuit's table.
@@ -596,22 +596,22 @@ pub fn block_convert(
         .collect_vec();
     let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
 
-    let bytecode_map: BTreeMap<Word, usize> = bytecodes
+    let bytecode_map: BTreeMap<Word, bool> = bytecodes
         .iter()
         .filter_map(|(hash, codes)| {
             let len = codes.bytes.len();
             if first_set.contains(&len) {
                 let index = first_set.iter().position(|x| *x == len).unwrap();
                 first_set.remove(index);
-                Some((*hash, 0))
+                Some((*hash, true))
             } else if second_set.contains(&len) {
                 let index = second_set.iter().position(|x| *x == len).unwrap();
                 second_set.remove(index);
-                Some((*hash, 1))
+                Some((*hash, false))
             } else {
                 // here should be not reachable, panic or return a placeholder.
                 //panic!("“Find an unexpected element that is not present in either first_set or second_set”)
-                Some((U256::zero(), 1000))
+                Some((U256::zero(), false))
             }
         })
         .collect();
