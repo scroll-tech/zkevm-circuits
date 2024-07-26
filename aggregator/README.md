@@ -247,8 +247,8 @@ To verify the $k_{th}$ snark, we have 3 PIs from the current circuit, the snark 
 
 - if $N > 0$, $PI(preprocessed\_digest) = PI_{prev}(preprocessed\_digest)$: ensure the snark for “previous recursion circuit” is the same circuit of current one
 - if $N > 0$, $PI(round) = PI_{prev}(round) + 1$: ensure the round number is increment so the first snark from app circuit has round = 0
-- $PI_{app}(final\_states) = PI(final\_states)$: transparent pass the PI to app circuit
 - if $N > 0$, $PI(init\_states) = PI_{prev}(init\_states)$, else $PI(init\_states) = PI_{app}(init\_states)$: propagate the init state, and for first recursion, the init state part of PI is passed to app circuit
-- if $N > 0$, $PI_{app}(all\_additional\_states) = PI(all\_additional\_states)$: ensure the PIs in `propagated_additional_states` and `additional_states` would be passed to app circuit's PI fields, which are being marked by `additional_indices`
+- $PI_{app}(final\_states) = PI(final\_states)$: transparent pass the PIs in `final_states` to app circuit
+- $PI_{app}(all\_additional\_states) = PI(all\_additional\_states)$: ensure the PIs in `propagated_additional_states` and `additional_states` would be passed to app circuit's PI fields, which are being marked by `additional_indices`
 - if $N > 0$, $PI_{app}(propagated\_additional\_states) = PI_{prev}(propagated\_additional\_states)$: propagate the additional state being marked by `propagate_indices`
 - $PI_{app}(init\_states) = PI_{prev}(final\_states)$: the init state part of PI for app circuit must be “chained” with previous recursion round
