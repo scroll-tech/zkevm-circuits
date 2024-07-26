@@ -238,8 +238,8 @@ All parts of $PI$ in `AppCircuit` is also put into the $PI$ of recursion circuit
 - `preprocessed_digest` represents the Recursion Circuit itself. There would be an unique value for every recursion circuit which can bundle (any number of) snarks from specified `AppCircuit`
 - `init_states` represent the initial state $S_0$.
 - `final_states` represent the final state, along with the exported $PI$ from $S_N$.
-- `propagated_additional_states` represent PIs in app states which do not involved in state transation, however, the PIs in recursion circuit must be "propagated" into the corresponding PI in every app circuit being verified recursively. For example, the PI of `chainID` in each batch circuit must be same when they are verified together in the recursion circuit
-- `additional_states` represent the PIs in app state which do not involved in state transation, and only the PIs in the last app circuit for this part are "export" transparently.
+- `propagated_additional_states` represent PIs in app states which do not involved in state transition, however, the PIs in recursion circuit must be "propagated" into the corresponding PI in every app circuit being verified recursively. For example, the PI of `chainID` in each batch circuit must be same when they are verified together in the recursion circuit
+- `additional_states` represent the PIs in app state which do not involved in state transition, and only the PIs in the last app circuit for this part are "export" transparently.
 - `round` represents the number of batches being bundled recursively, i.e. $N$.
 
 ### Statements

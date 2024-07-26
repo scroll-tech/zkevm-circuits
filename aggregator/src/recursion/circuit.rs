@@ -442,7 +442,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     .collect::<Vec<_>>();
 
                 // Pick additional inst part in "previous state", verify the items at the front
-                // is currectly propagated to the app inst which is marked as "propagated"
+                // is currently propagated to the app inst which is marked as "propagated"
                 let propagate_app_states = previous_instances[index_additional_state..index_round]
                     .iter()
                     .zip(
