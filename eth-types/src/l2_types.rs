@@ -183,7 +183,7 @@ pub struct BlockTrace {
     /// txs
     pub transactions: Vec<TransactionTrace>,
     /// execution results
-    #[serde(rename = "executionResults"), default]
+    #[serde(rename = "executionResults", default)]
     pub execution_results: Vec<ExecutionResult>,
     /// Accessed bytecodes with hashes
     #[serde(default)]
