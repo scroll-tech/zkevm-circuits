@@ -134,5 +134,10 @@ fn load_params() -> AggregationConfigParams {
 }
 
 pub fn to_ce_snark(snark: &snark_verifier_sdk::Snark) -> ce_snark_verifier_sdk::Snark {
-    serde_json::from_str(&serde_json::to_string(&snark).unwrap()).unwrap()
+    let s = serde_json::to_string(&snark).unwrap();
+    let mut inner_deserializer = serde_json::Deserializer::from_str(&s);
+    inner_deserializer.disable_recursion_limit();
+
+    let deserializer = serde_stacker::Deserializer::new(&mut inner_deserializer);
+    serde::Deserialize::deserialize(deserializer).unwrap()
 }

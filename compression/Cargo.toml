@@ -9,7 +9,8 @@ ark-std.workspace = true
 env_logger.workspace = true
 log.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = {workspace = true, features = ["unbounded_depth"] }
+serde_stacker.workspace = true
 rand.workspace = true
 halo2_proofs.workspace = true
 halo2curves.workspace = true
@@ -19,4 +20,4 @@ snark-verifier-sdk.workspace = true
 
 [dev-dependencies]
 aggregator = { path = "../aggregator" }
-
+prover = { path = "../prover" }
