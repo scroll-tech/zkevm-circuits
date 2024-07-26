@@ -317,9 +317,8 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 );
 
                 // Get the field elements representing the "preprocessed digest" and "recursion round".
-                let [preprocessed_digest, chain_id, round] = [
+                let [preprocessed_digest, round] = [
                     self.instances[Self::PREPROCESSED_DIGEST_ROW],
-                    self.instances[index_additional_state],
                     self.instances[index_round],
                 ]
                 .map(|instance| {
@@ -442,6 +441,28 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     .map(|(&st, &app_inst)| ("passing cur state to app", st, app_inst))
                     .collect::<Vec<_>>();
 
+                // Pick additional inst part in "previous state", verify the items at the front
+                // is currectly propagated to the app inst which is marked as "propagated"
+                let propagate_app_states = previous_instances[index_additional_state..index_round]
+                    .iter()
+                    .zip(
+                        ST::propagate_indices()
+                            .into_iter()
+                            .map(|i| &app_instances[i]),
+                    )
+                    .map(|(&st, &app_propagated_inst)| {
+                        (
+                            "propagate additional states in app (not first round)",
+                            main_gate.mul(
+                                &mut ctx,
+                                Existing(app_propagated_inst),
+                                Existing(not_first_round),
+                            ),
+                            st,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
                 // Verify that the "previous state" (additional state not included) is the same
                 // as the previous state defined in the current application SNARK. This check is
                 // meaningful only in subsequent recursion rounds after the first round.
@@ -474,12 +495,6 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                         ),
                         previous_instances[Self::PREPROCESSED_DIGEST_ROW],
                     ),
-                    // Propagate chain ID, i.e. chain ID is the same for every batch.
-                    (
-                        "propagate chain id",
-                        main_gate.mul(&mut ctx, Existing(chain_id), Existing(not_first_round)),
-                        previous_instances[index_additional_state],
-                    ),
                     // Verify that "round" increments by 1 when not the first round of recursion.
                     (
                         "increment recursion round",
@@ -495,6 +510,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 .chain(initial_state_propagate)
                 .chain(verify_app_state)
                 .chain(verify_app_init_state)
+                .chain(propagate_app_states)
                 {
                     use halo2_proofs::dev::unwrap_value;
                     debug_assert_eq!(
