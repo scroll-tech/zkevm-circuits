@@ -114,8 +114,8 @@ pub trait StateTransition: Sized {
         (start..end).collect()
     }
 
-    /// The indices of any "other instances" which should be "propagate" (i.e. same in PI of
-    /// each app circuit)
+    /// The indices of any "other instances" which should be propagated, i.e. must remain
+    /// unchanged in PI of each app circuit.
     fn propagate_indices() -> Vec<usize> {
         Vec::new()
     }
