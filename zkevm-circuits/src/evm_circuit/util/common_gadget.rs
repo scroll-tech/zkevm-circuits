@@ -117,7 +117,7 @@ impl<F: Field> SameContextGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let is_first_bytecode_table = block.get_bytecodes_index(&call.code_hash) == 0;
+        let is_first_bytecode_table = block.is_first_bytecode(&call.code_hash);
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;

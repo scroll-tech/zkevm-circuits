@@ -274,11 +274,35 @@ impl Block {
         log::debug!("start num: {}", self.rws.rw_num(RwTableTag::Start));
     }
 
-    // this helper returns bytecodes's index (all bytecodes are splitted into two sub table).
-    pub(crate) fn get_bytecodes_index(&self, code_hash: &U256) -> usize {
-        // TODO: implement real selection alogrithm with `find_closest_sum_partition` later.
-        //let bytecode_lens = self.bytecodes.into_values().map(|codes| codes.bytes.len()).collect_vec();
-        return 0;
+    // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
+    pub(crate) fn is_first_bytecode(&self, code_hash: &U256) -> bool {
+        // bytecode_map should conver the target 'code_hash', `unwrap` here is safe.
+        *self.bytecode_map.get(code_hash).unwrap()
+    }
+
+    // Get two sub bytecodes for two sub bytecode circuit.
+    pub(crate) fn get_two_bytecodes(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
+        let first_bytecode_hashes: Vec<Word> = self
+            .bytecode_map
+            .iter()
+            .filter_map(|item| if *item.1 { Some(*item.0) } else { None })
+            .collect();
+
+        let mut first_bytecodes = Vec::new();
+        let mut second_bytecodes = Vec::new();
+
+        self.bytecodes
+            .iter()
+            .map(|code| {
+                if first_bytecode_hashes.contains(code.0) {
+                    first_bytecodes.push(code.1)
+                } else {
+                    second_bytecodes.push(code.1)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        (first_bytecodes, second_bytecodes)
     }
 }
 

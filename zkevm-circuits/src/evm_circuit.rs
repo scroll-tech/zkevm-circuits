@@ -1,6 +1,7 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
+use eth_types::{bytecode, Word};
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -45,6 +46,7 @@ pub struct EvmCircuitConfig<F> {
     tx_table: TxTable,
     rw_table: RwTable,
     bytecode_table: BytecodeTable,
+    bytecode_table1: BytecodeTable,
     block_table: BlockTable,
     copy_table: CopyTable,
     keccak_table: KeccakTable,
@@ -148,6 +150,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         tx_table.annotate_columns(meta);
         rw_table.annotate_columns(meta);
         bytecode_table.annotate_columns(meta);
+        bytecode_table1.annotate_columns(meta);
         block_table.annotate_columns(meta);
         copy_table.annotate_columns(meta);
         keccak_table.annotate_columns(meta);
@@ -164,6 +167,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            bytecode_table1,
             block_table,
             copy_table,
             keccak_table,
@@ -516,10 +520,16 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             block.circuits_params.max_rws,
             challenges.evm_word(),
         )?;
+
+        let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
+        // assign first bytecode_table
         config
             .bytecode_table
-            .dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
-        // TODO: assign bytecode_table1
+            .dev_load(&mut layouter, first_bytecodes, &challenges)?;
+        config
+            .bytecode_table1
+            .dev_load(&mut layouter, second_bytecodes, &challenges)?;
+        // assign second bytecode_table
         config
             .block_table
             .dev_load(&mut layouter, &block.context, &block.txs, &challenges)?;
