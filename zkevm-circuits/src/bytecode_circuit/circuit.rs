@@ -1014,6 +1014,18 @@ impl<F: Field> BytecodeCircuit<F> {
             .collect();
         Self::new(bytecodes, bytecode_size)
     }
+
+    /// Creates bytecode sub circuit from block, is_first_bytecode indicates first or second
+    /// sub bytecode circuit.
+    pub fn new_from_block_for_subcircuit(block: &witness::Block, is_first_bytecode: bool) -> Self {
+        let bytecodes: Vec<UnrolledBytecode<F>> = block
+            .bytecodes
+            .iter()
+            .filter(|code| block.is_first_bytecode(code.0) == is_first_bytecode)
+            .map(|(codehash, b)| unroll_with_codehash(*codehash, b.bytes.clone()))
+            .collect();
+        Self::new(bytecodes, block.circuits_params.max_bytecode)
+    }
 }
 
 impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {

@@ -632,8 +632,11 @@ impl<
         let state_circuit = StateCircuit::new_from_block(block);
         let tx_circuit = TxCircuit::new_from_block(block);
         let pi_circuit = PiCircuit::new_from_block(block);
-        let bytecode_circuit = BytecodeCircuit::new_from_block(block);
-        let bytecode_circuit1 = BytecodeCircuit::new_from_block(block);
+        // let bytecode_circuit = BytecodeCircuit::new_from_block(block);
+        // let bytecode_circuit1 = BytecodeCircuit::new_from_block(block);
+        // Get each sub circuit's bytecodes and assgin
+        let bytecode_circuit = BytecodeCircuit::new_from_block_for_subcircuit(block, true);
+        let bytecode_circuit1 = BytecodeCircuit::new_from_block_for_subcircuit(block, false);
 
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
         let exp_circuit = ExpCircuit::new_from_block(block);
@@ -727,7 +730,6 @@ impl<
         self.poseidon_circuit
             .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;
         log::debug!("assigning bytecode_circuit");
-        // TODO: selective assign part of bytecodes later.
         self.bytecode_circuit
             .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
         log::debug!("assigning second bytecode_circuit");
