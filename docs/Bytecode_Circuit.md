@@ -20,7 +20,7 @@ Here `Header` is used to separate bytecodes.
 ## Purpose of the Bytecode Circuit
 
 The bytecode circuit aims at constraining the correctness of the above bytecode table. This includes:
-- constraints related to boundary behavior of tag: first and last row constraints, transition from `tag==byte` to `header` and vice versa, transition from `header` to `header`; 
+- constraints related to boundary behavior of tag: first and last row constraints, transition from `tag==byte` to `header` and vice versa, transition from `header` to `tag==byte`; 
 - constrain the code size: this includes counting the length of the bytecode by constraining the index at the end byte of a bytecode;
 - constrain the code hash: correct behavior of RLC of bytes in code hash and lookup to Keccak table for codehash;
 - ensure PUSH behavior: `is_code = push_data_left == 0` (so must be boolean) and lookup `push_table` for PUSH1-PUSH32 to ensure push data size;
