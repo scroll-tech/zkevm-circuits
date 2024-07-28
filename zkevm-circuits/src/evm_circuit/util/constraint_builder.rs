@@ -667,6 +667,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.opcode_lookup_at_rlc(index, opcode, 0.expr());
     }
 
+    #[cfg(feature = "dual_bytecode")]
     pub(crate) fn opcode_lookup2_at(
         &mut self,
         index: Expression<F>,
@@ -686,6 +687,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.program_counter_offset += 1;
     }
 
+    #[cfg(feature = "dual_bytecode")]
     // helper to lookup second bytecode tables.
     pub(crate) fn opcode_lookup_rlc2(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
         self.opcode_lookup_at_rlc2(
@@ -717,6 +719,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    #[cfg(feature = "dual_bytecode")]
     // lookup second bytecode table.
     pub(crate) fn opcode_lookup_at_rlc2(
         &mut self,

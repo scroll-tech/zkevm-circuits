@@ -169,6 +169,7 @@ pub(crate) enum Table {
     Tx,
     Rw,
     Bytecode,
+    #[cfg(feature = "dual_bytecode")]
     Bytecode1,
     Block,
     Copy,
@@ -274,6 +275,7 @@ pub(crate) enum Lookup<F> {
         push_rlc: Expression<F>,
     },
 
+    #[cfg(feature = "dual_bytecode")]
     /// Lookup to second bytecode table, which contains all used creation code and
     /// contract code.
     Bytecode1 {

@@ -145,6 +145,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) tx_table: StateReportRow,
     pub(crate) rw_table: StateReportRow,
     pub(crate) bytecode_table: StateReportRow,
+    #[cfg(feature = "dual_bytecode")]
     pub(crate) bytecode_table1: StateReportRow,
     pub(crate) block_table: StateReportRow,
     pub(crate) copy_table: StateReportRow,

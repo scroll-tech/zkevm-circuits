@@ -51,6 +51,7 @@ pub struct Block {
     /// Bytecode used in the block
     pub bytecodes: BTreeMap<Word, Bytecode>,
     /// Bytecode map <code_hash, is_first_bytecode_circuit> in the block
+    #[cfg(feature = "dual_bytecode")]
     pub bytecode_map: BTreeMap<Word, bool>,
     /// The block context
     pub context: BlockContexts,
@@ -275,12 +276,14 @@ impl Block {
     }
 
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
+    #[cfg(feature = "dual_bytecode")]
     pub(crate) fn is_first_bytecode(&self, code_hash: &U256) -> bool {
         // bytecode_map should conver the target 'code_hash', `unwrap` here is safe.
         *self.bytecode_map.get(code_hash).unwrap()
     }
 
     // Get two sub bytecodes for two sub bytecode circuit.
+    #[cfg(feature = "dual_bytecode")]
     pub(crate) fn get_two_bytecodes(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
         let first_bytecode_hashes: Vec<Word> = self
             .bytecode_map
@@ -620,6 +623,7 @@ pub fn block_convert(
         .collect_vec();
     let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
 
+    #[cfg(feature = "dual_bytecode")]
     let bytecode_map: BTreeMap<Word, bool> = bytecodes
         .iter()
         .filter_map(|(hash, codes)| {
@@ -660,6 +664,7 @@ pub fn block_convert(
         padding_step,
         end_block_step,
         bytecodes,
+        #[cfg(feature = "dual_bytecode")]
         bytecode_map,
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),

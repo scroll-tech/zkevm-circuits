@@ -52,6 +52,7 @@ pub(crate) struct SameContextGadget<F> {
     opcode: Cell<F>,
     // indicates current op code belongs to first or second bytecode table.
     // should be bool type.
+    #[cfg(feature = "dual_bytecode")]
     is_first_bytecode_table: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
 }
@@ -71,13 +72,19 @@ impl<F: Field> SameContextGadget<F> {
         step_state_transition: StepStateTransition<F>,
         push_rlc: Expression<F>,
     ) -> Self {
-        let is_first_bytecode_table = cb.query_bool();
-        cb.condition(is_first_bytecode_table.expr(), |cb| {
-            cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
-        });
-        cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-            cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
-        });
+        #[cfg(feature = "dual_bytecode")]
+        {
+            let is_first_bytecode_table = cb.query_bool();
+            cb.condition(is_first_bytecode_table.expr(), |cb| {
+                cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
+            });
+            cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+                cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
+            });
+        }
+
+        #[cfg(not(feature = "dual_bytecode"))]
+        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
 
         cb.add_lookup(
             "Responsible opcode lookup",
@@ -99,11 +106,14 @@ impl<F: Field> SameContextGadget<F> {
 
         Self {
             opcode,
+            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
             sufficient_gas_left,
         }
     }
 
+    #[cfg(feature = "dual_bytecode")]
+    // Check if current bytecode is belong to first bytecode table.
     pub(crate) fn is_first_bytecode_table(&self) -> Expression<F> {
         self.is_first_bytecode_table.expr()
     }
@@ -117,10 +127,13 @@ impl<F: Field> SameContextGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = block.is_first_bytecode(&call.code_hash);
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+        #[cfg(feature = "dual_bytecode")]
         self.is_first_bytecode_table.assign(
             region,
             offset,
