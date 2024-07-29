@@ -586,6 +586,7 @@ fn variadic_size_check() {
     let circuit = CopyCircuit::<Fr>::new(
         block1.copy_events,
         block1.circuits_params.max_copy_rows,
+        #[cfg(feature = "dual_bytecode")]
         block1.bytecode_map,
     );
     let prover1 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
@@ -593,6 +594,7 @@ fn variadic_size_check() {
     let circuit = CopyCircuit::<Fr>::new(
         block2.copy_events.clone(),
         block2.circuits_params.max_copy_rows,
+        #[cfg(feature = "dual_bytecode")]
         block2.bytecode_map,
     );
     let prover2 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();

@@ -73,8 +73,10 @@ impl<F: Field> SameContextGadget<F> {
         push_rlc: Expression<F>,
     ) -> Self {
         #[cfg(feature = "dual_bytecode")]
+        let is_first_bytecode_table = cb.query_bool();
+
+        #[cfg(feature = "dual_bytecode")]
         {
-            let is_first_bytecode_table = cb.query_bool();
             cb.condition(is_first_bytecode_table.expr(), |cb| {
                 cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
             });
@@ -114,7 +116,7 @@ impl<F: Field> SameContextGadget<F> {
 
     #[cfg(feature = "dual_bytecode")]
     // Check if current bytecode is belong to first bytecode table.
-    pub(crate) fn is_first_bytecode_table(&self) -> Expression<F> {
+    pub(crate) fn is_first_sub_bytecode(&self) -> Expression<F> {
         self.is_first_bytecode_table.expr()
     }
 

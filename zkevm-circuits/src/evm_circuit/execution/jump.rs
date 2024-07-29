@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
 
         #[cfg(feature = "dual_bytecode")]
         // Lookup opcode at destination
-        cb.condition(same_context.is_first_bytecode_table(), |cb| {
+        cb.condition(same_context.is_first_sub_bytecode(), |cb| {
             cb.opcode_lookup_at(
                 from_bytes::expr(&destination.cells),
                 OpcodeId::JUMPDEST.expr(),
@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
             );
         });
         #[cfg(feature = "dual_bytecode")]
-        cb.condition(not::expr(same_context.is_first_bytecode_table()), |cb| {
+        cb.condition(not::expr(same_context.is_first_sub_bytecode()), |cb| {
             cb.opcode_lookup2_at(
                 from_bytes::expr(&destination.cells),
                 OpcodeId::JUMPDEST.expr(),

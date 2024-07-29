@@ -645,10 +645,9 @@ impl<
         // let bytecode_circuit1 = BytecodeCircuit::new_from_block(block);
         // Get each sub circuit's bytecodes and assgin
         #[cfg(feature = "dual_bytecode")]
-        {
-            let bytecode_circuit = BytecodeCircuit::new_from_block_for_subcircuit(block, true);
-            let bytecode_circuit1 = BytecodeCircuit::new_from_block_for_subcircuit(block, false);
-        }
+        let bytecode_circuit = BytecodeCircuit::new_from_block_for_dual_circuit(block, true);
+        #[cfg(feature = "dual_bytecode")]
+        let bytecode_circuit1 = BytecodeCircuit::new_from_block_for_dual_circuit(block, false);
 
         #[cfg(not(feature = "dual_bytecode"))]
         let bytecode_circuit = BytecodeCircuit::new_from_block(block);
