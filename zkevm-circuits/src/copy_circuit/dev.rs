@@ -24,6 +24,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
+        #[cfg(feature = "dual_bytecode")]
         let bytecode_table1 = BytecodeTable::construct(meta);
 
         let q_enable = meta.fixed_column();
@@ -38,6 +39,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
                     tx_table,
                     rw_table,
                     bytecode_table,
+                    #[cfg(feature = "dual_bytecode")]
                     bytecode_table1,
                     copy_table,
                     q_enable,

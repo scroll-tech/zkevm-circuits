@@ -93,6 +93,7 @@ impl Instrument {
                     CellType::Lookup(Table::Bytecode) => {
                         report.bytecode_table = data_entry;
                     }
+                    #[cfg(feature = "dual_bytecode")]
                     CellType::Lookup(Table::Bytecode1) => {
                         report.bytecode_table1 = data_entry;
                     }

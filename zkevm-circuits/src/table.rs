@@ -1726,7 +1726,8 @@ pub struct CopyTable {
     pub q_enable: Column<Fixed>,
     /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
-    /// Whether the row is the first read-write pair for a copy event.
+    #[cfg(feature = "dual_bytecode")]
+    /// Whether the bytecode is  belong to the first bytecode sub circuit .
     pub is_first_bytecode_table: Column<Advice>,
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below:
@@ -1760,8 +1761,12 @@ pub struct CopyTable {
     /// TxLog. This also now includes various precompile calls, hence will take up more cells.
     pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
-
+#[cfg(feature = "dual_bytecode")]
 type CopyTableRow<F> = [(Value<F>, &'static str); 9];
+
+#[cfg(not(feature = "dual_bytecode"))]
+type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
 
 /// CopyThread is the state used while generating rows of the copy table.
@@ -1784,6 +1789,7 @@ impl CopyTable {
         Self {
             q_enable,
             is_first: meta.advice_column(),
+            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table: meta.advice_column_in(SecondPhase),
             id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
@@ -1801,7 +1807,7 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
-        bytecode_map: &BTreeMap<Word, bool>,
+        #[cfg(feature = "dual_bytecode")] bytecode_map: &BTreeMap<Word, bool>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
         assert!(
@@ -1985,6 +1991,7 @@ impl CopyTable {
                 (rw_counter, rwc_inc_left)
             };
 
+            #[cfg(feature = "dual_bytecode")]
             // Currently only codecopy & extcodecopy copy bytecodes. both of the two's src_type == Bytecode.
             let is_first_bytecode_table = if copy_event.src_type == CopyDataType::Bytecode {
                 let code_hash = Word::from_big_endian(copy_event.src_id.get_hash().as_bytes());
@@ -2000,6 +2007,7 @@ impl CopyTable {
                 thread.tag,
                 [
                     (Value::known(F::from(is_first)), "is_first"),
+                    #[cfg(feature = "dual_bytecode")]
                     (
                         // set value from block get bytecode circuit.
                         Value::known(F::from(is_first_bytecode_table)),
@@ -2085,9 +2093,12 @@ impl CopyTable {
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row, _) in
-                        Self::assignments(copy_event, *challenges, &block.bytecode_map)
-                    {
+                    #[cfg(feature = "dual_bytecode")]
+                    let copy_rows = Self::assignments(copy_event, *challenges, &block.bytecode_map);
+                    #[cfg(not(feature = "dual_bytecode"))]
+                    let copy_rows = Self::assignments(copy_event, *challenges);
+
+                    for (tag, row, _) in copy_rows {
                         region.assign_fixed(
                             || format!("q_enable at row: {offset}"),
                             self.q_enable,
@@ -2118,6 +2129,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
         vec![
             self.q_enable.into(),
             self.is_first.into(),
+            #[cfg(feature = "dual_bytecode")]
             self.is_first_bytecode_table.into(),
             self.id.into(),
             self.addr.into(),
@@ -2148,6 +2160,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.is_first, Rotation::cur()),
+            #[cfg(feature = "dual_bytecode")]
             meta.query_advice(self.is_first_bytecode_table, Rotation::cur()),
             meta.query_advice(self.id, Rotation::cur()), // src_id
             self.tag.value(Rotation::cur())(meta),       // src_tag

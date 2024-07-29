@@ -40,12 +40,13 @@ fn copy_circuit_unusable_rows() {
 pub fn test_copy_circuit(
     copy_events: Vec<CopyEvent>,
     max_copy_rows: usize,
-    bytecode_map: BTreeMap<Word, bool>,
+    #[cfg(feature = "dual_bytecode")] bytecode_map: BTreeMap<Word, bool>,
     external_data: ExternalData,
 ) -> Result<(), Vec<VerifyFailure>> {
     let circuit = CopyCircuit::<Fr>::new_with_external_data(
         copy_events,
         max_copy_rows,
+        #[cfg(feature = "dual_bytecode")]
         bytecode_map,
         external_data,
     );
@@ -59,6 +60,7 @@ pub fn test_copy_circuit_from_block(block: Block) -> Result<(), Vec<VerifyFailur
     test_copy_circuit(
         block.copy_events,
         block.circuits_params.max_copy_rows,
+        #[cfg(feature = "dual_bytecode")]
         block.bytecode_map,
         ExternalData {
             max_txs: block.circuits_params.max_txs,

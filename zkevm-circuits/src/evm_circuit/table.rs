@@ -405,6 +405,7 @@ impl<F: Field> Lookup<F> {
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
+            #[cfg(feature = "dual_bytecode")]
             Self::Bytecode1 { .. } => Table::Bytecode1,
             Self::Block { .. } => Table::Block,
             Self::CopyTable { .. } => Table::Copy,
@@ -473,6 +474,7 @@ impl<F: Field> Lookup<F> {
                     push_rlc.clone(),
                 ]
             }
+            #[cfg(feature = "dual_bytecode")]
             Self::Bytecode1 {
                 hash,
                 tag,

@@ -46,6 +46,7 @@ pub struct EvmCircuitConfig<F> {
     tx_table: TxTable,
     rw_table: RwTable,
     bytecode_table: BytecodeTable,
+    #[cfg(feature = "dual_bytecode")]
     bytecode_table1: BytecodeTable,
     block_table: BlockTable,
     copy_table: CopyTable,
@@ -68,6 +69,7 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub rw_table: RwTable,
     /// BytecodeTable
     pub bytecode_table: BytecodeTable,
+    #[cfg(feature = "dual_bytecode")]
     /// BytecodeTable
     pub bytecode_table1: BytecodeTable,
     /// BlockTable
@@ -109,6 +111,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            #[cfg(feature = "dual_bytecode")]
             bytecode_table1,
             block_table,
             copy_table,
@@ -131,6 +134,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &tx_table,
             &rw_table,
             &bytecode_table,
+            #[cfg(feature = "dual_bytecode")]
             &bytecode_table1,
             &block_table,
             &copy_table,
@@ -150,6 +154,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         tx_table.annotate_columns(meta);
         rw_table.annotate_columns(meta);
         bytecode_table.annotate_columns(meta);
+        #[cfg(feature = "dual_bytecode")]
         bytecode_table1.annotate_columns(meta);
         block_table.annotate_columns(meta);
         copy_table.annotate_columns(meta);
@@ -167,6 +172,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            #[cfg(feature = "dual_bytecode")]
             bytecode_table1,
             block_table,
             copy_table,
@@ -460,6 +466,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let rw_table = RwTable::construct(meta);
         let tx_table = TxTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
+        #[cfg(feature = "dual_bytecode")]
         let bytecode_table1 = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
         let q_copy_table = meta.fixed_column();
@@ -479,6 +486,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     tx_table,
                     rw_table,
                     bytecode_table,
+                    #[cfg(feature = "dual_bytecode")]
                     bytecode_table1,
                     block_table,
                     copy_table,
@@ -521,15 +529,23 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             challenges.evm_word(),
         )?;
 
-        let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
-        // assign first bytecode_table
+        #[cfg(feature = "dual_bytecode")]
+        {
+            let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
+            // assign first bytecode_table
+            config
+                .bytecode_table
+                .dev_load(&mut layouter, first_bytecodes, &challenges)?;
+            // assign second bytecode_table
+            config
+                .bytecode_table1
+                .dev_load(&mut layouter, second_bytecodes, &challenges)?;
+        }
+
+        #[cfg(not(feature = "dual_bytecode"))]
         config
             .bytecode_table
-            .dev_load(&mut layouter, first_bytecodes, &challenges)?;
-        config
-            .bytecode_table1
-            .dev_load(&mut layouter, second_bytecodes, &challenges)?;
-        // assign second bytecode_table
+            .dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
         config
             .block_table
             .dev_load(&mut layouter, &block.context, &block.txs, &challenges)?;

@@ -1015,9 +1015,13 @@ impl<F: Field> BytecodeCircuit<F> {
         Self::new(bytecodes, bytecode_size)
     }
 
+    #[cfg(feature = "dual_bytecode")]
     /// Creates bytecode sub circuit from block, is_first_bytecode indicates first or second
     /// sub bytecode circuit.
-    pub fn new_from_block_for_subcircuit(block: &witness::Block, is_first_bytecode: bool) -> Self {
+    pub fn new_from_block_for_dual_circuit(
+        block: &witness::Block,
+        is_first_bytecode: bool,
+    ) -> Self {
         let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .iter()
