@@ -1,4 +1,4 @@
-use aggregator::{AggregationCircuit, ChunkInfo, CompressionCircuit};
+use aggregator::{BatchCircuit, ChunkInfo, CompressionCircuit};
 use ethers_core::types::H256;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr},
@@ -190,7 +190,7 @@ impl<const N_SNARKS: usize> ProverType for ProverTypeBatch<N_SNARKS> {
 
     type Task = BatchProvingTask<N_SNARKS>;
 
-    type BaseCircuit = AggregationCircuit<N_SNARKS>;
+    type BaseCircuit = BatchCircuit<N_SNARKS>;
 
     type CompressionCircuit = CompressionCircuit;
 

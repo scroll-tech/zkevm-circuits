@@ -3546,7 +3546,7 @@ dependencies = [
 
 [[package]]
 name = "prover2"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "aggregator",
  "anyhow",
