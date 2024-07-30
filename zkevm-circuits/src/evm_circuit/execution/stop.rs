@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::LtGadget,
-            CachedRegion, Cell,
+            not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,6 +25,8 @@ pub(crate) struct StopGadget<F> {
     code_length: Cell<F>,
     is_within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     opcode: Cell<F>,
+    #[cfg(feature = "dual_bytecode")]
+    is_first_bytecode_table: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -35,12 +37,39 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let code_length = cb.query_cell();
+        let opcode = cb.query_cell();
+        #[cfg(feature = "dual_bytecode")]
+        let is_first_bytecode_table = cb.query_bool();
+
+        #[cfg(not(feature = "dual_bytecode"))]
         cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
+
+        #[cfg(feature = "dual_bytecode")]
+        {
+            cb.condition(is_first_bytecode_table.expr(), |cb| {
+                cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
+            });
+            cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+                cb.bytecode2_length(cb.curr.state.code_hash.expr(), code_length.expr());
+            });
+        }
+
         let is_within_range =
             LtGadget::construct(cb, cb.curr.state.program_counter.expr(), code_length.expr());
-        let opcode = cb.query_cell();
+
         cb.condition(is_within_range.expr(), |cb| {
+            #[cfg(not(feature = "dual_bytecode"))]
             cb.opcode_lookup(opcode.expr(), 1.expr());
+
+            #[cfg(feature = "dual_bytecode")]
+            {
+                // cb.condition(is_first_bytecode_table.expr(), |cb| {
+                //     cb.opcode_lookup(opcode.expr(), 1.expr());
+                // });
+                // cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+                //     cb.opcode_lookup2(opcode.expr(), 1.expr());
+                // });
+            }
         });
 
         // We do the responsible opcode check explicitly here because we're not using
@@ -89,6 +118,8 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             code_length,
             is_within_range,
             opcode,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
             restore_context,
         }
     }
@@ -122,6 +153,16 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+        #[cfg(feature = "dual_bytecode")]
+        {
+            let is_first_bytecode_table = block.is_first_bytecode(&call.code_hash);
+            self.is_first_bytecode_table.assign(
+                region,
+                offset,
+                Value::known(F::from(is_first_bytecode_table)),
+            )?;
+        }
 
         if !call.is_root {
             self.restore_context

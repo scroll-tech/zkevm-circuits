@@ -1424,6 +1424,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_tx", TX_TABLE_LOOKUPS),
             ("EVM_lookup_rw", RW_TABLE_LOOKUPS),
             ("EVM_lookup_bytecode", BYTECODE_TABLE_LOOKUPS),
+            ("EVM_lookup_bytecode1", BYTECODE_TABLE_LOOKUPS),
             ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
