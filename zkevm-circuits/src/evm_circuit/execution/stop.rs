@@ -63,12 +63,12 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
             #[cfg(feature = "dual_bytecode")]
             {
-                // cb.condition(is_first_bytecode_table.expr(), |cb| {
-                //     cb.opcode_lookup(opcode.expr(), 1.expr());
-                // });
-                // cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                //     cb.opcode_lookup2(opcode.expr(), 1.expr());
-                // });
+                cb.condition(is_first_bytecode_table.expr(), |cb| {
+                    cb.opcode_lookup(opcode.expr(), 1.expr());
+                });
+                cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+                    cb.opcode_lookup2(opcode.expr(), 1.expr());
+                });
             }
         });
 
