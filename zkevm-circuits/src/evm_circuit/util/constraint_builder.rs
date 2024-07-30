@@ -303,7 +303,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
-    program_counter_offset: usize,
+    program_counter_offset: Expression<F>,
     stack_pointer_offset: Expression<F>,
     log_id_offset: usize,
     in_next_step: bool,
@@ -351,7 +351,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 not_step_last: Vec::new(),
             },
             rw_counter_offset: 0.expr(),
-            program_counter_offset: 0,
+            program_counter_offset: 0.expr(),
             stack_pointer_offset: 0.expr(),
             log_id_offset: 0,
             in_next_step: false,
@@ -404,9 +404,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_counter_offset.clone()
     }
 
-    pub(crate) fn program_counter_offset(&self) -> usize {
-        self.program_counter_offset
-    }
+    // TODO: will remove
+    // pub(crate) fn program_counter_offset(&self) -> usize {
+    //     self.program_counter_offset
+    // }
 
     pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
         self.stack_pointer_offset.clone()
@@ -656,6 +657,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.opcode_lookup_rlc(opcode, 0.expr());
     }
 
+    #[cfg(feature = "dual_bytecode")]
+    pub(crate) fn opcode_lookup2(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
+        assert_eq!(is_code, 1.expr());
+        self.opcode_lookup_rlc2(opcode, 0.expr());
+    }
+
     // TODO: refactor opcode_lookup_at and opcode_lookup2_at into one helper ?
     pub(crate) fn opcode_lookup_at(
         &mut self,
@@ -680,22 +687,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
         self.opcode_lookup_at_rlc(
-            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
+            self.curr.state.program_counter.expr() + self.program_counter_offset.clone(),
             opcode,
             push_rlc,
         );
-        self.program_counter_offset += 1;
+        // self.program_counter_offset += 1;
+        self.program_counter_offset = self.program_counter_offset.clone() * self.condition_expr();
     }
 
     #[cfg(feature = "dual_bytecode")]
-    // helper to lookup second bytecode tables.
+    // helper to lookup second bytecode table.
     pub(crate) fn opcode_lookup_rlc2(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
         self.opcode_lookup_at_rlc2(
-            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
+            self.curr.state.program_counter.expr()
+                + self.program_counter_offset.expr() * self.condition_expr(),
             opcode,
             push_rlc,
         );
-        self.program_counter_offset += 1;
+        // self.program_counter_offset += 1;
+        self.program_counter_offset = self.program_counter_offset.clone() * self.condition_expr();
     }
 
     pub(crate) fn opcode_lookup_at_rlc(
@@ -706,7 +716,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
         self.add_lookup(
-            "Opcode lookup",
+            "Opcode lookup ",
             Lookup::Bytecode {
                 hash: self.curr.state.code_hash.expr(),
                 tag: BytecodeFieldTag::Byte.expr(),
@@ -729,7 +739,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
         self.add_lookup(
-            "Opcode lookup",
+            "Opcode lookup from Bytecode1",
             Lookup::Bytecode1 {
                 hash: self.curr.state.code_hash.expr(),
                 tag: BytecodeFieldTag::Byte.expr(),
@@ -769,6 +779,21 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.add_lookup(
             "Bytecode (length)",
             Lookup::Bytecode {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Header.expr(),
+                index: 0.expr(),
+                is_code: 0.expr(),
+                value,
+                push_rlc: 0.expr(),
+            },
+        );
+    }
+
+    #[cfg(feature = "dual_bytecode")]
+    pub(crate) fn bytecode2_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
+        self.add_lookup(
+            "Bytecode2 (length)",
+            Lookup::Bytecode1 {
                 hash: code_hash,
                 tag: BytecodeFieldTag::Header.expr(),
                 index: 0.expr(),
