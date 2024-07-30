@@ -124,6 +124,7 @@ impl LiteralTable {
     pub fn mock_assign<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
+        block_id: u64,
         literals: &[u64],
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -157,7 +158,7 @@ impl LiteralTable {
                     )?;
                     for (col, val) in [
                         (self.tag, F::from(ZstdTag::ZstdBlockLiteralsRawBytes as u64)),
-                        (self.block_index, F::one()),
+                        (self.block_index, F::from(block_id)),
                         (self.byte_index, F::from(i as u64 + 1)),
                         (self.char, F::from(char)),
                         (self.last_flag, F::zero()),
@@ -191,7 +192,7 @@ impl LiteralTable {
                     || "set dummy border",
                     self.block_index,
                     offset,
-                    || Value::known(F::from(2)),
+                    || Value::known(F::from(block_id + 1)),
                 )?;
                 region.assign_advice(
                     || "set dummy border",
@@ -988,54 +989,63 @@ impl<F: Field> SeqExecConfig<F> {
 
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
-    pub fn mock_assign(
+    fn mock_assign(
         &self,
-        layouter: &mut impl Layouter<F>,
-        chng: Value<F>,
-        n_seq: usize,
-        seq_exec_infos: &[SequenceExec],
-        literals: &[u8],
-        // all of the decompressed bytes, not only current block
-        decompressed_bytes: &[u8],
-        enabled_rows: usize,
+        region: &mut Region<F>,
+        offset: usize,
+        index_mock: [Option<F>; 2],    //block_ind, seq_ind
+        decode_mock: [Option<F>; 2],   //decode_le, decode_byte,
+        phase_mock: [Option<bool>; 3], //last_phase, cp_phase, backref_phase
+        pos_mock: [Option<F>; 3],      //literal, offset, ref_len
     ) -> Result<(), Error> {
-        let literals = literals
-            .iter()
-            .copied()
-            .map(|b| b as u64)
-            .collect::<Vec<_>>();
+        for (mock_val, col) in index_mock
+            .into_iter()
+            .zip([self.block_index, self.seq_index])
+        {
+            if let Some(val) = mock_val {
+                region.assign_advice(|| "mock index", col, offset, || Value::known(val))?;
+            }
+        }
 
-        layouter.assign_region(
-            || "output region",
-            |mut region| {
-                let offset = self.init_top_row(&mut region, None)?;
-                let (offset, decoded_len, decoded_rlc) = self.assign_block(
-                    &mut region,
-                    chng,
-                    offset,
-                    0,
-                    Value::known(F::zero()),
-                    &SequenceInfo {
-                        block_idx: 1,
-                        num_sequences: n_seq,
-                        ..Default::default()
-                    },
-                    seq_exec_infos.iter(),
-                    &literals,
-                    decompressed_bytes,
-                )?;
-                self.paddings(
-                    &mut region,
-                    offset,
-                    enabled_rows,
-                    decoded_len,
-                    decoded_rlc,
-                    2,
-                )?;
+        for (mock_val, col) in decode_mock
+            .into_iter()
+            .zip([self.decoded_len, self.decoded_byte])
+        {
+            if let Some(val) = mock_val {
+                region.assign_advice(|| "mock decode", col, offset, || Value::known(val))?;
+            }
+        }
+        if let Some(val) = decode_mock[1] {
+            region.assign_advice(
+                || "mock decode rlc",
+                self.decoded_rlc,
+                offset,
+                || Value::known(val),
+            )?;
+        }
 
-                Ok(())
-            },
-        )
+        for (mock_val, col) in
+            pos_mock
+                .into_iter()
+                .zip([self.literal_pos, self.backref_offset, self.backref_progress])
+        {
+            if let Some(val) = mock_val {
+                region.assign_advice(|| "mock position", col, offset, || Value::known(val))?;
+            }
+        }
+
+        for (mock_val, bool_adv) in phase_mock.into_iter().zip([
+            self.s_last_lit_cp_phase,
+            self.s_lit_cp_phase,
+            self.s_back_ref_phase,
+        ]) {
+            if let Some(val) = mock_val {
+                let val = Value::known(if val { F::one() } else { F::zero() });
+                region.assign_advice(|| "phase mock", bool_adv.column, offset, || val)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -1046,28 +1056,41 @@ mod tests {
         circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
     };
     use witgen::AddressTableRow;
-    use zkevm_circuits::util::MockChallenges;
 
-    #[derive(Clone, Debug)]
+    #[allow(dead_code)]
+    #[derive(Clone, Copy, Debug)]
+    enum MockEntry {
+        Index([Option<Fr>; 2]),
+        Decode([Option<Fr>; 2]),
+        Phase([Option<bool>; 3]),
+        Position([Option<Fr>; 3]),
+    }
+
+    #[derive(Clone, Debug, Default)]
     struct SeqExecMock {
-        outputs: Vec<u8>,
         literals: Vec<u8>,
         seq_conf: SequenceInfo,
         insts: Vec<AddressTableRow>,
         exec_trace: Vec<SequenceExec>,
+        mocks: Vec<(usize, MockEntry)>,
+        literal_mocks: Option<Vec<u8>>,
     }
 
     impl SeqExecMock {
         // use the code in witgen to generate exec trace
-        pub fn mock_generate(literals: Vec<u8>, insts: Vec<AddressTableRow>) -> Self {
+        pub fn mock_generate(
+            block_idx: usize,
+            literals: Vec<u8>,
+            insts: Vec<AddressTableRow>,
+            outputs: &mut Vec<u8>,
+        ) -> Self {
             let seq_conf = SequenceInfo {
-                block_idx: 1,
+                block_idx,
                 num_sequences: insts.len(),
                 ..Default::default()
             };
 
             let mut exec_trace = Vec::new();
-            let mut outputs = Vec::new();
 
             let mut current_literal_pos: usize = 0;
             for inst in &insts {
@@ -1106,11 +1129,11 @@ mod tests {
             }
 
             Self {
-                outputs,
                 literals,
                 seq_conf,
                 insts,
                 exec_trace,
+                ..Default::default()
             }
         }
     }
@@ -1121,10 +1144,18 @@ mod tests {
         inst_tbl: SeqInstTable<Fr>,
         literal_tbl: LiteralTable,
         seq_cfg: SequenceConfig,
-        chng_mock: MockChallenges,
+        //chng_mock: MockChallenges,
     }
 
-    impl Circuit<Fr> for SeqExecMock {
+    #[derive(Clone, Default)]
+    struct SeqExecMockCircuit {
+        traces: Vec<SeqExecMock>,
+        padding_mocks: Vec<(usize, MockEntry)>,
+        all_padding_mocks: Vec<MockEntry>,
+        output: Vec<u8>,
+    }
+
+    impl Circuit<Fr> for SeqExecMockCircuit {
         type Config = SeqExecMockConfig;
         type FloorPlanner = SimpleFloorPlanner;
         fn without_witnesses(&self) -> Self {
@@ -1154,23 +1185,15 @@ mod tests {
 
             let inst_tbl = SeqInstTable::configure(meta);
 
-            let chng_mock = MockChallenges::construct_p1(meta);
-            let chng = chng_mock.exprs(meta);
+            let chng = 0.expr();
 
-            let config = SeqExecConfig::configure(
-                meta,
-                chng.keccak_input(),
-                &literal_tbl,
-                &inst_tbl,
-                &seq_cfg,
-            );
+            let config = SeqExecConfig::configure(meta, chng, &literal_tbl, &inst_tbl, &seq_cfg);
 
             Self::Config {
                 config,
                 literal_tbl,
                 inst_tbl,
                 seq_cfg,
-                chng_mock,
             }
         }
 
@@ -1179,32 +1202,132 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            config.literal_tbl.mock_assign(
-                &mut layouter,
-                self.literals
-                    .iter()
-                    .copied()
-                    .map(|b| b as u64)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
+            for blk_trace in &self.traces {
+                config
+                    .seq_cfg
+                    .mock_assign(&mut layouter, &blk_trace.seq_conf)?;
+
+                let literals = blk_trace
+                    .literal_mocks
+                    .as_ref()
+                    .unwrap_or(&blk_trace.literals);
+
+                config.literal_tbl.mock_assign(
+                    &mut layouter,
+                    blk_trace.seq_conf.block_idx as u64,
+                    literals
+                        .iter()
+                        .copied()
+                        .map(|b| b as u64)
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                )?;
+            }
+
+            let chng_val = Value::known(Fr::zero());
+            let assigned_rows = layouter.assign_region(
+                || "mock exec output region",
+                |mut region| {
+                    let config = &config.config;
+
+                    let mut offset = config.init_top_row(&mut region, None)?;
+
+                    let mut decoded_len = 0usize;
+                    let mut decoded_rlc = Value::known(Fr::zero());
+                    let mut blk_ind = 0;
+
+                    let fill_mock_row =
+                        |region: &mut Region<Fr>, offset: usize, entry: &MockEntry| match entry {
+                            MockEntry::Decode(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                [None, None],
+                                *mock,
+                                [None, None, None],
+                                [None, None, None],
+                            ),
+                            MockEntry::Index(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                *mock,
+                                [None, None],
+                                [None, None, None],
+                                [None, None, None],
+                            ),
+                            MockEntry::Phase(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                [None, None],
+                                [None, None],
+                                *mock,
+                                [None, None, None],
+                            ),
+                            MockEntry::Position(mock) => config.mock_assign(
+                                region,
+                                offset,
+                                [None, None],
+                                [None, None],
+                                [None, None, None],
+                                *mock,
+                            ),
+                        };
+
+                    for tr in &self.traces {
+                        let literals = tr
+                            .literals
+                            .iter()
+                            .copied()
+                            .map(|b| b as u64)
+                            .collect::<Vec<_>>();
+                        let seq_info = &tr.seq_conf;
+                        let exec_trace = &tr.exec_trace;
+                        blk_ind = seq_info.block_idx;
+                        let begin_offset = offset;
+                        (offset, decoded_len, decoded_rlc) = config.assign_block(
+                            &mut region,
+                            chng_val,
+                            offset,
+                            decoded_len,
+                            decoded_rlc,
+                            seq_info,
+                            exec_trace.iter(),
+                            &literals,
+                            &self.output,
+                        )?;
+
+                        for (mock_offset, entry) in &tr.mocks {
+                            assert!(mock_offset + begin_offset < offset);
+                            fill_mock_row(&mut region, begin_offset + mock_offset, entry)?;
+                        }
+                    }
+
+                    let end_offset = offset + 10;
+                    config.paddings(
+                        &mut region,
+                        offset,
+                        end_offset,
+                        decoded_len,
+                        decoded_rlc,
+                        blk_ind as u64 + 1,
+                    )?;
+                    for (offset, entry) in (offset..end_offset)
+                        .flat_map(|i| self.all_padding_mocks.iter().map(move |entry| (i, entry)))
+                    {
+                        fill_mock_row(&mut region, offset, entry)?;
+                    }
+
+                    for (mock_offset, entry) in &self.padding_mocks {
+                        fill_mock_row(&mut region, offset + mock_offset, entry)?;
+                    }
+
+                    Ok(end_offset)
+                },
             )?;
 
-            config.seq_cfg.mock_assign(&mut layouter, &self.seq_conf)?;
-
-            config
-                .inst_tbl
-                .mock_assign(&mut layouter, &self.insts, 15)?;
-
-            let chng_val = config.chng_mock.values(&layouter);
-
-            config.config.mock_assign(
+            config.inst_tbl.assign(
                 &mut layouter,
-                chng_val.keccak_input(),
-                self.insts.len(),
-                &self.exec_trace,
-                &self.literals,
-                &self.outputs,
-                50,
+                self.traces.iter().map(|tr| tr.insts.iter()),
+                assigned_rows,
             )?;
 
             Ok(())
@@ -1214,9 +1337,21 @@ mod tests {
     #[test]
     fn seq_exec_literal_only() {
         // no instructions, we only copy literals to output
-        let circuit = SeqExecMock::mock_generate(Vec::from("abcd".as_bytes()), Vec::new());
+        let mut output = Vec::new();
+        let traces = vec![SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcd".as_bytes()),
+            Vec::new(),
+            &mut output,
+        )];
 
-        assert_eq!(circuit.outputs, Vec::from("abcd".as_bytes()));
+        let circuit = SeqExecMockCircuit {
+            traces,
+            output,
+            ..Default::default()
+        };
+
+        assert_eq!(circuit.output, Vec::from("abcd".as_bytes()));
 
         let k = 12;
         let mock_prover =
@@ -1226,17 +1361,94 @@ mod tests {
 
     #[test]
     fn seq_exec_simple() {
-        // no instructions, we only copy literals to output
-        let circuit = SeqExecMock::mock_generate(
+        let mut output = Vec::new();
+        let traces = vec![SeqExecMock::mock_generate(
+            1,
             Vec::from("abcdef".as_bytes()),
             AddressTableRow::mock_samples_full([
                 [1, 4, 1, 1, 4, 8],
                 [9, 1, 3, 6, 1, 4],
                 [3, 0, 4, 5, 6, 1],
             ]),
-        );
+            &mut output,
+        )];
+        let circuit = SeqExecMockCircuit {
+            traces,
+            output,
+            ..Default::default()
+        };
 
-        assert_eq!(circuit.outputs, Vec::from("abcddeabcdeabf".as_bytes()));
+        assert_eq!(circuit.output, Vec::from("abcddeabcdeabf".as_bytes()));
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
+    }
+
+    // #[test]
+    // fn seq_exec_no_literal() {
+    //
+    //     let mut output = Vec::new();
+    //     let traces = vec![
+    //         SeqExecMock::mock_generate(
+    //             1,
+    //             Vec::from("abcdef".as_bytes()),
+    //             AddressTableRow::mock_samples_full([
+    //                 [1, 4, 1, 1, 4, 8],
+    //                 [9, 1, 3, 6, 1, 4],
+    //                 [3, 0, 4, 5, 6, 1],
+    //             ]),
+    //             &mut output,
+    //         ),
+    //         SeqExecMock::mock_generate(
+    //             2,
+    //             Vec::new(),
+    //             AddressTableRow::mock_samples_full([
+    //                 [17, 0, 3, 14, 5, 6],
+    //                 [7, 0, 2, 4, 14, 5],
+    //             ]),
+    //             &mut output,
+    //         )
+    //     ];
+    //     let circuit = SeqExecMockCircuit {traces, output};
+
+    //     assert_eq!(circuit.output, Vec::from("abcddeabcdeabfabcfa".as_bytes()));
+
+    //     let k = 12;
+    //     let mock_prover =
+    //         MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+    //     mock_prover.verify().unwrap();
+    // }
+
+    #[test]
+    fn seq_exec_common() {
+        let mut output = Vec::new();
+        let traces = vec![
+            SeqExecMock::mock_generate(
+                1,
+                Vec::from("abcdef".as_bytes()),
+                AddressTableRow::mock_samples_full([
+                    [1, 4, 1, 1, 4, 8],
+                    [9, 1, 3, 6, 1, 4],
+                    [3, 0, 4, 5, 6, 1],
+                ]),
+                &mut output,
+            ),
+            SeqExecMock::mock_generate(
+                2,
+                Vec::from("g".as_bytes()),
+                AddressTableRow::mock_samples_full([[17, 0, 3, 14, 5, 6], [8, 1, 2, 5, 14, 5]]),
+                &mut output,
+            ),
+        ];
+        let circuit = SeqExecMockCircuit {
+            traces,
+            output,
+            ..Default::default()
+        };
+
+        assert_eq!(circuit.output, Vec::from("abcddeabcdeabfabcgfa".as_bytes()));
 
         let k = 12;
         let mock_prover =
@@ -1246,17 +1458,24 @@ mod tests {
 
     #[test]
     fn seq_exec_rle_like() {
-        // no instructions, we only copy literals to output
-        let circuit = SeqExecMock::mock_generate(
+        let mut output = Vec::new();
+        let traces = vec![SeqExecMock::mock_generate(
+            1,
             Vec::from("abcdef".as_bytes()),
             AddressTableRow::mock_samples_full([
                 [1, 4, 1, 1, 4, 8],
                 [9, 1, 3, 6, 1, 4],
                 [5, 0, 6, 2, 6, 1], // an RLE like inst, match len exceed match offset
             ]),
-        );
+            &mut output,
+        )];
+        let circuit = SeqExecMockCircuit {
+            traces,
+            output,
+            ..Default::default()
+        };
 
-        assert_eq!(circuit.outputs, Vec::from("abcddeabcbcbcbcf".as_bytes()));
+        assert_eq!(circuit.output, Vec::from("abcddeabcbcbcbcf".as_bytes()));
 
         let k = 12;
         let mock_prover =
@@ -1266,17 +1485,326 @@ mod tests {
 
     #[test]
     fn seq_exec_no_tail_cp() {
-        // no instructions, we only copy literals to output
-        let circuit = SeqExecMock::mock_generate(
+        let mut output = Vec::new();
+        let traces = vec![SeqExecMock::mock_generate(
+            1,
             Vec::from("abcde".as_bytes()),
             AddressTableRow::mock_samples_full([[1, 4, 1, 1, 4, 8], [9, 1, 3, 6, 1, 4]]),
-        );
+            &mut output,
+        )];
+        let circuit = SeqExecMockCircuit {
+            traces,
+            output,
+            ..Default::default()
+        };
 
-        assert_eq!(circuit.outputs, Vec::from("abcddeabc".as_bytes()));
+        assert_eq!(circuit.output, Vec::from("abcddeabc".as_bytes()));
 
         let k = 12;
         let mock_prover =
             MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
         mock_prover.verify().unwrap();
+    }
+
+    #[test]
+    fn seq_exec_neg_literal_unmatch() {
+        let mut output = Vec::new();
+        let base_trace_blk1 = SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+            ]),
+            &mut output,
+        );
+        let base_trace_blk2 = SeqExecMock::mock_generate(
+            2,
+            Vec::from("g".as_bytes()),
+            AddressTableRow::mock_samples_full([[17, 0, 3, 14, 5, 6], [8, 1, 2, 5, 14, 5]]),
+            &mut output,
+        );
+
+        assert_eq!(output, Vec::from("abcddeabcdeabfabcgfa".as_bytes()));
+
+        let mut literal_unmatch_blk = base_trace_blk1.clone();
+        literal_unmatch_blk.literal_mocks = Some(Vec::from("abcdefg".as_bytes()));
+        let lit_unmatch_circuit_1 = SeqExecMockCircuit {
+            traces: vec![literal_unmatch_blk, base_trace_blk2.clone()],
+            output: output.clone(),
+            ..Default::default()
+        };
+        let mut literal_unmatch_blk = base_trace_blk1.clone();
+        literal_unmatch_blk.literal_mocks = Some(Vec::from("abddef".as_bytes()));
+        let lit_unmatch_circuit_2 = SeqExecMockCircuit {
+            traces: vec![literal_unmatch_blk, base_trace_blk2.clone()],
+            output: output.clone(),
+            ..Default::default()
+        };
+        let mut literal_unmatch_blk1 = base_trace_blk1.clone();
+        literal_unmatch_blk1.literal_mocks = Some(Vec::from("abcde".as_bytes()));
+        let mut literal_unmatch_blk2 = base_trace_blk2.clone();
+        literal_unmatch_blk2.literal_mocks = Some(Vec::from("fg".as_bytes()));
+        let lit_unmatch_circuit_3 = SeqExecMockCircuit {
+            traces: vec![literal_unmatch_blk1, literal_unmatch_blk2],
+            output: output.clone(),
+            ..Default::default()
+        };
+
+        let k = 12;
+        for circuit in [
+            lit_unmatch_circuit_1,
+            lit_unmatch_circuit_2,
+            lit_unmatch_circuit_3,
+        ] {
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
+    }
+
+    #[test]
+    fn seq_exec_neg_phases() {
+        let mut output = Vec::new();
+        let base_trace_blk1 = SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+                [4, 0, 1, 1, 5, 6],
+            ]),
+            &mut output,
+        );
+        let base_trace_blk2 = SeqExecMock::mock_generate(
+            2,
+            Vec::from("gg".as_bytes()),
+            AddressTableRow::mock_samples_full([[4, 2, 2, 1, 1, 5]]),
+            &mut output,
+        );
+
+        assert_eq!(output, Vec::from("abcddeabcdeabbfgggg".as_bytes()));
+
+        // try to put the final phase into previous one
+        let mut mis_phase_blk1 = base_trace_blk1.clone();
+        assert_eq!(mis_phase_blk1.exec_trace.len(), 7);
+        assert_eq!(mis_phase_blk1.exec_trace[6].0, 4);
+        assert_eq!(mis_phase_blk1.exec_trace[5].0, 3);
+        mis_phase_blk1.exec_trace[6].0 = 3;
+        mis_phase_blk1.mocks = vec![
+            (14, MockEntry::Index([None, Some(Fr::from(3u64))])),
+            (14, MockEntry::Phase([Some(false), None, None])),
+        ];
+
+        let circuit_mis_phase_1 = SeqExecMockCircuit {
+            traces: vec![mis_phase_blk1, base_trace_blk2.clone()],
+            output: output.clone(),
+            ..Default::default()
+        };
+
+        // try to make last cp phase cross instruction
+        let mut mis_phase_blk2 = base_trace_blk1.clone();
+        mis_phase_blk2.mocks = vec![(13, MockEntry::Phase([Some(true), None, None]))];
+        let circuit_mis_phase_2 = SeqExecMockCircuit {
+            traces: vec![mis_phase_blk2, base_trace_blk2.clone()],
+            output: output.clone(),
+            ..Default::default()
+        };
+
+        // try to a phase both lit-cp and backref
+        let mut mis_phase_blk3 = base_trace_blk1.clone();
+        mis_phase_blk3.mocks = vec![(13, MockEntry::Phase([Some(false), Some(true), Some(true)]))];
+        let circuit_mis_phase_3 = SeqExecMockCircuit {
+            traces: vec![mis_phase_blk3, base_trace_blk2.clone()],
+            output: output.clone(),
+            ..Default::default()
+        };
+
+        // detect phase must work in a normal row
+        let mut mis_phase_blk4 = base_trace_blk2.clone();
+        mis_phase_blk4.mocks = vec![
+            (3, MockEntry::Phase([Some(false), Some(false), Some(false)])),
+            (3, MockEntry::Decode([Some(Fr::from(18)), Some(Fr::zero())])),
+        ];
+        let circuit_mis_phase_4 = SeqExecMockCircuit {
+            traces: vec![base_trace_blk1.clone(), mis_phase_blk4],
+            output: Vec::from("abcddeabcdeabbfggg".as_bytes()),
+            all_padding_mocks: vec![MockEntry::Decode([Some(Fr::from(18)), None])],
+            ..Default::default()
+        };
+
+        // detect out of order phases
+        let mut mis_phase_blk5 = base_trace_blk2.clone();
+        mis_phase_blk5.mocks = vec![
+            (0, MockEntry::Decode([None, Some(Fr::from(0x66))])), //the decoded byte become 'f'
+            (
+                0,
+                MockEntry::Position([Some(Fr::zero()), None, Some(Fr::one())]),
+            ),
+            (
+                1,
+                MockEntry::Position([Some(Fr::one()), None, Some(Fr::one())]),
+            ),
+            (
+                2,
+                MockEntry::Position([Some(Fr::from(2)), None, Some(Fr::one())]),
+            ),
+            (0, MockEntry::Phase([None, Some(false), Some(true)])),
+            (2, MockEntry::Phase([None, Some(true), Some(false)])),
+        ];
+        let circuit_mis_phase_5 = SeqExecMockCircuit {
+            traces: vec![base_trace_blk1.clone(), mis_phase_blk5],
+            output: output.clone(),
+            ..Default::default()
+        };
+
+        let k = 12;
+        for circuit in [
+            circuit_mis_phase_1,
+            circuit_mis_phase_2,
+            circuit_mis_phase_3,
+            circuit_mis_phase_4,
+            circuit_mis_phase_5,
+        ] {
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
+    }
+
+    #[test]
+    fn seq_exec_neg_insts() {
+        let mut output = Vec::new();
+        let base_trace_blk = SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+                [4, 0, 1, 1, 5, 6],
+            ]),
+            &mut output,
+        );
+
+        assert_eq!(output, Vec::from("abcddeabcdeabbf".as_bytes()));
+
+        let mut output_mis = Vec::new();
+        SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+                [4, 0, 2, 1, 5, 6],
+            ]),
+            &mut output_mis,
+        );
+
+        assert_eq!(output_mis, Vec::from("abcddeabcdeabbbf".as_bytes()));
+
+        let mut mis_inst_blk = base_trace_blk.clone();
+        let tr = &mut mis_inst_blk.exec_trace[5].1;
+        assert_eq!(*tr, SequenceExecInfo::BackRef(12..13));
+        // build the mis-match len to 2
+        *tr = SequenceExecInfo::BackRef(12..14);
+
+        let circuit_mis_inst_1 = SeqExecMockCircuit {
+            traces: vec![mis_inst_blk],
+            output: output_mis,
+            ..Default::default()
+        };
+        let mut mis_inst_blk = base_trace_blk.clone();
+        let tr = &mut mis_inst_blk.exec_trace[5].1;
+        // build the mis-match offset to 2
+        *tr = SequenceExecInfo::BackRef(11..12);
+        let circuit_mis_inst_2 = SeqExecMockCircuit {
+            traces: vec![mis_inst_blk],
+            output: Vec::from("abcddeabcdeabaf".as_bytes()),
+            ..Default::default()
+        };
+
+        let k = 12;
+        for circuit in [circuit_mis_inst_1, circuit_mis_inst_2] {
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
+    }
+
+    #[test]
+    fn seq_exec_neg_paddings() {
+        let mut output = Vec::new();
+        let base_trace_blk = SeqExecMock::mock_generate(
+            1,
+            Vec::from("abcdef".as_bytes()),
+            AddressTableRow::mock_samples_full([
+                [1, 4, 1, 1, 4, 8],
+                [9, 1, 3, 6, 1, 4],
+                [3, 0, 4, 5, 6, 1],
+                [4, 0, 1, 1, 5, 6],
+            ]),
+            &mut output,
+        );
+
+        assert_eq!(output, Vec::from("abcddeabcdeabbf".as_bytes()));
+
+        let circuit_ref = SeqExecMockCircuit {
+            traces: vec![base_trace_blk.clone()],
+            output: output.clone(),
+            padding_mocks: vec![
+                (0, MockEntry::Decode([Some(Fr::from(15)), None])),
+                (1, MockEntry::Index([Some(Fr::from(2)), Some(Fr::zero())])),
+            ],
+            ..Default::default()
+        };
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit_ref, vec![]).expect("failed to run mock prover");
+        assert!(mock_prover.verify().is_ok());
+
+        let circuit_mal_block_index = SeqExecMockCircuit {
+            traces: vec![base_trace_blk.clone()],
+            output: output.clone(),
+            padding_mocks: vec![(4, MockEntry::Index([Some(Fr::from(3)), None]))],
+            ..Default::default()
+        };
+        let circuit_mal_decode_len = SeqExecMockCircuit {
+            traces: vec![base_trace_blk.clone()],
+            output: output.clone(),
+            padding_mocks: vec![(4, MockEntry::Decode([Some(Fr::from(16)), None]))],
+            ..Default::default()
+        };
+        let circuit_mal_inst = SeqExecMockCircuit {
+            traces: vec![base_trace_blk.clone()],
+            output: output.clone(),
+            padding_mocks: vec![
+                (0, MockEntry::Index([Some(Fr::from(1)), Some(Fr::from(5))])),
+                (0, MockEntry::Phase([Some(true), Some(true), None])),
+            ],
+            ..Default::default()
+        };
+
+        for circuit in [
+            circuit_mal_block_index,
+            circuit_mal_decode_len,
+            circuit_mal_inst,
+        ] {
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
     }
 }
