@@ -194,7 +194,8 @@ pub struct Transaction {
     pub signature: Signature,
     /// RLP bytes
     pub rlp_bytes: Vec<u8>,
-    /// RLP bytes for signing
+    /// RLP bytes for signing, only used for PreEip155 tx without chain_id
+    /// for other tx types: rlp == rlp_unsigned.
     pub rlp_unsigned_bytes: Vec<u8>,
     /// RLP bytes for signed tx
     pub rlp_signed_bytes: Vec<u8>,
@@ -281,6 +282,7 @@ impl Transaction {
         let block_num = eth_tx.block_number.unwrap().as_u64();
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
+            log::error!("tx.from not found {}", eth_tx.from);
             return Err(Error::AccountNotFound(eth_tx.from));
         }
 
@@ -288,6 +290,7 @@ impl Transaction {
             // Contract Call / Transfer
             let (found, account) = sdb.get_account(&address);
             if !found {
+                log::error!("tx.to not found {}", address);
                 return Err(Error::AccountNotFound(address));
             }
             let code_hash = account.code_hash;

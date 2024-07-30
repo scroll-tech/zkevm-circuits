@@ -1,4 +1,6 @@
 #![allow(unused_imports)]
+use crate::witness::dummy_witness_block;
+
 pub use super::*;
 use bus_mapping::{
     circuit_input_builder::CircuitInputBuilder,
@@ -7,13 +9,18 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    dev::MockProver,
+    halo2curves::bn256::{Bn256, Fr},
+    plonk::keygen_vk,
+};
 use log::error;
 #[cfg(not(feature = "scroll"))]
 use mock::MOCK_DIFFICULTY;
 #[cfg(feature = "scroll")]
 use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
 use mock::{eth, TestContext, MOCK_CHAIN_ID};
+use params::ScrollSuperCircuit;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::env::set_var;
@@ -54,6 +61,27 @@ fn super_circuit_degree() {
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
+}
+
+// This circuit is used to prevent unexpected changes in circuit vk.
+// This test can run successfully now standalone `RUST_LOG=info cargo test --release --features=scroll super_circuit_vk -- --ignored`
+// but will fail in CI.  I don't understand, may due to env var like COINBASE/DIFFICULT/KECCAK_ROWS?
+// So have to ignore it now.
+#[ignore = "enable this when we want to prevent unexpected changes in circuit"]
+#[test]
+fn super_circuit_vk() {
+    use halo2_proofs::poly::kzg::commitment::ParamsKZG;
+    let params = ParamsKZG::<Bn256>::unsafe_setup_with_s(20, Fr::from(1234u64));
+    // chain_id is not related to vk, so we can use any value here.
+    let chain_id = 534351;
+    let circuit = ScrollSuperCircuit::new_from_block(&dummy_witness_block(chain_id));
+    let vk = keygen_vk(&params, &circuit).unwrap();
+    let protocol_hash = vk.transcript_repr();
+    log::info!("transcript_repr {:?}", protocol_hash);
+    assert_eq!(
+        "0x1b3d158be8148c9e8ac9fce6eff2c576027c356ee1ff68ad7662d61556d5a7d7",
+        format!("{:?}", protocol_hash)
+    );
 }
 
 #[cfg(feature = "scroll")]

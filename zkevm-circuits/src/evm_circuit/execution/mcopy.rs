@@ -143,10 +143,11 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
         offset: usize,
         block: &Block,
         _transaction: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [dest_offset, src_offset, length] =
             [0, 1, 2].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
