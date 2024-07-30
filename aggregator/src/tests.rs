@@ -6,6 +6,8 @@ mod rlc;
 
 #[cfg(feature = "soundness-tests")]
 mod bitstring;
+#[cfg(feature = "soundness-tests")]
+mod literals_header;
 
 #[macro_export]
 macro_rules! layer_0 {
