@@ -82,7 +82,7 @@ pub struct RecursionCircuit<ST> {
     default_accumulator: KzgAccumulator<G1Affine, NativeLoader>,
     /// The SNARK witness from the k-th BatchCircuit.
     app: SnarkWitness,
-    /// The SNARK witness from the (k-1)-th BatchCircuit.
+    /// The SNARK witness from the previous RecursionCircuit, i.e. RecursionCircuit up to the (k-1)-th BatchCircuit.
     previous: SnarkWitness,
     /// The recursion round, starting at round=0 and incrementing at every subsequent recursion.
     round: usize,
@@ -302,7 +302,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 // The index of the "state", i.e. the state achieved post the current batch.
                 let index_state = index_init_state + ST::num_transition_instance();
                 // The index where the "additional" fields required to define the state are
-                // present.
+                // present. The first field in the "additional" fields is the chain ID.
                 let index_additional_state = index_state + ST::num_transition_instance();
                 // The index to find the "round" of recursion in the current instance of the
                 // Recursion Circuit.
@@ -441,6 +441,28 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     .map(|(&st, &app_inst)| ("passing cur state to app", st, app_inst))
                     .collect::<Vec<_>>();
 
+                // Pick additional inst part in "previous state", verify the items at the front
+                // is currently propagated to the app inst which is marked as "propagated"
+                let propagate_app_states = previous_instances[index_additional_state..index_round]
+                    .iter()
+                    .zip(
+                        ST::propagate_indices()
+                            .into_iter()
+                            .map(|i| &app_instances[i]),
+                    )
+                    .map(|(&st, &app_propagated_inst)| {
+                        (
+                            "propagate additional states in app (not first round)",
+                            main_gate.mul(
+                                &mut ctx,
+                                Existing(app_propagated_inst),
+                                Existing(not_first_round),
+                            ),
+                            st,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
                 // Verify that the "previous state" (additional state not included) is the same
                 // as the previous state defined in the current application SNARK. This check is
                 // meaningful only in subsequent recursion rounds after the first round.
@@ -465,7 +487,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 for (comment, lhs, rhs) in [
                     // Propagate the preprocessed digest.
                     (
-                        "chain preprocessed digest",
+                        "propagate preprocessed digest",
                         main_gate.mul(
                             &mut ctx,
                             Existing(preprocessed_digest),
@@ -475,7 +497,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                     ),
                     // Verify that "round" increments by 1 when not the first round of recursion.
                     (
-                        "round increment",
+                        "increment recursion round",
                         round,
                         main_gate.add(
                             &mut ctx,
@@ -488,6 +510,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 .chain(initial_state_propagate)
                 .chain(verify_app_state)
                 .chain(verify_app_init_state)
+                .chain(propagate_app_states)
                 {
                     use halo2_proofs::dev::unwrap_value;
                     debug_assert_eq!(
