@@ -643,7 +643,7 @@ impl<
         let pi_circuit = PiCircuit::new_from_block(block);
         // let bytecode_circuit = BytecodeCircuit::new_from_block(block);
         // let bytecode_circuit1 = BytecodeCircuit::new_from_block(block);
-        // Get each sub circuit's bytecodes and assgin
+        // Get each sub circuit's bytecodes and assign
         #[cfg(feature = "dual_bytecode")]
         let bytecode_circuit = BytecodeCircuit::new_from_block_for_dual_circuit(block, true);
         #[cfg(feature = "dual_bytecode")]

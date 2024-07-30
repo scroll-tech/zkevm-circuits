@@ -278,7 +278,7 @@ impl Block {
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
     #[cfg(feature = "dual_bytecode")]
     pub(crate) fn is_first_bytecode(&self, code_hash: &U256) -> bool {
-        // bytecode_map should conver the target 'code_hash', `unwrap` here is safe.
+        // bytecode_map should cover the target 'code_hash', `unwrap` here is safe.
         *self.bytecode_map.get(code_hash).unwrap()
     }
 
