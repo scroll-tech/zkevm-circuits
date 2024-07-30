@@ -944,49 +944,56 @@ impl<F: Field> SeqInstTable<F> {
     }
 
     #[cfg(test)]
-    pub fn mock_assign(
+    fn mock_assign(
         &self,
-        layouter: &mut impl Layouter<F>,
-        table_rows: &[AddressTableRow],
-        enabled_rows: usize,
+        region: &mut Region<F>,
+        offset: usize,
+        block_ind: u64,
+        n_seq: usize,
+        chip_ctx: &ChipContext<F>,
+        mock_table_row: &AddressTableRow,
     ) -> Result<(), Error> {
-        let chip_ctx = ChipContext::construct(self);
-        layouter.assign_region(
-            || "addr table",
-            |mut region| {
-                let mut offset_table: [u64; 3] = [1, 4, 8];
-                let offset = self.init_top_row(&mut region, None)?;
-                let offset = self.assign_heading_row(
-                    &mut region,
-                    offset,
-                    1,
-                    table_rows.len(),
-                    &chip_ctx,
-                    &offset_table,
-                )?;
-                let offset = self.assign_block(
-                    &mut region,
-                    offset,
-                    1,
-                    table_rows.len(),
-                    table_rows.iter(),
-                    &chip_ctx,
-                    &mut offset_table,
-                )?;
-                assert!(offset < enabled_rows);
+        for (col, val) in [
+            (self.s_beginning.column, F::from(mock_table_row.s_padding)),
+            (self.rep_offset_1, F::from(mock_table_row.repeated_offset1)),
+            (self.rep_offset_2, F::from(mock_table_row.repeated_offset2)),
+            (self.rep_offset_3, F::from(mock_table_row.repeated_offset3)),
+            (self.match_len, F::from(mock_table_row.match_length)),
+            (
+                self.match_offset,
+                F::from(mock_table_row.cooked_match_offset),
+            ),
+            (self.literal_len, F::from(mock_table_row.literal_length)),
+            (
+                self.acc_literal_len,
+                F::from(mock_table_row.literal_length_acc),
+            ),
+            (self.offset, F::from(mock_table_row.actual_offset)),
+            (self.seq_index, F::from(mock_table_row.instruction_idx + 1)),
+            (self.block_index, F::from(block_ind)),
+            (self.n_seq, F::from(n_seq as u64)),
+        ] {
+            region.assign_advice(|| "mock rewritten", col, offset, || Value::known(val))?;
+        }
 
-                self.padding_rows(
-                    &mut region,
-                    offset,
-                    enabled_rows,
-                    2,
-                    &chip_ctx,
-                    &offset_table,
-                )?;
+        chip_ctx.literal_is_zero_chip.assign(
+            region,
+            offset,
+            Value::known(F::from(mock_table_row.literal_length)),
+        )?;
+        chip_ctx.ref_offset_1_is_zero_chip.assign(
+            region,
+            offset,
+            Value::known(F::from(mock_table_row.repeated_offset1)),
+        )?;
+        chip_ctx.seq_index_chip.assign(
+            region,
+            offset,
+            Value::known(F::from(mock_table_row.instruction_idx + 1)),
+            Value::known(F::from(n_seq as u64)),
+        )?;
 
-                Ok(())
-            },
-        )
+        Ok(())
     }
 }
 
@@ -996,12 +1003,156 @@ mod tests {
     use halo2_proofs::{
         circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
     };
+    use itertools::Itertools;
 
     #[derive(Clone, Debug)]
-    struct SeqTable(Vec<AddressTableRow>);
+    struct MockDecoderTable {
+        q_inst_data: Column<Fixed>,
+        q_inst_cnt: Column<Fixed>,
+        block_idx: Column<Advice>,
+        sequence_idx: Column<Advice>,
+        literal_length_value: Column<Advice>,
+        match_offset_value: Column<Advice>,
+        match_length_value: Column<Advice>,
+    }
+
+    impl MockDecoderTable {
+        fn configure(meta: &mut ConstraintSystem<Fr>, inst_table: &SeqInstTable<Fr>) -> Self {
+            let q_inst_data = meta.fixed_column();
+            let q_inst_cnt = meta.fixed_column();
+            let block_idx = meta.advice_column();
+            let sequence_idx = meta.advice_column();
+            let literal_length_value = meta.advice_column();
+            let match_offset_value = meta.advice_column();
+            let match_length_value = meta.advice_column();
+
+            meta.lookup_any("Mock DecoderConfig's tag ZstdBlockSequenceData", |meta| {
+                let enabled = meta.query_fixed(q_inst_data, Rotation::cur());
+                let (block_idx, sequence_idx) = (
+                    meta.query_advice(block_idx, Rotation::cur()),
+                    meta.query_advice(sequence_idx, Rotation::cur()),
+                );
+                let (literal_length_value, match_offset_value, match_length_value) = (
+                    meta.query_advice(literal_length_value, Rotation::cur()),
+                    meta.query_advice(match_offset_value, Rotation::cur()),
+                    meta.query_advice(match_length_value, Rotation::cur()),
+                );
+                [
+                    1.expr(), // q_enabled
+                    block_idx,
+                    0.expr(), // s_beginning
+                    sequence_idx,
+                    literal_length_value,
+                    match_offset_value,
+                    match_length_value,
+                ]
+                .into_iter()
+                .zip_eq(inst_table.seq_values_exprs(meta))
+                .map(|(arg, table)| (enabled.expr() * arg, table))
+                .collect()
+            });
+
+            meta.lookup_any("Mock DecoderConfig's tag ZstdBlockSequenceHeader", |meta| {
+                let enabled = meta.query_fixed(q_inst_cnt, Rotation::cur());
+                let (block_idx, sequence_idx) = (
+                    meta.query_advice(block_idx, Rotation::cur()),
+                    meta.query_advice(sequence_idx, Rotation::cur()),
+                );
+
+                [
+                    1.expr(), // q_enabled
+                    block_idx,
+                    1.expr(), // s_beginning
+                    sequence_idx,
+                ]
+                .into_iter()
+                .zip_eq(inst_table.seq_count_exprs(meta))
+                .map(|(arg, table)| (enabled.expr() * arg, table))
+                .collect()
+            });
+
+            Self {
+                q_inst_data,
+                q_inst_cnt,
+                block_idx,
+                sequence_idx,
+                literal_length_value,
+                match_offset_value,
+                match_length_value,
+            }
+        }
+
+        fn assign_blk(
+            &self,
+            layouter: &mut impl Layouter<Fr>,
+            blk_id: usize,
+            rows: &[AddressTableRow],
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || format!("mock decoder config blk {}", blk_id),
+                |mut region| {
+                    for (i, row) in rows.iter().enumerate() {
+                        for (col, val) in [
+                            (self.block_idx, Fr::from(blk_id as u64)),
+                            (self.sequence_idx, Fr::from(row.instruction_idx + 1)),
+                            (self.literal_length_value, Fr::from(row.literal_length)),
+                            (self.match_offset_value, Fr::from(row.cooked_match_offset)),
+                            (self.match_length_value, Fr::from(row.match_length)),
+                        ] {
+                            region.assign_advice(
+                                || "assign mock data",
+                                col,
+                                i,
+                                || Value::known(val),
+                            )?;
+                        }
+                        region.assign_fixed(
+                            || "enable mock data row",
+                            self.q_inst_data,
+                            i,
+                            || Value::known(Fr::one()),
+                        )?;
+                    }
+                    let n_seq = rows.len();
+                    region.assign_fixed(
+                        || "enable mock cnt row",
+                        self.q_inst_cnt,
+                        n_seq,
+                        || Value::known(Fr::one()),
+                    )?;
+                    for (col, val) in [
+                        (self.block_idx, Fr::from(blk_id as u64)),
+                        (self.sequence_idx, Fr::from(n_seq as u64)),
+                    ] {
+                        region.assign_advice(
+                            || "assign mock nseq",
+                            col,
+                            n_seq,
+                            || Value::known(val),
+                        )?;
+                    }
+
+                    Ok(())
+                },
+            )
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct MockSeqTableConfig {
+        config: SeqInstTable<Fr>,
+        mock_decoder: MockDecoderTable,
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct SeqTable {
+        base_data: Vec<Vec<AddressTableRow>>,
+        rows_for_table: Option<Vec<Vec<AddressTableRow>>>,
+        mock_rows: Vec<Vec<(usize, AddressTableRow, Option<u64>)>>,
+    }
 
     impl Circuit<Fr> for SeqTable {
-        type Config = SeqInstTable<Fr>;
+        type Config = MockSeqTableConfig;
         type FloorPlanner = SimpleFloorPlanner;
         fn without_witnesses(&self) -> Self {
             unimplemented!()
@@ -1011,7 +1162,13 @@ mod tests {
             let const_col = meta.fixed_column();
             meta.enable_constant(const_col);
 
-            Self::Config::configure(meta)
+            let config = SeqInstTable::configure(meta);
+            let mock_decoder = MockDecoderTable::configure(meta, &config);
+
+            Self::Config {
+                config,
+                mock_decoder,
+            }
         }
 
         fn synthesize(
@@ -1019,16 +1176,114 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            config.mock_assign(&mut layouter, &self.0, 15)?;
+            for (i, blk_rows) in self.base_data.iter().enumerate() {
+                config
+                    .mock_decoder
+                    .assign_blk(&mut layouter, i + 1, blk_rows)?;
+            }
 
-            Ok(())
+            let rows_for_table = self.rows_for_table.as_ref().unwrap_or(&self.base_data);
+            let config = &config.config;
+            let chip_ctx = ChipContext::construct(config);
+            layouter.assign_region(
+                || "mock addr table",
+                |mut region| {
+                    let mut offset_table: [u64; 3] = [1, 4, 8];
+                    let mut blk_id = 0u64;
+                    let mut offset = config.init_top_row(&mut region, None)?;
+                    for (i, rows_in_blk) in rows_for_table.iter().enumerate() {
+                        blk_id = (i + 1) as u64;
+                        let n_seqs = rows_in_blk.len();
+                        let block_begin_offset = offset;
+                        offset = config.assign_heading_row(
+                            &mut region,
+                            offset,
+                            blk_id,
+                            n_seqs,
+                            &chip_ctx,
+                            &offset_table,
+                        )?;
+                        offset = config.assign_block(
+                            &mut region,
+                            offset,
+                            blk_id,
+                            n_seqs,
+                            rows_in_blk.iter(),
+                            &chip_ctx,
+                            &mut offset_table,
+                        )?;
+
+                        for (mock_offset, mock_row, overwriteen_id) in
+                            self.mock_rows.get(i).iter().flat_map(|data| data.iter())
+                        {
+                            assert!(*mock_offset <= offset);
+                            config.mock_assign(
+                                &mut region,
+                                block_begin_offset + *mock_offset,
+                                overwriteen_id.unwrap_or(blk_id),
+                                n_seqs,
+                                &chip_ctx,
+                                mock_row,
+                            )?
+                        }
+                    }
+
+                    config.padding_rows(
+                        &mut region,
+                        offset,
+                        offset + 5,
+                        blk_id + 1,
+                        &chip_ctx,
+                        &offset_table,
+                    )?;
+
+                    Ok(())
+                },
+            )
         }
     }
 
     #[test]
     fn seqinst_table_gates() {
         // example comes from zstd's spec
-        let circuit = SeqTable(AddressTableRow::mock_samples(&[
+        let base_data = vec![
+            AddressTableRow::mock_samples(&[
+                [1114, 11, 1111, 1, 4],
+                [1, 22, 1111, 1, 4],
+                [2225, 22, 2222, 1111, 1],
+                [1114, 111, 1111, 2222, 1111],
+                [3336, 33, 3333, 1111, 2222],
+                [2, 22, 1111, 3333, 2222],
+                [3, 33, 2222, 1111, 3333],
+                [3, 0, 2221, 2222, 1111],
+                [1, 0, 2222, 2221, 1111],
+            ]),
+            AddressTableRow::mock_samples(&[
+                [3, 0, 2221, 2222, 2221],
+                [3, 0, 2220, 2221, 2222],
+                [3, 0, 2219, 2220, 2221],
+            ]),
+        ];
+        let mock_rows = vec![
+            vec![(7, base_data[0][6].clone(), None)],
+            vec![(3, base_data[1][2].clone(), None)],
+        ];
+
+        let circuit = SeqTable {
+            base_data,
+            mock_rows,
+            ..Default::default()
+        };
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        mock_prover.verify().unwrap();
+    }
+
+    #[test]
+    fn seqinst_table_negative_unmatch_seq() {
+        let mut base_data = vec![AddressTableRow::mock_samples(&[
             [1114, 11, 1111, 1, 4],
             [1, 22, 1111, 1, 4],
             [2225, 22, 2222, 1111, 1],
@@ -1038,11 +1293,221 @@ mod tests {
             [3, 33, 2222, 1111, 3333],
             [3, 0, 2221, 2222, 1111],
             [1, 0, 2222, 2221, 1111],
-        ]));
+        ])];
+        let rows_for_table = Some(base_data.clone());
+        // so we build a negative sample which there is an extra row in inst table
+        base_data[0].pop();
+
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table,
+            ..Default::default()
+        };
 
         let k = 12;
         let mock_prover =
             MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
-        mock_prover.verify().unwrap();
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        assert!(ret.is_err());
+
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [3, 33, 2222, 1111, 3333],
+            [3, 0, 2221, 2222, 1111],
+            [1, 0, 2222, 2221, 1111],
+        ])];
+        let mut rows_for_table = base_data.clone();
+        // so we build a negative sample which there is less row in inst table
+        rows_for_table[0].pop();
+
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table: Some(rows_for_table),
+            ..Default::default()
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        assert!(ret.is_err());
+
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [3, 33, 2222, 1111, 3333],
+            [3, 0, 2221, 2222, 1111],
+            [1, 0, 2222, 2221, 1111],
+        ])];
+        let mut rows_for_table = base_data.clone();
+        rows_for_table[0].pop();
+        // try to use a similar row in another block
+        rows_for_table.push(AddressTableRow::mock_samples(&[[1, 0, 2222, 2221, 1111]]));
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table: Some(rows_for_table),
+            ..Default::default()
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        assert!(ret.is_err());
+    }
+
+    #[test]
+    fn seqinst_table_negative_unmatch_block() {
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [11, 0, 8, 1111, 3333],
+            [7, 0, 4, 8, 1111],
+            [4, 0, 1, 4, 8],
+        ])];
+        let mut rows_for_table = base_data.clone();
+        // so we build a negative sample which there is an extra row in inst table
+        rows_for_table.push(AddressTableRow::mock_samples(&[
+            [1, 5, 1, 4, 8],
+            [1, 5, 1, 4, 8],
+            [1, 5, 1, 4, 8],
+        ]));
+
+        let circuit = SeqTable {
+            base_data: base_data.clone(),
+            rows_for_table: Some(rows_for_table.clone()),
+            ..Default::default()
+        };
+
+        let k = 12;
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        // notice more block data can be filled into seq table, but inst exec
+        // never touch them
+        assert!(ret.is_ok());
+
+        let circuit = SeqTable {
+            base_data: rows_for_table,
+            rows_for_table: Some(base_data.clone()),
+            ..Default::default()
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        // but inst table can never miss a block
+        assert!(ret.is_err());
+
+        let rows_for_table = vec![
+            AddressTableRow::mock_samples(&[
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+                [1, 5, 1, 4, 8],
+            ]),
+            base_data[0].clone(),
+        ];
+
+        let mock_rows = vec![
+            Vec::new(),
+            rows_for_table[1]
+                .iter()
+                .enumerate()
+                .map(|(i, row)| (i + 1, row.clone(), Some(1)))
+                .collect(),
+        ];
+
+        let circuit = SeqTable {
+            base_data,
+            rows_for_table: Some(rows_for_table),
+            mock_rows,
+        };
+
+        let mock_prover =
+            MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+        let ret = mock_prover.verify();
+        println!("{:?}", ret);
+        // try to put the block with unordered index, should fail
+        assert!(ret.is_err());
+    }
+
+    #[test]
+    fn seqinst_table_negative_unmatch_data() {
+        let base_data = vec![AddressTableRow::mock_samples(&[
+            [1114, 11, 1111, 1, 4],
+            [1, 22, 1111, 1, 4],
+            [2225, 22, 2222, 1111, 1],
+            [1114, 111, 1111, 2222, 1111],
+            [3336, 33, 3333, 1111, 2222],
+            [2, 22, 1111, 3333, 2222],
+            [3, 33, 2222, 1111, 3333],
+            [3, 0, 2221, 2222, 1111],
+            [1, 0, 2222, 2221, 1111],
+        ])];
+
+        let mut wrong_offset_row = base_data[0][0].clone();
+        assert_eq!(wrong_offset_row.actual_offset, 1111);
+        wrong_offset_row.actual_offset = 1110;
+        let neg_case_offset_1 = vec![vec![(1, wrong_offset_row.clone(), None)]];
+        wrong_offset_row.cooked_match_offset = 1113;
+        let neg_case_offset_2 = vec![vec![(1, wrong_offset_row, None)]];
+
+        let mut wrong_lit_row = base_data[0][1].clone();
+        assert_eq!(wrong_lit_row.literal_length, 22);
+        wrong_lit_row.literal_length = 23;
+        let wrong_lit_1 = vec![vec![(2, wrong_lit_row.clone(), None)]];
+        wrong_lit_row.literal_length = 20;
+        let wrong_lit_2 = vec![vec![(2, wrong_lit_row.clone(), None)]];
+
+        let mut out_order_row_1 = base_data[0][0].clone();
+        let mut out_order_row_2 = base_data[0][1].clone();
+        assert_eq!(out_order_row_1.literal_length_acc, 11);
+        out_order_row_1.literal_length_acc = out_order_row_2.literal_length_acc;
+        out_order_row_2.literal_length_acc = 11;
+        let neg_case_outoforder_seq = vec![
+            vec![(2, out_order_row_1, None)],
+            vec![(1, out_order_row_2, None)],
+        ];
+
+        let k = 12;
+        for mock_rows in [
+            neg_case_offset_1,
+            neg_case_offset_2,
+            wrong_lit_1,
+            wrong_lit_2,
+            neg_case_outoforder_seq,
+        ] {
+            let circuit = SeqTable {
+                base_data: base_data.clone(),
+                mock_rows,
+                ..Default::default()
+            };
+            let mock_prover =
+                MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
+            let ret = mock_prover.verify();
+            println!("{:?}", ret);
+            assert!(ret.is_err());
+        }
     }
 }
