@@ -151,7 +151,8 @@ impl<F: Field> MulAddWordsGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
-    use eth_types::{ToScalar, Word};
+    use eth_types::Word;
+    use gadgets::ToScalar;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
@@ -332,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn test_muladd_unexpect() {
+    fn test_muladd_unexpected() {
         // 10 * 1 + 1 != 3
         try_test!(
             MulAddGadgetContainer<Fr>,

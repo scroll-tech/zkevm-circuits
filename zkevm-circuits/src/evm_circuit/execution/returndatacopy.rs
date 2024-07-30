@@ -22,8 +22,9 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
 use gadgets::util::not;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -63,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let return_data_size: Cell<F> = cb.query_cell();
 
         let size: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> = cb.query_word_rlc();
-        // enusre no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
+        // ensure no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
         // state
         let check_overflow_gadget =
             CommonReturnDataCopyGadget::construct(cb, return_data_size.expr(), false.expr());
@@ -169,10 +170,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [dest_offset, data_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());

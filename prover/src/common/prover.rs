@@ -12,6 +12,7 @@ mod compression;
 mod evm;
 mod inner;
 mod mock;
+mod recursion;
 mod utils;
 
 #[derive(Debug)]

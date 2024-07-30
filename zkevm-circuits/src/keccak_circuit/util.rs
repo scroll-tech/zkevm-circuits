@@ -2,7 +2,8 @@
 
 use super::{keccak_packed_multi::keccak_unusable_rows, param::*};
 use crate::util::Field;
-use eth_types::{ToScalar, Word};
+use eth_types::Word;
+use gadgets::ToScalar;
 use halo2_proofs::circuit::Value;
 use std::env::var;
 

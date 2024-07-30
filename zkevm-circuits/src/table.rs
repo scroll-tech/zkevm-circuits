@@ -22,8 +22,9 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use core::iter::once;
-use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
+use eth_types::{sign_types::SignData, ToLittleEndian, ToWord, Word, H256, U256};
 use ethers_core::utils::keccak256;
+use gadgets::ToScalar;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{and, not, pow_of_two, split_u256, split_u256_limb64, Expr},
@@ -2882,7 +2883,7 @@ impl ModExpTable {
         ret
     }
 
-    /// helper for devide a U256 into 3 108bit limbs
+    /// helper for divide a U256 into 3 108bit limbs
     pub fn split_u256_108bit_limbs(word: &Word) -> [u128; 3] {
         let bit108 = 1u128 << 108;
         let (next, limb0) = word.div_mod(U256::from(bit108));
@@ -3134,6 +3135,8 @@ impl PowOfRandTable {
                         || pow_of_rand,
                     )?;
                 }
+
+                log::debug!("assign pow of rand with rows {} done", max_rows);
 
                 Ok(())
             },

@@ -6,8 +6,8 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget,
-                TxL1FeeGadget, TxL1MsgGadget,
+                CurieGadget, TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget,
+                TxEip1559Gadget, TxL1FeeGadget, TxL1MsgGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -31,9 +31,10 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
-use eth_types::{utils::is_precompiled, Address, ToLittleEndian, ToScalar, U256};
+use eth_types::{utils::is_precompiled, Address, ToLittleEndian, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, select, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 const PRECOMPILE_COUNT: usize = 9;
@@ -61,6 +62,8 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
+    // rlp signed tx bytes' length
+    tx_signed_length: Cell<F>,
     reversion_info: ReversionInfo<F>,
     intrinsic_gas_cost: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
@@ -79,6 +82,7 @@ pub(crate) struct BeginTxGadget<F> {
     precompile_input_bytes_rlc: Cell<F>, // input bytes to precompile call.
     /// Keccak256(RLP([tx_caller_address, tx_nonce]))
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
+    // TODO: we need not need this `keccak_code_hash` for scroll mode?
     keccak_code_hash: Cell<F>,
     init_code_rlc: Cell<F>,
     /// RLP gadget for CREATE address.
@@ -96,6 +100,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_l1_msg: TxL1MsgGadget<F>,
     tx_access_list: TxAccessListGadget<F>,
     tx_eip1559: TxEip1559Gadget<F>,
+    curie: CurieGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -131,8 +136,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
+        let tx_signed_length = cb.tx_context(tx_id.expr(), TxContextFieldTag::TxHashLength, None);
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
+
+        let curie = CurieGadget::construct(cb, cb.curr.state.block_number.expr());
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
@@ -141,7 +149,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_nonce.expr(),
                 sender_nonce.expr(),
             );
-            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
+            TxL1FeeGadget::construct(
+                cb,
+                not::expr(curie.is_before_curie.expr()),
+                tx_id.expr(),
+                tx_data_gas_cost.expr(),
+                tx_signed_length.expr(),
+            )
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
@@ -156,7 +170,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let l1_rw_delta = select::expr(
             tx_l1_msg.is_l1_msg(),
             tx_l1_msg.rw_delta(),
-            tx_l1_fee.rw_delta(),
+            tx_l1_fee.rw_delta(not::expr(curie.is_before_curie.expr())),
         ) + 1.expr();
 
         // the cost caused by l1
@@ -218,8 +232,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         ); // rwc_delta += 1
 
-        // TODO: Implement EIP 1559 (currently it only supports legacy
-        // transaction format)
         // Calculate transaction gas fee
         let mul_gas_fee_by_gas =
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
@@ -247,7 +259,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ConstantDivisionGadget::construct(cb, tx_call_data_length.expr() + 31.expr(), 32);
 
         // Use intrinsic gas
-        // TODO2: contrain calling precompile directly
+        // TODO2: constrain calling precompile directly
 
         let intrinsic_gas_cost = cb.query_cell();
         cb.condition(not::expr(is_precompile.expr()), |cb| {
@@ -420,6 +432,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 )
             });
             cb.condition(not::expr(is_call_data_empty.expr()), |cb| {
+                // Constrain the initcode is exactly the code we are executing
                 cb.copy_table_lookup(
                     tx_id.expr(),                    // src_id
                     CopyDataType::TxCalldata.expr(), // src_tag
@@ -530,7 +543,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Notice we need an additional copy event like we have done in the `CallOp` step
 
             We simply drop any checks to the output bytes which precompile would return,
-            since they are ommited as the return data from a transaction.
+            since they are omitted as the return data from a transaction.
         */
         let (precompile_gadget, precompile_input_bytes_rlc) =
             cb.condition(is_precompile.expr(), |cb| {
@@ -802,6 +815,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_call_data_word_length,
             tx_call_data_gas_cost,
             tx_data_gas_cost,
+            tx_signed_length,
             reversion_info,
             intrinsic_gas_cost,
             sufficient_gas_left,
@@ -831,6 +845,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_msg,
             tx_access_list,
             tx_eip1559,
+            curie,
         }
     }
 
@@ -843,11 +858,25 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        /*
-        for (i, idx) in step.rw_indices.iter().copied().enumerate() {
-            log::trace!("begin_tx assign rw: #{i} {:?}", block.rws[idx]);
-        }
-        */
+        ////////////// RWS ////////////////
+        // TxID
+        // gen_tx_access_list_ops
+        // if L1:
+        //      CodeHash
+        //      if empty:
+        //          CodeHash
+        //          if scroll:
+        //              KeccakCodeHash
+        // else:
+        //      3 or 6 l1 fee rw
+        // RwCounterEndOfReversion
+        // IsPersistent
+        // IsSuccess
+        // Nonce
+        // Precompiles
+        // caller addr
+        // callee addr
+        // coinbase
 
         let mut rws = StepRws::new(block, step);
         let rw = rws.next();
@@ -868,23 +897,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_l1_msg
             .assign(region, offset, tx_type, caller_code_hash)?;
 
-        ////////////// RWS ////////////////
-        // if L1:
-        //      CodeHash
-        //      if empty:
-        //          CodeHash
-        //          if scroll:
-        //              KeccakCodeHash
-        // else:
-        //      3 l1 fee rw
-        // RwCounterEndOfReversion
-        // IsPersistent
-        // IsSuccess
-        // Nonce
-        // Precompiles
-        // caller addr
-        // callee addr
-        // coinbase
+        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_enabled(
+            block.chain_id,
+            tx.block_number,
+        );
+        // Add access-list RW offset.
+        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+
         rws.offset_add(if tx_type.is_l1_msg() {
             if caller_code_hash.is_zero() {
                 assert_eq!(
@@ -901,21 +920,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 0
             }
         } else {
-            3
+            if is_curie {
+                6
+            } else {
+                3
+            }
         });
 
-        // Add access-list RW offset.
-        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+        self.curie
+            .assign(region, offset, block.chain_id, tx.block_number)?;
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
         debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
 
+        // reversion
         rws.offset_add(3);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::Account);
         debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
+
         let nonce_rw = rw.account_nonce_pair();
 
         let are_precompile_warm: [_; PRECOMPILE_COUNT] =
@@ -1077,6 +1102,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_data_gas_cost
             .assign(region, offset, Value::known(F::from(tx.tx_data_gas_cost)))?;
+        self.tx_signed_length.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.rlp_signed.len() as u64)),
+        )?;
+
         self.reversion_info.assign(
             region,
             offset,
@@ -1192,7 +1223,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (U256::zero(), U256::zero())
         } else {
             (
-                tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0.into(),
+                tx.l1_fee
+                    .tx_l1_fee(tx.tx_data_gas_cost, tx.rlp_signed.len() as u64)
+                    .0
+                    .into(),
                 tx.gas_price * tx.gas,
             )
         };
@@ -1211,6 +1245,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.l1_fee,
             tx.l1_fee_committed,
             tx.tx_data_gas_cost,
+            tx.rlp_signed.len().try_into().unwrap(),
         )?;
 
         self.tx_access_list.assign(region, offset, tx)?;
@@ -1219,7 +1254,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .context
             .ctxs
             .get(&tx.block_number)
-            .expect("cound not find block with number = {tx.block_number}")
+            .expect("could not find block with number = {tx.block_number}")
             .base_fee;
         self.tx_eip1559.assign(
             region,

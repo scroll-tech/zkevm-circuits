@@ -150,8 +150,8 @@ paths = [
     "callToNonExistentFiller.json",
     "tackDepthLimitSECFiller.json",
     "ValueOverflowFiller", # weird 0x:biginteger 0x...
-    "result_mergeEnvConvertionFiller.json", # missing `currentDifficulty`
-    "result_cancunEnvConvertionFiller.json", # missing `currentDifficulty`
+    "result_mergeEnvConversionFiller.json", # missing `currentDifficulty`
+    "result_cancunEnvConversionFiller.json", # missing `currentDifficulty`
     "calldatacopy_dejavu2Filler.json", # missing comma
     "callDataCopyOffsetFiller.json" # missing comma
 ]

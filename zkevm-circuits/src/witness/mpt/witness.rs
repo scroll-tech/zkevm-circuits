@@ -148,8 +148,8 @@ impl WitnessGenerator {
             let old_value_in_trie = storage_before
                 .as_ref()
                 .ok()
-                .and_then(|(_, nd)| nd.as_ref())
-                .and_then(|nd| nd.as_storage())
+                .and_then(|(_, node)| node.as_ref())
+                .and_then(|node| node.as_storage())
                 .unwrap_or_default();
             assert_eq!(hex::encode(word_buf), hex::encode(old_value_in_trie),
                 "for (address {address:?} key {key:?}): old value in proof != old value in partial trie",
@@ -230,7 +230,7 @@ impl WitnessGenerator {
         let (account_path_before, account_data_before) =
             decode_proof_for_mpt_path(address_key, proofs).expect("unless the db is totally empty");
         let account_data_before = account_data_before
-            .and_then(|nd| nd.as_account())
+            .and_then(|node| node.as_account())
             .map(AccountData::from);
 
         let account_data_after = update_account_data(account_data_before.as_ref());
@@ -505,10 +505,10 @@ use eth_types::Bytes;
 use serde::Deserialize;
 
 type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
-type StorageTrieProofs = HashMap<Address, HashMap<Word, Vec<Bytes>>>;
+type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 type AccountDatas = HashMap<Address, AccountData>;
-type StorageDatas = HashMap<(Address, Word), StorageData>;
+type StorageDatas = HashMap<(Address, H256), StorageData>;
 
 #[derive(Deserialize, Default, Debug, Clone)]
 struct StorageTrace {
@@ -598,7 +598,7 @@ fn witgen_update_one() {
     assert_eq!(
         Some(U256::from(10u32)),
         storages
-            .get(&(target_addr, U256::zero()))
+            .get(&(target_addr, H256::zero()))
             .map(AsRef::as_ref)
             .copied()
     );

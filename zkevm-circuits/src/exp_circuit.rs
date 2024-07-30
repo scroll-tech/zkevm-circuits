@@ -15,7 +15,8 @@ use crate::{
     witness,
 };
 use bus_mapping::circuit_input_builder::{ExpEvent, ExpStep};
-use eth_types::{ToScalar, U256};
+use eth_types::U256;
+use gadgets::ToScalar;
 use gadgets::{
     mul_add::{MulAddChip, MulAddConfig},
     util::{and, not, Expr},

@@ -24,18 +24,21 @@ use crate::{
     witness::{Block, Call, ExecStep},
 };
 use either::Either;
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToLittleEndian, U256};
 use gadgets::util::{select, sum};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
 
+mod curie;
 mod tx_access_list;
 mod tx_eip1559;
 mod tx_l1_fee;
 mod tx_l1_msg;
 
+pub(crate) use curie::CurieGadget;
 pub(crate) use tx_access_list::TxAccessListGadget;
 pub(crate) use tx_eip1559::TxEip1559Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
@@ -94,6 +97,8 @@ impl<F: Field> SameContextGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
+        _block: &Block,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -175,7 +180,7 @@ impl<F: Field> RestoreContextGadget<F> {
         // Update caller's last callee information
         // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         // There is only one case where RETURNDATASIZE != 0:
-        //      opcode is REVERT, and no stack/oog error occured.
+        //      opcode is REVERT, and no stack/oog error occurred.
         // In other words, for RETURN opcode, RETURNDATASIZE is 0 for both successful
         // and fail case.
         let discard_return_data = cb.curr.state.is_create.expr()
@@ -841,6 +846,7 @@ impl<F: Field> TransferToGadget<F> {
         } else {
             (0.into(), 0.into())
         };
+
         debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
         self.receiver.assign(
             region,
@@ -1102,7 +1108,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         let rd_address = MemAddrGadget::construct_self(cb);
 
         // Lookup values from stack
-        // `callee_address` is poped from stack and used to check if it exists in
+        // `callee_address` is popped from stack and used to check if it exists in
         // access list and get code hash.
         // For CALLCODE, both caller and callee addresses are `current_callee_address`.
         // For DELEGATECALL, caller address is `current_caller_address` and
@@ -1755,7 +1761,7 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
             from_bytes::expr(&remainder_end.cells[..N_BYTES_U64]),
         );
 
-        // enusre it is expected overflow condition.
+        // ensure it is expected overflow condition.
         cb.require_equal(
             "check if [data_offset > u64::MAX, data_offset + size > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
             or::expr([

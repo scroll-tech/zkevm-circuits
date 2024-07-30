@@ -186,7 +186,7 @@ impl<F: Field> ChipContext<F> {
 
 impl<F: Field> SeqInstTable<F> {
     /// The sequence count should be lookuped by parsed bitstream,
-    /// used the block index and value for sequnce count tag to
+    /// used the block index and value for sequence count tag to
     /// lookup (`true`, `block_index`, 1, `value`)
     /// The table would be padded by increased block index to
     /// fill all rows being enabled
@@ -247,7 +247,7 @@ impl<F: Field> SeqInstTable<F> {
     }
 
     /// Construct the sequence instruction table
-    /// the maxium rotation is prev(1), next(1)
+    /// the maximum rotation is prev(1), next(1)
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enabled = meta.fixed_column();
         let block_index = meta.advice_column();
@@ -347,7 +347,7 @@ impl<F: Field> SeqInstTable<F> {
         });
 
         // so, we enforce s_beginning enabled for valid block index
-        meta.create_gate("border constaints", |meta| {
+        meta.create_gate("border constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
             let s_beginning = s_beginning.expr_at(meta, Rotation::cur());
 
@@ -492,7 +492,7 @@ impl<F: Field> SeqInstTable<F> {
                     rep_offset_3.expr(),
                 );
             });
-            // update mode 2 (offset == 2 / offet == 1 while lit_len != 0)
+            // update mode 2 (offset == 2 / offset == 1 while lit_len != 0)
             cb.condition(ref_update_mode_2.expr(), |cb| {
                 cb.require_equal(
                     "swap 1&2 for ref 2",
@@ -510,7 +510,7 @@ impl<F: Field> SeqInstTable<F> {
                     rep_offset_3.expr(),
                 );
             });
-            // update mode 3 (offset == 3 / offet == 2 while lit_len != 0)
+            // update mode 3 (offset == 3 / offset == 2 while lit_len != 0)
             cb.condition(ref_update_mode_3.expr(), |cb| {
                 cb.require_equal(
                     "rotate 3-1 for ref 3",
@@ -554,7 +554,7 @@ impl<F: Field> SeqInstTable<F> {
             )
         });
 
-        // the beginning of following rows must be constrainted
+        // the beginning of following rows must be constrained
         meta.enable_equality(block_index);
         meta.enable_equality(seq_index);
         meta.enable_equality(rep_offset_1);

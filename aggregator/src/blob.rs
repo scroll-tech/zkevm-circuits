@@ -1,6 +1,6 @@
 use crate::{
     aggregation::{interpolate, witgen::init_zstd_encoder, BLS_MODULUS},
-    BatchHash, ChunkHash,
+    BatchHash, ChunkInfo,
 };
 
 use eth_types::{ToBigEndian, H256, U256};
@@ -35,6 +35,9 @@ pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
 /// The number of rows to encode number of valid chunks (num_valid_snarks) in a batch, in the Blob
 /// Data config. Since num_valid_chunks is u16, we use 2 bytes/rows.
 pub const N_ROWS_NUM_CHUNKS: usize = 2;
+
+/// The number of rows to encode chunk size (u32).
+pub const N_ROWS_CHUNK_SIZE: usize = 4;
 
 /// The number of bytes that we can fit in a blob. Note that each coefficient is represented in 32
 /// bytes, however, since those 32 bytes must represent a BLS12-381 scalar in its canonical form,
@@ -72,6 +75,66 @@ pub struct BatchData<const N_SNARKS: usize> {
     /// copied over for the padded chunks. The `chunk_data_digest` for padded chunks is the
     /// `chunk_data_digest` of the last valid chunk (from Aggregation Circuit's perspective).
     pub chunk_data: [Vec<u8>; N_SNARKS],
+}
+
+impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
+    /// For raw batch bytes with metadata, this function segments the byte stream into chunk segments.
+    /// Metadata will be removed from the result.
+    pub fn segment_with_metadata(batch_bytes_with_metadata: Vec<u8>) -> Vec<Vec<u8>> {
+        let n_bytes_metadata = Self::n_rows_metadata();
+        let metadata_bytes = batch_bytes_with_metadata
+            .clone()
+            .into_iter()
+            .take(n_bytes_metadata)
+            .collect::<Vec<u8>>();
+        let batch_bytes = batch_bytes_with_metadata
+            .clone()
+            .into_iter()
+            .skip(n_bytes_metadata)
+            .collect::<Vec<u8>>();
+
+        // Decoded batch bytes require segmentation based on chunk length
+        let batch_data_len = batch_bytes.len();
+        let chunk_lens = metadata_bytes[N_ROWS_NUM_CHUNKS..]
+            .chunks(N_ROWS_CHUNK_SIZE)
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .fold(0usize, |acc, &d| acc * 256usize + d as usize)
+            })
+            .collect::<Vec<usize>>();
+
+        // length segments sanity check
+        let valid_chunks = metadata_bytes
+            .iter()
+            .take(N_ROWS_NUM_CHUNKS)
+            .fold(0usize, |acc, &d| acc * 256usize + d as usize);
+        let calculated_len = chunk_lens.iter().take(valid_chunks).sum::<usize>();
+        assert_eq!(
+            batch_data_len, calculated_len,
+            "chunk segmentation len must add up to the correct value"
+        );
+
+        // reconstruct segments
+        let mut segmented_batch_data: Vec<Vec<u8>> = Vec::new();
+        let mut offset: usize = 0;
+        let mut segment: usize = 0;
+        while offset < batch_data_len {
+            segmented_batch_data.push(
+                batch_bytes
+                    .clone()
+                    .into_iter()
+                    .skip(offset)
+                    .take(chunk_lens[segment])
+                    .collect::<Vec<u8>>(),
+            );
+
+            offset += chunk_lens[segment];
+            segment += 1;
+        }
+
+        segmented_batch_data
+    }
 }
 
 impl<const N_SNARKS: usize> From<&BatchHash<N_SNARKS>> for BatchData<N_SNARKS> {
@@ -150,7 +213,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     /// The number of rows to encode the size of each chunk in a batch, in the Blob Data config.
     /// chunk_size is u32, we use 4 bytes/rows.
     const fn n_rows_chunk_sizes() -> usize {
-        N_SNARKS * 4
+        N_SNARKS * N_ROWS_CHUNK_SIZE
     }
 
     /// The total number of rows in "digest rlc" and "digest bytes" sections.
@@ -173,7 +236,8 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         N_BATCH_BYTES + Self::n_rows_digest()
     }
 
-    pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkHash]) -> Self {
+    /// Construct BatchData from chunks
+    pub fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkInfo]) -> Self {
         assert!(num_valid_chunks > 0);
         assert!(num_valid_chunks <= N_SNARKS);
 
@@ -191,7 +255,14 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .collect::<Vec<u32>>()
             .try_into()
             .unwrap();
-        assert!(chunk_sizes.iter().sum::<u32>() <= Self::n_rows_data() as u32);
+
+        if chunk_sizes.iter().sum::<u32>() > Self::n_rows_data() as u32 {
+            panic!(
+                "invalid chunk_sizes {}, n_rows_data {}",
+                chunk_sizes.iter().sum::<u32>(),
+                Self::n_rows_data()
+            )
+        }
 
         // chunk data of the "last valid chunk" is repeated over the padded chunks for simplicity
         // in calculating chunk_data_digest for those padded chunks. However, for the "chunk data"
@@ -269,14 +340,22 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     }
 
     /// Get the zstd encoded batch data bytes.
-    pub(crate) fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
+    pub fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
         let batch_data_bytes = self.get_batch_data_bytes();
         let mut encoder = init_zstd_encoder(None);
         encoder
             .set_pledged_src_size(Some(batch_data_bytes.len() as u64))
             .expect("infallible");
         encoder.write_all(&batch_data_bytes).expect("infallible");
-        encoder.finish().expect("infallible")
+        let encoded_bytes = encoder.finish().expect("infallible");
+        log::info!(
+            "compress batch data from {} to {}, compression ratio {:.2}, blob usage {:.3}",
+            batch_data_bytes.len(),
+            encoded_bytes.len(),
+            batch_data_bytes.len() as f32 / encoded_bytes.len() as f32,
+            encoded_bytes.len() as f32 / N_BLOB_BYTES as f32
+        );
+        encoded_bytes
     }
 
     /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
@@ -286,7 +365,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         // We only consider the data from `valid` chunks and ignore the padded chunks.
         let blob_bytes = self.get_encoded_batch_data_bytes();
         assert!(
-            blob_bytes.len() < N_BLOB_BYTES,
+            blob_bytes.len() <= N_BLOB_BYTES,
             "too many bytes in batch data"
         );
 
@@ -363,7 +442,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         // metadata bytes.
         let bytes = self.to_metadata_bytes();
 
-        // accumulators represent the runnin linear combination of bytes.
+        // accumulators represent the running linear combination of bytes.
         let accumulators_iter = self
             .num_valid_chunks
             .to_be_bytes()
@@ -692,7 +771,7 @@ mod tests {
                 vec![vec![]; MAX_AGG_SNARKS],
             ),
             (
-                "max number of chunkks all non-empty",
+                "max number of chunks all non-empty",
                 (0..MAX_AGG_SNARKS)
                     .map(|i| (10u8..11 + u8::try_from(i).unwrap()).collect())
                     .collect(),
@@ -726,15 +805,33 @@ mod tests {
         ]
         .iter()
         {
+            // batch header
+            let batch_header = crate::batch::BatchHeader {
+                version: 3,
+                batch_index: 6789,
+                l1_message_popped: 101,
+                total_l1_message_popped: 10101,
+                parent_batch_hash: H256::repeat_byte(1),
+                last_block_timestamp: 192837,
+                ..Default::default()
+            };
+            let chunks_without_padding = crate::chunk::ChunkInfo::mock_chunk_infos(tcase);
+            let batch_hash = BatchHash::<MAX_AGG_SNARKS>::construct_with_unpadded(
+                &chunks_without_padding,
+                batch_header,
+            );
+
+            // blob data
             let batch_data: BatchData<MAX_AGG_SNARKS> = tcase.into();
             let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
             let versioned_hash = batch_data.get_versioned_hash();
             println!(
-                "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}\n\n",
+                "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}, batch_hash = {:0>64x}\n\n",
                 annotation,
                 point_evaluation_assignments.challenge,
                 point_evaluation_assignments.evaluation,
                 versioned_hash,
+                batch_hash.current_batch_hash,
             );
         }
     }

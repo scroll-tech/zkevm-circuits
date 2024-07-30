@@ -64,10 +64,11 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         for (cell, value) in self.phase2_values.iter().zip(
             [step.rw_indices[0], step.rw_indices[1]]

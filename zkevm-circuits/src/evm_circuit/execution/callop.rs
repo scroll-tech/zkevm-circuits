@@ -29,8 +29,9 @@ use bus_mapping::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE},
     utils::is_precompiled,
-    ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
+    ToAddress, ToBigEndian, ToLittleEndian, U256,
 };
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::cmp::min;
@@ -811,7 +812,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_precheck_ok =
             depth.low_u64() < 1025 && (!(is_call || is_callcode) || caller_balance >= value);
 
-        // only call opcode do transfer in sucessful case.
+        // only call opcode do transfer in successful case.
         if is_call && is_precheck_ok && !value.is_zero() {
             let transfer_assign_result = self.transfer.assign_from_rws(
                 region,

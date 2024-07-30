@@ -278,9 +278,14 @@ impl<F: Field> EvmCircuit<F> {
         num_rows += 1;
         num_rows
     }
+
+    pub fn get_test_cicuit_from_block(block: Block) -> Self {
+        let fixed_table_tags = detect_fixed_table_tags(&block);
+        EvmCircuit::<F>::new_dev(block, fixed_table_tags)
+    }
 }
 
-const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3656;
+const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3659;
 const FIXED_TABLE_ROWS: usize = FIXED_TABLE_ROWS_NO_BITWISE + 3 * 65536;
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
@@ -370,7 +375,6 @@ pub(crate) fn detect_fixed_table_tags(block: &Block) -> Vec<FixedTableTag> {
     }
 }
 
-#[cfg(all(feature = "disabled", test))]
 pub(crate) mod cached {
     use super::*;
     use halo2_proofs::halo2curves::bn256::Fr;

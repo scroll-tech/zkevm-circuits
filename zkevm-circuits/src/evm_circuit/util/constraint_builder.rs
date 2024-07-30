@@ -12,8 +12,9 @@ use crate::{
     util::{build_tx_log_expression, Challenges, Expr, Field},
 };
 use bus_mapping::util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY};
-use eth_types::{state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToScalar, ToWord};
+use eth_types::{state_db::EMPTY_CODE_HASH_LE, ToLittleEndian, ToWord, H256};
 use gadgets::util::{and, not};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -490,6 +491,29 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         }
         .cell_manager
         .query_cells(cell_type, count)
+    }
+
+    pub(crate) fn code_hash(&self, codehash: H256) -> Expression<F> {
+        let bytes = codehash.to_word().to_le_bytes();
+        if cfg!(feature = "poseidon-codehash") {
+            // Recover the poseidon hash fr
+            rlc::expr(
+                &bytes.map(|b| b.expr()),
+                Expression::Constant(F::from(256u64)),
+            )
+        } else {
+            self.word_rlc(bytes.map(|b| b.expr()))
+        }
+    }
+
+    pub(crate) fn keccak_code_hash(&self, codehash: H256) -> Expression<F> {
+        let bytes = codehash.to_word().to_le_bytes();
+        self.word_rlc(bytes.map(|b| b.expr()))
+    }
+
+    pub(crate) fn word_rlc_constant(&self, word: eth_types::Word) -> Expression<F> {
+        let bytes = word.to_le_bytes();
+        self.word_rlc(bytes.map(|b| b.expr()))
     }
 
     pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {

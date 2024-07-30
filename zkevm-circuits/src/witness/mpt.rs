@@ -3,7 +3,8 @@ use crate::{
     table::AccountFieldTag,
     util::Field,
 };
-use eth_types::{Address, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, ToLittleEndian, ToWord, Word, H256};
+use gadgets::ToScalar;
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 use mpt_circuits::{serde::SMTTrace, MPTProofType};
@@ -21,7 +22,7 @@ use witness::WitnessGenerator;
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct WithdrawProof {
     /// state root after a block
-    pub state_root: U256,
+    pub state_root: H256,
     /// account proof for withdraw bridge contract
     pub account_proof: Vec<Vec<u8>>,
     /// storage proof for withdraw bridge contract, withdraw root storage key
@@ -94,8 +95,8 @@ impl Default for MptUpdate {
 /// All the MPT updates in the MptCircuit, accessible by their key
 #[derive(Default, Clone, Debug)]
 pub struct MptUpdates {
-    old_root: Word,
-    new_root: Word,
+    old_root: H256,
+    new_root: H256,
     updates: BTreeMap<Key, MptUpdate>,
     /// TODO: is here the best place for this?
     /// Withdraw proof after this block
@@ -114,11 +115,11 @@ impl MptUpdates {
         self.updates.len()
     }
 
-    pub(crate) fn old_root(&self) -> Word {
+    pub(crate) fn old_root(&self) -> H256 {
         self.old_root
     }
 
-    pub(crate) fn new_root(&self) -> Word {
+    pub(crate) fn new_root(&self) -> H256 {
         self.new_root
     }
 
@@ -166,7 +167,7 @@ impl MptUpdates {
                 },
             );
         }
-        self.old_root = U256::from_big_endian(wit_gen.root().as_bytes());
+        self.old_root = wit_gen.root();
         self.fill_state_roots_from_generator(wit_gen);
         log::debug!("build_prestate_trie done");
         self.pretty_print();
@@ -174,8 +175,8 @@ impl MptUpdates {
 
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
         let root_pair = (self.old_root, self.new_root);
-        self.old_root = U256::from_big_endian(init_trie.root());
-        log::trace!("fill_state_roots init {:?}", init_trie.root());
+        self.old_root = init_trie.root().into();
+        log::trace!("fill_state_roots init {:?}", self.old_root);
 
         let wit_gen = WitnessGenerator::from(init_trie);
         let wit_gen = self.fill_state_roots_from_generator(wit_gen);
@@ -247,14 +248,16 @@ impl MptUpdates {
                     Key::AccountStorage { storage_key, .. } => Some(storage_key),
                 },
             );
-            log::trace!(
-                "fill_state_roots {:?}->{:?}",
-                smt_trace.account_path[0].root,
-                smt_trace.account_path[1].root
-            );
-            update.old_root = U256::from_little_endian(smt_trace.account_path[0].root.as_ref());
-            update.new_root = U256::from_little_endian(smt_trace.account_path[1].root.as_ref());
-            self.new_root = update.new_root;
+            let mut old_root_bytes = *smt_trace.account_path[0].root.as_ref();
+            old_root_bytes.reverse();
+            let old_root = H256::from(old_root_bytes);
+            let mut new_root_bytes = *smt_trace.account_path[1].root.as_ref();
+            new_root_bytes.reverse();
+            let new_root = H256::from(new_root_bytes);
+            log::trace!("fill_state_roots {:?}->{:?}", old_root, new_root,);
+            update.old_root = old_root.to_word();
+            update.new_root = new_root.to_word();
+            self.new_root = new_root;
             self.smt_traces.push(smt_trace);
             self.proof_types.push(proof_tip);
         }
@@ -267,16 +270,21 @@ impl MptUpdates {
         wit_gen
     }
 
+    /// For testing only
     pub(crate) fn mock_from(rows: &[Rw]) -> Self {
-        Self::from_rws_with_mock_state_roots(rows, 0xcafeu64.into(), 0xdeadbeefu64.into())
+        Self::from_rws_with_state_roots(
+            rows,
+            H256::from_low_u64_be(0xcafeu64),
+            H256::from_low_u64_be(0xdeadbeefu64),
+        )
     }
 
-    pub(crate) fn from_unsorted_rws_with_mock_state_roots(
+    pub(crate) fn from_unsorted_rws_with_state_roots(
         rows: &[Rw],
-        old_root: U256,
-        new_root: U256,
+        old_root: H256,
+        new_root: H256,
     ) -> Self {
-        log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
+        log::debug!("mpt update roots {:?} {:?}", old_root, new_root);
         let rows_len = rows.len();
         let mut updates: BTreeMap<_, Vec<_>> = BTreeMap::new(); // TODO: preallocate
         for (key, row) in rows.iter().filter_map(|row| key(row).map(|key| (key, row))) {
@@ -286,7 +294,14 @@ impl MptUpdates {
             .into_iter()
             .enumerate()
             .map(|(i, (key, rows))| {
-                MptUpdate::from_rows(key, rows, i, rows_len, old_root, new_root)
+                MptUpdate::from_rows(
+                    key,
+                    rows,
+                    i,
+                    rows_len,
+                    old_root.to_word(),
+                    new_root.to_word(),
+                )
             })
             .collect();
         MptUpdates {
@@ -297,12 +312,8 @@ impl MptUpdates {
         }
     }
 
-    pub(crate) fn from_rws_with_mock_state_roots(
-        rows: &[Rw],
-        old_root: U256,
-        new_root: U256,
-    ) -> Self {
-        log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
+    pub(crate) fn from_rws_with_state_roots(rows: &[Rw], old_root: H256, new_root: H256) -> Self {
+        log::debug!("mpt update roots {:?} {:?}", old_root, new_root);
         let rows_len = rows.len();
         let updates: BTreeMap<_, _> = rows
             .iter()
@@ -312,7 +323,14 @@ impl MptUpdates {
             .enumerate()
             .map(|(i, (key, rows))| {
                 let rows: Vec<Rw> = rows.copied().collect_vec();
-                MptUpdate::from_rows(key, rows, i, rows_len, old_root, new_root)
+                MptUpdate::from_rows(
+                    key,
+                    rows,
+                    i,
+                    rows_len,
+                    old_root.to_word(),
+                    new_root.to_word(),
+                )
             })
             .collect();
         MptUpdates {

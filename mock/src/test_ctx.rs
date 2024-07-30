@@ -1,10 +1,11 @@
-//! Mock types and functions to generate Test enviroments for ZKEVM tests
+//! Mock types and functions to generate Test environments for ZKEVM tests
 
 use crate::{eth, MockAccount, MockBlock, MockTransaction, MOCK_WALLETS};
 #[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
+    l2_predeployed::l1_gas_price_oracle,
     BigEndianHash, Block, Bytecode, Error, Transaction, Word, H256,
 };
 #[cfg(feature = "scroll")]
@@ -88,7 +89,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// Account list
     pub accounts: [Account; NACC],
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
@@ -98,6 +99,14 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     block_trace: BlockTrace,
 }
 
+fn deployed_system_contract_for_test_env() -> Vec<Account> {
+    if cfg!(feature = "scroll") {
+        vec![l1_gas_price_oracle::default_contract_account()]
+    } else {
+        vec![]
+    }
+}
+
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
     fn from(ctx: TestContext<NACC, NTX>) -> GethData {
         GethData {
@@ -105,7 +114,14 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             history_hashes: ctx.history_hashes,
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
-            accounts: ctx.accounts.into(),
+            // TODO: any better method?
+            // always inject system contract
+            accounts: ctx
+                .accounts
+                .iter()
+                .cloned()
+                .chain(deployed_system_contract_for_test_env())
+                .collect_vec(),
             #[cfg(feature = "scroll")]
             block_trace: ctx.block_trace,
         }
@@ -185,7 +201,11 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         let trace_config = gen_trace_config(
             chain_id,
             block.clone(),
-            accounts.to_vec(),
+            accounts
+                .iter()
+                .cloned()
+                .chain(deployed_system_contract_for_test_env())
+                .collect_vec(),
             history_hashes.clone(),
             logger_config,
         )?;

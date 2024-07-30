@@ -73,7 +73,7 @@ async fn test_mock_prove_tx() {
     };
 
     let cli = BuilderClient::new(cli, params).await.unwrap();
-    let builder = cli.gen_inputs_tx(tx_id).await.unwrap().enable_relax_mode();
+    let builder = cli.gen_inputs_tx(tx_id).await.unwrap();
 
     if builder.block.txs.is_empty() {
         log::info!("skip empty block");
@@ -164,7 +164,7 @@ async fn test_circuit_all_block() {
             log::error!("invalid builder {} {:?}, err num NA", block_num, err_msg);
             continue;
         }
-        let builder = builder.unwrap().0.enable_relax_mode();
+        let builder = builder.unwrap().0;
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
             // skip empty block

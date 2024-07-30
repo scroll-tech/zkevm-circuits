@@ -1294,7 +1294,7 @@ impl<const L: usize, const R: usize> FseTable<L, R> {
 
     /// Lookup table expressions for (symbol, symbol_count) tuple check.
     ///
-    /// This check is only done on the last occurence of a particular symbol, i.e. where:
+    /// This check is only done on the last occurrence of a particular symbol, i.e. where:
     /// - symbol_count == symbol_count_acc
     pub fn table_exprs_by_symbol(&self, meta: &mut VirtualCells<Fr>) -> Vec<Expression<Fr>> {
         vec![
@@ -1762,7 +1762,7 @@ impl FseSortedStatesTable {
             // - smallest_spot does not change
             // - last_baseline does not change
             // - symbol_count_acc increments by +1
-            // - spot_acc accumlates based on the current spot
+            // - spot_acc accumulates based on the current spot
             // - baseline_mark can transition from 0 -> 1 only once
             // - baseline==0x00 if baseline_mark is set
             // - baseline==baseline::prev+spot::prev if baseline_mark is not set

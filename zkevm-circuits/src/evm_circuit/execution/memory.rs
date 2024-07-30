@@ -30,7 +30,7 @@ pub(crate) struct MemoryGadget<F> {
     address: MemoryWordAddress<F>,
     mask: MemoryMask<F>,
     // consider move to MemoryWordAddress ?
-    /// The value poped from or pushed to the stack.
+    /// The value popped from or pushed to the stack.
     value: Word<F>,
     /// The left memory word read or written.
     value_left: Word<F>,
@@ -165,10 +165,11 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let opcode = step.opcode.unwrap();
 

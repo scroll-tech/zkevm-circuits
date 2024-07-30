@@ -49,10 +49,11 @@
 //!   - [x] Bytecode Circuit
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
-#[cfg(feature = "scroll")]
+#[cfg(all(feature = "scroll", any(feature = "test", test)))]
 pub(crate) mod eip1559_2930;
 /// Mainnet Super circuit params
 pub mod params;
+#[cfg(any(feature = "test", test))]
 pub(crate) mod precompile_block_trace;
 #[cfg(any(feature = "test", test))]
 pub(crate) mod test;
@@ -593,6 +594,7 @@ impl<
         .unwrap()
     }
 
+    /// Create circuit instance of witness block
     fn new_from_block(block: &Block) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
@@ -853,7 +855,7 @@ impl<
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
         Self::build_from_witness_block(block)
     }
-    /// ..
+    /// Build super circuit from witness block
     pub fn build_from_witness_block(
         block: Block,
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {

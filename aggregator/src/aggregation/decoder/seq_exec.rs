@@ -294,7 +294,7 @@ type ExportedCell<F> = AssignedCell<F, F>;
 
 impl<F: Field> SeqExecConfig<F> {
     /// Construct the sequence instruction table
-    /// the maxium rotation is prev(2), next(1)
+    /// the maximum rotation is prev(2), next(1)
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         challenges: Expression<F>,
@@ -399,7 +399,7 @@ impl<F: Field> SeqExecConfig<F> {
                 |cb| {
                     cb.require_equal(
                         "inside a inst, backref phase keep 1 once it changed to 1",
-                        s_back_ref_phase_prev.expr(),
+                        s_back_ref_phase.expr(),
                         1.expr(),
                     );
                 },
@@ -409,7 +409,7 @@ impl<F: Field> SeqExecConfig<F> {
                 1.expr() - s_lit_cp_phase_next.expr() - s_back_ref_phase_next.expr();
             cb.condition(is_padding.expr(), |cb| {
                 cb.require_equal(
-                    "padding never change once actived",
+                    "padding never change once activated",
                     is_padding_next.expr(),
                     is_padding.expr(),
                 );
@@ -432,7 +432,7 @@ impl<F: Field> SeqExecConfig<F> {
                 ]),
                 |cb| {
                     cb.require_equal(
-                        "phase can only be actived in inst border",
+                        "phase can only be activated in inst border",
                         is_inst_begin.expr(),
                         1.expr(),
                     );
@@ -446,7 +446,7 @@ impl<F: Field> SeqExecConfig<F> {
                 ]),
                 |cb| {
                     cb.require_equal(
-                        "phase must keep actived until block end",
+                        "phase must keep activated until block end",
                         s_last_lit_cp_phase_prev.expr(),
                         s_last_lit_cp_phase.expr(),
                     );
@@ -455,7 +455,7 @@ impl<F: Field> SeqExecConfig<F> {
 
             cb.condition(s_last_lit_cp_phase.expr(), |cb| {
                 cb.require_equal(
-                    "lit cp must actived if last lit cp is actived",
+                    "lit cp must activated if last lit cp is activated",
                     s_lit_cp_phase.expr_at(meta, Rotation::cur()),
                     1.expr(),
                 );

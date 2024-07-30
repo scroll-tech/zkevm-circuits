@@ -22,7 +22,7 @@ pub use gadgets::util::Expr;
 pub mod is_zero;
 
 /// The field used in circuits. We only support bn254fr now.
-pub trait Field = eth_types::Field + halo2_base::utils::ScalarField;
+pub trait Field = gadgets::Field + halo2_base::utils::ScalarField;
 
 pub(crate) fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
@@ -49,7 +49,7 @@ pub(crate) fn rlc_be_bytes<F: Field>(bytes: &[u8], rand: Value<F>) -> Value<F> {
 }
 
 /// Wrap multiple challenges:
-/// `construct`: the default consturct route to provide all challenges used in `SuperCircuit`.
+/// `construct`: the default construct route to provide all challenges used in `SuperCircuit`.
 /// `construct_p1`: construct challenge up to second phase
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {

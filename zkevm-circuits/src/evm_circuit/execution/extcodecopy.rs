@@ -22,8 +22,9 @@ use crate::{
     util::Field,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, ToLittleEndian};
 use gadgets::util::Expr;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use super::ExecutionGadget;
@@ -110,7 +111,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(memory_address.has_length(), |cb| {
-            // Set source start to the minimun value of code offset and code size.
+            // Set source start to the minimum value of code offset and code size.
             let src_addr = select::expr(
                 code_offset.lt_cap(),
                 code_offset.valid_value(),
@@ -174,7 +175,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [external_address, memory_offset, code_offset, memory_length] =
             [0, 1, 2, 3].map(|idx| block.rws[step.rw_indices[idx]].stack_value());

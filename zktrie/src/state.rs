@@ -1,5 +1,5 @@
 //! Represent the storage state under zktrie as implement
-use eth_types::{Address, Hash, Word};
+use eth_types::{Address, Hash, H256};
 
 use std::{collections::HashSet, io::Error};
 pub use zktrie::{Hash as ZkTrieHash, ZkMemoryDb, ZkTrie, ZkTrieNode};
@@ -17,7 +17,7 @@ pub struct ZktrieState {
     /// Trie root
     pub trie_root: ZkTrieHash,
     addr_cache: HashSet<Address>,
-    storage_cache: HashSet<(Address, Word)>,
+    storage_cache: HashSet<(Address, H256)>,
 }
 
 //unsafe impl Send for ZktrieState {}
@@ -68,9 +68,9 @@ impl ZktrieState {
     /// switch to another root state (trie snapshot)
     /// return true if the switch success, or false if db have not contain
     /// corresponding root yet
-    /// notice the cached key would not be clean if we can successfully swith to
+    /// notice the cached key would not be clean if we can successfully switch to
     /// new snapshot since we consider it is not need to send more nodes data
-    /// from storage trace for the updated leafs
+    /// from storage trace for the updated leaves
     pub fn switch_to(&mut self, new_root: ZkTrieHash) -> bool {
         let test_trie = self.zk_db.borrow_mut().new_trie(&new_root);
         if test_trie.is_none() {
@@ -99,16 +99,15 @@ impl ZktrieState {
 
     /// Helper for parsing storage value from external data
     pub fn parse_storage_from_proofs<'d: 'a, 'a, BYTES>(
-        storage_proofs: impl Iterator<Item = (&'a Address, &'a Word, BYTES)> + 'd,
-    ) -> impl Iterator<Item = Result<((Address, Word), StorageData), Error>> + 'a
+        storage_proofs: impl Iterator<Item = (&'a Address, &'a H256, BYTES)> + 'd,
+    ) -> impl Iterator<Item = Result<((Address, H256), StorageData), Error>> + 'a
     where
         BYTES: IntoIterator<Item = &'a [u8]>,
     {
         use builder::{BytesArray, StorageProof};
         storage_proofs.map(|(&addr, &key, bytes)| {
-            let storage_key: (Address, Word) = (addr, key);
-            let mut key_buf = [0u8; 32];
-            key.to_big_endian(key_buf.as_mut_slice());
+            let storage_key: (Address, H256) = (addr, key);
+            let key_buf = key.to_fixed_bytes();
             let bytes_array = BytesArray(bytes.into_iter());
             let store_proof =
                 builder::verify_proof_leaf(StorageProof::try_from(bytes_array)?, &key_buf);
@@ -130,7 +129,7 @@ impl ZktrieState {
     pub fn update_from_trace<'d, BYTES1, BYTES2>(
         &mut self,
         account_proofs: impl Iterator<Item = (&'d Address, BYTES1)>,
-        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES2)>,
+        storage_proofs: impl Iterator<Item = (&'d Address, &'d H256, BYTES2)>,
         additional_proofs: impl Iterator<Item = &'d [u8]>,
     ) where
         BYTES1: IntoIterator<Item = &'d [u8]>,
@@ -156,7 +155,7 @@ impl ZktrieState {
     pub fn from_trace_with_additional<'d, BYTES1, BYTES2>(
         state_root: Hash,
         account_proofs: impl Iterator<Item = (&'d Address, BYTES1)>,
-        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES2)>,
+        storage_proofs: impl Iterator<Item = (&'d Address, &'d H256, BYTES2)>,
         additional_proofs: impl Iterator<Item = &'d [u8]>,
     ) -> Result<Self, Error>
     where

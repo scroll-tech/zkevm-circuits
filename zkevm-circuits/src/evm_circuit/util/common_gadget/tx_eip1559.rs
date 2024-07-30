@@ -182,7 +182,11 @@ impl<F: Field> TxEip1559Gadget<F> {
             offset,
             Some(tx.max_priority_fee_per_gas.to_le_bytes()),
         )?;
-        let diff_gas_base_fee = tx.max_fee_per_gas - base_fee;
+        let diff_gas_base_fee = if tx.max_fee_per_gas >= base_fee {
+            tx.max_fee_per_gas - base_fee
+        } else {
+            0u64.into()
+        };
         let priority_fee_per_gas = tx.max_priority_fee_per_gas.min(diff_gas_base_fee);
         self.gas_sub_base_fee.assign(
             region,
@@ -243,7 +247,13 @@ mod test {
 
     #[test]
     fn test_eip1559_tx_for_equal_balance() {
-        let ctx = build_ctx(gwei(80_000), gwei(2), gwei(2)).unwrap();
+        let balance = if cfg!(feature = "scroll") {
+            // l1 fee
+            gwei(80_000) + Word::from(279u64)
+        } else {
+            gwei(80_000)
+        };
+        let ctx = build_ctx(balance, gwei(2), gwei(2)).unwrap();
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
@@ -253,8 +263,11 @@ mod test {
 
         #[cfg(not(feature = "scroll"))]
         let expected_err = "Failed to run Trace, err: Failed to apply config.Transactions[0]: insufficient funds for gas * price + value: address 0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241 have 79999000000000 want 80000000000000";
+
+        // "80000000000279": 279 is l1 fee
         #[cfg(feature = "scroll")]
-        let expected_err = "Failed to run Trace, err: insufficient funds for gas * price + value: address 0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241 have 79999000000000 want 80000000000000";
+        let expected_err = "Failed to run Trace, err: insufficient funds for gas * price + value: address 0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241 have 79999000000000 want 80000000000279";
+
         // Address `0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241` in error message comes from
         // MOCK_WALLETS[0] in build_ctx.
 
@@ -275,7 +288,13 @@ mod test {
     #[test]
     fn test_eip1559_tx_for_gas_fee_cap_gt_gas_tip_cap() {
         // Should be successful if `max_fee_per_gas > max_priority_fee_per_gas`.
-        let ctx = build_ctx(gwei(80_000), gwei(2), gwei(1)).unwrap();
+        let balance = if cfg!(feature = "scroll") {
+            // l1 fee
+            gwei(80_000) + Word::from(279u64)
+        } else {
+            gwei(80_000)
+        };
+        let ctx = build_ctx(balance, gwei(2), gwei(1)).unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }

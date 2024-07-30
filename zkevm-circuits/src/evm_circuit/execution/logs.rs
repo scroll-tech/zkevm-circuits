@@ -23,8 +23,9 @@ use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    ToScalar, U256,
+    U256,
 };
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -211,7 +212,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [memory_start, msize] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
@@ -461,7 +463,7 @@ mod test {
         code.write_op(cur_op_code);
 
         // second log op code
-        // prepare additinal bytes for memory reading
+        // prepare additional bytes for memory reading
         code.append(&prepare_code(&pushdata, 0x20));
         mstart = 0x00usize;
         // when mszie > 0x20 (32) needs multi copy steps

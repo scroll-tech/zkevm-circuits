@@ -1,10 +1,9 @@
 use anyhow;
 use halo2_proofs::{
-    halo2curves::bn256::{Fq, Fr, G1Affine},
+    halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, VerifyingKey},
     SerdeFormat,
 };
-use num_bigint::BigUint;
 use snark_verifier::util::arithmetic::PrimeField;
 use snark_verifier_sdk::Snark;
 use std::{
@@ -12,6 +11,19 @@ use std::{
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
 };
+
+pub fn from_json_file<'de, P: serde::Deserialize<'de>>(file_path: &str) -> anyhow::Result<P> {
+    if !Path::new(&file_path).exists() {
+        anyhow::bail!("File {file_path} doesn't exist");
+    }
+
+    let fd = File::open(file_path)?;
+    let mut deserializer = serde_json::Deserializer::from_reader(fd);
+    deserializer.disable_recursion_limit();
+    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
+
+    Ok(serde::Deserialize::deserialize(deserializer)?)
+}
 
 pub fn serialize_fr(f: &Fr) -> Vec<u8> {
     f.to_bytes().to_vec()
@@ -35,25 +47,10 @@ pub fn deserialize_fr_matrix(l3_buf: Vec<Vec<Vec<u8>>>) -> Vec<Vec<Fr>> {
     l3_buf.into_iter().map(deserialize_fr_vec).collect()
 }
 
-pub fn serialize_fr_tensor(t: &[Vec<Vec<Fr>>]) -> Vec<Vec<Vec<Vec<u8>>>> {
-    t.iter()
-        .map(|m| serialize_fr_matrix(m.as_slice()))
-        .collect()
-}
-
-pub fn deserialize_fr_tensor(l4_buf: Vec<Vec<Vec<Vec<u8>>>>) -> Vec<Vec<Vec<Fr>>> {
-    l4_buf.into_iter().map(deserialize_fr_matrix).collect()
-}
-
 pub fn serialize_instance(instance: &[Vec<Fr>]) -> Vec<u8> {
     let instances_for_serde = serialize_fr_matrix(instance);
 
     serde_json::to_vec(&instances_for_serde).unwrap()
-}
-
-pub fn load_instance(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
-    let instances: Vec<Vec<Vec<Vec<u8>>>> = serde_json::from_reader(buf).unwrap();
-    deserialize_fr_tensor(instances)
 }
 
 pub fn read_all(filename: &str) -> Vec<u8> {
@@ -108,56 +105,11 @@ pub fn deserialize_vk<C: Circuit<Fr>>(raw_vk: &[u8]) -> VerifyingKey<G1Affine> {
         .unwrap()
 }
 
-pub fn write_verify_circuit_vk(folder: &mut PathBuf, verify_circuit_vk: &[u8]) {
-    folder.push("verify_circuit.vkey");
-    let mut fd = std::fs::File::create(folder.as_path()).unwrap();
-    folder.pop();
-    fd.write_all(verify_circuit_vk).unwrap()
-}
-
-pub fn field_to_bn(f: &Fq) -> BigUint {
-    BigUint::from_bytes_le(&f.to_bytes())
-}
-
-pub fn serialize_commitments(buf: &[Vec<G1Affine>]) -> Vec<u8> {
-    let mut result = Vec::<u8>::new();
-    let mut fd = Cursor::new(&mut result);
-    let to_bytes_be = |x: &BigUint| {
-        let mut buf = x.to_bytes_le();
-        buf.resize(32, 0u8);
-        buf.reverse();
-        buf
-    };
-    for v in buf {
-        for commitment in v {
-            let x = field_to_bn(&commitment.x);
-            let y = field_to_bn(&commitment.y);
-            let be = to_bytes_be(&x)
-                .into_iter()
-                .chain(to_bytes_be(&y).into_iter())
-                .collect::<Vec<_>>();
-            fd.write_all(&be).unwrap()
-        }
-    }
-    result
-}
-
-pub fn serialize_verify_circuit_final_pair(pair: &(G1Affine, G1Affine, Vec<Fr>)) -> Vec<u8> {
-    let mut result = Vec::<u8>::new();
-    let mut fd = Cursor::new(&mut result);
-    fd.write_all(&pair.0.x.to_bytes()).unwrap();
-    fd.write_all(&pair.0.y.to_bytes()).unwrap();
-    fd.write_all(&pair.1.x.to_bytes()).unwrap();
-    fd.write_all(&pair.1.y.to_bytes()).unwrap();
-    pair.2.iter().for_each(|scalar| {
-        fd.write_all(&scalar.to_bytes()).unwrap();
-    });
-    result
-}
-
 pub fn write_snark(file_path: &str, snark: &Snark) {
+    log::debug!("write_snark to {file_path}");
     let mut fd = std::fs::File::create(file_path).unwrap();
-    serde_json::to_writer(&mut fd, snark).unwrap()
+    serde_json::to_writer(&mut fd, snark).unwrap();
+    log::debug!("write_snark to {file_path} done");
 }
 
 pub fn load_snark(file_path: &str) -> anyhow::Result<Option<Snark>> {
@@ -189,14 +141,14 @@ pub fn load_instances(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
         .collect()
 }
 
-pub fn load_instances_flat(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
-    let mut ret = vec![];
-    let cursor = &mut std::io::Cursor::new(buf);
-    let mut scalar_bytes = <Fr as PrimeField>::Repr::default();
-
-    while cursor.read_exact(scalar_bytes.as_mut()).is_ok() {
-        ret.push(Fr::from_bytes(&scalar_bytes).unwrap());
-    }
-
-    vec![vec![ret]]
+#[ignore]
+#[test]
+fn test_block_trace_convert() {
+    let trace_v1: eth_types::l2_types::BlockTrace =
+        from_json_file("src/testdata/trace_v1_5224657.json").expect("should load");
+    let trace_v2: eth_types::l2_types::BlockTraceV2 = trace_v1.into();
+    let mut fd = std::fs::File::create("src/testdata/trace_v2_5224657.json").unwrap();
+    serde_json::to_writer_pretty(&mut fd, &trace_v2).unwrap();
+    // then we can use this command to compare the traces:
+    // vimdiff <(jq -S "del(.executionResults)|del(.txStorageTraces)" src/testdata/trace_v1_5224657.json) <(jq -S . src/testdata/trace_v2_5224657.json)
 }

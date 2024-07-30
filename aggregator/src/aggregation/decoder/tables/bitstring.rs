@@ -292,7 +292,7 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
 
             let mut cb = BaseConstraintBuilder::default();
 
-            // Columns that do not change in the chunk of 3 contigious bytes.
+            // Columns that do not change in the chunk of 3 contiguous bytes.
             for col in [
                 config.byte_idx_1,
                 config.byte_idx_2,

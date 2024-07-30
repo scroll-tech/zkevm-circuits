@@ -21,7 +21,8 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -111,7 +112,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             CopyDataType::Memory.expr(),
         );
         cb.condition(memory_address.has_length(), |cb| {
-            // Set source start to the minimun value of data offset and call data length.
+            // Set source start to the minimum value of data offset and call data length.
             let src_addr = call_data_offset.expr()
                 + select::expr(
                     data_offset.lt_cap(),
@@ -177,7 +178,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [memory_offset, data_offset, length] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]

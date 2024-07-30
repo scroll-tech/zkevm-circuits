@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, io::Cursor};
 
 use bitstream_io::{BitRead, BitReader, LittleEndian};
-use eth_types::Field;
 use gadgets::impl_expr;
+use gadgets::Field;
 use halo2_proofs::{circuit::Value, plonk::Expression};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -383,7 +383,7 @@ pub struct AddressTableRow {
 }
 
 impl AddressTableRow {
-    /// a debug helper, input datas in the form of example in
+    /// a debug helper, input data in the form of example in
     /// zstd spec: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#repeat-offsets
     /// i.e. [offset, literal, rep_1, rep_2, rep_3]
     #[cfg(test)]

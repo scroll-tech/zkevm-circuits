@@ -1,4 +1,5 @@
 use ethers_core::types::Signature;
+use gadgets::ToScalar;
 use std::collections::{BTreeMap, HashMap};
 
 #[cfg(any(feature = "test", test))]
@@ -6,19 +7,22 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
 use crate::{
     evm_circuit::util::rlc,
+    super_circuit::params::get_super_circuit_params,
     table::{BlockContextFieldTag, RwTableTag},
     util::{Field, SubCircuit},
     witness::keccak::keccak_inputs,
 };
 use bus_mapping::{
     circuit_input_builder::{
-        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEvents, SHA256,
+        self, BigModExp, CircuitInputBuilder, CircuitsParams, CopyEvent, EcAddOp, EcMulOp,
+        EcPairingOp, ExpEvent, PrecompileEvents, SHA256,
     },
     Error,
 };
 use eth_types::{
-    sign_types::SignData, Address, ToBigEndian, ToLittleEndian, ToScalar, Word, H256, U256,
+    sign_types::SignData,
+    state_db::{CodeDB, StateDB},
+    Address, ToLittleEndian, Word, H256, U256,
 };
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
@@ -29,7 +33,6 @@ use super::{
 };
 use crate::util::Challenges;
 
-// TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
 #[derive(Debug, Clone, Default)]
@@ -58,7 +61,7 @@ pub struct Block {
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
-    pub prev_state_root: Word, // TODO: Make this H256
+    pub prev_state_root: H256,
     /// Withdraw root
     pub withdraw_root: Word,
     /// Withdraw roof of the previous block
@@ -78,20 +81,32 @@ pub struct Block {
 pub struct BlockContexts {
     /// Hashmap that maps block number to its block context.
     pub ctxs: BTreeMap<u64, BlockContext>,
-    /// relax mode flag inherited from block builder
-    pub relax_mode: bool,
 }
 
 impl Block {
+    /// First block number
+    pub fn first_block_number(&self) -> U256 {
+        self.context
+            .ctxs
+            .first_key_value()
+            .map_or(0.into(), |(_, ctx)| ctx.number)
+    }
+    /// Last block number
+    pub fn last_block_number(&self) -> U256 {
+        self.context
+            .ctxs
+            .last_key_value()
+            .map_or(0.into(), |(_, ctx)| ctx.number)
+    }
     /// The state root after this chunk
     pub fn post_state_root(&self) -> H256 {
-        let post_state_root_in_trie = H256(self.mpt_updates.new_root().to_be_bytes());
+        let post_state_root_in_trie = self.mpt_updates.new_root();
         let post_state_root_in_header = self
             .context
             .ctxs
             .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root)
-            .unwrap_or(H256(self.prev_state_root.to_be_bytes()));
+            .map(|(_, blk)| blk.state_root)
+            .unwrap_or(self.prev_state_root);
         if post_state_root_in_trie != post_state_root_in_header {
             log::error!(
                 "replayed root {:?} != block head root {:?}",
@@ -345,8 +360,10 @@ pub struct BlockContext {
     pub history_hashes: Vec<Word>,
     /// The chain id
     pub chain_id: u64,
-    /// Original Block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Parent block hash
+    pub parent_hash: H256,
+    /// State root of this block
+    pub state_root: H256,
 }
 
 impl BlockContext {
@@ -439,7 +456,7 @@ impl BlockContext {
                     .checked_sub((len_history - idx) as u64)
                     .unwrap_or_default();
                 if block_number + 1 == self.number.low_u64() {
-                    debug_assert_eq!(self.eth_block.parent_hash.to_word(), hash.into());
+                    debug_assert_eq!(self.parent_hash.to_word(), hash.into());
                 }
                 [
                     Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
@@ -451,11 +468,11 @@ impl BlockContext {
     }
 }
 
-impl From<&circuit_input_builder::Block> for BlockContexts {
-    fn from(block: &circuit_input_builder::Block) -> Self {
+impl From<&circuit_input_builder::Blocks> for BlockContexts {
+    fn from(block: &circuit_input_builder::Blocks) -> Self {
         Self {
             ctxs: block
-                .headers
+                .blocks
                 .values()
                 .map(|block| {
                     (
@@ -469,32 +486,37 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
                             base_fee: block.base_fee,
                             history_hashes: block.history_hashes.clone(),
                             chain_id: block.chain_id,
-                            eth_block: block.eth_block.clone(),
+                            parent_hash: block.parent_hash,
+                            state_root: block.state_root,
                         },
                     )
                 })
                 .collect::<BTreeMap<_, _>>(),
-            relax_mode: block.is_relaxed(),
         }
     }
 }
 
-/// Convert a block struct in bus-mapping to a witness block used in circuits
+/// Build a witness block
 pub fn block_convert(
-    block: &circuit_input_builder::Block,
+    block: &circuit_input_builder::Blocks,
     code_db: &eth_types::state_db::CodeDB,
 ) -> Result<Block, Error> {
     let rws = RwMap::from(&block.container);
     rws.check_value()?;
     let num_txs = block.txs().len();
-    let last_block_num = block
-        .headers
-        .iter()
-        .next_back()
-        .map(|(k, _)| *k)
-        .unwrap_or_default();
+    let last_block_num = block.last_block_num().unwrap_or_default();
     let chain_id = block.chain_id();
     rws.check_rw_counter_sanity();
+    if block
+        .block_steps
+        .end_block_step
+        .bus_mapping_instance
+        .is_empty()
+    {
+        return Err(Error::InternalError(
+            "invalid end_block. Forget to call CircuitInputBuilder::set_end_block()?",
+        ));
+    }
     let padding_step = step_convert(&block.block_steps.padding_step, last_block_num);
     let end_block_step = step_convert(&block.block_steps.end_block_step, last_block_num);
     log::trace!(
@@ -508,7 +530,7 @@ pub fn block_convert(
         block.circuits_params.max_rws
     };
 
-    let mpt_updates = MptUpdates::from_unsorted_rws_with_mock_state_roots(
+    let mpt_updates = MptUpdates::from_unsorted_rws_with_state_roots(
         &rws.table_assignments_unsorted(),
         block.prev_state_root,
         block.end_state_root(),
@@ -541,10 +563,10 @@ pub fn block_convert(
             );
         }
     } else {
-        log::error!("withdraw root is not avaliable");
+        log::error!("withdraw root is not available");
     }
 
-    Ok(Block {
+    let block = Block {
         context: BlockContexts::from(block),
         rws,
         txs: block
@@ -591,5 +613,15 @@ pub fn block_convert(
         chain_id,
         start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
-    })
+    };
+    Ok(block)
+}
+
+/// Generate a empty witness block, which can be used for key-gen.
+pub fn dummy_witness_block(chain_id: u64) -> Block {
+    let builder_block = circuit_input_builder::Blocks::init(chain_id, get_super_circuit_params());
+    let mut builder: CircuitInputBuilder =
+        CircuitInputBuilder::new(StateDB::new(), CodeDB::new(), &builder_block);
+    builder.finalize_building().expect("should not fail");
+    block_convert(&builder.block, &builder.code_db).expect("should not fail")
 }

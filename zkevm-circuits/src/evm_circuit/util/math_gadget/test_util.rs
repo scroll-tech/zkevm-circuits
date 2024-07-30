@@ -36,7 +36,7 @@ use eth_types::{Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
-    dev::MockProver,
+    dev::{MockProver, VerifyFailure},
     plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
 
@@ -91,7 +91,7 @@ pub(crate) struct UnitTestMathGadgetBaseCircuit<G> {
 }
 
 impl<G> UnitTestMathGadgetBaseCircuit<G> {
-    fn new(size: usize, witnesses: Vec<Word>) -> Self {
+    pub(crate) fn new(size: usize, witnesses: Vec<Word>) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size,
             witnesses,
@@ -227,7 +227,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         )?;
 
         // assign fixed range tables only as they are the only tables referred by a
-        // specfic math gadget -- ConstantDivisionGadget.
+        // specific math gadget -- ConstantDivisionGadget.
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -293,3 +293,29 @@ macro_rules! try_test {
 
 #[cfg(test)]
 pub(crate) use try_test;
+
+// for negative test used.
+pub(crate) fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
+    let errors = result.expect_err("result is not an error");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    match &errors[0] {
+        VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
+            let constraint = format!("{constraint}");
+
+            // here use assert ?
+            if !constraint.contains(name) {
+                panic!("{constraint} does not contain {name}");
+            }
+        }
+        // TODO: not support following error now.
+        VerifyFailure::Lookup {
+            name: _lookup_name, ..
+        } => panic!(),
+        VerifyFailure::CellNotAssigned { .. } => panic!(),
+        VerifyFailure::ConstraintPoisoned { .. } => panic!(),
+        VerifyFailure::Permutation { .. } => panic!(),
+        &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => {
+            todo!()
+        }
+    }
+}

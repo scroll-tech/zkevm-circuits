@@ -38,7 +38,7 @@ impl Instrument {
         self.states.push((execution_state, sizes));
     }
 
-    /// Dissasembles the instrumentation data and returns a collection of
+    /// Disassembles the instrumentation data and returns a collection of
     /// `ExecStateReport`s. One for each EVM `ExecutionState`.
     pub(crate) fn analyze(&self) -> Vec<ExecStateReport> {
         let mut report_collection = vec![];

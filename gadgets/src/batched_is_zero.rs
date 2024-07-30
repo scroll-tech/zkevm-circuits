@@ -5,7 +5,7 @@
 //!   otherwise
 //! - is_zero: 1 if all `values` are `0`, `0` otherwise
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Phase, VirtualCells},

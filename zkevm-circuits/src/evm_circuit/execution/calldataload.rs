@@ -132,7 +132,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             },
         );
 
-        // Set source start to the minimun value of data offset and call data length.
+        // Set source start to the minimum value of data offset and call data length.
         let src_addr = call_data_offset.expr()
             + select::expr(
                 data_offset.lt_cap(),
@@ -268,7 +268,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         // Assign to the buffer reader gadget.
         let (src_id, call_data_offset, call_data_length) = if call.is_root {

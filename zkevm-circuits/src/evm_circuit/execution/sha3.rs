@@ -1,7 +1,8 @@
 use crate::util::Field;
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, ToLittleEndian};
 use gadgets::util::{not, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::evm_circuit::{
@@ -112,12 +113,13 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let mut rws = StepRws::new(block, step);
 
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [memory_offset, size, sha3_output] = [(); 3].map(|_| rws.next().stack_value());
         let memory_address = self
