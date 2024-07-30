@@ -1,6 +1,6 @@
 use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
@@ -20,6 +20,30 @@ use crate::{
     },
     witgen::{N_BITS_PER_BYTE, N_BLOCK_SIZE_TARGET},
 };
+
+#[derive(Default, Clone, Debug)]
+pub struct AssignedBitstringTableRow {
+    pub q_start: Option<AssignedCell<Fr, Fr>>,
+    pub bit_index: Option<AssignedCell<Fr, Fr>>,
+    pub byte_idx_1: Option<AssignedCell<Fr, Fr>>,
+    pub byte_idx_2: Option<AssignedCell<Fr, Fr>>,
+    pub byte_idx_3: Option<AssignedCell<Fr, Fr>>,
+    pub byte_1: Option<AssignedCell<Fr, Fr>>,
+    pub byte_2: Option<AssignedCell<Fr, Fr>>,
+    pub byte_3: Option<AssignedCell<Fr, Fr>>,
+    pub bit: Option<AssignedCell<Fr, Fr>>,
+    pub bit_f: Option<Fr>,
+    pub bitstring_value: Option<AssignedCell<Fr, Fr>>,
+    pub bitstring_value_acc: Option<AssignedCell<Fr, Fr>>,
+    pub bitstring_len: Option<AssignedCell<Fr, Fr>>,
+    pub from_start: Option<AssignedCell<Fr, Fr>>,
+    pub until_end: Option<AssignedCell<Fr, Fr>>,
+    pub is_reverse: Option<AssignedCell<Fr, Fr>>,
+    pub is_reverse_f: Option<Fr>,
+    pub is_padding: Option<AssignedCell<Fr, Fr>>,
+}
+
+pub(crate) type AssignedBitstringTableRows = Vec<AssignedBitstringTableRow>;
 
 /// In the process of decoding zstd encoded data, there are several scenarios in which we process
 /// bits instead of bytes, for instance:
@@ -444,7 +468,10 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
         block_info_arr: &Vec<BlockInfo>,
         witness_rows: &[ZstdWitnessRow<Fr>],
         n_enabled: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<AssignedBitstringTableRows, Error> {
+        let mut assigned_bitstring_table_rows: Vec<AssignedBitstringTableRow> =
+            Vec::with_capacity(n_enabled);
+
         layouter.assign_region(
             || "Bitstring Table",
             |mut region| {
@@ -454,20 +481,37 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                 // assign fixed columns.
                 for i in 0..n_enabled {
                     let bit_index = i % (N_BYTES * N_BITS_PER_BYTE);
-                    if bit_index == 0 {
+                    let _assigned_q_start = if bit_index == 0 {
                         region.assign_fixed(
                             || "q_start",
                             self.q_start,
                             i,
                             || Value::known(Fr::one()),
-                        )?;
-                    }
-                    region.assign_fixed(
+                        )?
+                    } else {
+                        region.assign_fixed(
+                            || "q_start",
+                            self.q_start,
+                            i,
+                            || Value::known(Fr::zero()),
+                        )?
+                    };
+                    let _assigned_bit_index = region.assign_fixed(
                         || "bit_index",
                         self.bit_index,
                         i,
                         || Value::known(Fr::from(bit_index as u64)),
                     )?;
+
+                    #[cfg(feature = "soundness-tests")]
+                    assigned_bitstring_table_rows.push(AssignedBitstringTableRow {
+                        q_start: Some(_assigned_q_start),
+                        bit_index: Some(_assigned_bit_index),
+                        ..Default::default()
+                    });
+
+                    #[cfg(not(feature = "soundness-tests"))]
+                    assigned_bitstring_table_rows.push(AssignedBitstringTableRow::default());
                 }
 
                 let n_witness_rows = witness_rows.len();
@@ -591,37 +635,37 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                     for (bit_idx, bit) in
                         bits.into_iter().enumerate().take(N_BYTES * N_BITS_PER_BYTE)
                     {
-                        region.assign_advice(
+                        let _assigned_byte_idx_1 = region.assign_advice(
                             || "byte_idx_1",
                             self.byte_idx_1,
                             offset + bit_idx,
                             || Value::known(Fr::from(byte_idx_1)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_byte_idx_2 = region.assign_advice(
                             || "byte_idx_2",
                             self.byte_idx_2,
                             offset + bit_idx,
                             || Value::known(Fr::from(byte_idx_2)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_byte_idx_3 = region.assign_advice(
                             || "byte_idx_3",
                             self.byte_idx_3,
                             offset + bit_idx,
                             || Value::known(Fr::from(byte_idx_3)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_byte_1 = region.assign_advice(
                             || "byte_1",
                             self.byte_1,
                             offset + bit_idx,
                             || Value::known(Fr::from(byte_1)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_byte_2 = region.assign_advice(
                             || "byte_2",
                             self.byte_2,
                             offset + bit_idx,
                             || Value::known(Fr::from(byte_2)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_byte_3 = region.assign_advice(
                             || "byte_3",
                             self.byte_3,
                             offset + bit_idx,
@@ -632,73 +676,125 @@ impl<const N_BYTES: usize> BitstringTable<N_BYTES> {
                             acc = acc * 2 + (bit as u64);
                             bitstring_len += 1;
                         }
-                        region.assign_advice(
+                        let _assigned_bit_f = Fr::from(bit as u64);
+                        let _assigned_bit = region.assign_advice(
                             || "bit",
                             self.bit.column,
                             offset + bit_idx,
                             || Value::known(Fr::from(bit as u64)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_bitstring_value = region.assign_advice(
                             || "bitstring_value",
                             self.bitstring_value,
                             offset + bit_idx,
                             || Value::known(Fr::from(curr_row.4)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_bitstring_value_acc = region.assign_advice(
                             || "bitstring_value_acc",
                             self.bitstring_value_acc,
                             offset + bit_idx,
                             || Value::known(Fr::from(acc)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_bitstring_len = region.assign_advice(
                             || "bitstring_len",
                             self.bitstring_len,
                             offset + bit_idx,
                             || Value::known(Fr::from(bitstring_len)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_from_start = region.assign_advice(
                             || "from_start",
                             self.from_start.column,
                             offset + bit_idx,
                             || Value::known(Fr::from((bit_idx <= (curr_row.3 as usize)) as u64)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_until_end = region.assign_advice(
                             || "until_end",
                             self.until_end.column,
                             offset + bit_idx,
                             || Value::known(Fr::from((bit_idx >= (curr_row.2 as usize)) as u64)),
                         )?;
-                        region.assign_advice(
+                        let _assigned_is_reverse_f = Fr::from(curr_row.5);
+                        let _assigned_is_reverse = region.assign_advice(
                             || "is_reverse",
                             self.is_reverse.column,
                             offset + bit_idx,
                             || Value::known(Fr::from(curr_row.5)),
                         )?;
+
+                        #[cfg(feature = "soundness-tests")]
+                        {
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_1 =
+                                Some(_assigned_byte_idx_1);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_2 =
+                                Some(_assigned_byte_idx_2);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_idx_3 =
+                                Some(_assigned_byte_idx_3);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_1 =
+                                Some(_assigned_byte_1);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_2 =
+                                Some(_assigned_byte_2);
+                            assigned_bitstring_table_rows[offset + bit_idx].byte_3 =
+                                Some(_assigned_byte_3);
+                            assigned_bitstring_table_rows[offset + bit_idx].bit_f =
+                                Some(_assigned_bit_f);
+                            assigned_bitstring_table_rows[offset + bit_idx].bit =
+                                Some(_assigned_bit);
+                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_value =
+                                Some(_assigned_bitstring_value);
+                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_value_acc =
+                                Some(_assigned_bitstring_value_acc);
+                            assigned_bitstring_table_rows[offset + bit_idx].bitstring_len =
+                                Some(_assigned_bitstring_len);
+                            assigned_bitstring_table_rows[offset + bit_idx].from_start =
+                                Some(_assigned_from_start);
+                            assigned_bitstring_table_rows[offset + bit_idx].until_end =
+                                Some(_assigned_until_end);
+                            assigned_bitstring_table_rows[offset + bit_idx].is_reverse =
+                                Some(_assigned_is_reverse);
+                            assigned_bitstring_table_rows[offset + bit_idx].is_reverse_f =
+                                Some(_assigned_is_reverse_f);
+                        }
                     }
 
                     offset += N_BYTES * N_BITS_PER_BYTE;
                 }
 
-                for idx in 0..offset {
-                    region.assign_advice(
+                for (idx, row) in assigned_bitstring_table_rows
+                    .iter_mut()
+                    .enumerate()
+                    .take(offset)
+                {
+                    let assigned_is_padding = region.assign_advice(
                         || "is_padding",
                         self.is_padding.column,
                         idx,
                         || Value::known(Fr::zero()),
                     )?;
+
+                    row.is_padding = Some(assigned_is_padding);
                 }
-                for idx in offset..n_enabled {
-                    region.assign_advice(
+
+                for (idx, row) in assigned_bitstring_table_rows
+                    .iter_mut()
+                    .enumerate()
+                    .take(n_enabled)
+                    .skip(offset)
+                {
+                    let assigned_is_padding = region.assign_advice(
                         || "is_padding",
                         self.is_padding.column,
                         idx,
                         || Value::known(Fr::one()),
                     )?;
+
+                    row.is_padding = Some(assigned_is_padding);
                 }
 
                 Ok(())
             },
-        )
+        )?;
+
+        Ok(assigned_bitstring_table_rows)
     }
 }
 
