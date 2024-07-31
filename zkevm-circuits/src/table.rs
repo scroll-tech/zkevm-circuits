@@ -1763,6 +1763,9 @@ type CopyTableRow<F> = [(Value<F>, &'static str); 8];
 #[cfg(feature = "dual_bytecode")]
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
 
+#[cfg(not(feature = "dual_bytecode"))]
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
+
 /// CopyThread is the state used while generating rows of the copy table.
 struct CopyThread<F: Field> {
     tag: CopyDataType,

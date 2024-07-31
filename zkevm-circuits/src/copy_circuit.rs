@@ -641,11 +641,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_id_unchange,
             is_src_end,
             is_word_end,
+            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
             non_pad_non_mask,
             tx_table,
             rw_table,
             bytecode_table,
+            #[cfg(feature = "dual_bytecode")]
             bytecode_table1,
         }
     }
