@@ -92,7 +92,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        //TODO: refactor opcode_lookup into common helper
+        #[cfg(not(feature = "dual_bytecode"))]
         cb.opcode_lookup(opcode.expr(), 1.expr());
+        #[cfg(feature = "dual_bytecode")]
+        cb.opcode_lookup2(opcode.expr(), 1.expr());
+
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
         let is_delegatecall =
