@@ -714,6 +714,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.mask,
                 self.front_mask,
                 self.word_index,
+                #[cfg(feature = "dual_bytecode")]
                 self.is_first_bytecode_table,
             ]
             .iter()

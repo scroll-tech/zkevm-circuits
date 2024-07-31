@@ -56,7 +56,6 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        println!("CopyCircuit: synthesize");
         let challenge_values = config.1.values(&layouter);
 
         config.0.tx_table.load(
