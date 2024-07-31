@@ -129,6 +129,9 @@ pub struct CopyCircuitConfig<F> {
     pub rw_table: RwTable,
     /// BytecodeTable
     pub bytecode_table: BytecodeTable,
+    #[cfg(feature = "dual_bytecode")]
+    /// BytecodeTable1
+    pub bytecode_table1: BytecodeTable,
 }
 
 /// Circuit configuration arguments
@@ -639,6 +642,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            bytecode_table1,
         }
     }
 }

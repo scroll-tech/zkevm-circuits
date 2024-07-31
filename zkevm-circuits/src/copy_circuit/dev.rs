@@ -4,6 +4,7 @@ use crate::{
     copy_circuit::{CopyCircuitConfig, CopyCircuitConfigArgs},
     table::{BytecodeTable, CopyTable, RwTable, TxTable},
     util::{Challenges, Field, SubCircuit, SubCircuitConfig},
+    witness::Block,
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
@@ -55,6 +56,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        println!("CopyCircuit: synthesize");
         let challenge_values = config.1.values(&layouter);
 
         config.0.tx_table.load(
@@ -73,11 +75,28 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             challenge_values.evm_word(),
         )?;
 
+        #[cfg(not(feature = "dual_bytecode"))]
         config.0.bytecode_table.dev_load(
             &mut layouter,
             self.external_data.bytecodes.values(),
             &challenge_values,
         )?;
+
+        // when enable "dual_bytecode", get two bytes here.
+        #[cfg(feature = "dual_bytecode")]
+        {
+            let (first_bytecodes, second_bytecodes) =
+                Block::split_two_bytecodes(&self.external_data.bytecodes, &self.bytecode_map);
+            config
+                .0
+                .bytecode_table
+                .dev_load(&mut layouter, first_bytecodes, &challenge_values)?;
+            config.0.bytecode_table1.dev_load(
+                &mut layouter,
+                second_bytecodes,
+                &challenge_values,
+            )?;
+        }
         self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
     }
 }

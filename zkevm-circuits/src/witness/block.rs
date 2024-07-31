@@ -283,18 +283,30 @@ impl Block {
     }
 
     // Get two sub bytecodes for two sub bytecode circuit.
+    // TODO: Consider return (Vec<&Bytecode>, Vec<&Bytecode>) ?
     #[cfg(feature = "dual_bytecode")]
     pub(crate) fn get_two_bytecodes(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
-        let first_bytecode_hashes: Vec<Word> = self
-            .bytecode_map
+        let (first_bytecodes, second_bytecodes) =
+            Self::split_two_bytecodes(&self.bytecodes, &self.bytecode_map);
+
+        (first_bytecodes, second_bytecodes)
+    }
+
+    // Get two sub bytecodes for two sub bytecode circuit.
+    #[cfg(feature = "dual_bytecode")]
+    pub(crate) fn split_two_bytecodes<'a>(
+        bytecodes: &'a BTreeMap<Word, Bytecode>,
+        bytecode_map: &BTreeMap<Word, bool>,
+    ) -> (Vec<&'a Bytecode>, Vec<&'a Bytecode>) {
+        let first_bytecode_hashes: Vec<Word> = bytecode_map
             .iter()
             .filter_map(|item| if *item.1 { Some(*item.0) } else { None })
             .collect();
 
-        let mut first_bytecodes = Vec::new();
-        let mut second_bytecodes = Vec::new();
+        let mut first_bytecodes = Vec::<&Bytecode>::new();
+        let mut second_bytecodes = Vec::<&Bytecode>::new();
 
-        self.bytecodes
+        bytecodes
             .iter()
             .map(|code| {
                 if first_bytecode_hashes.contains(code.0) {
