@@ -67,8 +67,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-
+        #[cfg(not(feature = "dual_bytecode"))]
         cb.opcode_lookup(opcode.expr(), 1.expr());
+        #[cfg(feature = "dual_bytecode")]
+        cb.opcode_lookup2(opcode.expr(), 1.expr());
+
         let is_revert = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::REVERT.expr());
 
         // constrain op codes
@@ -358,6 +361,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        println!("return_revert offset {}", offset);
         let opcode = F::from(step.opcode.unwrap().as_u64());
         self.opcode.assign(region, offset, Value::known(opcode))?;
 
