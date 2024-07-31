@@ -458,7 +458,7 @@ fn copy_circuit_invalid_calldatacopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["rw lookup", "rw lookup"],
+        vec!["tx lookup for CallData", "rw lookup"],
     );
 }
 

@@ -122,6 +122,9 @@ pub struct CopyCircuitConfig<F> {
     pub is_word_end: IsEqualConfig<F>,
     /// non pad and non mask witness to reduce the degree of lookups.
     pub non_pad_non_mask: Column<Advice>,
+    #[cfg(feature = "dual_bytecode")]
+    /// Whether the bytecode is belong to the first bytecode sub circuit .
+    pub is_first_bytecode_table: Column<Advice>,
     // External tables
     /// TxTable
     pub tx_table: TxTable,
@@ -185,7 +188,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             array_init(|_| meta.advice_column());
         let is_first = copy_table.is_first;
         #[cfg(feature = "dual_bytecode")]
-        let is_first_bytecode_table = copy_table.is_first_bytecode_table;
+        let is_first_bytecode_table = meta.advice_column_in(SecondPhase);
         let id = copy_table.id;
         let addr = copy_table.addr;
         let src_addr_end = copy_table.src_addr_end;
@@ -497,7 +500,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        meta.lookup_any("tx table calldata lookup", |meta| {
+        meta.lookup_any("tx lookup for CallData", |meta| {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_tx_calldata, CURRENT)
                 * meta.query_advice(non_pad_non_mask, CURRENT);
@@ -638,6 +641,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_id_unchange,
             is_src_end,
             is_word_end,
+            is_first_bytecode_table,
             non_pad_non_mask,
             tx_table,
             rw_table,
@@ -708,6 +712,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.mask,
                 self.front_mask,
                 self.word_index,
+                self.is_first_bytecode_table,
             ]
             .iter()
             .zip_eq(circuit_row)
@@ -725,9 +730,6 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             // lt chip
             if is_read {
-                #[cfg(feature = "dual_bytecode")]
-                let addr = table_row[3].0;
-                #[cfg(not(feature = "dual_bytecode"))]
                 let addr = table_row[2].0;
 
                 is_src_end_chip.assign(
@@ -969,7 +971,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         // is_first_bytecode_table
         region.assign_advice(
             || format!("assign is_first_bytecode_table {}", *offset),
-            self.copy_table.is_first_bytecode_table,
+            self.is_first_bytecode_table,
             *offset,
             || Value::known(F::zero()),
         )?;
