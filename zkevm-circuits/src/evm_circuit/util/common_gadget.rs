@@ -1537,6 +1537,10 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
 pub(crate) struct CommonErrorGadget<F> {
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
+    // indicates current op code belongs to first or second bytecode table.
+    // should be bool type.
+    #[cfg(feature = "dual_bytecode")]
+    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> CommonErrorGadget<F> {
@@ -1582,10 +1586,23 @@ impl<F: Field> CommonErrorGadget<F> {
         return_data_length: Expression<F>,
         push_rlc: Expression<F>,
     ) -> Self {
+        #[cfg(feature = "dual_bytecode")]
+        let is_first_bytecode_table = cb.query_bool();
+
         #[cfg(not(feature = "dual_bytecode"))]
         cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
         #[cfg(feature = "dual_bytecode")]
-        cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
+        let is_first_bytecode_table = cb.query_bool();
+
+        #[cfg(feature = "dual_bytecode")]
+        {
+            cb.condition(is_first_bytecode_table.expr(), |cb| {
+                cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
+            });
+            cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+                cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
+            });
+        }
 
         let rw_counter_end_of_reversion = cb.query_cell();
 
@@ -1644,6 +1661,8 @@ impl<F: Field> CommonErrorGadget<F> {
         Self {
             rw_counter_end_of_reversion,
             restore_context,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
         }
     }
 
@@ -1664,6 +1683,16 @@ impl<F: Field> CommonErrorGadget<F> {
         )?;
         self.restore_context
             .assign(region, offset, block, call, step, rw_offset)?;
+
+        #[cfg(feature = "dual_bytecode")]
+        {
+            let is_first_bytecode_table = block.is_first_bytecode(&call.code_hash);
+            self.is_first_bytecode_table.assign(
+                region,
+                offset,
+                Value::known(F::from(is_first_bytecode_table)),
+            )?;
+        }
 
         // NOTE: return value not use for now.
         Ok(1u64)
