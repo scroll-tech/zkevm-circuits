@@ -34,6 +34,8 @@ pub(crate) struct ReturnRevertGadget<F> {
     opcode: Cell<F>,
     // check if it is REVERT opcode
     is_revert: IsEqualGadget<F>,
+    #[cfg(feature = "dual_bytecode")]
+    is_first_bytecode_table: Cell<F>,
 
     range: MemoryAddressGadget<F>,
     deployed_bytecode_rlc: Cell<F>,
@@ -67,10 +69,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.opcode_lookup(opcode.expr(), 1.expr());
         #[cfg(feature = "dual_bytecode")]
-        cb.opcode_lookup2(opcode.expr(), 1.expr());
+        let is_first_bytecode_table = cb.query_bool();
+
+        #[cfg(feature = "dual_bytecode")]
+        cb.lookup_opcode(opcode.expr(), 1.expr(), is_first_bytecode_table.expr());
+        #[cfg(not(feature = "dual_bytecode"))]
+        cb.lookup_opcode(opcode.expr(), 1.expr());
 
         let is_revert = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::REVERT.expr());
 
@@ -331,6 +336,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         Self {
             opcode,
             is_revert,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
             range,
             deployed_bytecode_rlc,
             is_success,
@@ -361,12 +368,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("return_revert offset {}", offset);
         let opcode = F::from(step.opcode.unwrap().as_u64());
         self.opcode.assign(region, offset, Value::known(opcode))?;
 
         self.is_revert
             .assign(region, offset, opcode, F::from(OpcodeId::REVERT.as_u64()))?;
+        #[cfg(feature = "dual_bytecode")]
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+        )?;
 
         let mut rws = StepRws::new(block, step);
 

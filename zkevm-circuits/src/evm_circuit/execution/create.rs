@@ -79,6 +79,8 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     #[cfg(feature = "scroll")]
     prev_keccak_code_hash: Cell<F>,
     copy_rw_increase: Cell<F>,
+    #[cfg(feature = "dual_bytecode")]
+    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<F>
@@ -91,8 +93,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let copy_rw_increase = cb.query_cell();
+        #[cfg(feature = "dual_bytecode")]
+        let is_first_bytecode_table = cb.query_bool();
 
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        #[cfg(feature = "dual_bytecode")]
+        cb.lookup_opcode(opcode.expr(), 1.expr(), is_first_bytecode_table.expr());
+        #[cfg(not(feature = "dual_bytecode"))]
+        cb.lookup_opcode(opcode.expr(), 1.expr());
+
         cb.require_equal(
             "Opcode is CREATE or CREATE2",
             opcode.expr(),
@@ -564,6 +572,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             #[cfg(feature = "scroll")]
             prev_keccak_code_hash,
             copy_rw_increase,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
         }
     }
 
@@ -827,6 +837,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.is_nonce_in_range
             .assign(region, offset, F::from(caller_nonce), F::from(u64::MAX))?;
 
+        #[cfg(feature = "dual_bytecode")]
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+        )?;
         Ok(())
     }
 }

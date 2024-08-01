@@ -651,10 +651,30 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Opcode
-
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
         assert_eq!(is_code, 1.expr());
         self.opcode_lookup_rlc(opcode, 0.expr());
+    }
+
+    pub(crate) fn lookup_opcode(
+        &mut self,
+        opcode: Expression<F>,
+        is_code: Expression<F>,
+        #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
+    ) {
+        assert_eq!(is_code, 1.expr());
+        #[cfg(not(feature = "dual_bytecode"))]
+        cb.opcode_lookup_rlc(opcode.expr(), 0.expr());
+
+        #[cfg(feature = "dual_bytecode")]
+        {
+            self.condition(is_first_bytecode_table.expr(), |cb| {
+                cb.opcode_lookup_rlc(opcode.expr(), 0.expr());
+            });
+            self.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+                cb.opcode_lookup_rlc2(opcode.expr(), 0.expr());
+            });
+        }
     }
 
     #[cfg(feature = "dual_bytecode")]
