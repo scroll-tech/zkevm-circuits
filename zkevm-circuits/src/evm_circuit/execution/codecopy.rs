@@ -73,9 +73,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // Fetch the hash of bytecode running in current environment.
         let code_hash = cb.curr.state.code_hash.clone();
 
-        // Fetch the bytecode length from the bytecode table.
-        cb.bytecode_length(code_hash.expr(), code_size.expr());
-
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
         // memory.
@@ -127,6 +124,19 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+
+        // Fetch the bytecode length from the bytecode table.
+        #[cfg(not(feature = "dual_bytecode"))]
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_size.expr());
+        #[cfg(feature = "dual_bytecode")]
+        {
+            cb.condition(same_context.is_first_sub_bytecode(), |cb| {
+                cb.bytecode_length(cb.curr.state.code_hash.expr(), code_size.expr());
+            });
+            cb.condition(not::expr(same_context.is_first_sub_bytecode()), |cb| {
+                cb.bytecode2_length(cb.curr.state.code_hash.expr(), code_size.expr());
+            });
+        }
 
         Self {
             same_context,

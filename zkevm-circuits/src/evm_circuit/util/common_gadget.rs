@@ -149,6 +149,58 @@ impl<F: Field> SameContextGadget<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct BytecodeLengthGadget<F> {
+    pub(crate) code_length: Cell<F>,
+    // indicates current op code belongs to first or second bytecode table.
+    // should be bool type.
+    #[cfg(feature = "dual_bytecode")]
+    is_first_bytecode_table: Expression<F>,
+}
+
+impl<F: Field> BytecodeLengthGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        code_hash: Cell<F>,
+        #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
+    ) -> Self {
+        // Fetch the bytecode length from the bytecode table.
+        let code_length = cb.query_cell();
+        #[cfg(not(feature = "dual_bytecode"))]
+        cb.bytecode_length(code_hash.expr(), code_length.expr());
+
+        #[cfg(feature = "dual_bytecode")]
+        {
+            cb.condition(is_first_bytecode_table.clone(), |cb| {
+                cb.bytecode_length(code_hash.expr(), code_length.expr());
+            });
+            cb.condition(not::expr(is_first_bytecode_table.clone()), |cb| {
+                cb.bytecode2_length(code_hash.expr(), code_length.expr());
+            });
+        }
+        Self {
+            code_length,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block,
+        call: &Call,
+        code_len: u64,
+    ) -> Result<(), Error> {
+        // TODO: get code length dynamically here ?
+        self.code_length
+            .assign(region, offset, Value::known(F::from(code_len)))?;
+
+        Ok(())
+    }
+}
+
 /// Construction of step state transition that restores caller's state.
 #[derive(Clone, Debug)]
 pub(crate) struct RestoreContextGadget<F> {

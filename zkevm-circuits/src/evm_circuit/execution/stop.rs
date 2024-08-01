@@ -40,7 +40,6 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         let opcode = cb.query_cell();
         #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
-
         #[cfg(not(feature = "dual_bytecode"))]
         cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
 
