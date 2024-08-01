@@ -4,7 +4,7 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            common_gadget::{CommonErrorGadget, WordByteCapGadget},
+            common_gadget::{BytecodeLengthGadget, CommonErrorGadget, WordByteCapGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsEqualGadget, IsZeroGadget},
             CachedRegion, Cell,
@@ -21,7 +21,6 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct ErrorInvalidJumpGadget<F> {
     opcode: Cell<F>,
     dest: WordByteCapGadget<F, N_BYTES_PROGRAM_COUNTER>,
-    code_len: Cell<F>,
     value: Cell<F>,
     is_code: Cell<F>,
     push_rlc: Cell<F>,
@@ -30,6 +29,9 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     phase2_condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
+    #[cfg(feature = "dual_bytecode")]
+    is_first_bytecode_table: Cell<F>,
+    code_len_gadget: BytecodeLengthGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
@@ -38,8 +40,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let code_len = cb.query_cell();
-        let dest = WordByteCapGadget::construct(cb, code_len.expr());
+        let is_first_bytecode_table = cb.query_cell();
+        #[cfg(not(feature = "dual_bytecode"))]
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
+
+        #[cfg(feature = "dual_bytecode")]
+        let code_len_gadget = BytecodeLengthGadget::construct(
+            cb,
+            cb.curr.state.code_hash.clone(),
+            is_first_bytecode_table.expr(),
+        );
+
+        let dest = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
 
         let opcode = cb.query_cell();
         let value = cb.query_cell();
@@ -71,9 +83,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
-        // Look up bytecode length
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_len.expr());
-
         // If destination is in valid range, lookup for the value.
         cb.condition(dest.lt_cap(), |cb| {
             cb.bytecode_lookup(
@@ -95,7 +104,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         Self {
             opcode,
             dest,
-            code_len,
             value,
             is_code,
             push_rlc,
@@ -104,6 +112,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             phase2_condition,
             is_condition_zero,
             common_error_gadget,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
+            code_len_gadget,
         }
     }
 
@@ -133,8 +144,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
         let code_len = code.bytes.len() as u64;
-        self.code_len
-            .assign(region, offset, Value::known(F::from(code_len)))?;
+        #[cfg(feature = "dual_bytecode")]
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+        )?;
 
         let dest = block.rws[step.rw_indices[0]].stack_value();
         self.dest.assign(region, offset, dest, F::from(code_len))?;
@@ -179,6 +194,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             step,
             3 + is_jumpi as usize,
         )?;
+        self.code_len_gadget
+            .assign(region, offset, block, call, code_len)?;
 
         Ok(())
     }
