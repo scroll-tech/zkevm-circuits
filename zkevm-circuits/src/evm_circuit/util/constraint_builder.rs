@@ -664,7 +664,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         assert_eq!(is_code, 1.expr());
         #[cfg(not(feature = "dual_bytecode"))]
-        cb.opcode_lookup_rlc(opcode.expr(), 0.expr());
+        self.opcode_lookup_rlc(opcode.expr(), 0.expr());
 
         #[cfg(feature = "dual_bytecode")]
         {

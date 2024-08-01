@@ -1586,9 +1586,6 @@ impl<F: Field> CommonErrorGadget<F> {
         return_data_length: Expression<F>,
         push_rlc: Expression<F>,
     ) -> Self {
-        #[cfg(feature = "dual_bytecode")]
-        let is_first_bytecode_table = cb.query_bool();
-
         #[cfg(not(feature = "dual_bytecode"))]
         cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
         #[cfg(feature = "dual_bytecode")]
