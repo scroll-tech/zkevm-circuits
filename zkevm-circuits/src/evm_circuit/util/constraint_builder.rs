@@ -795,6 +795,28 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
+    // TODO: consider to merge bytecode_lookup and bytecode_lookup2 into one later?
+    pub(crate) fn bytecode_lookup2(
+        &mut self,
+        code_hash: Expression<F>,
+        index: Expression<F>,
+        is_code: Expression<F>,
+        value: Expression<F>,
+        push_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "Bytecode (byte) lookup",
+            Lookup::Bytecode1 {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Byte.expr(),
+                index,
+                is_code,
+                value,
+                push_rlc,
+            },
+        )
+    }
+
     pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
         self.add_lookup(
             "Bytecode (length)",
