@@ -83,6 +83,7 @@ pub(crate) struct CallOpGadget<F> {
     precompile_input_rws: Cell<F>,
     precompile_output_rws: Cell<F>,
     precompile_return_rws: Cell<F>,
+    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -92,11 +93,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        //TODO: refactor opcode_lookup into common helper
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.opcode_lookup(opcode.expr(), 1.expr());
         #[cfg(feature = "dual_bytecode")]
-        cb.opcode_lookup2(opcode.expr(), 1.expr());
+        let is_first_bytecode_table = cb.query_bool();
+        cb.lookup_opcode(
+            opcode.expr(),
+            1.expr(),
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table.expr(),
+        );
 
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
@@ -752,6 +756,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_input_rws,
             precompile_output_rws,
             precompile_return_rws,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
         }
     }
 
@@ -779,7 +785,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
-
+        #[cfg(feature = "dual_bytecode")]
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+        )?;
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
         // opcode DELEGATECALL has two extra call context lookups - current
