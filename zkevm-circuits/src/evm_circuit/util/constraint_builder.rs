@@ -795,6 +795,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
+    #[cfg(feature = "dual_bytecode")]
     // TODO: consider to merge bytecode_lookup and bytecode_lookup2 into one later?
     pub(crate) fn bytecode_lookup2(
         &mut self,
@@ -805,7 +806,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         push_rlc: Expression<F>,
     ) {
         self.add_lookup(
-            "Bytecode (byte) lookup",
+            "Bytecode1 (byte) lookup",
             Lookup::Bytecode1 {
                 hash: code_hash,
                 tag: BytecodeFieldTag::Byte.expr(),
