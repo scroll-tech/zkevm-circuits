@@ -83,6 +83,7 @@ pub(crate) struct CallOpGadget<F> {
     precompile_input_rws: Cell<F>,
     precompile_output_rws: Cell<F>,
     precompile_return_rws: Cell<F>,
+    #[cfg(feature = "dual_bytecode")]
     is_first_bytecode_table: Cell<F>,
 }
 
