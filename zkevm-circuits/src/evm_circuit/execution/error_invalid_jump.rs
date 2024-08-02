@@ -42,13 +42,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let is_first_bytecode_table = cb.query_cell();
-        #[cfg(not(feature = "dual_bytecode"))]
-        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
 
-        #[cfg(feature = "dual_bytecode")]
         let code_len_gadget = BytecodeLengthGadget::construct(
             cb,
             cb.curr.state.code_hash.clone(),
+            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table.expr(),
         );
 
