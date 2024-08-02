@@ -29,6 +29,8 @@ pub(crate) struct ErrorPrecompileFailedGadget<F> {
     value: Word<F>,
     cd_address: MemoryAddressGadget<F>,
     rd_address: MemoryAddressGadget<F>,
+    #[cfg(feature = "dual_bytecode")]
+    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
@@ -38,7 +40,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        #[cfg(feature = "dual_bytecode")]
+        let is_first_bytecode_table = cb.query_bool();
+        cb.lookup_opcode(
+            opcode.expr(),
+            1.expr(),
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table.expr(),
+        );
 
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
@@ -107,6 +116,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             value,
             cd_address,
             rd_address,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
         }
     }
 
@@ -116,13 +127,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
-
+        #[cfg(feature = "dual_bytecode")]
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+        )?;
         let [gas, callee_address] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
         let value = if is_call_or_callcode == 1 {
