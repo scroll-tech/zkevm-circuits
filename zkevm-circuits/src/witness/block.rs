@@ -278,8 +278,10 @@ impl Block {
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
     #[cfg(feature = "dual_bytecode")]
     pub(crate) fn is_first_bytecode(&self, code_hash: &U256) -> bool {
-        // bytecode_map should cover the target 'code_hash', `unwrap` here is safe.
-        *self.bytecode_map.get(code_hash).unwrap()
+        // bytecode_map should cover the target 'code_hash',
+        // but for extcodecopy, the external_address can be non existed code hash.
+        // `unwrap` here is not safe.
+        *self.bytecode_map.get(code_hash).unwrap_or(&true)
     }
 
     // Get two sub bytecodes for two sub bytecode circuit.

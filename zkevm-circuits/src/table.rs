@@ -1992,8 +1992,9 @@ impl CopyTable {
             // For return in creating contract case, dst_type == Bytecode.
             let is_first_bytecode_table = if copy_event.src_type == CopyDataType::Bytecode {
                 let code_hash = Word::from_big_endian(copy_event.src_id.get_hash().as_bytes());
-                // bytecode_map includes all the code_hash, here unwrap would be safe.
-                *bytecode_map.get(&code_hash).unwrap()
+                // bytecode_map includes all the code_hash, for normal cases, unwrap would be safe.
+                // but for extcodecopy, the external_address can be non existed code hash.
+                *bytecode_map.get(&code_hash).unwrap_or(&true)
             } else if copy_event.dst_type == CopyDataType::Bytecode {
                 let code_hash = Word::from_big_endian(copy_event.dst_id.get_hash().as_bytes());
 
