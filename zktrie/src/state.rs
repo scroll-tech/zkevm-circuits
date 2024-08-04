@@ -184,7 +184,7 @@ impl ZktrieState {
             .chain(additional_proofs);
         let mut zk_db = self.zk_db.borrow_mut();
         for bytes in proofs {
-            zk_db.add_node_bytes(bytes).unwrap();
+            zk_db.add_node_data(bytes).unwrap();
         }
     }
 
