@@ -148,21 +148,57 @@ impl CircuitInputBuilder {
         };
 
         let mut sdb = StateDB::new();
-        for parsed in ZktrieState::parse_account_from_proofs(Self::collect_account_proofs(
-            &l2_trace.storage_trace,
-        )) {
-            let (addr, acc) = parsed.map_err(Error::IoError)?;
-            log::trace!("sdb trace {:?} {:?}", addr, acc);
-            sdb.set_account(&addr, state_db::Account::from(&acc));
-        }
+        if let Some(zk_state) = &mpt_init_state {
+            for (addr, acc) in zk_state.query_accounts(
+                Self::collect_account_proofs(&l2_trace.storage_trace).map(|(addr, _)| addr),
+            ) {
+                if let Some(acc) = acc {
+                    log::trace!("sdb trace[query mode] {:?} {:?}", addr, acc);
+                    sdb.set_account(&addr, state_db::Account::from(&acc));
+                } else {
+                    log::warn!("can not query account with addr {:?}", addr);
+                }
+            }
 
-        for parsed in ZktrieState::parse_storage_from_proofs(Self::collect_storage_proofs(
-            &l2_trace.storage_trace,
-        )) {
-            let ((addr, key), val) = parsed.map_err(Error::IoError)?;
-            let key = key.to_word();
-            log::trace!("sdb trace storage {:?} {:?} {:?}", addr, key, val);
-            *sdb.get_storage_mut(&addr, &key).1 = val.into();
+            for ((addr, key), val) in zk_state.query_storages(
+                Self::collect_storage_proofs(&l2_trace.storage_trace)
+                    .map(|(addr, key, _)| (addr, key)),
+            ) {
+                let key = key.to_word();
+                if let Some(val) = val {
+                    log::trace!(
+                        "sdb trace storage[query mode] {:?} {:?} {:?}",
+                        addr,
+                        key,
+                        val
+                    );
+                    *sdb.get_storage_mut(&addr, &key).1 = val.into();
+                } else {
+                    log::trace!(
+                        "sdb trace storage[query mode] {:?} {:?} for zero",
+                        addr,
+                        key
+                    );
+                    *sdb.get_storage_mut(&addr, &key).1 = Default::default();
+                }
+            }
+        } else {
+            for parsed in ZktrieState::parse_account_from_proofs(Self::collect_account_proofs(
+                &l2_trace.storage_trace,
+            )) {
+                let (addr, acc) = parsed.map_err(Error::IoError)?;
+                log::trace!("sdb trace {:?} {:?}", addr, acc);
+                sdb.set_account(&addr, state_db::Account::from(&acc));
+            }
+
+            for parsed in ZktrieState::parse_storage_from_proofs(Self::collect_storage_proofs(
+                &l2_trace.storage_trace,
+            )) {
+                let ((addr, key), val) = parsed.map_err(Error::IoError)?;
+                let key = key.to_word();
+                log::trace!("sdb trace storage {:?} {:?} {:?}", addr, key, val);
+                *sdb.get_storage_mut(&addr, &key).1 = val.into();
+            }
         }
 
         let mut code_db = CodeDB::new();
@@ -203,40 +239,62 @@ impl CircuitInputBuilder {
             );
         }
 
-        let new_accounts = ZktrieState::parse_account_from_proofs(
+        let filtered_accounts =
             Self::collect_account_proofs(&l2_trace.storage_trace).filter(|(addr, _)| {
                 let (existed, _) = self.sdb.get_account(addr);
                 !existed
-            }),
-        )
-        .try_fold(
-            HashMap::new(),
-            |mut m, parsed| -> Result<HashMap<_, _>, Error> {
-                let (addr, acc) = parsed.map_err(Error::IoError)?;
-                m.insert(addr, acc);
-                Ok(m)
-            },
-        )?;
+            });
+
+        let new_accounts = if let Some(zk_state) = &self.mpt_init_state {
+            zk_state
+                .query_accounts(filtered_accounts.map(|(addr, _)| addr))
+                .fold(HashMap::new(), |mut m, (addr, acc)| {
+                    if let Some(acc) = acc {
+                        m.insert(addr, acc);
+                    }
+                    m
+                })
+        } else {
+            ZktrieState::parse_account_from_proofs(filtered_accounts).try_fold(
+                HashMap::new(),
+                |mut m, parsed| -> Result<HashMap<_, _>, Error> {
+                    let (addr, acc) = parsed.map_err(Error::IoError)?;
+                    m.insert(addr, acc);
+                    Ok(m)
+                },
+            )?
+        };
 
         for (addr, acc) in new_accounts {
             self.sdb.set_account(&addr, state_db::Account::from(&acc));
         }
 
-        let new_storages = ZktrieState::parse_storage_from_proofs(
+        let filtered_storages =
             Self::collect_storage_proofs(&l2_trace.storage_trace).filter(|(addr, key, _)| {
                 let key = key.to_word();
                 let (existed, _) = self.sdb.get_committed_storage(addr, &key);
                 !existed
-            }),
-        )
-        .try_fold(
-            HashMap::new(),
-            |mut m, parsed| -> Result<HashMap<(Address, Word), Word>, Error> {
-                let ((addr, key), val) = parsed.map_err(Error::IoError)?;
-                m.insert((addr, key.to_word()), val.into());
-                Ok(m)
-            },
-        )?;
+            });
+
+        let new_storages = if let Some(zk_state) = &self.mpt_init_state {
+            zk_state
+                .query_storages(filtered_storages.map(|(addr, key, _)| (addr, key)))
+                .fold(HashMap::new(), |mut m, ((addr, key), val)| {
+                    if let Some(val) = val {
+                        m.insert((addr, key.to_word()), val.into());
+                    }
+                    m
+                })
+        } else {
+            ZktrieState::parse_storage_from_proofs(filtered_storages).try_fold(
+                HashMap::new(),
+                |mut m, parsed| -> Result<HashMap<(Address, Word), Word>, Error> {
+                    let ((addr, key), val) = parsed.map_err(Error::IoError)?;
+                    m.insert((addr, key.to_word()), val.into());
+                    Ok(m)
+                },
+            )?
+        };
 
         for ((addr, key), val) in new_storages {
             *self.sdb.get_storage_mut(&addr, &key).1 = val;

@@ -80,6 +80,44 @@ impl ZktrieState {
         true
     }
 
+    ///
+    pub fn query_accounts<'d: 'a, 'a>(
+        &self,
+        accounts: impl Iterator<Item = &'a Address> + 'd,
+    ) -> impl Iterator<Item = (Address, Option<AccountData>)> + 'a {
+        let trie = self.zk_db.borrow_mut().new_trie(&self.trie_root).unwrap();
+        accounts.map(move |&addr| {
+            let account = trie.get_account(addr.as_bytes()).map(AccountData::from);
+            (addr, account)
+        })
+    }
+
+    ///
+    pub fn query_storages<'d: 'a, 'a>(
+        &self,
+        storages: impl Iterator<Item = (&'a Address, &'a H256)> + 'd,
+    ) -> impl Iterator<Item = ((Address, H256), Option<StorageData>)> + 'a {
+        use std::collections::{hash_map::Entry::*, HashMap};
+        let zk_db = self.zk_db.borrow().clone();
+        let account_trie = zk_db.new_trie(&self.trie_root).unwrap();
+        let mut trie_cache: HashMap<Address, ZkTrie> = HashMap::new();
+        storages.map(move |(&addr, &key)| {
+            let store_val = match trie_cache.entry(addr) {
+                Occupied(entry) => Some(entry.into_mut()),
+                Vacant(entry) => account_trie
+                    .get_account(addr.as_bytes())
+                    .map(AccountData::from)
+                    .and_then(|account| {
+                        zk_db
+                            .new_trie(&account.storage_root.0)
+                            .map(|tr| entry.insert(tr))
+                    }),
+            }
+            .and_then(|tr| tr.get_store(key.as_bytes()).map(StorageData::from));
+            ((addr, key), store_val)
+        })
+    }
+
     /// Helper for parsing account data from external data (mainly storage trace)
     pub fn parse_account_from_proofs<'d: 'a, 'a, BYTES>(
         account_proofs: impl Iterator<Item = (&'a Address, BYTES)> + 'd,
