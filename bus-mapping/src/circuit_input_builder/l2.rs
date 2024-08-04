@@ -124,7 +124,16 @@ impl CircuitInputBuilder {
             hex::encode(old_root),
         );
 
-        let mpt_init_state = if !light_mode {
+        let mpt_init_state = if !l2_trace.storage_trace.flatten_proofs.is_empty() {
+            log::info!("always init mpt state with flatten proofs");
+            let state = ZktrieState::construct(old_root);
+            let mut zk_db = state.zk_db.borrow_mut();
+            for (k, bytes) in &l2_trace.storage_trace.flatten_proofs {
+                zk_db.add_node_bytes(bytes, Some(k.as_bytes())).unwrap();
+            }
+            drop(zk_db);
+            Some(state)
+        } else if !light_mode {
             let mpt_init_state = ZktrieState::from_trace_with_additional(
                 old_root,
                 Self::collect_account_proofs(&l2_trace.storage_trace),
@@ -227,7 +236,17 @@ impl CircuitInputBuilder {
     /// Apply more l2 traces
     pub fn add_more_l2_trace(&mut self, l2_trace: BlockTrace) -> Result<(), Error> {
         // update init state new data from storage
-        if let Some(mpt_init_state) = &mut self.mpt_init_state {
+        if !l2_trace.storage_trace.flatten_proofs.is_empty() {
+            let mpt_state = self
+                .mpt_init_state
+                .as_ref()
+                .expect("should have inited with flatten proof");
+            log::info!("add more flatten proofs to mpt state");
+            let mut zk_db = mpt_state.zk_db.borrow_mut();
+            for (k, bytes) in &l2_trace.storage_trace.flatten_proofs {
+                zk_db.add_node_bytes(bytes, Some(k.as_bytes())).unwrap();
+            }
+        } else if let Some(mpt_init_state) = &mut self.mpt_init_state {
             mpt_init_state.update_from_trace(
                 Self::collect_account_proofs(&l2_trace.storage_trace),
                 Self::collect_storage_proofs(&l2_trace.storage_trace),
