@@ -272,5 +272,8 @@ pub(crate) fn print_circuit_stats_by_states(
         table.push_row(row);
     }
 
+    // height_debug
+    log::trace!("=> evm_height table: ");
+    
     table.print();
 }
