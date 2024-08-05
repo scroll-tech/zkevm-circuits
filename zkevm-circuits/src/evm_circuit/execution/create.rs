@@ -577,7 +577,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         step: &ExecStep,
     ) -> Result<(), Error> {
         // height_debug
-        log::trace!("=> create state: {:?}, step.rw_indices: {:?}", step.opcode.clone(), step.rw_indices.clone());
+        log::trace!("=> create state: {:?}, step.rw_indices: {:?}, len: {:?}", step.opcode.clone(), step.rw_indices.clone(), step.rw_indices.len());
         
         let opcode = step.opcode.unwrap();
         let is_create2 = opcode == OpcodeId::CREATE2;
