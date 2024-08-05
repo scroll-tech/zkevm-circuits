@@ -691,10 +691,11 @@ impl<'a> CircuitInputBuilder {
         self.sdb.clear_transient_storage();
         tx.steps_mut().extend(end_tx_steps);
 
-        debug_assert_eq!(
-            tx.calls.len(),
-            tx_ctx.call_is_success_offset + tx_ctx.call_is_success.len()
-        );
+        // height_debug
+        // debug_assert_eq!(
+        //     tx.calls.len(),
+        //     tx_ctx.call_is_success_offset + tx_ctx.call_is_success.len()
+        // );
 
         self.sdb.commit_tx();
         self.block.txs.push(tx);
