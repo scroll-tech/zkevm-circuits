@@ -476,9 +476,6 @@ fn copy_circuit_invalid_codecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        #[cfg(feature = "dual_bytecode")]
-        vec!["Bytecode lookup", "rw lookup"],
-        #[cfg(not(feature = "dual_bytecode"))]
         vec!["rw lookup", "Bytecode lookup"],
     );
 }
@@ -497,9 +494,6 @@ fn copy_circuit_invalid_extcodecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        #[cfg(feature = "dual_bytecode")]
-        vec!["Bytecode lookup", "rw lookup"],
-        #[cfg(not(feature = "dual_bytecode"))]
         vec!["rw lookup", "Bytecode lookup"],
     );
 }
