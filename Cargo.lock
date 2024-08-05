@@ -61,8 +61,8 @@ dependencies = [
  "num-bigint",
  "once_cell",
  "rand",
- "revm-precompile 7.0.0",
- "revm-primitives 4.0.0",
+ "revm-precompile 9.2.0",
+ "revm-primitives 7.1.0",
  "serde",
  "serde_json",
  "snark-verifier 0.1.0",
@@ -99,6 +99,20 @@ name = "allocator-api2"
 version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
+
+[[package]]
+name = "alloy-eips"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9431c99a3b3fe606ede4b3d4043bdfbcb780c45b8d8d226c3804e2b75cfbe68"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "alloy-rlp",
+ "c-kzg 1.0.2",
+ "k256",
+ "once_cell",
+ "serde",
+]
 
 [[package]]
 name = "alloy-primitives"
@@ -668,7 +682,7 @@ dependencies = [
  "pretty_assertions",
  "rand",
  "rayon",
- "revm-precompile 7.0.0",
+ "revm-precompile 9.2.0",
  "serde",
  "serde_json",
  "strum 0.25.0",
@@ -1557,6 +1571,7 @@ name = "eth-types"
 version = "0.12.0"
 dependencies = [
  "base64 0.13.1",
+ "bincode",
  "ethers-core",
  "ethers-signers",
  "halo2curves",
@@ -1567,8 +1582,8 @@ dependencies = [
  "num-bigint",
  "poseidon-base",
  "regex",
- "revm-precompile 7.0.0",
- "revm-primitives 4.0.0",
+ "revm-precompile 9.2.0",
+ "revm-primitives 7.1.0",
  "serde",
  "serde_json",
  "serde_with 1.14.0",
@@ -4026,14 +4041,15 @@ dependencies = [
 
 [[package]]
 name = "revm-precompile"
-version = "7.0.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#36c304d9e9ba4e4b2d5468d91a6bd27210133b6a"
+version = "9.2.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#2a3e0a54801892c649b61c17e719c5391f166811"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg 1.0.2",
+ "cfg-if 1.0.0",
  "k256",
  "once_cell",
- "revm-primitives 4.0.0",
+ "revm-primitives 7.1.0",
  "ripemd",
  "secp256k1 0.29.0",
  "sha2",
@@ -4060,9 +4076,10 @@ dependencies = [
 
 [[package]]
 name = "revm-primitives"
-version = "4.0.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v36#36c304d9e9ba4e4b2d5468d91a6bd27210133b6a"
+version = "7.1.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#2a3e0a54801892c649b61c17e719c5391f166811"
 dependencies = [
+ "alloy-eips",
  "alloy-primitives 0.7.7",
  "auto_impl",
  "bitflags 2.6.0",

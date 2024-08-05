@@ -111,7 +111,7 @@ fn test_read_inner_snark() {
     let inner_snark: snark_verifier_sdk::Snark =
         prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
     // test that we are able to deserialize the inner snark without hitting the recursion limit.
-    let _ = to_ce_snark(&snark);
+    to_ce_snark(&inner_snark);
 }
 
 fn from_ce_snark(snark: &Snark) -> snark_verifier_sdk::Snark {
