@@ -468,24 +468,67 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             #[cfg(feature = "dual_bytecode")]
             let is_first_bytecode = meta.query_advice(is_first_bytecode_table, CURRENT);
 
-            let cond = meta.query_fixed(q_enable, CURRENT)
+            let mut cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_bytecode, CURRENT)
                 * meta.query_advice(non_pad_non_mask, CURRENT);
 
-            // construct table for lookup
             #[cfg(feature = "dual_bytecode")]
-            let table_expr: Vec<Expression<F>> = bytecode_table
-                .table_exprs_mini(meta)
-                .into_iter()
-                .zip_eq(bytecode_table1.table_exprs_mini(meta))
-                .map(|(first_table_item, second_table_item)| {
-                    first_table_item * is_first_bytecode.clone()
-                        + not::expr(is_first_bytecode.clone()) * second_table_item
-                })
-                .collect();
+            {
+                cond = cond * is_first_bytecode.expr();
+            }
 
-            #[cfg(not(feature = "dual_bytecode"))]
+            // construct table for lookup
+            // #[cfg(feature = "dual_bytecode")]
+            // let table_expr: Vec<Expression<F>> = bytecode_table
+            //     .table_exprs_mini(meta)
+            //     .into_iter()
+            //     .zip_eq(bytecode_table1.table_exprs_mini(meta))
+            //     .map(|(first_table_item, second_table_item)| {
+            //         first_table_item * is_first_bytecode.clone()
+            //             + not::expr(is_first_bytecode.clone()) * second_table_item
+            //     })
+            //     .collect();
+
+            //#[cfg(not(feature = "dual_bytecode"))]
             let table_expr = bytecode_table.table_exprs_mini(meta);
+
+            vec![
+                1.expr(),
+                meta.query_advice(id, CURRENT),
+                BytecodeFieldTag::Byte.expr(),
+                meta.query_advice(addr, CURRENT),
+                meta.query_advice(value, CURRENT),
+            ]
+            .into_iter()
+            .zip_eq(table_expr)
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
+        });
+
+        // lookup second bytecode table
+        #[cfg(feature = "dual_bytecode")]
+        meta.lookup_any("Bytecode lookup", |meta| {
+            let is_first_bytecode = meta.query_advice(is_first_bytecode_table, CURRENT);
+
+            let mut cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_bytecode, CURRENT)
+                * meta.query_advice(non_pad_non_mask, CURRENT)
+                * (1.expr() - is_first_bytecode);
+
+            // construct table for lookup
+            // #[cfg(feature = "dual_bytecode")]
+            // let table_expr: Vec<Expression<F>> = bytecode_table
+            //     .table_exprs_mini(meta)
+            //     .into_iter()
+            //     .zip_eq(bytecode_table1.table_exprs_mini(meta))
+            //     .map(|(first_table_item, second_table_item)| {
+            //         first_table_item * is_first_bytecode.clone()
+            //             + not::expr(is_first_bytecode.clone()) * second_table_item
+            //     })
+            //     .collect();
+
+            //#[cfg(not(feature = "dual_bytecode"))]
+            let table_expr = bytecode_table1.table_exprs_mini(meta);
 
             vec![
                 1.expr(),
@@ -668,10 +711,12 @@ impl<F: Field> CopyCircuitConfig<F> {
         copy_event: &CopyEvent,
         #[cfg(feature = "dual_bytecode")] bytecode_map: &BTreeMap<Word, bool>,
     ) -> Result<(), Error> {
-        #[cfg(feature = "dual_bytecode")]
-        let copy_rows = CopyTable::assignments(copy_event, challenges, bytecode_map);
-        #[cfg(not(feature = "dual_bytecode"))]
-        let copy_rows = CopyTable::assignments(copy_event, challenges);
+        let copy_rows = CopyTable::assignments(
+            copy_event,
+            challenges,
+            #[cfg(feature = "dual_bytecode")]
+            bytecode_map,
+        );
 
         for (step_idx, (tag, table_row, circuit_row)) in copy_rows.iter().enumerate() {
             let is_read = step_idx % 2 == 0;
@@ -885,7 +930,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                             }
                         }
                     );
-                    #[cfg(feature = "dual_bytecode")]
+
                     self.assign_copy_event(
                         &mut region,
                         &mut offset,
@@ -895,18 +940,8 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &lt_word_end_chip,
                         challenges,
                         copy_event,
+                        #[cfg(feature = "dual_bytecode")]
                         bytecode_map,
-                    )?;
-                    #[cfg(not(feature = "dual_bytecode"))]
-                    self.assign_copy_event(
-                        &mut region,
-                        &mut offset,
-                        &tag_chip,
-                        &is_id_unchange,
-                        &is_src_end_chip,
-                        &lt_word_end_chip,
-                        challenges,
-                        copy_event,
                     )?;
                     log::trace!("offset after {}th copy event: {}", ev_idx, offset);
                 }
