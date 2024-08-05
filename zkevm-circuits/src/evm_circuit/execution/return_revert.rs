@@ -72,11 +72,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
 
-        #[cfg(feature = "dual_bytecode")]
-        cb.lookup_opcode(opcode.expr(), 1.expr(), is_first_bytecode_table.expr());
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.lookup_opcode(opcode.expr(), 1.expr());
-
+        cb.lookup_opcode(
+            opcode.expr(),
+            1.expr(),
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table.expr(),
+        );
         let is_revert = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::REVERT.expr());
 
         // constrain op codes
@@ -368,6 +369,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        println!("return offset {}", offset);
+
         let opcode = F::from(step.opcode.unwrap().as_u64());
         self.opcode.assign(region, offset, Value::known(opcode))?;
 
