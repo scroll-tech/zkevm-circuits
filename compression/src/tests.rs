@@ -112,8 +112,8 @@ fn from_ce_snark(snark: &Snark) -> snark_verifier_sdk::Snark {
 
 fn assert_snark_roundtrip(snark: &Snark) {
     assert_eq!(
-        serde_json::to_string(&snark).unwrap(),
-        serde_json::to_string(&to_ce_snark(&from_ce_snark(&snark))).unwrap()
+        serde_json::to_string(snark).unwrap(),
+        serde_json::to_string(&to_ce_snark(&from_ce_snark(snark))).unwrap()
     );
 }
 
