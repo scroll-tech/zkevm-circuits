@@ -99,7 +99,7 @@ impl CompressionCircuit {
         _rng: impl Rng + Send, // TODO: hook this up to the rng in AggregationCircuit? is that even needed?
     ) -> Result<Self, ce_snark_verifier::Error> {
         let mut inner = AggregationCircuit::new::<SHPLONK>(
-            CircuitBuilderStage::Prover,
+            CircuitBuilderStage::Mock,
             load_params(),
             params,
             [snark],
