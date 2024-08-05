@@ -1,8 +1,9 @@
+use crate::aggregation::witgen::{process, MultiBlockProcessResult};
 use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
     },
-    blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
+    blob::{BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256},
     param::ConfigParams,
     BatchDataConfig, MAX_AGG_SNARKS,
 };
@@ -259,16 +260,16 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 
 #[test]
 fn blob_circuit_completeness() {
-    // single chunk in batch, but the chunk has a size of N_ROWS_DATA
-    let full_blob = vec![
-        // batch274 contains batch bytes that will produce a full blob
-        hex::decode(
-            fs::read_to_string("./data/test_batches/batch274.hex")
-                .expect("file path exists")
-                .trim(),
-        )
-        .expect("should load full blob batch bytes"),
-    ];
+    // Full blob test case
+    // batch274 contains batch bytes that will produce a full blob
+    let full_blob = hex::decode(
+        fs::read_to_string("./data/test_batches/batch274.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load full blob batch bytes");
+    // batch274 contains metadata
+    let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
 
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
@@ -290,8 +291,8 @@ fn blob_circuit_completeness() {
         .chain(std::iter::once(vec![3, 100, 24, 30]))
         .collect::<Vec<_>>();
 
-    for blob in [
-        full_blob,
+    for (idx, blob) in [
+        segmented_full_blob_src,
         one_chunk,
         two_chunks,
         max_chunks,
@@ -300,9 +301,111 @@ fn blob_circuit_completeness() {
         nonempty_chunk_followed_by_empty_chunk,
         empty_and_nonempty_chunks,
         all_empty_except_last,
-    ] {
-        assert_eq!(check_data(BatchData::from(&blob)), Ok(()), "{:?}", blob);
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let batch_data = BatchData::from(&blob);
+
+        // First blob is purposely constructed to take full blob space
+        if idx == 0 {
+            let encoded_len = batch_data.get_encoded_batch_data_bytes().len();
+            assert_eq!(
+                encoded_len, N_BLOB_BYTES,
+                "should be full blob: expected={N_BLOB_BYTES}, got={encoded_len}",
+            );
+        }
+
+        assert_eq!(check_data(batch_data), Ok(()), "{:?}", blob);
     }
+}
+
+#[test]
+fn zstd_encoding_consistency() {
+    // Load test blob bytes
+    let blob_bytes = hex::decode(
+        fs::read_to_string("./data/test_blobs/blob005.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load blob bytes");
+
+    // Leave out most significant byte for compressed data
+    let mut compressed: Vec<u8> = vec![];
+    for i in 0..blob_bytes.len() / 32 {
+        for j in 1..32usize {
+            compressed.push(blob_bytes[i * 32 + j]);
+        }
+    }
+
+    // Decode into original batch bytes
+    let MultiBlockProcessResult {
+        witness_rows: _w,
+        literal_bytes: _l,
+        fse_aux_tables: _f,
+        block_info_arr: _b,
+        sequence_info_arr: _s,
+        address_table_rows: _a,
+        sequence_exec_results,
+    } = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+
+    // The decoded batch data consists of:
+    // - [0..182] bytes of metadata
+    // - [182..] remaining bytes of chunk data
+    let recovered_bytes = sequence_exec_results
+        .into_iter()
+        .flat_map(|r| r.recovered_bytes)
+        .collect::<Vec<u8>>();
+    let segmented_batch_data = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(recovered_bytes);
+
+    // Re-encode into blob bytes
+    let re_encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_data);
+    let re_encoded_blob_bytes = re_encoded_batch_data.get_encoded_batch_data_bytes();
+
+    assert_eq!(compressed, re_encoded_blob_bytes, "Blob bytes must match");
+}
+
+#[test]
+fn zstd_encoding_consistency_from_batch() {
+    // Load test batch bytes
+    // batch274 contains batch bytes that will produce a full blob
+    let batch_bytes = hex::decode(
+        fs::read_to_string("./data/test_batches/batch274.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load batch bytes");
+    let segmented_batch_bytes =
+        BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(batch_bytes.clone());
+
+    // Re-encode into blob bytes
+    let encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_bytes);
+    let encoded_blob_bytes = encoded_batch_data.get_encoded_batch_data_bytes();
+
+    // full blob len sanity check
+    assert_eq!(
+        encoded_blob_bytes.len(),
+        N_BLOB_BYTES,
+        "full blob is the correct len"
+    );
+
+    // Decode into original batch bytes
+    let MultiBlockProcessResult {
+        witness_rows: _w,
+        literal_bytes: _l,
+        fse_aux_tables: _f,
+        block_info_arr: _b,
+        sequence_info_arr: _s,
+        address_table_rows: _a,
+        sequence_exec_results,
+    } = process::<Fr>(&encoded_blob_bytes, Value::known(Fr::from(123456789)));
+
+    let decoded_batch_bytes = sequence_exec_results
+        .into_iter()
+        .flat_map(|r| r.recovered_bytes)
+        .collect::<Vec<u8>>();
+
+    assert_eq!(batch_bytes, decoded_batch_bytes, "batch bytes must match");
 }
 
 fn generic_batch_data() -> BatchData<MAX_AGG_SNARKS> {
