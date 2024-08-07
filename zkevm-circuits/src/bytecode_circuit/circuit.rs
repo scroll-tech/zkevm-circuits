@@ -1054,7 +1054,8 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
-        if cfg!(feature = "dual_bytecode") {
+        #[cfg(feature = "dual_bytecode")]
+        {
             let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
             let minimum_row: usize = max(
                 first_bytecodes
@@ -1067,7 +1068,9 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
                     .sum(),
             );
             (minimum_row, block.circuits_params.max_bytecode)
-        } else {
+        }
+        #[cfg(not(feature = "dual_bytecode"))]
+        {
             (
                 block
                     .bytecodes
