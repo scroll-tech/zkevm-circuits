@@ -477,7 +477,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 cond = cond * is_first_bytecode.expr();
             }
 
-            // construct table for lookup
+            // not sure why this combination not work, will look into later.
             // #[cfg(feature = "dual_bytecode")]
             // let table_expr: Vec<Expression<F>> = bytecode_table
             //     .table_exprs_mini(meta)
@@ -489,7 +489,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             //     })
             //     .collect();
 
-            //#[cfg(not(feature = "dual_bytecode"))]
             let table_expr = bytecode_table.table_exprs_mini(meta);
 
             vec![
@@ -510,24 +509,11 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Bytecode lookup", |meta| {
             let is_first_bytecode = meta.query_advice(is_first_bytecode_table, CURRENT);
 
-            let mut cond = meta.query_fixed(q_enable, CURRENT)
+            let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_bytecode, CURRENT)
                 * meta.query_advice(non_pad_non_mask, CURRENT)
                 * (1.expr() - is_first_bytecode);
 
-            // construct table for lookup
-            // #[cfg(feature = "dual_bytecode")]
-            // let table_expr: Vec<Expression<F>> = bytecode_table
-            //     .table_exprs_mini(meta)
-            //     .into_iter()
-            //     .zip_eq(bytecode_table1.table_exprs_mini(meta))
-            //     .map(|(first_table_item, second_table_item)| {
-            //         first_table_item * is_first_bytecode.clone()
-            //             + not::expr(is_first_bytecode.clone()) * second_table_item
-            //     })
-            //     .collect();
-
-            //#[cfg(not(feature = "dual_bytecode"))]
             let table_expr = bytecode_table1.table_exprs_mini(meta);
 
             vec![

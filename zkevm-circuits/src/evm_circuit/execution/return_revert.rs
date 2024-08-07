@@ -369,8 +369,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("return offset {}", offset);
-
         let opcode = F::from(step.opcode.unwrap().as_u64());
         self.opcode.assign(region, offset, Value::known(opcode))?;
 

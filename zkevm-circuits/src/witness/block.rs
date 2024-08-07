@@ -285,7 +285,6 @@ impl Block {
     }
 
     // Get two sub bytecodes for two sub bytecode circuit.
-    // TODO: Consider return (Vec<&Bytecode>, Vec<&Bytecode>) ?
     #[cfg(feature = "dual_bytecode")]
     pub(crate) fn get_two_bytecodes(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
         let (first_bytecodes, second_bytecodes) =
