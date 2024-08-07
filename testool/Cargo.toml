@@ -40,7 +40,7 @@ urlencoding = "2.1.2"
 ctor.workspace = true
 
 [features]
-default = ["ignore-test-docker", "skip-self-destruct"]
+default = ["ignore-test-docker", "skip-self-destruct", "bus-mapping/strict-ccc"]
 onephase = ["zkevm-circuits/onephase"]
 ignore-test-docker = []
 skip-self-destruct = []
