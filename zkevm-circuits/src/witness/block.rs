@@ -688,7 +688,7 @@ pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
 }
 
 #[cfg(feature = "dual_bytecode")]
-// helper to extract bytecode map info (code_hash, is_frist_bytecode_table).
+// helper to extract bytecode map info (code_hash, is_first_bytecode_table).
 pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
     let bytecode_lens = bytecodes
         .values()
