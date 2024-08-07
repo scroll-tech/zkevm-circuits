@@ -713,7 +713,8 @@ pub struct GethPrestateTrace {
     /// nonce
     pub nonce: Option<u64>,
     /// code
-    pub code: Option<Bytes>,
+    #[serde(default)]
+    pub code: Bytes,
     /// storage
     pub storage: Option<HashMap<U256, U256>>,
 }
@@ -815,16 +816,7 @@ impl GethCallTrace {
         let is_callee_code_empty = self
             .to
             .as_ref()
-            .map(|addr| {
-                !created.contains(addr)
-                    && prestate
-                        .get(addr)
-                        .unwrap()
-                        .code
-                        .as_ref()
-                        .unwrap()
-                        .is_empty()
-            })
+            .map(|addr| !created.contains(addr) && prestate.get(addr).unwrap().code.is_empty())
             .unwrap_or(false);
 
         trace.push(FlatGethCallTrace {
@@ -840,7 +832,7 @@ impl GethCallTrace {
         }
 
         let has_output = self.output.as_ref().map(|x| !x.is_empty()).unwrap_or(false);
-        if call_type.is_create() && has_output {
+        if call_type.is_create() && self.error.is_none() && has_output {
             created.insert(self.to.unwrap());
         }
     }

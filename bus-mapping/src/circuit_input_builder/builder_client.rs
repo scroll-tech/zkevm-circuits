@@ -195,17 +195,16 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         for trace in traces.map(|tr| tr.prestate.clone()) {
             for (addr, prestate) in trace.into_iter() {
                 let (_, storages) = account_set.entry(addr).or_insert_with(|| {
-                    let code_size =
-                        Word::from(prestate.code.as_ref().map(|bt| bt.len()).unwrap_or(0));
-                    let (code_hash, keccak_code_hash) = if let Some(bt) = prestate.code {
-                        let h = CodeDB::hash(&bt);
+                    let code_size = Word::from(prestate.code.len());
+                    let (code_hash, keccak_code_hash) = if !prestate.code.is_empty() {
+                        let h = CodeDB::hash(&prestate.code);
                         // only require for L2
                         let keccak_h = if cfg!(feature = "scroll") {
-                            hash_code_keccak(&bt)
+                            hash_code_keccak(&prestate.code)
                         } else {
                             h
                         };
-                        code_set.insert(addr, Vec::from(bt.as_ref()));
+                        code_set.insert(addr, prestate.code.to_vec());
                         (h, keccak_h)
                     } else {
                         (CodeDB::empty_code_hash(), *KECCAK_CODE_HASH_EMPTY)
