@@ -17,7 +17,6 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::plonk::Error;
-use rand_chacha::rand_core::block;
 
 #[derive(Clone, Debug)]
 pub(crate) struct MsizeGadget<F> {

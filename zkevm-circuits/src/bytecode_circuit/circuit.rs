@@ -16,7 +16,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::vec;
+use std::{cmp::max, vec};
 
 use super::{
     bytecode_unroller::{unroll_with_codehash, BytecodeRow, UnrolledBytecode},
@@ -1054,14 +1054,29 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
-        (
-            block
-                .bytecodes
-                .values()
-                .map(|bytecode| bytecode.bytes.len() + 1)
-                .sum(),
-            block.circuits_params.max_bytecode,
-        )
+        if cfg!(feature = "dual_bytecode") {
+            let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
+            let minimum_row: usize = max(
+                first_bytecodes
+                    .iter()
+                    .map(|bytecode| bytecode.bytes.len() + 1)
+                    .sum(),
+                second_bytecodes
+                    .iter()
+                    .map(|bytecode| bytecode.bytes.len() + 1)
+                    .sum(),
+            );
+            (minimum_row, block.circuits_params.max_bytecode)
+        } else {
+            (
+                block
+                    .bytecodes
+                    .values()
+                    .map(|bytecode| bytecode.bytes.len() + 1)
+                    .sum(),
+                block.circuits_params.max_bytecode,
+            )
+        }
     }
 
     /// Make the assignments to the TxCircuit
