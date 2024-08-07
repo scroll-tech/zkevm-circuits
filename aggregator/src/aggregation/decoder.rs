@@ -2,6 +2,8 @@ mod seq_exec;
 mod tables;
 pub mod witgen;
 
+use std::time::Instant;
+
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -4595,6 +4597,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         /////////////////////////////////////////
         //////// Load Auxiliary Tables  /////////
         /////////////////////////////////////////
+        let time = Instant::now();
         self.range8.load(layouter)?;
         self.range16.load(layouter)?;
         self.range512.load(layouter)?;
@@ -4604,17 +4607,26 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         self.bitwise_op_table.load(layouter)?;
         self.pow_rand_table
             .assign(layouter, challenges, n_enabled)?;
+        log::debug!("table(fixed): {} msec", time.elapsed().as_millis());
 
         /////////////////////////////////////////////////////////
         //////// Assign FSE and Bitstream Accumulation  /////////
         /////////////////////////////////////////////////////////
+        let time = Instant::now();
         self.fse_table.assign(layouter, fse_aux_tables, n_enabled)?;
+        log::debug!("table(fse): {} msec", time.elapsed().as_millis());
+        let time = Instant::now();
         self.bitstring_table_1
             .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
+        log::debug!("table(bitstring 1): {} msec", time.elapsed().as_millis());
+        let time = Instant::now();
         self.bitstring_table_2
             .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
+        log::debug!("table(bitstring 2): {} msec", time.elapsed().as_millis());
+        let time = Instant::now();
         self.bitstring_table_3
             .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
+        log::debug!("table(bitstring 3): {} msec", time.elapsed().as_millis());
 
         /////////////////////////////////////////
         ///// Assign LiteralHeaderTable  ////////
@@ -4663,17 +4675,28 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 ),
             ));
         }
+        let time = Instant::now();
         self.literals_header_table
             .assign(layouter, literal_headers, n_enabled)?;
+        log::debug!(
+            "table(literals_header): {} msec",
+            time.elapsed().as_millis()
+        );
 
         /////////////////////////////////////////
         //// Assign Sequence-related Configs ////
         /////////////////////////////////////////
+        let time = Instant::now();
         self.sequence_instruction_table.assign(
             layouter,
             address_table_arr.iter().map(|rows| rows.iter()),
             n_enabled,
         )?;
+        log::debug!(
+            "table(sequence_instruction): {} msec",
+            time.elapsed().as_millis()
+        );
+        let time = Instant::now();
         let (exported_len, exported_rlc) = self.sequence_execution_config.assign(
             layouter,
             challenges.keccak_input(),
@@ -4685,11 +4708,16 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             raw_bytes,
             n_enabled,
         )?;
+        log::debug!(
+            "table(sequence_config): {} msec",
+            time.elapsed().as_millis()
+        );
 
         /////////////////////////////////////////
         ///// Assign Decompression Region  //////
         /////////////////////////////////////////
-        layouter.assign_region(
+        let time = Instant::now();
+        let exports = layouter.assign_region(
             || "Decompression table region",
             |mut region| {
                 ////////////////////////////////////////////////////////
@@ -5427,7 +5455,9 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     decoded_rlc: exported_rlc.clone(),
                 })
             },
-        )
+        )?;
+        log::debug!("table(decoder_config): {} msec", time.elapsed().as_millis());
+        Ok(exports)
     }
 
     pub fn unusable_rows(&self) -> usize {
