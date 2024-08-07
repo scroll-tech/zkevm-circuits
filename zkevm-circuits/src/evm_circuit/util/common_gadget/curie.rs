@@ -11,7 +11,9 @@ use crate::{
     util::{Expr, Field},
 };
 
-use eth_types::forks::{HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID};
+use eth_types::forks::{
+    HardforkId, SCROLL_DEVNET_CHAIN_ID, SCROLL_MAINNET_CHAIN_ID, SCROLL_TESTNET_CHAIN_ID,
+};
 use gadgets::util::not;
 use halo2_proofs::{
     circuit::Value,
@@ -95,8 +97,11 @@ impl<F: Field> CurieGadget<F> {
             (F::from(chain_id) - F::from(SCROLL_MAINNET_CHAIN_ID))
                 * (F::from(chain_id) - F::from(SCROLL_DEVNET_CHAIN_ID)),
         )?;
-        let curie_fork_block_num =
-            bus_mapping::circuit_input_builder::curie::get_curie_fork_block(chain_id);
+        let curie_fork_block_num = if chain_id == SCROLL_TESTNET_CHAIN_ID {
+            0
+        } else {
+            bus_mapping::circuit_input_builder::curie::get_curie_fork_block(chain_id)
+        };
         self.curie_fork_block_num.assign(
             region,
             offset,

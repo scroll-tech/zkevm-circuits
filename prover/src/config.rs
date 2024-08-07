@@ -16,11 +16,17 @@ pub static LAYER3_CONFIG_PATH: LazyLock<String> =
     LazyLock::new(|| asset_file_path("layer3.config"));
 pub static LAYER4_CONFIG_PATH: LazyLock<String> =
     LazyLock::new(|| asset_file_path("layer4.config"));
+pub static LAYER5_CONFIG_PATH: LazyLock<String> =
+    LazyLock::new(|| asset_file_path("layer5.config"));
+pub static LAYER6_CONFIG_PATH: LazyLock<String> =
+    LazyLock::new(|| asset_file_path("layer6.config"));
 
 pub static LAYER1_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER1_CONFIG_PATH));
 pub static LAYER2_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER2_CONFIG_PATH));
 pub static LAYER3_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER3_CONFIG_PATH));
 pub static LAYER4_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER4_CONFIG_PATH));
+pub static LAYER5_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER5_CONFIG_PATH));
+pub static LAYER6_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER6_CONFIG_PATH));
 
 pub static ZKEVM_DEGREES: LazyLock<Vec<u32>> = LazyLock::new(|| {
     Vec::from_iter(HashSet::from([
@@ -30,8 +36,14 @@ pub static ZKEVM_DEGREES: LazyLock<Vec<u32>> = LazyLock::new(|| {
     ]))
 });
 
-pub static AGG_DEGREES: LazyLock<Vec<u32>> =
-    LazyLock::new(|| Vec::from_iter(HashSet::from([*LAYER3_DEGREE, *LAYER4_DEGREE])));
+pub static AGG_DEGREES: LazyLock<Vec<u32>> = LazyLock::new(|| {
+    Vec::from_iter(HashSet::from([
+        *LAYER3_DEGREE,
+        *LAYER4_DEGREE,
+        *LAYER5_DEGREE,
+        *LAYER6_DEGREE,
+    ]))
+});
 
 #[derive(Clone, Copy, Debug)]
 pub enum LayerId {
@@ -41,10 +53,14 @@ pub enum LayerId {
     Layer1,
     /// Compression thin layer (to generate chunk-proof)
     Layer2,
-    /// Aggregation layer
+    /// Layer to batch multiple chunk proofs
     Layer3,
     /// Compression thin layer (to generate batch-proof)
     Layer4,
+    /// Recurse over a bundle of batches
+    Layer5,
+    /// Compression thin layer (to generate bundle-proof verifiable in EVM)
+    Layer6,
 }
 
 impl fmt::Display for LayerId {
@@ -61,6 +77,8 @@ impl LayerId {
             Self::Layer2 => "layer2",
             Self::Layer3 => "layer3",
             Self::Layer4 => "layer4",
+            Self::Layer5 => "layer5",
+            Self::Layer6 => "layer6",
         }
     }
 
@@ -71,6 +89,8 @@ impl LayerId {
             Self::Layer2 => *LAYER2_DEGREE,
             Self::Layer3 => *LAYER3_DEGREE,
             Self::Layer4 => *LAYER4_DEGREE,
+            Self::Layer5 => *LAYER5_DEGREE,
+            Self::Layer6 => *LAYER6_DEGREE,
         }
     }
 
@@ -80,6 +100,8 @@ impl LayerId {
             Self::Layer2 => &LAYER2_CONFIG_PATH,
             Self::Layer3 => &LAYER3_CONFIG_PATH,
             Self::Layer4 => &LAYER4_CONFIG_PATH,
+            Self::Layer5 => &LAYER5_CONFIG_PATH,
+            Self::Layer6 => &LAYER6_CONFIG_PATH,
             Self::Inner => unreachable!("No config file for super (inner) circuit"),
         }
     }
@@ -98,6 +120,8 @@ pub fn layer_config_path(id: &str) -> &str {
         "layer2" => &LAYER2_CONFIG_PATH,
         "layer3" => &LAYER3_CONFIG_PATH,
         "layer4" => &LAYER4_CONFIG_PATH,
+        "layer5" => &LAYER5_CONFIG_PATH,
+        "layer6" => &LAYER6_CONFIG_PATH,
         _ => panic!("Wrong id-{id} to get layer config path"),
     }
 }

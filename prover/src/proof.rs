@@ -13,10 +13,12 @@ use snark_verifier_sdk::{verify_evm_proof, Snark};
 use std::{fs::File, path::PathBuf};
 
 mod batch;
+mod bundle;
 mod chunk;
 mod evm;
 
 pub use batch::BatchProof;
+pub use bundle::BundleProof;
 pub use chunk::{compare_chunk_info, ChunkProof};
 pub use evm::EvmProof;
 
@@ -113,7 +115,7 @@ pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {
     let file_path = dump_proof_path(dir, filename);
-    Ok(eth_types::utils::from_json_file(&file_path)?)
+    crate::io::from_json_file(&file_path)
 }
 
 fn dump_proof_path(dir: &str, filename: &str) -> String {

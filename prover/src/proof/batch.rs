@@ -1,111 +1,56 @@
-use super::{dump_as_json, dump_data, dump_vk, from_json_file, serialize_instance, Proof};
-use crate::utils::short_git_version;
+use super::{dump_as_json, dump_vk, from_json_file, Proof};
+use crate::types::base64;
 use anyhow::Result;
+use eth_types::H256;
+use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
-use snark_verifier_sdk::encode_calldata;
-
-const ACC_LEN: usize = 12;
-const PI_LEN: usize = 32;
-
-const ACC_BYTES: usize = ACC_LEN * 32;
-const PI_BYTES: usize = PI_LEN * 32;
+use snark_verifier::Protocol;
+use snark_verifier_sdk::Snark;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BatchProof {
+    #[serde(with = "base64")]
+    pub protocol: Vec<u8>,
     #[serde(flatten)]
-    raw: Proof,
+    proof: Proof,
+    pub batch_hash: H256,
 }
 
-impl From<Proof> for BatchProof {
-    fn from(proof: Proof) -> Self {
-        let instances = proof.instances();
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].len(), ACC_LEN + PI_LEN);
-
-        let vk = proof.vk;
-        let git_version = proof.git_version;
-
-        // "onchain proof" = accumulator + proof
-        let proof = serialize_instance(&instances[0][..ACC_LEN])
-            .into_iter()
-            .chain(proof.proof)
-            .collect();
-
-        // "onchain instances" = pi_data
-        let instances = serialize_instance(&instances[0][ACC_LEN..]);
+impl From<&BatchProof> for Snark {
+    fn from(value: &BatchProof) -> Self {
+        let instances = value.proof.instances();
+        let protocol = serde_json::from_slice::<Protocol<G1Affine>>(&value.protocol).unwrap();
 
         Self {
-            raw: Proof {
-                proof,
-                instances,
-                vk,
-                git_version,
-            },
+            protocol,
+            proof: value.proof.proof.clone(),
+            instances,
         }
     }
 }
 
 impl BatchProof {
-    pub fn from_json_file(dir: &str, name: &str) -> Result<Self> {
-        from_json_file(dir, &dump_filename(name))
+    pub fn new(snark: Snark, pk: Option<&ProvingKey<G1Affine>>, batch_hash: H256) -> Result<Self> {
+        let protocol = serde_json::to_vec(&snark.protocol)?;
+        let proof = Proof::new(snark.proof, &snark.instances, pk);
+
+        Ok(Self {
+            protocol,
+            proof,
+            batch_hash,
+        })
     }
 
-    /// Returns the calldata given to YUL verifier.
-    /// Format: Accumulator(12x32bytes) || PIHASH(32x32bytes) || Proof
-    pub fn calldata(self) -> Vec<u8> {
-        let proof = self.proof_to_verify();
-
-        // calldata = instances + proof
-        let mut calldata = proof.instances;
-        calldata.extend(proof.proof);
-
-        calldata
+    pub fn from_json_file(dir: &str, name: &str) -> Result<Self> {
+        from_json_file(dir, &dump_filename(name))
     }
 
     pub fn dump(&self, dir: &str, name: &str) -> Result<()> {
         let filename = dump_filename(name);
 
-        dump_data(dir, &format!("pi_{filename}.data"), &self.raw.instances);
-        dump_data(dir, &format!("proof_{filename}.data"), &self.raw.proof);
-
-        dump_vk(dir, &filename, &self.raw.vk);
+        dump_vk(dir, &filename, &self.proof.vk);
 
         dump_as_json(dir, &filename, &self)
-    }
-
-    // Recover a `Proof` which follows halo2 semantic of "proof" and "instance",
-    // where "accumulators" are instance instead of proof, not like "onchain proof".
-    pub fn proof_to_verify(self) -> Proof {
-        // raw.proof is accumulator + proof
-        assert!(self.raw.proof.len() > ACC_BYTES);
-        // raw.instances is PI
-        assert_eq!(self.raw.instances.len(), PI_BYTES);
-
-        // instances = raw_proof[..12] (acc) + raw_instances (pi_data)
-        // proof = raw_proof[12..]
-        let mut instances = self.raw.proof;
-        let proof = instances.split_off(ACC_BYTES);
-        instances.extend(self.raw.instances);
-
-        let vk = self.raw.vk;
-        let git_version = Some(short_git_version());
-
-        Proof {
-            proof,
-            instances,
-            vk,
-            git_version,
-        }
-    }
-
-    pub fn assert_calldata(self) {
-        let real_calldata = self.clone().calldata();
-
-        let proof = self.proof_to_verify();
-        // encode_calldata output: instances || proof
-        let expected_calldata = encode_calldata(&proof.instances(), &proof.proof);
-
-        assert_eq!(real_calldata, expected_calldata);
     }
 }
 

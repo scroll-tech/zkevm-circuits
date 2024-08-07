@@ -7,18 +7,23 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
 use crate::{
     evm_circuit::util::rlc,
+    super_circuit::params::get_super_circuit_params,
     table::{BlockContextFieldTag, RwTableTag},
     util::{Field, SubCircuit},
     witness::keccak::keccak_inputs,
 };
 use bus_mapping::{
     circuit_input_builder::{
-        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEvents, SHA256,
+        self, BigModExp, CircuitInputBuilder, CircuitsParams, CopyEvent, EcAddOp, EcMulOp,
+        EcPairingOp, ExpEvent, PrecompileEvents, SHA256,
     },
     Error,
 };
-use eth_types::{sign_types::SignData, Address, ToLittleEndian, Word, H256, U256};
+use eth_types::{
+    sign_types::SignData,
+    state_db::{CodeDB, StateDB},
+    Address, ToLittleEndian, Word, H256, U256,
+};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
@@ -610,4 +615,13 @@ pub fn block_convert(
         precompile_events: block.precompile_events.clone(),
     };
     Ok(block)
+}
+
+/// Generate a empty witness block, which can be used for key-gen.
+pub fn dummy_witness_block(chain_id: u64) -> Block {
+    let builder_block = circuit_input_builder::Blocks::init(chain_id, get_super_circuit_params());
+    let mut builder: CircuitInputBuilder =
+        CircuitInputBuilder::new(StateDB::new(), CodeDB::new(), &builder_block);
+    builder.finalize_building().expect("should not fail");
+    block_convert(&builder.block, &builder.code_db).expect("should not fail")
 }

@@ -3,6 +3,7 @@
 use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
+    test_util::CircuitTestBuilder,
     util::unusable_rows,
     witness::Block,
 };
@@ -285,7 +286,7 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
     builder
 }
 
-fn gen_access_list_data() -> CircuitInputBuilder {
+fn gen_access_list_data() -> Block {
     let test_access_list = AccessList(vec![
         AccessListItem {
             address: address!("0x0000000000000000000000000000000000001111"),
@@ -318,13 +319,9 @@ fn gen_access_list_data() -> CircuitInputBuilder {
         |block, _tx| block.number(0xcafeu64),
     )
     .unwrap();
-    let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-
-    builder
+    CircuitTestBuilder::new_from_test_ctx(test_ctx)
+        .build_witness_block()
+        .0
 }
 
 fn gen_create_data() -> CircuitInputBuilder {
@@ -421,8 +418,7 @@ fn copy_circuit_valid_tx_log() {
 
 #[test]
 fn copy_circuit_valid_access_list() {
-    let builder = gen_access_list_data();
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    let block = gen_access_list_data();
     assert_eq!(test_copy_circuit_from_block(block), Ok(()));
 }
 

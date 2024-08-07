@@ -3,7 +3,7 @@
 //! used to generate witnesses for circuits.
 
 mod block;
-pub use block::{block_convert, Block, BlockContext, BlockContexts};
+pub use block::{block_convert, dummy_witness_block, Block, BlockContext, BlockContexts};
 
 /// Keccak witness
 pub mod keccak;

@@ -1,6 +1,14 @@
-use crate::{blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE};
+use crate::{
+    blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE, PI_CHAIN_ID,
+    PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH,
+    PI_PARENT_STATE_ROOT,
+};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
+
+#[cfg(not(feature = "disable_proof_aggregation"))]
+use halo2_ecc::{ecc::EccChip, fields::fp::FpConfig};
+
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -14,11 +22,11 @@ use std::rc::Rc;
 use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
+use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
 use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
-    loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader},
+    loader::halo2::halo2_ecc::halo2_base,
     pcs::kzg::{Bdfg21, Kzg},
 };
 #[cfg(not(feature = "disable_proof_aggregation"))]
@@ -35,18 +43,23 @@ use crate::{
     AssignedBarycentricEvaluationConfig, ConfigParams,
 };
 
-use super::AggregationConfig;
+use super::BatchCircuitConfig;
 
-/// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
+/// Batch circuit, the chunk aggregation routine below recursion circuit
 #[derive(Clone)]
-pub struct AggregationCircuit<const N_SNARKS: usize> {
+pub struct BatchCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
     pub snarks_with_padding: Vec<SnarkWitness>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
-    // - the batch's public_input_hash (32 elements)
+    // - parent_state_root (2 elements, split hi_lo)
+    // - parent_batch_hash (2 elements)
+    // - current_state_root (2 elements)
+    // - current_batch_hash (2 elements)
+    // - chain id (1 element)
+    // - current_withdraw_root (2 elements)
     pub flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
     pub as_proof: Value<Vec<u8>>,
@@ -55,7 +68,7 @@ pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub batch_hash: BatchHash<N_SNARKS>,
 }
 
-impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
     pub fn new(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
@@ -95,14 +108,21 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
         let (as_proof, acc_instances) =
             extract_proof_and_instances_with_pairing_check(params, snarks_with_padding, rng)?;
 
-        // extract batch's public input hash
-        let public_input_hash = &batch_hash.instances_exclude_acc()[0];
-
         // the public instance for this circuit consists of
         // - an accumulator (12 elements)
-        // - the batch's public_input_hash (32 elements)
-        let flattened_instances: Vec<Fr> =
-            [acc_instances.as_slice(), public_input_hash.as_slice()].concat();
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - chain id (1 element)
+        // - current_withdraw_root (2 elements)
+        let flattened_instances: Vec<Fr> = [
+            acc_instances.as_slice(),
+            batch_hash.instances_exclude_acc::<Fr>()[0]
+                .clone()
+                .as_slice(),
+        ]
+        .concat();
 
         end_timer!(timer);
         Ok(Self {
@@ -119,8 +139,8 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
-    type Config = (AggregationConfig<N_SNARKS>, Challenges);
+impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
+    type Config = (BatchCircuitConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     fn without_witnesses(&self) -> Self {
         unimplemented!()
@@ -138,7 +158,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
         );
 
         let challenges = Challenges::construct_p1(meta);
-        let config = AggregationConfig::configure(meta, &params, challenges);
+        let config = BatchCircuitConfig::configure(meta, &params, challenges);
         log::info!(
             "aggregation circuit configured with k = {} and {:?} advice columns",
             params.degree,
@@ -206,6 +226,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
         #[cfg(not(feature = "disable_proof_aggregation"))]
         let (accumulator_instances, snark_inputs, barycentric) = {
+            use halo2_proofs::halo2curves::bn256::Fq;
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
             let (accumulator_instances, snark_inputs, barycentric) = layouter.assign_region(
@@ -224,6 +245,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
                     // stores public inputs for all snarks, including the padded ones
                     let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
+
                     let ctx = Context::new(
                         region,
                         ContextParams {
@@ -234,15 +256,16 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     );
 
                     let ecc_chip = config.ecc_chip();
-                    let loader = Halo2Loader::new(ecc_chip, ctx);
+                    let loader: Rc<Halo2Loader<G1Affine, EccChip<Fr, FpConfig<Fr, Fq>>>> =
+                        Halo2Loader::new(ecc_chip, ctx);
 
                     //
                     // extract the assigned values for
                     // - instances which are the public inputs of each chunk (prefixed with 12
                     //   instances from previous accumulators)
-                    // - new accumulator to be verified on chain
+                    // - new accumulator
                     //
-                    log::debug!("aggregation: assigning aggregation");
+                    log::debug!("aggregation: chunk aggregation");
                     let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
                         &self.svk,
                         &loader,
@@ -266,10 +289,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                             .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                     );
 
-                    loader.ctx_mut().print_stats(&["snark aggregation"]);
+                    loader
+                        .ctx_mut()
+                        .print_stats(&["snark aggregation [chunks -> batch]"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
-                    log::debug!("aggregation: assigning barycentric");
+                    log::debug!("batching: assigning barycentric");
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
                         &self.batch_hash.point_evaluation_assignments.coefficients,
@@ -287,12 +312,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 },
             )?;
 
-            assert_eq!(snark_inputs.len(), N_SNARKS * DIGEST_LEN);
             (accumulator_instances, snark_inputs, barycentric)
         };
         end_timer!(timer);
+
         // ==============================================
-        // step 2: public input aggregation circuit
+        // step 2: public input batch circuit
         // ==============================================
         // extract all the hashes and load them to the hash table
         let challenges = challenge.values(&layouter);
@@ -307,7 +332,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
             let timer = start_timer!(|| "extract hash");
             // orders:
-            // - batch_public_input_hash
+            // - batch_hash
             // - chunk\[i\].piHash for i in \[0, N_SNARKS)
             // - batch_data_hash_preimage
             // - preimage for blob metadata
@@ -346,26 +371,25 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
             assigned_batch_hash
         };
-        // digests
-        let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
+
+        // Extract digests
+        #[cfg(feature = "disable_proof_aggregation")]
+        let (_batch_hash_digest, _chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
 
-        // ==============================================
-        // step 3: assert public inputs to the snarks are correct
-        // ==============================================
-        for (i, chunk) in chunk_pi_hash_digests.iter().enumerate() {
-            let hash = self.batch_hash.chunks_with_padding[i].public_input_hash();
-            for j in 0..DIGEST_LEN {
-                log::trace!("pi {:02x} {:?}", hash[j], chunk[j].value());
-            }
-        }
+        #[cfg(not(feature = "disable_proof_aggregation"))]
+        let (_batch_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
+            parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
 
+        // ========================================================================
+        // step 2.a: check accumulator including public inputs to the snarks
+        // ========================================================================
         #[cfg(not(feature = "disable_proof_aggregation"))]
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
         #[cfg(not(feature = "disable_proof_aggregation"))]
         layouter.assign_region(
-            || "pi checks",
+            || "BatchCircuit: Chunk PI",
             |mut region| -> Result<(), Error> {
                 if first_pass {
                     // this region only use copy constraints and do not affect the shape of the
@@ -398,10 +422,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             },
         )?;
 
-        // ==============================================
-        // step 4: assert public inputs to the aggregator circuit are correct
-        // ==============================================
-        // accumulator
         #[cfg(not(feature = "disable_proof_aggregation"))]
         {
             assert!(accumulator_instances.len() == ACC_LEN);
@@ -410,19 +430,28 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             }
         }
 
-        // public input hash
-        for (index, batch_pi_hash_digest_cell) in batch_pi_hash_digest.iter().enumerate() {
-            log::trace!(
-                "pi (circuit vs real): {:?} {:?}",
-                batch_pi_hash_digest_cell.value(),
-                self.instances()[0][index + ACC_LEN]
-            );
-
-            layouter.constrain_instance(
-                batch_pi_hash_digest_cell.cell(),
-                config.instance,
-                index + ACC_LEN,
-            )?;
+        // ========================================================================
+        // step 2.b: constrain extracted public input cells against actual instance
+        // ========================================================================
+        let hash_derived_public_input_cells = assigned_batch_hash.hash_derived_public_input_cells;
+        let instance_offsets: Vec<usize> = vec![
+            PI_PARENT_BATCH_HASH,
+            PI_PARENT_BATCH_HASH + 1,
+            PI_CURRENT_BATCH_HASH,
+            PI_CURRENT_BATCH_HASH + 1,
+            PI_PARENT_STATE_ROOT,
+            PI_PARENT_STATE_ROOT + 1,
+            PI_CURRENT_STATE_ROOT,
+            PI_CURRENT_STATE_ROOT + 1,
+            PI_CURRENT_WITHDRAW_ROOT,
+            PI_CURRENT_WITHDRAW_ROOT + 1,
+            PI_CHAIN_ID,
+        ];
+        for (c, inst_offset) in hash_derived_public_input_cells
+            .into_iter()
+            .zip(instance_offsets.into_iter())
+        {
+            layouter.constrain_instance(c.cell(), config.instance, inst_offset)?;
         }
 
         // blob data config
@@ -489,7 +518,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 address_table_arr,
                 sequence_exec_info_arr,
                 &challenges,
-                LOG_DEGREE, // TODO: configure k for aggregation circuit instead of hard-coded here.
+                LOG_DEGREE, // TODO: configure k for batch circuit instead of hard-coded here.
             )?;
 
             layouter.assign_region(
@@ -571,15 +600,18 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> CircuitExt<Fr> for AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> CircuitExt<Fr> for BatchCircuit<N_SNARKS> {
     fn num_instance(&self) -> Vec<usize> {
-        // 12 elements from accumulator
-        // 32 elements from batch's public_input_hash
-        vec![ACC_LEN + DIGEST_LEN]
+        // - 12 elements from accumulator
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - chain id (1 element)
+        // - current_withdraw_root (2 elements)
+        vec![ACC_LEN + 11]
     }
 
-    // 12 elements from accumulator
-    // 32 elements from batch's public_input_hash
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
     }
