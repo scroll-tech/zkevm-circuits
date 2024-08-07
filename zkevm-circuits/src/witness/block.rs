@@ -615,47 +615,9 @@ pub fn block_convert(
         log::error!("withdraw root is not available");
     }
 
-    let bytecodes: BTreeMap<Word, Bytecode> = code_db
-        .0
-        .iter()
-        .map(|(code_hash, bytes)| {
-            let hash = Word::from_big_endian(code_hash.as_bytes());
-            (
-                hash,
-                Bytecode {
-                    hash,
-                    bytes: bytes.clone(),
-                },
-            )
-        })
-        .collect();
-    let bytecode_lens = bytecodes
-        .values()
-        .into_iter()
-        .map(|codes| codes.bytes.len())
-        .collect_vec();
-    let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
-
+    let bytecodes: BTreeMap<Word, Bytecode> = get_bytecodes(code_db);
     #[cfg(feature = "dual_bytecode")]
-    let bytecode_map: BTreeMap<Word, bool> = bytecodes
-        .iter()
-        .filter_map(|(hash, codes)| {
-            let len = codes.bytes.len();
-            if first_set.contains(&len) {
-                let index = first_set.iter().position(|x| *x == len).unwrap();
-                first_set.remove(index);
-                Some((*hash, true))
-            } else if second_set.contains(&len) {
-                let index = second_set.iter().position(|x| *x == len).unwrap();
-                second_set.remove(index);
-                Some((*hash, false))
-            } else {
-                // here should be not reachable, panic or return a placeholder.
-                //panic!("“Find an unexpected element that is not present in either first_set or second_set”)
-                Some((U256::zero(), false))
-            }
-        })
-        .collect();
+    let bytecode_map = get_bytecode_map(&bytecodes);
 
     let block = Block {
         context: BlockContexts::from(block),
@@ -704,4 +666,56 @@ pub fn dummy_witness_block(chain_id: u64) -> Block {
         CircuitInputBuilder::new(StateDB::new(), CodeDB::new(), &builder_block);
     builder.finalize_building().expect("should not fail");
     block_convert(&builder.block, &builder.code_db).expect("should not fail")
+}
+
+// helper to extract bytecode info from CodeDB.
+pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
+    let bytecodes: BTreeMap<Word, Bytecode> = code_db
+        .0
+        .iter()
+        .map(|(code_hash, bytes)| {
+            let hash = Word::from_big_endian(code_hash.as_bytes());
+            (
+                hash,
+                Bytecode {
+                    hash,
+                    bytes: bytes.clone(),
+                },
+            )
+        })
+        .collect();
+    bytecodes
+}
+
+#[cfg(feature = "dual_bytecode")]
+// helper to extract bytecode map info (code_hash, is_frist_bytecode_table).
+pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
+    let bytecode_lens = bytecodes
+        .values()
+        .into_iter()
+        .map(|codes| codes.bytes.len())
+        .collect_vec();
+    let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
+
+    let bytecode_map: BTreeMap<Word, bool> = bytecodes
+        .iter()
+        .filter_map(|(hash, codes)| {
+            let len = codes.bytes.len();
+            if first_set.contains(&len) {
+                let index = first_set.iter().position(|x| *x == len).unwrap();
+                first_set.remove(index);
+                Some((*hash, true))
+            } else if second_set.contains(&len) {
+                let index = second_set.iter().position(|x| *x == len).unwrap();
+                second_set.remove(index);
+                Some((*hash, false))
+            } else {
+                // here should be not reachable, panic or return a placeholder.
+                //panic!("“Find an unexpected element that is not present in either first_set or second_set”)
+                Some((U256::zero(), false))
+            }
+        })
+        .collect();
+
+    bytecode_map
 }
