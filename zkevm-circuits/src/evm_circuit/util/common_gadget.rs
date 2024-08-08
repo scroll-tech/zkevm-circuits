@@ -175,7 +175,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
                 cb.bytecode_length(code_hash.expr(), code_length.expr());
             });
             cb.condition(not::expr(is_first_bytecode_table.clone()), |cb| {
-                cb.bytecode2_length(code_hash.expr(), code_length.expr());
+                cb.bytecode1_length(code_hash.expr(), code_length.expr());
             });
         }
         Self {

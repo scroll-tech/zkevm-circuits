@@ -834,9 +834,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     #[cfg(feature = "dual_bytecode")]
-    pub(crate) fn bytecode2_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
+    pub(crate) fn bytecode1_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
         self.add_lookup(
-            "Bytecode2 (length)",
+            "Bytecode1 (length)",
             Lookup::Bytecode1 {
                 hash: code_hash,
                 tag: BytecodeFieldTag::Header.expr(),

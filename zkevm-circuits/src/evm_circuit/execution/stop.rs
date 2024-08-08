@@ -4,7 +4,7 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
+            common_gadget::{BytecodeLengthGadget, RestoreContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same, To},
@@ -22,12 +22,13 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
-    code_length: Cell<F>,
     is_within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     opcode: Cell<F>,
     #[cfg(feature = "dual_bytecode")]
     is_first_bytecode_table: Cell<F>,
     restore_context: RestoreContextGadget<F>,
+    /// Wraps the bytecode length and lookup.
+    code_len_gadget: BytecodeLengthGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
@@ -36,27 +37,24 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let code_length = cb.query_cell();
         let opcode = cb.query_cell();
         #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
 
-        #[cfg(feature = "dual_bytecode")]
-        {
-            cb.condition(is_first_bytecode_table.expr(), |cb| {
-                cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
-            });
-            cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                cb.bytecode2_length(cb.curr.state.code_hash.expr(), code_length.expr());
-            });
-        }
+        let code_len_gadget = BytecodeLengthGadget::construct(
+            cb,
+            cb.curr.state.code_hash.clone(),
+            is_first_bytecode_table.expr(),
+        );
 
-        let is_within_range =
-            LtGadget::construct(cb, cb.curr.state.program_counter.expr(), code_length.expr());
+        let is_within_range = LtGadget::construct(
+            cb,
+            cb.curr.state.program_counter.expr(),
+            code_len_gadget.code_length.expr(),
+        );
 
         cb.condition(is_within_range.expr(), |cb| {
+            // TODO: refactor op_code lookup into helper later.
             #[cfg(not(feature = "dual_bytecode"))]
             cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -114,12 +112,12 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         });
 
         Self {
-            code_length,
             is_within_range,
             opcode,
             #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
             restore_context,
+            code_len_gadget,
         }
     }
 
@@ -136,11 +134,9 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             .bytecodes
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        self.code_length.assign(
-            region,
-            offset,
-            Value::known(F::from(code.bytes.len() as u64)),
-        )?;
+
+        self.code_len_gadget
+            .assign(region, offset, block, call, code.bytes.len() as u64)?;
 
         self.is_within_range.assign(
             region,
