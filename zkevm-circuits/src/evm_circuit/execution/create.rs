@@ -96,10 +96,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
 
-        #[cfg(feature = "dual_bytecode")]
-        cb.lookup_opcode(opcode.expr(), 1.expr(), is_first_bytecode_table.expr());
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.lookup_opcode(opcode.expr(), 1.expr());
+        cb.lookup_opcode(
+            opcode.expr(),
+            1.expr(),
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table.expr(),
+        );
 
         cb.require_equal(
             "Opcode is CREATE or CREATE2",

@@ -71,19 +71,13 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
                 1.expr(),
             );
 
-            #[cfg(not(feature = "dual_bytecode"))]
-            cb.opcode_lookup_at(dest.valid_value(), OpcodeId::JUMPDEST.expr(), 1.expr());
-
-            #[cfg(feature = "dual_bytecode")]
-            {
-                // Lookup opcode at destination
-                cb.condition(same_context.is_first_sub_bytecode(), |cb| {
-                    cb.opcode_lookup_at(dest.valid_value(), OpcodeId::JUMPDEST.expr(), 1.expr());
-                });
-                cb.condition(not::expr(same_context.is_first_sub_bytecode()), |cb| {
-                    cb.opcode_lookup2_at(dest.valid_value(), OpcodeId::JUMPDEST.expr(), 1.expr());
-                });
-            }
+            cb.opcode_lookup_at(
+                dest.valid_value(),
+                OpcodeId::JUMPDEST.expr(),
+                1.expr(),
+                #[cfg(feature = "dual_bytecode")]
+                same_context.is_first_sub_bytecode(),
+            );
         });
 
         Self {

@@ -55,19 +55,12 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         );
 
         cb.condition(is_within_range.expr(), |cb| {
-            // TODO: refactor op_code lookup into helper later.
-            #[cfg(not(feature = "dual_bytecode"))]
-            cb.opcode_lookup(opcode.expr(), 1.expr());
-
-            #[cfg(feature = "dual_bytecode")]
-            {
-                cb.condition(is_first_bytecode_table.expr(), |cb| {
-                    cb.opcode_lookup(opcode.expr(), 1.expr());
-                });
-                cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                    cb.opcode_lookup2(opcode.expr(), 1.expr());
-                });
-            }
+            cb.lookup_opcode(
+                opcode.expr(),
+                1.expr(),
+                #[cfg(feature = "dual_bytecode")]
+                is_first_bytecode_table.expr(),
+            );
         });
 
         // We do the responsible opcode check explicitly here because we're not using

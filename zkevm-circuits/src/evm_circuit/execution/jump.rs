@@ -46,30 +46,14 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
-        #[cfg(not(feature = "dual_bytecode"))]
+        // Lookup opcode at destination
         cb.opcode_lookup_at(
             from_bytes::expr(&destination.cells),
             OpcodeId::JUMPDEST.expr(),
             1.expr(),
+            #[cfg(feature = "dual_bytecode")]
+            same_context.is_first_sub_bytecode(),
         );
-
-        #[cfg(feature = "dual_bytecode")]
-        // Lookup opcode at destination
-        cb.condition(same_context.is_first_sub_bytecode(), |cb| {
-            cb.opcode_lookup_at(
-                from_bytes::expr(&destination.cells),
-                OpcodeId::JUMPDEST.expr(),
-                1.expr(),
-            );
-        });
-        #[cfg(feature = "dual_bytecode")]
-        cb.condition(not::expr(same_context.is_first_sub_bytecode()), |cb| {
-            cb.opcode_lookup2_at(
-                from_bytes::expr(&destination.cells),
-                OpcodeId::JUMPDEST.expr(),
-                1.expr(),
-            );
-        });
 
         Self {
             same_context,
