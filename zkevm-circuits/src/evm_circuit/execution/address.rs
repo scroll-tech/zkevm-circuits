@@ -51,7 +51,6 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         };
 
         let opcode = cb.query_cell();
-
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {

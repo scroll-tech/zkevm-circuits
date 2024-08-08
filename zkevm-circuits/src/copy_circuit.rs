@@ -765,7 +765,6 @@ impl<F: Field> CopyCircuitConfig<F> {
             // lt chip
             if is_read {
                 let addr = table_row[2].0;
-
                 is_src_end_chip.assign(
                     region,
                     *offset,
@@ -916,7 +915,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                             }
                         }
                     );
-
                     self.assign_copy_event(
                         &mut region,
                         &mut offset,

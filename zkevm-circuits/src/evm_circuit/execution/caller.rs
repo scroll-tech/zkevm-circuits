@@ -45,7 +45,6 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
 
         // State transition
         let opcode = cb.query_cell();
-
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
             program_counter: Delta(1.expr()),

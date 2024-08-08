@@ -1056,6 +1056,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         #[cfg(feature = "dual_bytecode")]
         {
+            // when enable "dual_bytecode", get two bytes here.
             let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
             let minimum_row: usize = max(
                 first_bytecodes
