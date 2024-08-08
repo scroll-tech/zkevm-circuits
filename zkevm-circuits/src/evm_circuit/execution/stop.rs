@@ -57,7 +57,6 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         cb.condition(is_within_range.expr(), |cb| {
             cb.lookup_opcode(
                 opcode.expr(),
-                1.expr(),
                 #[cfg(feature = "dual_bytecode")]
                 is_first_bytecode_table.expr(),
             );

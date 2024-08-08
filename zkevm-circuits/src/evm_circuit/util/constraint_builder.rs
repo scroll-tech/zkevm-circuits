@@ -651,19 +651,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    // Opcode
-    pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
-        assert_eq!(is_code, 1.expr());
-        self.opcode_lookup_rlc(opcode, 0.expr());
-    }
-
+    // lookup real opcode. opcode_lookup_rlc ensures is_code = 1
     pub(crate) fn lookup_opcode(
         &mut self,
         opcode: Expression<F>,
-        is_code: Expression<F>,
         #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
     ) {
-        assert_eq!(is_code, 1.expr());
         #[cfg(not(feature = "dual_bytecode"))]
         self.opcode_lookup_rlc(opcode.expr(), 0.expr());
 
@@ -678,13 +671,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         }
     }
 
-    #[cfg(feature = "dual_bytecode")]
-    pub(crate) fn opcode_lookup2(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
-        assert_eq!(is_code, 1.expr());
-        self.opcode_lookup_rlc2(opcode, 0.expr());
-    }
-
-    // TODO: refactor opcode_lookup_at and opcode_lookup2_at into one helper ?
     pub(crate) fn opcode_lookup_at(
         &mut self,
         index: Expression<F>,

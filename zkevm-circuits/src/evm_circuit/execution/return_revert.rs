@@ -74,7 +74,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         cb.lookup_opcode(
             opcode.expr(),
-            1.expr(),
             #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table.expr(),
         );
