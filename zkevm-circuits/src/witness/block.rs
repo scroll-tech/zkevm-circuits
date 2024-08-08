@@ -284,7 +284,7 @@ impl Block {
         *self.bytecode_map.get(code_hash).unwrap_or(&true)
     }
 
-    // Get two sub bytecodes for two sub bytecode circuit.
+    // Get two sets of bytecodes for two bytecode sub circuits.
     #[cfg(feature = "dual_bytecode")]
     pub(crate) fn get_two_bytecodes(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
         let (first_bytecodes, second_bytecodes) =
@@ -293,7 +293,7 @@ impl Block {
         (first_bytecodes, second_bytecodes)
     }
 
-    // Get two sub bytecodes for two sub bytecode circuit.
+    // Split two sets of bytecodes for two bytecode sub circuits.
     #[cfg(feature = "dual_bytecode")]
     pub(crate) fn split_two_bytecodes<'a>(
         bytecodes: &'a BTreeMap<Word, Bytecode>,

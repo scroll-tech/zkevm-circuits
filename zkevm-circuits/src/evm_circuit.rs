@@ -531,7 +531,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
         #[cfg(feature = "dual_bytecode")]
         {
-            // when enable "dual_bytecode", get two bytes here.
+            // when enable feature "dual_bytecode", get two sets of bytecodes here.
             let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
             if first_bytecodes.len() > 0 {
                 // assign first bytecode_table

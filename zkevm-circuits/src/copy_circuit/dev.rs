@@ -81,7 +81,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             &challenge_values,
         )?;
 
-        // when enable "dual_bytecode", get two bytes here.
+        // when enable feature "dual_bytecode", get two sets of bytecodes here.
         #[cfg(feature = "dual_bytecode")]
         {
             let (first_bytecodes, second_bytecodes) =
