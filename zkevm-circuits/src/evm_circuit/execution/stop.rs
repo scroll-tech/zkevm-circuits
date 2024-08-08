@@ -44,6 +44,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         let code_len_gadget = BytecodeLengthGadget::construct(
             cb,
             cb.curr.state.code_hash.clone(),
+            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table.expr(),
         );
 
