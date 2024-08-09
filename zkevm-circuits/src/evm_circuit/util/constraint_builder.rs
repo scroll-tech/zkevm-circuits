@@ -657,16 +657,30 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         opcode: Expression<F>,
         #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
     ) {
+        self.lookup_opcode_with_push_rlc(
+            opcode,
+            0.expr(),
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
+        );
+    }
+
+    pub(crate) fn lookup_opcode_with_push_rlc(
+        &mut self,
+        opcode: Expression<F>,
+        push_rlc: Expression<F>,
+        #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
+    ) {
         #[cfg(not(feature = "dual_bytecode"))]
-        self.opcode_lookup_rlc(opcode.expr(), 0.expr());
+        self.opcode_lookup_rlc(opcode.expr(), push_rlc);
 
         #[cfg(feature = "dual_bytecode")]
         {
             self.condition(is_first_bytecode_table.expr(), |cb| {
-                cb.opcode_lookup_rlc(opcode.expr(), 0.expr());
+                cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
             });
             self.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                cb.opcode_lookup_rlc2(opcode.expr(), 0.expr());
+                cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
             });
         }
     }

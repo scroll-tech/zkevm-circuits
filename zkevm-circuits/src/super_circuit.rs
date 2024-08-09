@@ -132,7 +132,6 @@ pub struct SuperCircuitConfig<F: Field> {
 
     #[cfg(feature = "poseidon-codehash")]
     bytecode_circuit: ToHashBlockCircuitConfig<F, HASHBLOCK_BYTES_IN_FIELD>,
-    //#[cfg(feature = "poseidon-codehash")]
     #[cfg(all(feature = "dual_bytecode", feature = "poseidon-codehash"))]
     bytecode_circuit1: ToHashBlockCircuitConfig<F, HASHBLOCK_BYTES_IN_FIELD>,
     copy_circuit: CopyCircuitConfig<F>,
@@ -291,7 +290,6 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             },
         );
 
-        //#[cfg(not(feature = "poseidon-codehash"))]
         #[cfg(all(feature = "dual_bytecode", not(feature = "poseidon-codehash")))]
         let bytecode_circuit1 = BytecodeCircuitConfig::new(
             meta,
@@ -313,7 +311,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 poseidon_table,
             },
         );
-        //#[cfg(feature = "poseidon-codehash")]
+
         #[cfg(all(feature = "dual_bytecode", feature = "poseidon-codehash"))]
         let bytecode_circuit1 = ToHashBlockCircuitConfig::new(
             meta,

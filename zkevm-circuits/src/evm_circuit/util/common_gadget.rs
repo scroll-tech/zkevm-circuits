@@ -75,18 +75,12 @@ impl<F: Field> SameContextGadget<F> {
         #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
 
-        #[cfg(feature = "dual_bytecode")]
-        {
-            cb.condition(is_first_bytecode_table.expr(), |cb| {
-                cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
-            });
-            cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
-            });
-        }
-
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
+        cb.lookup_opcode_with_push_rlc(
+            opcode.expr(),
+            push_rlc,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table.expr(),
+        );
 
         cb.add_lookup(
             "Responsible opcode lookup",
