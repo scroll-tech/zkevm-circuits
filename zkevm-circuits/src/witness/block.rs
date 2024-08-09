@@ -692,7 +692,6 @@ pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
 pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
     let bytecode_lens = bytecodes
         .values()
-        .into_iter()
         .map(|codes| codes.bytes.len())
         .collect_vec();
     let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);

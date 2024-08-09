@@ -11,7 +11,7 @@ use crate::{
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
-            from_bytes, not, CachedRegion, Cell,
+            from_bytes, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

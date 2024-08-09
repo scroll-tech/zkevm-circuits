@@ -183,8 +183,8 @@ impl<F: Field> BytecodeLengthGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block,
-        call: &Call,
+        _block: &Block,
+        _call: &Call,
         code_len: u64,
     ) -> Result<(), Error> {
         // TODO: get code length dynamically here ?

@@ -1,7 +1,6 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use eth_types::{bytecode, Word};
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -533,14 +532,14 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         {
             // when enable feature "dual_bytecode", get two sets of bytecodes here.
             let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
-            if first_bytecodes.len() > 0 {
+            if !first_bytecodes.is_empty() {
                 // assign first bytecode_table
                 config
                     .bytecode_table
                     .dev_load(&mut layouter, first_bytecodes, &challenges)?;
             }
 
-            if second_bytecodes.len() > 0 {
+            if !second_bytecodes.is_empty() {
                 // assign second bytecode_table
                 config
                     .bytecode_table1

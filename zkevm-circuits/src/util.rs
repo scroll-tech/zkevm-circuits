@@ -395,12 +395,12 @@ pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
 
 /// The function of this algorithm： Split a vec into two subsets such that
 /// the sums of the two subsets are as close as possible。
-pub(crate) fn find_two_closest_subset(vec: &Vec<usize>) -> (Vec<usize>, Vec<usize>) {
+pub(crate) fn find_two_closest_subset(vec: &[usize]) -> (Vec<usize>, Vec<usize>) {
     let total_sum: usize = vec.iter().sum();
     let n = vec.len();
 
     // dp[i][j]：indicates whether it is possible to achieve a sum of j using the first i elements.
-    let mut dp = vec![vec![false; (total_sum / 2 + 1) as usize]; n + 1];
+    let mut dp = vec![vec![false; total_sum / 2 + 1]; n + 1];
 
     // initialization: first sum zero can be always reached.
     for i in 0..=n {
@@ -409,9 +409,9 @@ pub(crate) fn find_two_closest_subset(vec: &Vec<usize>) -> (Vec<usize>, Vec<usiz
 
     // fill dp table
     for i in 1..=n {
-        for j in 1..=(total_sum / 2) as usize {
-            if j >= vec[i - 1] as usize {
-                dp[i][j] = dp[i - 1][j] || dp[i - 1][j - vec[i - 1] as usize];
+        for j in 1..=(total_sum / 2) {
+            if j >= vec[i - 1] {
+                dp[i][j] = dp[i - 1][j] || dp[i - 1][j - vec[i - 1]];
             } else {
                 dp[i][j] = dp[i - 1][j];
             }
@@ -420,7 +420,7 @@ pub(crate) fn find_two_closest_subset(vec: &Vec<usize>) -> (Vec<usize>, Vec<usiz
 
     // find closest sum
     let mut sum1 = 0;
-    for j in (0..=(total_sum / 2) as usize).rev() {
+    for j in (0..=(total_sum / 2)).rev() {
         if dp[n][j] {
             sum1 = j;
             break;
@@ -432,7 +432,7 @@ pub(crate) fn find_two_closest_subset(vec: &Vec<usize>) -> (Vec<usize>, Vec<usiz
     let mut subset2 = Vec::new();
     let mut current_sum = sum1;
     for i in (1..=n).rev() {
-        if current_sum >= vec[i - 1] && dp[i - 1][current_sum as usize - vec[i - 1] as usize] {
+        if current_sum >= vec[i - 1] && dp[i - 1][current_sum - vec[i - 1]] {
             subset1.push(vec[i - 1]);
             current_sum -= vec[i - 1];
         } else {
