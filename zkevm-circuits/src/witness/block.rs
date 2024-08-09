@@ -307,7 +307,7 @@ impl Block {
         let mut first_bytecodes = Vec::<&Bytecode>::new();
         let mut second_bytecodes = Vec::<&Bytecode>::new();
 
-        bytecodes
+        let _ = bytecodes
             .iter()
             .map(|code| {
                 if first_bytecode_hashes.contains(code.0) {
@@ -698,20 +698,20 @@ pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, 
 
     let bytecode_map: BTreeMap<Word, bool> = bytecodes
         .iter()
-        .filter_map(|(hash, codes)| {
+        .map(|(hash, codes)| {
             let len = codes.bytes.len();
             if first_set.contains(&len) {
                 let index = first_set.iter().position(|x| *x == len).unwrap();
                 first_set.remove(index);
-                Some((*hash, true))
+                (*hash, true)
             } else if second_set.contains(&len) {
                 let index = second_set.iter().position(|x| *x == len).unwrap();
                 second_set.remove(index);
-                Some((*hash, false))
+                (*hash, false)
             } else {
                 // here should be not reachable, panic or return a placeholder.
                 //panic!("“Find an unexpected element that is not present in either first_set or second_set”)
-                Some((U256::zero(), false))
+                (U256::zero(), false)
             }
         })
         .collect();

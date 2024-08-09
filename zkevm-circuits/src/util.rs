@@ -403,8 +403,11 @@ pub(crate) fn find_two_closest_subset(vec: &[usize]) -> (Vec<usize>, Vec<usize>)
     let mut dp = vec![vec![false; total_sum / 2 + 1]; n + 1];
 
     // initialization: first sum zero can be always reached.
-    for i in 0..=n {
-        dp[i][0] = true;
+    // for i in 0..=n {
+    //     dp[i][0] = true;
+    // }
+    for dp_inner in dp.iter_mut().take(n + 1) {
+        dp_inner[0] = true;
     }
 
     // fill dp table
