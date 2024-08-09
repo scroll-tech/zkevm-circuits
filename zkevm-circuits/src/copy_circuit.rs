@@ -188,7 +188,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             array_init(|_| meta.advice_column());
         let is_first = copy_table.is_first;
         #[cfg(feature = "dual_bytecode")]
-        let is_first_bytecode_table = meta.advice_column_in(SecondPhase);
+        let is_first_bytecode_table = meta.advice_column();
         let id = copy_table.id;
         let addr = copy_table.addr;
         let src_addr_end = copy_table.src_addr_end;

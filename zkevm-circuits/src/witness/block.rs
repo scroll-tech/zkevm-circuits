@@ -286,7 +286,7 @@ impl Block {
 
     // Get two sets of bytecodes for two bytecode sub circuits.
     #[cfg(feature = "dual_bytecode")]
-    pub(crate) fn get_two_bytecodes(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
+    pub(crate) fn get_bytecodes_for_dual_sub_circuits(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
         let (first_bytecodes, second_bytecodes) =
             Self::split_two_bytecodes(&self.bytecodes, &self.bytecode_map);
 

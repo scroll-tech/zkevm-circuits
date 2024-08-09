@@ -1057,7 +1057,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         #[cfg(feature = "dual_bytecode")]
         {
             // when enable feature "dual_bytecode", get two sets of bytecodes here.
-            let (first_bytecodes, second_bytecodes) = block.get_two_bytecodes();
+            let (first_bytecodes, second_bytecodes) = block.get_bytecodes_for_dual_sub_circuits();
             let minimum_row: usize = max(
                 first_bytecodes
                     .iter()
