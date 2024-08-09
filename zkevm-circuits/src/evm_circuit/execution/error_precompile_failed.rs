@@ -136,7 +136,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+            Value::known(F::from(
+                block.is_first_sub_bytecode_circuit(&call.code_hash),
+            )),
         )?;
         let [gas, callee_address] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());

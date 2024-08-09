@@ -730,6 +730,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.program_counter_offset = self.program_counter_offset.clone() * self.condition_expr();
     }
 
+    // lookup bytecode_table.
     pub(crate) fn opcode_lookup_at_rlc(
         &mut self,
         index: Expression<F>,
@@ -752,7 +753,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     #[cfg(feature = "dual_bytecode")]
-    // lookup second bytecode table.
+    // lookup bytecode_table1.
     pub(crate) fn opcode_lookup_at_rlc2(
         &mut self,
         index: Expression<F>,

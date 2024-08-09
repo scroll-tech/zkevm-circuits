@@ -377,7 +377,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+            Value::known(F::from(
+                block.is_first_sub_bytecode_circuit(&call.code_hash),
+            )),
         )?;
 
         let mut rws = StepRws::new(block, step);

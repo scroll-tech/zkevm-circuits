@@ -124,7 +124,7 @@ impl<F: Field> SameContextGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         #[cfg(feature = "dual_bytecode")]
-        let is_first_bytecode_table = block.is_first_bytecode(&call.code_hash);
+        let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -1677,7 +1677,7 @@ impl<F: Field> CommonErrorGadget<F> {
 
         #[cfg(feature = "dual_bytecode")]
         {
-            let is_first_bytecode_table = block.is_first_bytecode(&call.code_hash);
+            let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
             self.is_first_bytecode_table.assign(
                 region,
                 offset,

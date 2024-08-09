@@ -171,7 +171,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+            Value::known(F::from(
+                block.is_first_sub_bytecode_circuit(&call.code_hash),
+            )),
         )?;
 
         let dest = block.rws[step.rw_indices[0]].stack_value();

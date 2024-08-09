@@ -144,7 +144,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         #[cfg(feature = "dual_bytecode")]
         {
-            let is_first_bytecode_table = block.is_first_bytecode(&call.code_hash);
+            let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
             self.is_first_bytecode_table.assign(
                 region,
                 offset,

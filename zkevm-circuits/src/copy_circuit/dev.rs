@@ -84,8 +84,10 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         // when enable feature "dual_bytecode", get two sets of bytecodes here.
         #[cfg(feature = "dual_bytecode")]
         {
-            let (first_bytecodes, second_bytecodes) =
-                Block::split_two_bytecodes(&self.external_data.bytecodes, &self.bytecode_map);
+            let (first_bytecodes, second_bytecodes) = Block::split_bytecodes_for_dual_sub_circuits(
+                &self.external_data.bytecodes,
+                &self.bytecode_map,
+            );
             config
                 .0
                 .bytecode_table

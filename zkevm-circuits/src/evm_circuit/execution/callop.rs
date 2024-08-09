@@ -789,7 +789,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(block.is_first_bytecode(&call.code_hash))),
+            Value::known(F::from(
+                block.is_first_sub_bytecode_circuit(&call.code_hash),
+            )),
         )?;
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and

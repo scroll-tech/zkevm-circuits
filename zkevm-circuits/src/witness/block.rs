@@ -277,7 +277,7 @@ impl Block {
 
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
     #[cfg(feature = "dual_bytecode")]
-    pub(crate) fn is_first_bytecode(&self, code_hash: &U256) -> bool {
+    pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
         // bytecode_map should cover the target 'code_hash',
         // but for extcodecopy, the external_address can be non existed code hash.
         // `unwrap` here is not safe.
@@ -287,38 +287,38 @@ impl Block {
     // Get two sets of bytecodes for two bytecode sub circuits.
     #[cfg(feature = "dual_bytecode")]
     pub(crate) fn get_bytecodes_for_dual_sub_circuits(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
-        let (first_bytecodes, second_bytecodes) =
-            Self::split_two_bytecodes(&self.bytecodes, &self.bytecode_map);
+        let (first_subcircuit_bytecodes, second_subcircuit_bytecodes) =
+            Self::split_bytecodes_for_dual_sub_circuits(&self.bytecodes, &self.bytecode_map);
 
-        (first_bytecodes, second_bytecodes)
+        (first_subcircuit_bytecodes, second_subcircuit_bytecodes)
     }
 
     // Split two sets of bytecodes for two bytecode sub circuits.
     #[cfg(feature = "dual_bytecode")]
-    pub(crate) fn split_two_bytecodes<'a>(
+    pub(crate) fn split_bytecodes_for_dual_sub_circuits<'a>(
         bytecodes: &'a BTreeMap<Word, Bytecode>,
         bytecode_map: &BTreeMap<Word, bool>,
     ) -> (Vec<&'a Bytecode>, Vec<&'a Bytecode>) {
-        let first_bytecode_hashes: Vec<Word> = bytecode_map
+        let first_subcircuit_code_hashes: Vec<Word> = bytecode_map
             .iter()
             .filter_map(|item| if *item.1 { Some(*item.0) } else { None })
             .collect();
 
-        let mut first_bytecodes = Vec::<&Bytecode>::new();
-        let mut second_bytecodes = Vec::<&Bytecode>::new();
+        let mut first_subcircuit_bytecodes = Vec::<&Bytecode>::new();
+        let mut second_subcircuit_bytecodes = Vec::<&Bytecode>::new();
 
         let _ = bytecodes
             .iter()
             .map(|code| {
-                if first_bytecode_hashes.contains(code.0) {
-                    first_bytecodes.push(code.1)
+                if first_subcircuit_code_hashes.contains(code.0) {
+                    first_subcircuit_bytecodes.push(code.1)
                 } else {
-                    second_bytecodes.push(code.1)
+                    second_subcircuit_bytecodes.push(code.1)
                 }
             })
             .collect::<Vec<_>>();
 
-        (first_bytecodes, second_bytecodes)
+        (first_subcircuit_bytecodes, second_subcircuit_bytecodes)
     }
 }
 
@@ -692,14 +692,14 @@ pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
 pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
     let bytecode_lens = bytecodes
         .values()
-        .map(|codes| codes.bytes.len())
+        .map(|bytecode| bytecode.bytes.len())
         .collect_vec();
     let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
 
     let bytecode_map: BTreeMap<Word, bool> = bytecodes
         .iter()
-        .map(|(hash, codes)| {
-            let len = codes.bytes.len();
+        .map(|(hash, bytecode)| {
+            let len = bytecode.bytes.len();
             if first_set.contains(&len) {
                 let index = first_set.iter().position(|x| *x == len).unwrap();
                 first_set.remove(index);
