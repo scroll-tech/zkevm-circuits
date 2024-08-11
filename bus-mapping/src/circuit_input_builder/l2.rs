@@ -126,12 +126,26 @@ impl CircuitInputBuilder {
 
         let mpt_init_state = if !l2_trace.storage_trace.flatten_proofs.is_empty() {
             log::info!("always init mpt state with flatten proofs");
-            let state = ZktrieState::construct(old_root);
-            let mut zk_db = state.zk_db.borrow_mut();
+            let mut state = ZktrieState::construct(old_root);
+            let zk_db = state.expose_db();
             for (k, bytes) in &l2_trace.storage_trace.flatten_proofs {
                 zk_db.add_node_bytes(bytes, Some(k.as_bytes())).unwrap();
             }
-            drop(zk_db);
+            zk_db.with_key_cache(
+                l2_trace
+                    .storage_trace
+                    .address_hashes
+                    .iter()
+                    .map(|(k, v)| (k.as_bytes(), v.as_bytes())),
+            );
+            zk_db.with_key_cache(
+                l2_trace
+                    .storage_trace
+                    .store_key_hashes
+                    .iter()
+                    .map(|(k, v)| (k.as_bytes(), v.as_bytes())),
+            );
+
             Some(state)
         } else if !light_mode {
             let mpt_init_state = ZktrieState::from_trace_with_additional(
@@ -239,13 +253,27 @@ impl CircuitInputBuilder {
         if !l2_trace.storage_trace.flatten_proofs.is_empty() {
             let mpt_state = self
                 .mpt_init_state
-                .as_ref()
+                .as_mut()
                 .expect("should have inited with flatten proof");
             log::info!("add more flatten proofs to mpt state");
-            let mut zk_db = mpt_state.zk_db.borrow_mut();
+            let zk_db = mpt_state.expose_db();
             for (k, bytes) in &l2_trace.storage_trace.flatten_proofs {
                 zk_db.add_node_bytes(bytes, Some(k.as_bytes())).unwrap();
             }
+            zk_db.with_key_cache(
+                l2_trace
+                    .storage_trace
+                    .address_hashes
+                    .iter()
+                    .map(|(k, v)| (k.as_bytes(), v.as_bytes())),
+            );
+            zk_db.with_key_cache(
+                l2_trace
+                    .storage_trace
+                    .store_key_hashes
+                    .iter()
+                    .map(|(k, v)| (k.as_bytes(), v.as_bytes())),
+            );
         } else if let Some(mpt_init_state) = &mut self.mpt_init_state {
             mpt_init_state.update_from_trace(
                 Self::collect_account_proofs(&l2_trace.storage_trace),
