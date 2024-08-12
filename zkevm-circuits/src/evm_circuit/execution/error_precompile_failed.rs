@@ -3,10 +3,11 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            common_gadget::BytecodeLookupGadget,
             constraint_builder::EVMConstraintBuilder,
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            sum, CachedRegion, Cell, Word,
+            sum, CachedRegion, Word,
         },
     },
     table::CallContextFieldTag,
@@ -15,11 +16,11 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{ToLittleEndian, U256};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorPrecompileFailedGadget<F> {
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     is_call: IsZeroGadget<F>,
     is_callcode: IsZeroGadget<F>,
     is_delegatecall: IsZeroGadget<F>,
@@ -29,8 +30,6 @@ pub(crate) struct ErrorPrecompileFailedGadget<F> {
     value: Word<F>,
     cd_address: MemoryAddressGadget<F>,
     rd_address: MemoryAddressGadget<F>,
-    #[cfg(feature = "dual_bytecode")]
-    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
@@ -39,21 +38,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorPrecompileFailed;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        #[cfg(feature = "dual_bytecode")]
-        let is_first_bytecode_table = cb.query_bool();
-        cb.lookup_opcode(
-            opcode.expr(),
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table.expr(),
-        );
+        let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
-        let is_delegatecall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
-        let is_staticcall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+        let is_call =
+            IsZeroGadget::construct(cb, opcode_gadget.opcode.expr() - OpcodeId::CALL.expr());
+        let is_callcode =
+            IsZeroGadget::construct(cb, opcode_gadget.opcode.expr() - OpcodeId::CALLCODE.expr());
+        let is_delegatecall = IsZeroGadget::construct(
+            cb,
+            opcode_gadget.opcode.expr() - OpcodeId::DELEGATECALL.expr(),
+        );
+        let is_staticcall = IsZeroGadget::construct(
+            cb,
+            opcode_gadget.opcode.expr() - OpcodeId::STATICCALL.expr(),
+        );
 
         // constrain op code
         // NOTE: this precompile gadget is for dummy use at the moment, the real error handling for
@@ -105,7 +103,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
 
         Self {
-            opcode,
+            opcode_gadget,
             is_call,
             is_callcode,
             is_delegatecall,
@@ -115,8 +113,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             value,
             cd_address,
             rd_address,
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table,
         }
     }
 
@@ -132,14 +128,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         let opcode = step.opcode.unwrap();
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
-        #[cfg(feature = "dual_bytecode")]
-        self.is_first_bytecode_table.assign(
-            region,
-            offset,
-            Value::known(F::from(
-                block.is_first_sub_bytecode_circuit(&call.code_hash),
-            )),
-        )?;
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
+
         let [gas, callee_address] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
         let value = if is_call_or_callcode == 1 {
@@ -155,8 +146,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         ]
         .map(|idx| block.rws[idx].stack_value());
 
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
             region,
             offset,
