@@ -38,7 +38,7 @@ pub mod utils;
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
 pub use error::Error;
-use ethers_core::types;
+pub use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{ArchivedH512, BigEndianHash, U512},
     types::{
