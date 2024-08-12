@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, STACK_CAPACITY},
         step::ExecutionState,
         util::{
-            common_gadget::{get_copy_bytes, RestoreContextGadget},
+            common_gadget::{get_copy_bytes, BytecodeLookupGadget, RestoreContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -31,11 +31,9 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     // check if it is REVERT opcode
     is_revert: IsEqualGadget<F>,
-    #[cfg(feature = "dual_bytecode")]
-    is_first_bytecode_table: Cell<F>,
 
     range: MemoryAddressGadget<F>,
     deployed_bytecode_rlc: Cell<F>,
@@ -68,21 +66,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURN_REVERT;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        #[cfg(feature = "dual_bytecode")]
-        let is_first_bytecode_table = cb.query_bool();
+        let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        cb.lookup_opcode(
-            opcode.expr(),
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table.expr(),
-        );
-        let is_revert = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::REVERT.expr());
+        let is_revert =
+            IsEqualGadget::construct(cb, opcode_gadget.opcode.expr(), OpcodeId::REVERT.expr());
 
         // constrain op codes
         cb.require_in_set(
             "RETURN_REVERT state is for RETURN or REVERT",
-            opcode.expr(),
+            opcode_gadget.opcode.expr(),
             vec![OpcodeId::RETURN.expr(), OpcodeId::REVERT.expr()],
         );
 
@@ -334,10 +326,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         });
 
         Self {
-            opcode,
+            opcode_gadget,
             is_revert,
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table,
             range,
             deployed_bytecode_rlc,
             is_success,
@@ -369,18 +359,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = F::from(step.opcode.unwrap().as_u64());
-        self.opcode.assign(region, offset, Value::known(opcode))?;
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
 
         self.is_revert
             .assign(region, offset, opcode, F::from(OpcodeId::REVERT.as_u64()))?;
-        #[cfg(feature = "dual_bytecode")]
-        self.is_first_bytecode_table.assign(
-            region,
-            offset,
-            Value::known(F::from(
-                block.is_first_sub_bytecode_circuit(&call.code_hash),
-            )),
-        )?;
 
         let mut rws = StepRws::new(block, step);
 
