@@ -146,6 +146,11 @@ impl CircuitInputBuilder {
                     .map(|(k, v)| (k.as_bytes(), v.as_bytes())),
             );
 
+            log::debug!(
+                "building partial ZktrieState done from new trace, root {}",
+                hex::encode(state.root())
+            );
+
             Some(state)
         } else if !light_mode {
             let mpt_init_state = ZktrieState::from_trace_with_additional(
@@ -179,7 +184,7 @@ impl CircuitInputBuilder {
                     log::trace!("sdb trace[query mode] {:?} {:?}", addr, acc);
                     sdb.set_account(&addr, state_db::Account::from(&acc));
                 } else {
-                    log::warn!("can not query account with addr {:?}", addr);
+                    sdb.set_account(&addr, state_db::Account::zero());
                 }
             }
 
