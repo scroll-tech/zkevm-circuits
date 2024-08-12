@@ -195,6 +195,59 @@ impl<F: Field> BytecodeLengthGadget<F> {
     }
 }
 
+// this helper does opcode lookup for some opcodes(callop, create, return_revert etc.),
+// which don't use SameContextGadget.
+#[derive(Clone, Debug)]
+pub(crate) struct BytecodeLookupGadget<F> {
+    pub(crate) opcode: Cell<F>,
+    #[cfg(feature = "dual_bytecode")]
+    pub(crate) is_first_bytecode_table: Cell<F>,
+}
+
+impl<F: Field> BytecodeLookupGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let opcode = cb.query_cell();
+        #[cfg(feature = "dual_bytecode")]
+        let is_first_bytecode_table = cb.query_bool();
+        cb.lookup_opcode(
+            opcode.expr(),
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table.expr(),
+        );
+
+        Self {
+            opcode,
+            #[cfg(feature = "dual_bytecode")]
+            is_first_bytecode_table,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block,
+        call: &Call,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        let opcode = step.opcode.unwrap();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        #[cfg(feature = "dual_bytecode")]
+        #[cfg(feature = "dual_bytecode")]
+        {
+            let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
+            self.is_first_bytecode_table.assign(
+                region,
+                offset,
+                Value::known(F::from(is_first_bytecode_table)),
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Construction of step state transition that restores caller's state.
 #[derive(Clone, Debug)]
 pub(crate) struct RestoreContextGadget<F> {

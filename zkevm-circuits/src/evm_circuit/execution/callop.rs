@@ -5,7 +5,9 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::{CommonCallGadget, TransferGadget, TransferGadgetInfo},
+            common_gadget::{
+                BytecodeLookupGadget, CommonCallGadget, TransferGadget, TransferGadgetInfo,
+            },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -42,7 +44,7 @@ use std::cmp::min;
 #[derive(Clone, Debug)]
 
 pub(crate) struct CallOpGadget<F> {
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     is_call: IsZeroGadget<F>,
     is_callcode: IsZeroGadget<F>,
     is_delegatecall: IsZeroGadget<F>,
@@ -83,8 +85,6 @@ pub(crate) struct CallOpGadget<F> {
     precompile_input_rws: Cell<F>,
     precompile_output_rws: Cell<F>,
     precompile_return_rws: Cell<F>,
-    #[cfg(feature = "dual_bytecode")]
-    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -93,21 +93,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALL_OP;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        #[cfg(feature = "dual_bytecode")]
-        let is_first_bytecode_table = cb.query_bool();
-        cb.lookup_opcode(
-            opcode.expr(),
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table.expr(),
-        );
+        let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
-        let is_delegatecall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
-        let is_staticcall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+        let is_call =
+            IsZeroGadget::construct(cb, opcode_gadget.opcode.expr() - OpcodeId::CALL.expr());
+        let is_callcode =
+            IsZeroGadget::construct(cb, opcode_gadget.opcode.expr() - OpcodeId::CALLCODE.expr());
+        let is_delegatecall = IsZeroGadget::construct(
+            cb,
+            opcode_gadget.opcode.expr() - OpcodeId::DELEGATECALL.expr(),
+        );
+        let is_staticcall = IsZeroGadget::construct(
+            cb,
+            opcode_gadget.opcode.expr() - OpcodeId::STATICCALL.expr(),
+        );
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -717,7 +716,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         Self {
-            opcode,
+            opcode_gadget,
             is_call,
             is_callcode,
             is_delegatecall,
@@ -756,8 +755,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_input_rws,
             precompile_output_rws,
             precompile_return_rws,
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table,
         }
     }
 
@@ -785,14 +782,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
-        #[cfg(feature = "dual_bytecode")]
-        self.is_first_bytecode_table.assign(
-            region,
-            offset,
-            Value::known(F::from(
-                block.is_first_sub_bytecode_circuit(&call.code_hash),
-            )),
-        )?;
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
         // opcode DELEGATECALL has two extra call context lookups - current
@@ -859,8 +850,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             }
         }
 
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
             region,
             offset,
