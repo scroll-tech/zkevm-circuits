@@ -655,34 +655,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn lookup_opcode(
         &mut self,
         opcode: Expression<F>,
-        #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
+        is_first_bytecode_table: Expression<F>,
     ) {
-        self.lookup_opcode_with_push_rlc(
-            opcode,
-            0.expr(),
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table,
-        );
+        self.lookup_opcode_with_push_rlc(opcode, 0.expr(), is_first_bytecode_table);
     }
 
     pub(crate) fn lookup_opcode_with_push_rlc(
         &mut self,
         opcode: Expression<F>,
         push_rlc: Expression<F>,
-        #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
+        is_first_bytecode_table: Expression<F>,
     ) {
-        #[cfg(not(feature = "dual_bytecode"))]
-        self.opcode_lookup_rlc(opcode.expr(), push_rlc);
+        self.condition(is_first_bytecode_table.expr(), |cb| {
+            cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
+        });
 
         #[cfg(feature = "dual_bytecode")]
-        {
-            self.condition(is_first_bytecode_table.expr(), |cb| {
-                cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
-            });
-            self.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
-            });
-        }
+        self.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+            cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
+        });
     }
 
     pub(crate) fn opcode_lookup_at(
@@ -690,21 +681,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Expression<F>,
         opcode: Expression<F>,
         is_code: Expression<F>,
-        #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
+        is_first_bytecode_table: Expression<F>,
     ) {
         assert_eq!(is_code, 1.expr());
-        #[cfg(not(feature = "dual_bytecode"))]
-        self.opcode_lookup_at_rlc(index, opcode, 0.expr());
-        #[cfg(feature = "dual_bytecode")]
-        {
-            self.condition(is_first_bytecode_table.clone(), |cb| {
-                cb.opcode_lookup_at_rlc(index.clone(), opcode.clone(), 0.expr());
-            });
+        self.condition(is_first_bytecode_table.clone(), |cb| {
+            cb.opcode_lookup_at_rlc(index.clone(), opcode.clone(), 0.expr());
+        });
 
-            self.condition(not::expr(is_first_bytecode_table), |cb| {
-                cb.opcode_lookup_at_rlc2(index, opcode, 0.expr());
-            });
-        }
+        #[cfg(feature = "dual_bytecode")]
+        self.condition(not::expr(is_first_bytecode_table), |cb| {
+            cb.opcode_lookup_at_rlc2(index, opcode, 0.expr());
+        });
     }
 
     pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {

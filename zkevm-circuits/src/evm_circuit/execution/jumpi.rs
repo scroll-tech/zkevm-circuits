@@ -75,7 +75,6 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
                 dest.valid_value(),
                 OpcodeId::JUMPDEST.expr(),
                 1.expr(),
-                #[cfg(feature = "dual_bytecode")]
                 same_context.is_first_sub_bytecode(),
             );
         });

@@ -52,7 +52,6 @@ pub(crate) struct SameContextGadget<F> {
     opcode: Cell<F>,
     // indicates current op code belongs to first or second bytecode table.
     // should be bool type.
-    #[cfg(feature = "dual_bytecode")]
     is_first_bytecode_table: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
 }
@@ -72,15 +71,9 @@ impl<F: Field> SameContextGadget<F> {
         step_state_transition: StepStateTransition<F>,
         push_rlc: Expression<F>,
     ) -> Self {
-        #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
 
-        cb.lookup_opcode_with_push_rlc(
-            opcode.expr(),
-            push_rlc,
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table.expr(),
-        );
+        cb.lookup_opcode_with_push_rlc(opcode.expr(), push_rlc, is_first_bytecode_table.expr());
 
         cb.add_lookup(
             "Responsible opcode lookup",
@@ -102,13 +95,11 @@ impl<F: Field> SameContextGadget<F> {
 
         Self {
             opcode,
-            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
             sufficient_gas_left,
         }
     }
 
-    #[cfg(feature = "dual_bytecode")]
     // Check if current bytecode is belong to first bytecode table.
     pub(crate) fn is_first_sub_bytecode(&self) -> Expression<F> {
         self.is_first_bytecode_table.expr()
@@ -123,13 +114,11 @@ impl<F: Field> SameContextGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        #[cfg(feature = "dual_bytecode")]
         self.is_first_bytecode_table.assign(
             region,
             offset,
@@ -148,7 +137,6 @@ pub(crate) struct BytecodeLengthGadget<F> {
     pub(crate) code_length: Cell<F>,
     // indicates current op code belongs to first or second bytecode table.
     // should be bool type.
-    #[cfg(feature = "dual_bytecode")]
     pub(crate) is_first_bytecode_table: Cell<F>,
 }
 
@@ -156,23 +144,19 @@ impl<F: Field> BytecodeLengthGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, code_hash: Cell<F>) -> Self {
         // Fetch the bytecode length from the bytecode table.
         let code_length = cb.query_cell();
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.bytecode_length(code_hash.expr(), code_length.expr());
-        #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
 
+        cb.condition(is_first_bytecode_table.clone().expr(), |cb| {
+            cb.bytecode_length(code_hash.expr(), code_length.expr());
+        });
+
         #[cfg(feature = "dual_bytecode")]
-        {
-            cb.condition(is_first_bytecode_table.clone().expr(), |cb| {
-                cb.bytecode_length(code_hash.expr(), code_length.expr());
-            });
-            cb.condition(not::expr(is_first_bytecode_table.clone().expr()), |cb| {
-                cb.bytecode1_length(code_hash.expr(), code_length.expr());
-            });
-        }
+        cb.condition(not::expr(is_first_bytecode_table.clone().expr()), |cb| {
+            cb.bytecode1_length(code_hash.expr(), code_length.expr());
+        });
+
         Self {
             code_length,
-            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
         }
     }
@@ -204,24 +188,17 @@ impl<F: Field> BytecodeLengthGadget<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct BytecodeLookupGadget<F> {
     pub(crate) opcode: Cell<F>,
-    #[cfg(feature = "dual_bytecode")]
     pub(crate) is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> BytecodeLookupGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
-        cb.lookup_opcode(
-            opcode.expr(),
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table.expr(),
-        );
+        cb.lookup_opcode(opcode.expr(), is_first_bytecode_table.expr());
 
         Self {
             opcode,
-            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
         }
     }
@@ -237,16 +214,13 @@ impl<F: Field> BytecodeLookupGadget<F> {
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        #[cfg(feature = "dual_bytecode")]
-        #[cfg(feature = "dual_bytecode")]
-        {
-            let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
-            self.is_first_bytecode_table.assign(
-                region,
-                offset,
-                Value::known(F::from(is_first_bytecode_table)),
-            )?;
-        }
+
+        let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(is_first_bytecode_table)),
+        )?;
 
         Ok(())
     }
@@ -1590,7 +1564,6 @@ pub(crate) struct CommonErrorGadget<F> {
     restore_context: RestoreContextGadget<F>,
     // indicates current op code belongs to first or second bytecode table.
     // should be bool type.
-    #[cfg(feature = "dual_bytecode")]
     is_first_bytecode_table: Cell<F>,
 }
 
@@ -1637,20 +1610,16 @@ impl<F: Field> CommonErrorGadget<F> {
         return_data_length: Expression<F>,
         push_rlc: Expression<F>,
     ) -> Self {
-        #[cfg(not(feature = "dual_bytecode"))]
-        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
-        #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
 
+        cb.condition(is_first_bytecode_table.expr(), |cb| {
+            cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
+        });
+
         #[cfg(feature = "dual_bytecode")]
-        {
-            cb.condition(is_first_bytecode_table.expr(), |cb| {
-                cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
-            });
-            cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
-            });
-        }
+        cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+            cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
+        });
 
         let rw_counter_end_of_reversion = cb.query_cell();
 
@@ -1709,7 +1678,6 @@ impl<F: Field> CommonErrorGadget<F> {
         Self {
             rw_counter_end_of_reversion,
             restore_context,
-            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
         }
     }
@@ -1732,15 +1700,12 @@ impl<F: Field> CommonErrorGadget<F> {
         self.restore_context
             .assign(region, offset, block, call, step, rw_offset)?;
 
-        #[cfg(feature = "dual_bytecode")]
-        {
-            let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
-            self.is_first_bytecode_table.assign(
-                region,
-                offset,
-                Value::known(F::from(is_first_bytecode_table)),
-            )?;
-        }
+        let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(is_first_bytecode_table)),
+        )?;
 
         // NOTE: return value not use for now.
         Ok(1u64)
