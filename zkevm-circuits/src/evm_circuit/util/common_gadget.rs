@@ -149,26 +149,24 @@ pub(crate) struct BytecodeLengthGadget<F> {
     // indicates current op code belongs to first or second bytecode table.
     // should be bool type.
     #[cfg(feature = "dual_bytecode")]
-    is_first_bytecode_table: Expression<F>,
+    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> BytecodeLengthGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        code_hash: Cell<F>,
-        #[cfg(feature = "dual_bytecode")] is_first_bytecode_table: Expression<F>,
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, code_hash: Cell<F>) -> Self {
         // Fetch the bytecode length from the bytecode table.
         let code_length = cb.query_cell();
         #[cfg(not(feature = "dual_bytecode"))]
         cb.bytecode_length(code_hash.expr(), code_length.expr());
+        #[cfg(feature = "dual_bytecode")]
+        let is_first_bytecode_table = cb.query_bool();
 
         #[cfg(feature = "dual_bytecode")]
         {
-            cb.condition(is_first_bytecode_table.clone(), |cb| {
+            cb.condition(is_first_bytecode_table.clone().expr(), |cb| {
                 cb.bytecode_length(code_hash.expr(), code_length.expr());
             });
-            cb.condition(not::expr(is_first_bytecode_table.clone()), |cb| {
+            cb.condition(not::expr(is_first_bytecode_table.clone().expr()), |cb| {
                 cb.bytecode1_length(code_hash.expr(), code_length.expr());
             });
         }
@@ -183,14 +181,20 @@ impl<F: Field> BytecodeLengthGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block,
-        _call: &Call,
+        block: &Block,
+        code_hash: &U256,
         code_len: u64,
     ) -> Result<(), Error> {
         // TODO: get code length dynamically here ?
         self.code_length
             .assign(region, offset, Value::known(F::from(code_len)))?;
 
+        #[cfg(feature = "dual_bytecode")]
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(block.is_first_sub_bytecode_circuit(&code_hash))),
+        )?;
         Ok(())
     }
 }

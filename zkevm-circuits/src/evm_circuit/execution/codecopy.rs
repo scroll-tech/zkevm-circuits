@@ -128,12 +128,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         // Fetch the bytecode length from the bytecode table.
-        let code_len_gadget = BytecodeLengthGadget::construct(
-            cb,
-            cb.curr.state.code_hash.clone(),
-            #[cfg(feature = "dual_bytecode")]
-            same_context.is_first_sub_bytecode(),
-        );
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
         cb.require_equal(
             "code_size == code_len_gadget::code_length",
             code_size.expr(),
@@ -211,7 +206,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
 
         self.code_len_gadget
-            .assign(region, offset, block, call, code_size)?;
+            .assign(region, offset, block, &call.code_hash, code_size)?;
 
         Ok(())
     }

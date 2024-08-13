@@ -49,12 +49,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
-        let code_len_gadget = BytecodeLengthGadget::construct(
-            cb,
-            code_hash,
-            #[cfg(feature = "dual_bytecode")]
-            same_context.is_first_sub_bytecode(),
-        );
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, code_hash);
 
         cb.require_equal(
             "Constraint: bytecode length lookup == codesize",
@@ -92,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         }
 
         self.code_len_gadget
-            .assign(region, offset, block, call, codesize)?;
+            .assign(region, offset, block, &call.code_hash, codesize)?;
         Ok(())
     }
 }

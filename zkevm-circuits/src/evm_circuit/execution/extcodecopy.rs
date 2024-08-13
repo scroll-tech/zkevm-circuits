@@ -75,12 +75,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         // 2: `same_context.is_first_sub_bytecode` returns current call bytecode info, in extcodecopy, code_hash is not
         // necessary current call code hash.
         let code_len_gadget = cb.condition(exists.expr(), |cb| {
-            BytecodeLengthGadget::construct(
-                cb,
-                code_hash.clone(),
-                #[cfg(feature = "dual_bytecode")]
-                is_first_bytecode_table.expr(),
-            )
+            BytecodeLengthGadget::construct(cb, code_hash.clone())
         });
         let code_offset = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
 
@@ -237,7 +232,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         };
 
         self.code_len_gadget
-            .assign(region, offset, block, call, code_size)?;
+            .assign(region, offset, block, &call.code_hash, code_size)?;
         self.code_offset
             .assign(region, offset, code_offset, F::from(code_size))?;
 

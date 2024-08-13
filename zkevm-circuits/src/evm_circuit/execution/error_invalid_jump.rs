@@ -43,12 +43,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let is_first_bytecode_table = cb.query_cell();
 
-        let code_len_gadget = BytecodeLengthGadget::construct(
-            cb,
-            cb.curr.state.code_hash.clone(),
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table.expr(),
-        );
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
 
         let dest = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
 
@@ -220,7 +215,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             3 + is_jumpi as usize,
         )?;
         self.code_len_gadget
-            .assign(region, offset, block, call, code_len)?;
+            .assign(region, offset, block, &call.code_hash, code_len)?;
 
         Ok(())
     }

@@ -41,12 +41,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         #[cfg(feature = "dual_bytecode")]
         let is_first_bytecode_table = cb.query_bool();
 
-        let code_len_gadget = BytecodeLengthGadget::construct(
-            cb,
-            cb.curr.state.code_hash.clone(),
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table.expr(),
-        );
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
 
         let is_within_range = LtGadget::construct(
             cb,
@@ -128,8 +123,13 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
 
-        self.code_len_gadget
-            .assign(region, offset, block, call, code.bytes.len() as u64)?;
+        self.code_len_gadget.assign(
+            region,
+            offset,
+            block,
+            &call.code_hash,
+            code.bytes.len() as u64,
+        )?;
 
         self.is_within_range.assign(
             region,
