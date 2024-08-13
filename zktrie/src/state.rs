@@ -64,6 +64,19 @@ impl ZktrieState {
         Rc::get_mut(&mut self.zk_db).expect("no extra reference")
     }
 
+    /// apply the updates in Zktries into underlying db
+    pub fn updated_with_trie(&mut self, tries: impl Iterator<Item = ZkTrie>) {
+        let updated_data = tries.map(|tr| tr.updated_db()).collect::<Vec<_>>();
+        // note we must first collect the dbs (and drop all reference to current underlying db)
+        // or `exposed_db` would fail
+        updated_data
+            .into_iter()
+            .fold(self.expose_db(), |db, merged_db| {
+                db.update(merged_db);
+                db
+            });
+    }
+
     /// prepare to switch to another root state (trie snapshot)
     /// it is ok that even the db is not ready for this state
     /// cache is cleared so user can fill db with new storage traces
@@ -76,6 +89,9 @@ impl ZktrieState {
     /// switch to another root state (trie snapshot)
     /// return true if the switch success, or false if db have not contain
     /// corresponding root yet
+    /// if we have built ZkTrie from the underlying db and updated it
+    /// (like in mpt witness updating), the updated Zktrie must be merged back
+    /// to the underlying db by `updated_with_trie`
     /// notice the cached key would not be clean if we can successfully switch to
     /// new snapshot since we consider it is not need to send more nodes data
     /// from storage trace for the updated leaves
@@ -88,7 +104,7 @@ impl ZktrieState {
         true
     }
 
-    ///
+    /// query a series account data from underlying db
     pub fn query_accounts<'d: 'a, 'a>(
         &self,
         accounts: impl Iterator<Item = &'a Address> + 'd,
@@ -100,7 +116,7 @@ impl ZktrieState {
         })
     }
 
-    ///
+    /// query a series store data from underlying db
     pub fn query_storages<'d: 'a, 'a>(
         &self,
         storages: impl Iterator<Item = (&'a Address, &'a H256)> + 'd,

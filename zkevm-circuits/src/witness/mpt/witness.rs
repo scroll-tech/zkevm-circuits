@@ -54,6 +54,11 @@ impl From<&ZktrieState> for WitnessGenerator {
 }
 
 impl WitnessGenerator {
+    /// output all updated ZkTrie
+    pub fn into_updated_trie(self) -> impl Iterator<Item = ZkTrie> {
+        std::iter::once(self.trie).chain(self.storages_cache.into_values())
+    }
+
     /// dump inner data for debugging
     pub fn dump<'a>(&self, addrs: impl Iterator<Item = &'a Address>) {
         for addr in addrs {
