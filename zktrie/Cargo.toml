@@ -8,7 +8,7 @@ license.workspace = true
 
 [dependencies]
 halo2curves.workspace = true
-zktrie = { git = "https://github.com/scroll-tech/zktrie.git", branch = "main", features= ["rs_zktrie"] }
+zktrie = { git = "https://github.com/scroll-tech/zktrie.git", branch = "v0.8", features= ["rs_zktrie"] }
 poseidon-base.workspace = true
 eth-types = { path = "../eth-types" }
 num-bigint.workspace = true
