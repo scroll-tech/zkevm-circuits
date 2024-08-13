@@ -294,6 +294,9 @@ impl Block {
 
     // Get two sets of bytecodes for two bytecode sub circuits when enable feature 'dual_bytecode'.
     pub(crate) fn get_bytecodes_for_dual_sub_circuits(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
+        if self.bytecode_map.is_none() {
+            println!("error: bytecode_map is none ");
+        }
         let (first_subcircuit_bytecodes, second_subcircuit_bytecodes) =
             Self::split_bytecodes_for_dual_sub_circuits(
                 &self.bytecodes,
@@ -630,9 +633,9 @@ pub fn block_convert(
     let bytecodes: BTreeMap<Word, Bytecode> = get_bytecodes(code_db);
     // if not enable 'dual_bytecode' feature, set bytecode_map to None.
     let bytecode_map = if cfg!(feature = "dual_bytecode") {
-        None
-    } else {
         Some(get_bytecode_map(&bytecodes))
+    } else {
+        None
     };
 
     let block = Block {
