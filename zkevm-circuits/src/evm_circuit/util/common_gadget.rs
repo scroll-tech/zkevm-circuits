@@ -149,7 +149,7 @@ pub(crate) struct BytecodeLengthGadget<F> {
     // indicates current op code belongs to first or second bytecode table.
     // should be bool type.
     #[cfg(feature = "dual_bytecode")]
-    is_first_bytecode_table: Cell<F>,
+    pub(crate) is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> BytecodeLengthGadget<F> {
@@ -193,7 +193,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(block.is_first_sub_bytecode_circuit(&code_hash))),
+            Value::known(F::from(block.is_first_sub_bytecode_circuit(code_hash))),
         )?;
         Ok(())
     }
