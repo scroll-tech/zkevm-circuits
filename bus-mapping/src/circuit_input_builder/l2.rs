@@ -184,6 +184,7 @@ impl CircuitInputBuilder {
                     log::trace!("sdb trace[query mode] {:?} {:?}", addr, acc);
                     sdb.set_account(&addr, state_db::Account::from(&acc));
                 } else {
+                    log::trace!("sdb trace[query mode] {:?} for zero account", addr);
                     sdb.set_account(&addr, state_db::Account::zero());
                 }
             }
@@ -301,9 +302,7 @@ impl CircuitInputBuilder {
             zk_state
                 .query_accounts(filtered_accounts.map(|(addr, _)| addr))
                 .fold(HashMap::new(), |mut m, (addr, acc)| {
-                    if let Some(acc) = acc {
-                        m.insert(addr, acc);
-                    }
+                    m.insert(addr, acc.unwrap_or_default());
                     m
                 })
         } else {
@@ -334,6 +333,8 @@ impl CircuitInputBuilder {
                 .fold(HashMap::new(), |mut m, ((addr, key), val)| {
                     if let Some(val) = val {
                         m.insert((addr, key.to_word()), val.into());
+                    } else {
+                        m.insert((addr, key.to_word()), Default::default());
                     }
                     m
                 })
