@@ -167,7 +167,7 @@ pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block> {
     if let Some(state) = &mut builder.mpt_init_state {
         if *state.root() != [0u8; 32] {
             log::debug!("apply_mpt_updates");
-            witness_block.apply_mpt_updates(state);
+            witness_block.apply_mpt_updates_and_update_mpt_state(state);
             log::debug!("apply_mpt_updates done");
         } else {
             // Empty state root means circuit capacity checking, or dummy witness block for key gen?
