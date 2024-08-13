@@ -1,9 +1,3 @@
-mod seq_exec;
-mod tables;
-pub mod witgen;
-
-use std::time::Instant;
-
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -21,26 +15,30 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use std::time::Instant;
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{BitwiseOpTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table},
     util::Challenges,
 };
 
-use self::{
-    tables::{
-        BitstringTable, FixedLookupTag, FixedTable, FseTable, LiteralsHeaderTable,
-        SeqInstTable as SequenceInstructionTable,
-    },
-    witgen::{
-        util::value_bits_le, AddressTableRow, BlockInfo, FseAuxiliaryTableData, FseTableKind,
-        SequenceExec, SequenceInfo, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG,
-        N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_BLOCK_SIZE_TARGET,
-    },
-};
-use super::util::BooleanAdvice;
-
+mod seq_exec;
 use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
+
+mod tables;
+use tables::{
+    BitstringTable, FixedLookupTag, FixedTable, FseTable, LiteralsHeaderTable,
+    SeqInstTable as SequenceInstructionTable,
+};
+
+pub mod witgen;
+use witgen::{
+    util::value_bits_le, AddressTableRow, BlockInfo, FseAuxiliaryTableData, FseTableKind,
+    SequenceExec, SequenceInfo, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_REPEAT_FLAG,
+    N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_BLOCK_SIZE_TARGET,
+};
+
+use crate::aggregation::util::BooleanAdvice;
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig<const L: usize, const R: usize> {
@@ -4597,7 +4595,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         /////////////////////////////////////////
         //////// Load Auxiliary Tables  /////////
         /////////////////////////////////////////
-        let time = Instant::now();
         self.range8.load(layouter)?;
         self.range16.load(layouter)?;
         self.range512.load(layouter)?;
@@ -4607,26 +4604,17 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         self.bitwise_op_table.load(layouter)?;
         self.pow_rand_table
             .assign(layouter, challenges, n_enabled)?;
-        log::debug!("table(fixed): {} msec", time.elapsed().as_millis());
 
         /////////////////////////////////////////////////////////
         //////// Assign FSE and Bitstream Accumulation  /////////
         /////////////////////////////////////////////////////////
-        let time = Instant::now();
         self.fse_table.assign(layouter, fse_aux_tables, n_enabled)?;
-        log::debug!("table(fse): {} msec", time.elapsed().as_millis());
-        let time = Instant::now();
         self.bitstring_table_1
             .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
-        log::debug!("table(bitstring 1): {} msec", time.elapsed().as_millis());
-        let time = Instant::now();
         self.bitstring_table_2
             .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
-        log::debug!("table(bitstring 2): {} msec", time.elapsed().as_millis());
-        let time = Instant::now();
         self.bitstring_table_3
             .assign(layouter, &block_info_arr, &witness_rows, n_enabled)?;
-        log::debug!("table(bitstring 3): {} msec", time.elapsed().as_millis());
 
         /////////////////////////////////////////
         ///// Assign LiteralHeaderTable  ////////
@@ -4675,13 +4663,8 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 ),
             ));
         }
-        let time = Instant::now();
         self.literals_header_table
             .assign(layouter, literal_headers, n_enabled)?;
-        log::debug!(
-            "table(literals_header): {} msec",
-            time.elapsed().as_millis()
-        );
 
         /////////////////////////////////////////
         //// Assign Sequence-related Configs ////
@@ -5457,6 +5440,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             },
         )?;
         log::debug!("table(decoder_config): {} msec", time.elapsed().as_millis());
+
         Ok(exports)
     }
 
