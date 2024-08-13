@@ -51,8 +51,7 @@ pub struct Block {
     /// Bytecode used in the block
     pub bytecodes: BTreeMap<Word, Bytecode>,
     /// Bytecode map <code_hash, is_first_bytecode_circuit> in the block
-    #[cfg(feature = "dual_bytecode")]
-    pub bytecode_map: BTreeMap<Word, bool>,
+    pub bytecode_map: Option<BTreeMap<Word, bool>>,
     /// The block context
     pub context: BlockContexts,
     /// Copy events for the copy circuit's table.
@@ -276,36 +275,49 @@ impl Block {
     }
 
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
-    #[cfg(feature = "dual_bytecode")]
+    // always return true when feature 'dual_bytecode' is disabled.
     pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
         // bytecode_map should cover the target 'code_hash',
         // but for extcodecopy, the external_address can be non existed code hash.
         // `unwrap` here is not safe.
-        *self.bytecode_map.get(code_hash).unwrap_or(&true)
+        if self.bytecode_map.is_none() {
+            // not config feature 'dual_bytecode' case.
+            true
+        } else {
+            let bytecode_map = self
+                .bytecode_map
+                .as_ref()
+                .expect("bytecode_map is not none when enable 'dual_bytecode' feature");
+            *bytecode_map.get(code_hash).unwrap_or(&true)
+        }
     }
 
-    // Get two sets of bytecodes for two bytecode sub circuits.
-    #[cfg(feature = "dual_bytecode")]
+    // Get two sets of bytecodes for two bytecode sub circuits when enable feature 'dual_bytecode'.
     pub(crate) fn get_bytecodes_for_dual_sub_circuits(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
         let (first_subcircuit_bytecodes, second_subcircuit_bytecodes) =
-            Self::split_bytecodes_for_dual_sub_circuits(&self.bytecodes, &self.bytecode_map);
+            Self::split_bytecodes_for_dual_sub_circuits(
+                &self.bytecodes,
+                self.bytecode_map
+                    .as_ref()
+                    .expect("bytecode_map is not none when enable feature 'dual_bytecode'"),
+            );
 
         (first_subcircuit_bytecodes, second_subcircuit_bytecodes)
     }
 
     // Split two sets of bytecodes for two bytecode sub circuits.
-    #[cfg(feature = "dual_bytecode")]
+    //#[cfg(feature = "dual_bytecode")]
     pub(crate) fn split_bytecodes_for_dual_sub_circuits<'a>(
         bytecodes: &'a BTreeMap<Word, Bytecode>,
         bytecode_map: &BTreeMap<Word, bool>,
     ) -> (Vec<&'a Bytecode>, Vec<&'a Bytecode>) {
+        let mut first_subcircuit_bytecodes = Vec::<&Bytecode>::new();
+        let mut second_subcircuit_bytecodes = Vec::<&Bytecode>::new();
+
         let first_subcircuit_code_hashes: Vec<Word> = bytecode_map
             .iter()
             .filter_map(|item| if *item.1 { Some(*item.0) } else { None })
             .collect();
-
-        let mut first_subcircuit_bytecodes = Vec::<&Bytecode>::new();
-        let mut second_subcircuit_bytecodes = Vec::<&Bytecode>::new();
 
         let _ = bytecodes
             .iter()
@@ -616,8 +628,12 @@ pub fn block_convert(
     }
 
     let bytecodes: BTreeMap<Word, Bytecode> = get_bytecodes(code_db);
-    #[cfg(feature = "dual_bytecode")]
-    let bytecode_map = get_bytecode_map(&bytecodes);
+    // if not enable 'dual_bytecode' feature, set bytecode_map to None.
+    let bytecode_map = if cfg!(feature = "dual_bytecode") {
+        None
+    } else {
+        Some(get_bytecode_map(&bytecodes))
+    };
 
     let block = Block {
         context: BlockContexts::from(block),
@@ -639,7 +655,6 @@ pub fn block_convert(
         padding_step,
         end_block_step,
         bytecodes,
-        #[cfg(feature = "dual_bytecode")]
         bytecode_map,
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
@@ -687,8 +702,7 @@ pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
     bytecodes
 }
 
-#[cfg(feature = "dual_bytecode")]
-// helper to extract bytecode map info (code_hash, is_first_bytecode_table).
+// helper to extract bytecode map info (code_hash, is_first_bytecode_table) when enable feature 'dual_bytecode'.
 pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
     let bytecode_lens = bytecodes
         .values()

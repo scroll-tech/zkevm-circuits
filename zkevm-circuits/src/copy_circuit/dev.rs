@@ -86,7 +86,9 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         {
             let (first_bytecodes, second_bytecodes) = Block::split_bytecodes_for_dual_sub_circuits(
                 &self.external_data.bytecodes,
-                &self.bytecode_map,
+                self.bytecode_map
+                    .as_ref()
+                    .expect("bytecode_map is not none when enable feature 'dual_bytecode'"),
             );
             config
                 .0

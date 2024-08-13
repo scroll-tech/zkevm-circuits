@@ -695,14 +695,9 @@ impl<F: Field> CopyCircuitConfig<F> {
         lt_word_end_chip: &IsEqualChip<F>,
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
-        #[cfg(feature = "dual_bytecode")] bytecode_map: &BTreeMap<Word, bool>,
+        bytecode_map: Option<&BTreeMap<Word, bool>>,
     ) -> Result<(), Error> {
-        let copy_rows = CopyTable::assignments(
-            copy_event,
-            challenges,
-            #[cfg(feature = "dual_bytecode")]
-            bytecode_map,
-        );
+        let copy_rows = CopyTable::assignments(copy_event, challenges, bytecode_map);
 
         for (step_idx, (tag, table_row, circuit_row)) in copy_rows.iter().enumerate() {
             let is_read = step_idx % 2 == 0;
@@ -864,7 +859,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         copy_events: &[CopyEvent],
         max_copy_rows: usize,
         challenges: Challenges<Value<F>>,
-        #[cfg(feature = "dual_bytecode")] bytecode_map: &BTreeMap<Word, bool>,
+        bytecode_map: Option<&BTreeMap<Word, bool>>,
     ) -> Result<(), Error> {
         let copy_rows_needed = copy_events
             .iter()
@@ -924,7 +919,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &lt_word_end_chip,
                         challenges,
                         copy_event,
-                        #[cfg(feature = "dual_bytecode")]
                         bytecode_map,
                     )?;
                     log::trace!("offset after {}th copy event: {}", ev_idx, offset);
@@ -1193,10 +1187,9 @@ pub struct CopyCircuit<F: Field> {
     pub copy_events: Vec<CopyEvent>,
     /// Max number of rows in copy circuit
     pub max_copy_rows: usize,
-    #[cfg(feature = "dual_bytecode")]
     /// map for <code_hash, bool> bool value indicates come from first
     /// bytecode circuit.
-    pub bytecode_map: BTreeMap<Word, bool>,
+    pub bytecode_map: Option<BTreeMap<Word, bool>>,
     _marker: PhantomData<F>,
     /// Data for external lookup tables, currently this field only used for testing.
     pub external_data: ExternalData,
@@ -1207,12 +1200,11 @@ impl<F: Field> CopyCircuit<F> {
     pub fn new(
         copy_events: Vec<CopyEvent>,
         max_copy_rows: usize,
-        #[cfg(feature = "dual_bytecode")] bytecode_map: BTreeMap<Word, bool>,
+        bytecode_map: Option<BTreeMap<Word, bool>>,
     ) -> Self {
         Self {
             copy_events,
             max_copy_rows,
-            #[cfg(feature = "dual_bytecode")]
             bytecode_map,
             _marker: PhantomData,
             external_data: ExternalData::default(),
@@ -1223,13 +1215,12 @@ impl<F: Field> CopyCircuit<F> {
     pub fn new_with_external_data(
         copy_events: Vec<CopyEvent>,
         max_copy_rows: usize,
-        #[cfg(feature = "dual_bytecode")] bytecode_map: BTreeMap<Word, bool>,
+        bytecode_map: Option<BTreeMap<Word, bool>>,
         external_data: ExternalData,
     ) -> Self {
         Self {
             copy_events,
             max_copy_rows,
-            #[cfg(feature = "dual_bytecode")]
             bytecode_map,
             _marker: PhantomData,
             external_data,
@@ -1244,7 +1235,7 @@ impl<F: Field> CopyCircuit<F> {
         Self::new(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
-            #[cfg(feature = "dual_bytecode")]
+            //#[cfg(feature = "dual_bytecode")]
             block.bytecode_map.clone(),
         )
     }
@@ -1263,7 +1254,6 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         Self::new_with_external_data(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
-            #[cfg(feature = "dual_bytecode")]
             block.bytecode_map.clone(),
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
@@ -1300,8 +1290,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
             &self.copy_events,
             self.max_copy_rows,
             *challenges,
-            #[cfg(feature = "dual_bytecode")]
-            &self.bytecode_map,
+            self.bytecode_map.as_ref(),
         )
     }
 }
