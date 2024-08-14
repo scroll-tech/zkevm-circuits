@@ -672,7 +672,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             opcode,
             push_rlc,
         );
-        self.program_counter_offset += 1;
+        //self.program_counter_offset += 1;
     }
 
     pub(crate) fn opcode_lookup_at_rlc(
