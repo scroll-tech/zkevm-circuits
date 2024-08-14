@@ -436,14 +436,17 @@ pub struct StorageTrace {
     /// additional deletion proofs
     pub deletion_proofs: Vec<Bytes>,
     #[serde(rename = "flattenProofs", default)]
+    #[serde_as(as = "Map<_, _>")]
     ///
-    pub flatten_proofs: HashMap<H256, Bytes>,
+    pub flatten_proofs: Vec<(H256, Bytes)>,
     #[serde(rename = "addressHashes", default)]
+    #[serde_as(as = "Map<_, _>")]
     ///
-    pub address_hashes: HashMap<Address, Hash>,
+    pub address_hashes: Vec<(Address, Hash)>,
     #[serde(rename = "storeKeyHashes", default)]
+    #[serde_as(as = "Map<_, _>")]
     ///
-    pub store_key_hashes: HashMap<H256, Hash>,
+    pub store_key_hashes: Vec<(H256, Hash)>,
 }
 
 /// extension of `GethExecTrace`, with compatible serialize form
