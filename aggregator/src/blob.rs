@@ -36,6 +36,9 @@ pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
 /// Data config. Since num_valid_chunks is u16, we use 2 bytes/rows.
 pub const N_ROWS_NUM_CHUNKS: usize = 2;
 
+/// The number of rows to encode chunk size (u32).
+pub const N_ROWS_CHUNK_SIZE: usize = 4;
+
 /// The number of bytes that we can fit in a blob. Note that each coefficient is represented in 32
 /// bytes, however, since those 32 bytes must represent a BLS12-381 scalar in its canonical form,
 /// we explicitly set the most-significant byte to 0, effectively utilising only 31 bytes.
@@ -72,6 +75,66 @@ pub struct BatchData<const N_SNARKS: usize> {
     /// copied over for the padded chunks. The `chunk_data_digest` for padded chunks is the
     /// `chunk_data_digest` of the last valid chunk (from Aggregation Circuit's perspective).
     pub chunk_data: [Vec<u8>; N_SNARKS],
+}
+
+impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
+    /// For raw batch bytes with metadata, this function segments the byte stream into chunk segments.
+    /// Metadata will be removed from the result.
+    pub fn segment_with_metadata(batch_bytes_with_metadata: Vec<u8>) -> Vec<Vec<u8>> {
+        let n_bytes_metadata = Self::n_rows_metadata();
+        let metadata_bytes = batch_bytes_with_metadata
+            .clone()
+            .into_iter()
+            .take(n_bytes_metadata)
+            .collect::<Vec<u8>>();
+        let batch_bytes = batch_bytes_with_metadata
+            .clone()
+            .into_iter()
+            .skip(n_bytes_metadata)
+            .collect::<Vec<u8>>();
+
+        // Decoded batch bytes require segmentation based on chunk length
+        let batch_data_len = batch_bytes.len();
+        let chunk_lens = metadata_bytes[N_ROWS_NUM_CHUNKS..]
+            .chunks(N_ROWS_CHUNK_SIZE)
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .fold(0usize, |acc, &d| acc * 256usize + d as usize)
+            })
+            .collect::<Vec<usize>>();
+
+        // length segments sanity check
+        let valid_chunks = metadata_bytes
+            .iter()
+            .take(N_ROWS_NUM_CHUNKS)
+            .fold(0usize, |acc, &d| acc * 256usize + d as usize);
+        let calculated_len = chunk_lens.iter().take(valid_chunks).sum::<usize>();
+        assert_eq!(
+            batch_data_len, calculated_len,
+            "chunk segmentation len must add up to the correct value"
+        );
+
+        // reconstruct segments
+        let mut segmented_batch_data: Vec<Vec<u8>> = Vec::new();
+        let mut offset: usize = 0;
+        let mut segment: usize = 0;
+        while offset < batch_data_len {
+            segmented_batch_data.push(
+                batch_bytes
+                    .clone()
+                    .into_iter()
+                    .skip(offset)
+                    .take(chunk_lens[segment])
+                    .collect::<Vec<u8>>(),
+            );
+
+            offset += chunk_lens[segment];
+            segment += 1;
+        }
+
+        segmented_batch_data
+    }
 }
 
 impl<const N_SNARKS: usize> From<&BatchHash<N_SNARKS>> for BatchData<N_SNARKS> {
@@ -150,7 +213,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     /// The number of rows to encode the size of each chunk in a batch, in the Blob Data config.
     /// chunk_size is u32, we use 4 bytes/rows.
     const fn n_rows_chunk_sizes() -> usize {
-        N_SNARKS * 4
+        N_SNARKS * N_ROWS_CHUNK_SIZE
     }
 
     /// The total number of rows in "digest rlc" and "digest bytes" sections.

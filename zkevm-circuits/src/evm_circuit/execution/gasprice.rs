@@ -68,7 +68,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         offset: usize,
         block: &Block,
         tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_price = block.rws[step.rw_indices[1]].stack_value();
@@ -79,7 +79,8 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         self.gas_price
             .assign(region, offset, region.word_rlc(gas_price))?;
 
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         Ok(())
     }

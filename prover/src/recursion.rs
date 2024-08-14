@@ -67,4 +67,9 @@ impl<'a, const N_SNARK: usize> StateTransition for RecursionTask<'a, N_SNARK> {
     fn num_additional_instance() -> usize {
         ADD_INSTANCE
     }
+
+    fn propagate_indices() -> Vec<usize> {
+        // the first index of additional indices
+        vec![Self::additional_indices()[0]]
+    }
 }

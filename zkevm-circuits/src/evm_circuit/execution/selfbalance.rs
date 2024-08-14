@@ -66,7 +66,8 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         self.callee_address.assign(
             region,
