@@ -120,6 +120,17 @@ impl Block {
     pub fn apply_mpt_updates(&mut self, mpt_state: &MptState) {
         self.mpt_updates.fill_state_roots(mpt_state);
     }
+
+    /// Replay mpt updates to generate mpt witness, also update the mpt state with
+    /// calculated mpt updatings
+    pub fn apply_mpt_updates_and_update_mpt_state(&mut self, mpt_state: &mut MptState) {
+        let updated_tries = self
+            .mpt_updates
+            .fill_state_roots(mpt_state)
+            .into_updated_trie();
+        mpt_state.updated_with_trie(updated_tries);
+    }
+
     /// For each tx, for each step, print the rwc at the beginning of the step,
     /// and all the rw operations of the step.
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
