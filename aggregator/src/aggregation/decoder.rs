@@ -41,7 +41,7 @@ use super::util::BooleanAdvice;
 use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
 
 /// The raw text from < https://nigeltao.github.io/blog/2022/romeo.txt >
-pub static WORKED_EXAMPLE: &str = std::include_str!("../../data/worked-example.txt");
+pub static WORKED_EXAMPLE: &str = std::include_str!("../../data/worked-example");
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig<const L: usize, const R: usize> {
