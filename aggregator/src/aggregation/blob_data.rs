@@ -51,6 +51,7 @@ pub struct AssignedBlobDataExport {
     pub enable_encoding: AssignedCell<Fr, Fr>,
     pub bytes_rlc: AssignedCell<Fr, Fr>,
     pub bytes_len: AssignedCell<Fr, Fr>,
+    pub cooked_len: AssignedCell<Fr, Fr>,
 }
 
 impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
@@ -163,7 +164,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         )?;
         let enable_encoding = assigned_bytes[0].clone();
 
-        let cooked_bytes_len = layouter.assign_region(
+        let cooked_len = layouter.assign_region(
             || "BlobData internal checks",
             |mut region| {
                 self.assign_internal_checks(
@@ -180,7 +181,8 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             enable_encoding_bool,
             enable_encoding,
             bytes_rlc,
-            bytes_len: cooked_bytes_len,
+            bytes_len,
+            cooked_len,
         })
     }
 
