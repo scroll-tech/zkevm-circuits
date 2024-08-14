@@ -62,7 +62,6 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             same_context.is_first_sub_bytecode(),
         );
 
-
         Self {
             same_context,
             codesize_bytes,

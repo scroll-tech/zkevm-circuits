@@ -166,7 +166,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             same_context.is_first_sub_bytecode(),
         );
 
-
         Self {
             same_context,
             external_address_word,
