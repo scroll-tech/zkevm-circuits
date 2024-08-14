@@ -173,7 +173,7 @@ impl MptUpdates {
         self.pretty_print();
     }
 
-    pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
+    pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) -> WitnessGenerator {
         let root_pair = (self.old_root, self.new_root);
         self.old_root = init_trie.root().into();
         log::trace!("fill_state_roots init {:?}", self.old_root);
@@ -223,6 +223,7 @@ impl MptUpdates {
         }
         log::debug!("fill_state_roots done");
         self.pretty_print();
+        wit_gen
     }
 
     fn fill_state_roots_from_generator(

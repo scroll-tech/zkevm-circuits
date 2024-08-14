@@ -83,12 +83,12 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.value_u64
             .same_context
-            .assign_exec_step(region, offset, step)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
@@ -124,12 +124,12 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.value_u160
             .same_context
-            .assign_exec_step(region, offset, step)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
@@ -169,14 +169,14 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         log::debug!("BlockCtxU256Gadget assign for {:?}", step.opcode);
 
         self.value_u256
             .same_context
-            .assign_exec_step(region, offset, step)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
@@ -221,12 +221,13 @@ impl<F: Field> ExecutionGadget<F> for DifficultyGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block,
+        block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)
     }
 }
 
