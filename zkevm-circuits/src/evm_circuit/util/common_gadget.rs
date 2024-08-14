@@ -101,6 +101,7 @@ impl<F: Field> SameContextGadget<F> {
     }
 
     // Check if current bytecode is belong to first bytecode table.
+    // Note: always return true when feature 'dual_bytecode' is disabled.
     pub(crate) fn is_first_sub_bytecode(&self) -> Expression<F> {
         self.is_first_bytecode_table.expr()
     }
@@ -174,7 +175,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
             block
                 .bytecodes
                 .get(code_hash)
-                .expect("could not find external bytecode")
+                .expect("could not find bytecode")
                 .bytes
                 .len() as u64
         };
@@ -1572,7 +1573,7 @@ pub(crate) struct CommonErrorGadget<F> {
     restore_context: RestoreContextGadget<F>,
     // indicates current op code belongs to first or second bytecode table.
     // should be bool type.
-    is_first_bytecode_table: Cell<F>,
+    pub(crate) is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> CommonErrorGadget<F> {

@@ -160,6 +160,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        cb.require_equal(
+            "code_len_gadget and same_context have the same is_first_bytecode_table",
+            code_len_gadget.is_first_bytecode_table.expr(),
+            same_context.is_first_sub_bytecode(),
+        );
+
 
         Self {
             same_context,

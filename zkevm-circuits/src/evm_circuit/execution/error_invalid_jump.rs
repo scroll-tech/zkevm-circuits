@@ -78,45 +78,40 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // If destination is in valid range, lookup for the value.
         cb.condition(dest.lt_cap(), |cb| {
-            // TODO: refactor later.
-            #[cfg(not(feature = "dual_bytecode"))]
-            cb.bytecode_lookup(
-                cb.curr.state.code_hash.expr(),
-                dest.valid_value(),
-                is_code.expr(),
-                value.expr(),
-                push_rlc.expr(),
-            );
+            cb.condition(code_len_gadget.is_first_bytecode_table.expr(), |cb| {
+                cb.bytecode_lookup(
+                    cb.curr.state.code_hash.expr(),
+                    dest.valid_value(),
+                    is_code.expr(),
+                    value.expr(),
+                    push_rlc.expr(),
+                );
+            });
+
             #[cfg(feature = "dual_bytecode")]
-            {
-                cb.condition(code_len_gadget.is_first_bytecode_table.expr(), |cb| {
-                    cb.bytecode_lookup(
+            cb.condition(
+                not::expr(code_len_gadget.is_first_bytecode_table.expr()),
+                |cb| {
+                    cb.bytecode_lookup2(
                         cb.curr.state.code_hash.expr(),
                         dest.valid_value(),
                         is_code.expr(),
                         value.expr(),
                         push_rlc.expr(),
                     );
-                });
-                cb.condition(
-                    not::expr(code_len_gadget.is_first_bytecode_table.expr()),
-                    |cb| {
-                        cb.bytecode_lookup2(
-                            cb.curr.state.code_hash.expr(),
-                            dest.valid_value(),
-                            is_code.expr(),
-                            value.expr(),
-                            push_rlc.expr(),
-                        );
-                    },
-                );
-            }
+                },
+            );
 
             cb.require_zero(
                 "is_code is false or not JUMPDEST",
                 is_code.expr() * is_jump_dest.expr(),
             );
         });
+        cb.require_equal(
+            "code_len_gadget and common_error_gadget have the same is_first_bytecode_table",
+            code_len_gadget.is_first_bytecode_table.expr(),
+            common_error_gadget.is_first_bytecode_table.expr(),
+        );
 
         Self {
             opcode,
