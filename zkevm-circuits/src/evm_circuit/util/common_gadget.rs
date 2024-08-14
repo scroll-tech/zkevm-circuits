@@ -173,7 +173,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
         } else {
             block
                 .bytecodes
-                .get(&code_hash)
+                .get(code_hash)
                 .expect("could not find external bytecode")
                 .bytes
                 .len() as u64
