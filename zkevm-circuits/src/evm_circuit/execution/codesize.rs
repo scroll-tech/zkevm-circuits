@@ -71,10 +71,11 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         offset: usize,
         block: &Block,
         _transaction: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let codesize = block.rws[step.rw_indices[0]].stack_value().as_u64();
 
