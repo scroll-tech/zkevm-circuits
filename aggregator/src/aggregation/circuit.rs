@@ -1,7 +1,9 @@
 use crate::{
-    blob::BatchData, witgen::MultiBlockProcessResult, LOG_DEGREE, PI_CHAIN_ID,
-    PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH,
-    PI_PARENT_STATE_ROOT,
+    aggregation::decoder::WORKED_EXAMPLE,
+    blob::BatchData,
+    witgen::{init_zstd_encoder, MultiBlockProcessResult},
+    LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
+    PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
@@ -19,7 +21,7 @@ use itertools::Itertools;
 use rand::Rng;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use std::rc::Rc;
-use std::{env, fs::File};
+use std::{env, fs::File, io::Write};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
@@ -479,8 +481,23 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 barycentric_assignments,
             )?;
 
+            // construct bytes to be populated into the [`BatchDataConfig`].
             let batch_bytes = batch_data.get_batch_data_bytes();
-            let encoded_batch_bytes = batch_data.get_encoded_batch_data_bytes();
+
+            // conditionally encode those bytes. By default we use a worked example.
+            let encoded_bytes = if blob_data_exports.enable_encoding_bool {
+                batch_data.get_encoded_batch_data_bytes()
+            } else {
+                let dummy_bytes = WORKED_EXAMPLE.as_bytes().to_vec();
+                let mut encoder = init_zstd_encoder(None);
+                encoder
+                    .set_pledged_src_size(Some(dummy_bytes.len() as u64))
+                    .map_err(|_| Error::Synthesis)?;
+                encoder
+                    .write_all(&dummy_bytes)
+                    .map_err(|_| Error::Synthesis)?;
+                encoder.finish().map_err(|_| Error::Synthesis)?
+            };
 
             let MultiBlockProcessResult {
                 witness_rows,
@@ -490,9 +507,9 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 sequence_info_arr,
                 address_table_rows: address_table_arr,
                 sequence_exec_results,
-            } = process(&encoded_batch_bytes, challenges.keccak_input());
+            } = process(&encoded_bytes, challenges.keccak_input());
 
-            // sanity check:
+            // sanity check
             let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
                 (Vec::new(), Vec::new()),
                 |(mut out_byte, mut out_exec), res| {
@@ -501,15 +518,17 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     (out_byte, out_exec)
                 },
             );
-            assert_eq!(
-                batch_bytes, recovered_bytes,
-                "original and recovered bytes mismatch"
-            );
+            if blob_data_exports.enable_encoding_bool {
+                assert_eq!(
+                    batch_bytes, recovered_bytes,
+                    "original and recovered bytes mismatch"
+                );
+            }
 
             let decoder_exports = config.decoder_config.assign(
                 &mut layouter,
                 &batch_bytes,
-                &encoded_batch_bytes,
+                &encoded_bytes,
                 witness_rows,
                 decoded_literals,
                 fse_aux_tables,
@@ -524,6 +543,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             layouter.assign_region(
                 || "consistency checks",
                 |mut region| -> Result<(), Error> {
+                    // Initialise the RLC config for basic arithmetic/conditional checks.
+                    config.rlc_config.init(&mut region)?;
+                    let mut rlc_config_offset = 0;
+
                     region.constrain_equal(
                         assigned_batch_hash.num_valid_snarks.cell(),
                         batch_data_exports.num_valid_chunks.cell(),
@@ -568,25 +591,132 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
+                    // do we encode batch data to blob? or not.
+                    let enable_encoding = blob_data_exports.enable_encoding.clone();
+                    let disable_encoding = config.rlc_config.not(
+                        &mut region,
+                        &enable_encoding,
+                        &mut rlc_config_offset,
+                    )?;
+
                     // equate rlc (from blob data) with decoder's encoded_rlc
+                    let (conditional_blob_rlc, conditional_encoded_rlc) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.bytes_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.encoded_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
                     region.constrain_equal(
-                        blob_data_exports.bytes_rlc.cell(),
-                        decoder_exports.encoded_rlc.cell(),
+                        conditional_blob_rlc.cell(),
+                        conditional_encoded_rlc.cell(),
                     )?;
+
                     // equate len(blob_bytes) with decoder's encoded_len
+                    let (conditional_blob_len, conditional_encoded_len) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.bytes_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.encoded_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
                     region.constrain_equal(
-                        blob_data_exports.bytes_len.cell(),
-                        decoder_exports.encoded_len.cell(),
+                        conditional_blob_len.cell(),
+                        conditional_encoded_len.cell(),
                     )?;
+
                     // equate rlc (from batch data) with decoder's decoded_rlc
+                    let (conditional_batch_rlc, conditional_decoded_rlc) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.bytes_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.decoded_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
                     region.constrain_equal(
-                        batch_data_exports.bytes_rlc.cell(),
-                        decoder_exports.decoded_rlc.cell(),
+                        conditional_batch_rlc.cell(),
+                        conditional_decoded_rlc.cell(),
                     )?;
+
                     // equate len(batch_data) with decoder's decoded_len
+                    let (conditional_batch_len, conditional_decoded_len) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.batch_data_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.decoded_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
                     region.constrain_equal(
-                        batch_data_exports.batch_data_len.cell(),
-                        decoder_exports.decoded_len.cell(),
+                        conditional_batch_len.cell(),
+                        conditional_decoded_len.cell(),
+                    )?;
+
+                    // if we do not enable encoding, then blob == batch (rlc).
+                    let (conditional_blob_rlc, conditional_batch_rlc) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.bytes_rlc,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.bytes_rlc,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
+                    region.constrain_equal(
+                        conditional_blob_rlc.cell(),
+                        conditional_batch_rlc.cell(),
+                    )?;
+
+                    // if we do not enable encoding, then blob == batch (len).
+                    let (conditional_blob_len, conditional_batch_len) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.bytes_len,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.batch_data_len,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
+                    region.constrain_equal(
+                        conditional_blob_len.cell(),
+                        conditional_batch_len.cell(),
                     )?;
 
                     Ok(())
