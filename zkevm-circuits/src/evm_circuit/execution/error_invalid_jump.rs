@@ -204,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             3 + is_jumpi as usize,
         )?;
         self.code_len_gadget
-            .assign(region, offset, block, &call.code_hash, code_len)?;
+            .assign(region, offset, block, &call.code_hash)?;
 
         Ok(())
     }

@@ -206,7 +206,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
 
         self.code_len_gadget
-            .assign(region, offset, block, &call.code_hash, code_size)?;
+            .assign(region, offset, block, &call.code_hash)?;
 
         Ok(())
     }

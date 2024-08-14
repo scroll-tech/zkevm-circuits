@@ -726,7 +726,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
         self.add_lookup(
-            "Opcode lookup ",
+            "Opcode lookup",
             Lookup::Bytecode {
                 hash: self.curr.state.code_hash.expr(),
                 tag: BytecodeFieldTag::Byte.expr(),
@@ -786,7 +786,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     #[cfg(feature = "dual_bytecode")]
-    // TODO: consider to merge bytecode_lookup and bytecode_lookup2 into one later?
     pub(crate) fn bytecode_lookup2(
         &mut self,
         code_hash: Expression<F>,

@@ -167,11 +167,20 @@ impl<F: Field> BytecodeLengthGadget<F> {
         offset: usize,
         block: &Block,
         code_hash: &U256,
-        code_len: u64,
     ) -> Result<(), Error> {
-        // TODO: get code length dynamically here ?
+        let code_length = if code_hash.is_zero() {
+            0
+        } else {
+            block
+                .bytecodes
+                .get(&code_hash)
+                .expect("could not find external bytecode")
+                .bytes
+                .len() as u64
+        };
+
         self.code_length
-            .assign(region, offset, Value::known(F::from(code_len)))?;
+            .assign(region, offset, Value::known(F::from(code_length)))?;
 
         self.is_first_bytecode_table.assign(
             region,

@@ -74,16 +74,9 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             challenge_values.evm_word(),
         )?;
 
-        #[cfg(not(feature = "dual_bytecode"))]
-        config.0.bytecode_table.dev_load(
-            &mut layouter,
-            self.external_data.bytecodes.values(),
-            &challenge_values,
-        )?;
-
         // when enable feature "dual_bytecode", get two sets of bytecodes here.
-        #[cfg(feature = "dual_bytecode")]
-        {
+        if self.bytecode_map.is_some() {
+            // enable feature = "dual_bytecode"
             let (first_bytecodes, second_bytecodes) = Block::split_bytecodes_for_dual_sub_circuits(
                 &self.external_data.bytecodes,
                 self.bytecode_map
@@ -94,12 +87,21 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
                 .0
                 .bytecode_table
                 .dev_load(&mut layouter, first_bytecodes, &challenge_values)?;
+
+            #[cfg(feature = "dual_bytecode")]
             config.0.bytecode_table1.dev_load(
                 &mut layouter,
                 second_bytecodes,
                 &challenge_values,
             )?;
-        }
+        } else {
+            config.0.bytecode_table.dev_load(
+                &mut layouter,
+                self.external_data.bytecodes.values(),
+                &challenge_values,
+            )?;
+        };
+
         self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
     }
 }

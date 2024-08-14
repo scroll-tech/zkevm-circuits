@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         }
 
         self.code_len_gadget
-            .assign(region, offset, block, &call.code_hash, codesize)?;
+            .assign(region, offset, block, &call.code_hash)?;
         Ok(())
     }
 }

@@ -117,13 +117,8 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
 
-        self.code_len_gadget.assign(
-            region,
-            offset,
-            block,
-            &call.code_hash,
-            code.bytes.len() as u64,
-        )?;
+        self.code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
         self.is_within_range.assign(
             region,
