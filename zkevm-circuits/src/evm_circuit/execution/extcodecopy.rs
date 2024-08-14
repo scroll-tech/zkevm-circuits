@@ -44,7 +44,6 @@ pub(crate) struct ExtcodecopyGadget<F> {
     copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
-    #[cfg(feature = "dual_bytecode")]
     is_first_bytecode_table: Cell<F>,
 }
 
@@ -176,7 +175,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             copy_rwc_inc,
             memory_expansion,
             memory_copier_gas,
-            #[cfg(feature = "dual_bytecode")]
             is_first_bytecode_table,
         }
     }
@@ -260,7 +258,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             memory_expansion_gas_cost,
         )?;
 
-        #[cfg(feature = "dual_bytecode")]
         self.is_first_bytecode_table.assign(
             region,
             offset,

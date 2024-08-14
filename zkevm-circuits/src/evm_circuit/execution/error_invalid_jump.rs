@@ -30,8 +30,6 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     phase2_condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
-    #[cfg(feature = "dual_bytecode")]
-    is_first_bytecode_table: Cell<F>,
     code_len_gadget: BytecodeLengthGadget<F>,
 }
 
@@ -41,8 +39,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let is_first_bytecode_table = cb.query_cell();
-
         let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
 
         let dest = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
@@ -93,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             );
             #[cfg(feature = "dual_bytecode")]
             {
-                cb.condition(is_first_bytecode_table.expr(), |cb| {
+                cb.condition(code_len_gadget.is_first_bytecode_table.expr(), |cb| {
                     cb.bytecode_lookup(
                         cb.curr.state.code_hash.expr(),
                         dest.valid_value(),
@@ -102,15 +98,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
                         push_rlc.expr(),
                     );
                 });
-                cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
-                    cb.bytecode_lookup2(
-                        cb.curr.state.code_hash.expr(),
-                        dest.valid_value(),
-                        is_code.expr(),
-                        value.expr(),
-                        push_rlc.expr(),
-                    );
-                });
+                cb.condition(
+                    not::expr(code_len_gadget.is_first_bytecode_table.expr()),
+                    |cb| {
+                        cb.bytecode_lookup2(
+                            cb.curr.state.code_hash.expr(),
+                            dest.valid_value(),
+                            is_code.expr(),
+                            value.expr(),
+                            push_rlc.expr(),
+                        );
+                    },
+                );
             }
 
             cb.require_zero(
@@ -130,8 +129,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             phase2_condition,
             is_condition_zero,
             common_error_gadget,
-            #[cfg(feature = "dual_bytecode")]
-            is_first_bytecode_table,
             code_len_gadget,
         }
     }
@@ -162,14 +159,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
         let code_len = code.bytes.len() as u64;
-        #[cfg(feature = "dual_bytecode")]
-        self.is_first_bytecode_table.assign(
-            region,
-            offset,
-            Value::known(F::from(
-                block.is_first_sub_bytecode_circuit(&call.code_hash),
-            )),
-        )?;
 
         let dest = block.rws[step.rw_indices[0]].stack_value();
         self.dest.assign(region, offset, dest, F::from(code_len))?;

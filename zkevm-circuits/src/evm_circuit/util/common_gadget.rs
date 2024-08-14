@@ -173,7 +173,6 @@ impl<F: Field> BytecodeLengthGadget<F> {
         self.code_length
             .assign(region, offset, Value::known(F::from(code_len)))?;
 
-        #[cfg(feature = "dual_bytecode")]
         self.is_first_bytecode_table.assign(
             region,
             offset,

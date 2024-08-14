@@ -55,7 +55,6 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             OpcodeId::STOP.expr(),
         );
 
-        #[cfg(feature = "dual_bytecode")]
         cb.require_equal(
             "code_len_gadget and opcode_gadget have the same is_first_bytecode_table",
             opcode_gadget.is_first_bytecode_table.expr(),
