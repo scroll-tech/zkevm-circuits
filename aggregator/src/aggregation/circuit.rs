@@ -623,7 +623,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     let (conditional_blob_len, conditional_encoded_len) = (
                         config.rlc_config.mul(
                             &mut region,
-                            &blob_data_exports.bytes_len,
+                            &blob_data_exports.cooked_len,
                             &enable_encoding,
                             &mut rlc_config_offset,
                         )?,
