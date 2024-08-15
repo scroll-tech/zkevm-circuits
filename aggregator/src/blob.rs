@@ -1,5 +1,6 @@
 use crate::{
-    aggregation::{interpolate, witgen::init_zstd_encoder, BLS_MODULUS},
+    aggregation::{interpolate, BLS_MODULUS},
+    witgen::zstd_encode,
     BatchHash, ChunkInfo,
 };
 
@@ -16,7 +17,6 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;
 use std::{
-    io::Write,
     iter::{once, repeat},
     sync::Arc,
 };
@@ -339,36 +339,26 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .collect()
     }
 
-    /// Get the zstd encoded batch data bytes.
-    pub fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
+    /// Get the blob data bytes that will be populated in BlobDataConfig.
+    pub(crate) fn get_blob_data_bytes(&self) -> Vec<u8> {
         let batch_data_bytes = self.get_batch_data_bytes();
-        let mut encoder = init_zstd_encoder(None);
-        encoder
-            .set_pledged_src_size(Some(batch_data_bytes.len() as u64))
-            .expect("infallible");
-        encoder.write_all(&batch_data_bytes).expect("infallible");
-        let encoded_bytes = encoder.finish().expect("infallible");
-        log::info!(
-            "compress batch data from {} to {}, compression ratio {:.2}, blob usage {:.3}",
-            batch_data_bytes.len(),
-            encoded_bytes.len(),
-            batch_data_bytes.len() as f32 / encoded_bytes.len() as f32,
-            encoded_bytes.len() as f32 / N_BLOB_BYTES as f32
-        );
-        encoded_bytes
+        let mut blob_data_bytes = zstd_encode(&batch_data_bytes);
+
+        // Whether we encode batch -> blob or not.
+        let enable_encoding = blob_data_bytes.len() < batch_data_bytes.len();
+        if !enable_encoding {
+            blob_data_bytes = batch_data_bytes;
+        }
+        blob_data_bytes.insert(0, enable_encoding as u8);
+
+        blob_data_bytes
     }
 
     /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
     pub(crate) fn get_coefficients(&self) -> [U256; BLOB_WIDTH] {
         let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
-        // We only consider the data from `valid` chunks and ignore the padded chunks.
-        let batch_bytes = self.get_batch_data_bytes();
-        let mut blob_bytes = self.get_encoded_batch_data_bytes();
-
-        // Whether we encode batch -> blob or not.
-        let enable_encoding = blob_bytes.len() < batch_bytes.len();
-        blob_bytes.insert(0, enable_encoding as u8);
+        let blob_bytes = self.get_blob_data_bytes();
 
         assert!(
             blob_bytes.len() <= N_BLOB_BYTES,
