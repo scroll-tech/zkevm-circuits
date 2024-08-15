@@ -22,7 +22,8 @@ fn test_max_agg_snarks_batch_circuit() {
     let k = 21;
 
     // This set up requires one round of keccak for chunk's data hash
-    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
+    // let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
+    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_batch_circuit_skip_encoding();
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -188,6 +189,70 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
     // ==========================
     let batch_hash = BatchHash::construct(&chunks_with_padding, BatchHeader::default());
 
+    BatchCircuit::new(
+        &params,
+        [real_snarks, padded_snarks].concat().as_ref(),
+        rng,
+        batch_hash,
+    )
+    .unwrap()
+}
+
+/// Build a batch circuit where blob == batch, i.e. no encoding.
+fn build_batch_circuit_skip_encoding<const N_SNARKS: usize>() -> BatchCircuit<N_SNARKS> {
+    let k0 = 8;
+    #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+    pub struct ChunkProof {
+        pub chunk_info: ChunkInfo,
+    }
+    #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+    struct BatchProvingTask {
+        pub chunk_proofs: Vec<ChunkProof>,
+        pub batch_header: BatchHeader<MAX_AGG_SNARKS>,
+    }
+    let file = std::fs::File::open("data/batch-task.json").expect("batch-task.json exists");
+    let reader = std::io::BufReader::new(file);
+    let batch_proving_task: BatchProvingTask =
+        serde_json::from_reader(reader).expect("deserialisation should succeed");
+    let chunks = batch_proving_task
+        .chunk_proofs
+        .clone()
+        .into_iter()
+        .map(|p| p.chunk_info)
+        .collect::<Vec<_>>();
+    let corrected_batch_header = BatchHeader::construct_from_chunks(
+        batch_proving_task.batch_header.version,
+        batch_proving_task.batch_header.batch_index,
+        batch_proving_task.batch_header.l1_message_popped,
+        batch_proving_task.batch_header.total_l1_message_popped,
+        batch_proving_task.batch_header.parent_batch_hash,
+        batch_proving_task.batch_header.last_block_timestamp,
+        &chunks,
+    );
+    let batch_hash = BatchHash::construct_with_unpadded(&chunks, corrected_batch_header);
+    let params = gen_srs(k0);
+    let rng = test_rng();
+    // ==========================
+    // real chunks
+    // ==========================
+    let real_snarks = {
+        let circuits = chunks
+            .iter()
+            .take(chunks.len())
+            .map(|chunk| MockChunkCircuit::new(true, chunk.clone()))
+            .collect_vec();
+        circuits
+            .iter()
+            .map(|circuit| {
+                let circuit = circuit.clone();
+                layer_0!(circuit, MockChunkCircuit, params, k0, path)
+            })
+            .collect_vec()
+    };
+    // ==========================
+    // padded chunks
+    // ==========================
+    let padded_snarks = { vec![real_snarks.last().unwrap().clone(); N_SNARKS - chunks.len()] };
     BatchCircuit::new(
         &params,
         [real_snarks, padded_snarks].concat().as_ref(),

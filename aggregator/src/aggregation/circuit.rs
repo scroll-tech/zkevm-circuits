@@ -481,12 +481,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 barycentric_assignments,
             )?;
 
-            // construct bytes to be populated into the [`BatchDataConfig`].
-            let batch_bytes = batch_data.get_batch_data_bytes();
-
             // conditionally encode those bytes. By default we use a worked example.
-            let encoded_bytes = if blob_data_exports.enable_encoding_bool {
-                batch_data.get_encoded_batch_data_bytes()
+            let (batch_bytes, encoded_bytes) = if blob_data_exports.enable_encoding_bool {
+                (
+                    batch_data.get_batch_data_bytes(),
+                    batch_data.get_encoded_batch_data_bytes(),
+                )
             } else {
                 let dummy_bytes = WORKED_EXAMPLE.as_bytes().to_vec();
                 let mut encoder = init_zstd_encoder(None);
@@ -496,7 +496,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 encoder
                     .write_all(&dummy_bytes)
                     .map_err(|_| Error::Synthesis)?;
-                encoder.finish().map_err(|_| Error::Synthesis)?
+                (dummy_bytes, encoder.finish().map_err(|_| Error::Synthesis)?)
             };
 
             let MultiBlockProcessResult {
