@@ -402,6 +402,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_counter_offset.clone()
     }
 
+    // Warn: this is a debug helper,only used in debug purpose: if we want to diagnose which `copy_table_lookup` failed, can comment that
+    // `copy_table_lookup` codes, and call this method to increase rw_counter correctly, thus make other constraints succeed.
+    pub(crate) fn add_counter_offset(&mut self, offset: Expression<F>) {
+        self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * offset;
+    }
+
     pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
         self.stack_pointer_offset.clone()
     }
