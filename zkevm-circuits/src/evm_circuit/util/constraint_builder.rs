@@ -303,7 +303,6 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
-    program_counter_offset: usize,
     stack_pointer_offset: Expression<F>,
     log_id_offset: usize,
     in_next_step: bool,
@@ -402,10 +401,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn rw_counter_offset(&self) -> Expression<F> {
         self.rw_counter_offset.clone()
-    }
-
-    pub(crate) fn program_counter_offset(&self) -> usize {
-        self.program_counter_offset
     }
 
     pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
@@ -667,12 +662,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
-        self.opcode_lookup_at_rlc(
-            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
-            opcode,
-            push_rlc,
-        );
-        self.program_counter_offset += 1;
+        self.opcode_lookup_at_rlc(self.curr.state.program_counter.expr(), opcode, push_rlc);
     }
 
     pub(crate) fn opcode_lookup_at_rlc(
