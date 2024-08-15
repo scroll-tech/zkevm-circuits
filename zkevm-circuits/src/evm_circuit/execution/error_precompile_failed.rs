@@ -3,6 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            common_gadget::BytecodeLookupGadget,
             constraint_builder::EVMConstraintBuilder,
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
@@ -19,7 +20,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorPrecompileFailedGadget<F> {
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     is_call: IsZeroGadget<F>,
     is_callcode: IsZeroGadget<F>,
     is_delegatecall: IsZeroGadget<F>,
@@ -37,15 +38,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorPrecompileFailed;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
-        let is_delegatecall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
-        let is_staticcall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+        let is_call =
+            IsZeroGadget::construct(cb, opcode_gadget.opcode.expr() - OpcodeId::CALL.expr());
+        let is_callcode =
+            IsZeroGadget::construct(cb, opcode_gadget.opcode.expr() - OpcodeId::CALLCODE.expr());
+        let is_delegatecall = IsZeroGadget::construct(
+            cb,
+            opcode_gadget.opcode.expr() - OpcodeId::DELEGATECALL.expr(),
+        );
+        let is_staticcall = IsZeroGadget::construct(
+            cb,
+            opcode_gadget.opcode.expr() - OpcodeId::STATICCALL.expr(),
+        );
 
         // constrain op code
         // NOTE: this precompile gadget is for dummy use at the moment, the real error handling for
@@ -97,7 +103,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
 
         Self {
-            opcode,
+            opcode_gadget,
             is_call,
             is_callcode,
             is_delegatecall,
@@ -116,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -137,9 +143,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             step.rw_indices[is_call_or_callcode + 5],
         ]
         .map(|idx| block.rws[idx].stack_value());
-
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
         self.is_call.assign(
             region,
             offset,

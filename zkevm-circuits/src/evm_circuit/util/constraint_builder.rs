@@ -350,7 +350,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 not_step_last: Vec::new(),
             },
             rw_counter_offset: 0.expr(),
-            program_counter_offset: 0,
             stack_pointer_offset: 0.expr(),
             log_id_offset: 0,
             in_next_step: false,
