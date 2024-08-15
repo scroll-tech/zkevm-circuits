@@ -64,9 +64,9 @@ pub fn get_sub_circuit_limit_and_confidence() -> Vec<(usize, f64)> {
         (MAX_CALLDATA, default_confidence),                     // rlp
         (OFFSET_INCREMENT * MAX_EXP_STEPS, default_confidence), // exp
         (MAX_KECCAK_ROWS, default_confidence),                  // modexp
-        (MAX_RWS, default_confidence),                          // pi
+        (MAX_RWS, 1.0),                                         // pi
         (MAX_POSEIDON_ROWS, default_confidence),                // poseidon
-        (MAX_VERTICAL_ROWS, default_confidence),                // sig
+        (MAX_VERTICAL_ROWS, 1.0),                               // sig
         (MAX_VERTICAL_ROWS, 1.0),                               // ecc
         #[cfg(feature = "scroll")]
         (MAX_MPT_ROWS, default_confidence), // mpt
