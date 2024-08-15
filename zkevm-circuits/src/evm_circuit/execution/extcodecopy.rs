@@ -3,7 +3,7 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordByteCapGadget},
+            common_gadget::{BytecodeLengthGadget, SameContextGadget, WordByteCapGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition,
@@ -40,7 +40,7 @@ pub(crate) struct ExtcodecopyGadget<F> {
     is_warm: Cell<F>,
     code_hash: Cell<F>,
     not_exists: IsZeroGadget<F>,
-    code_size: Cell<F>,
+    code_len_gadget: BytecodeLengthGadget<F>,
     copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
@@ -58,12 +58,17 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let external_address =
             from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
 
-        let code_size = cb.query_cell();
-
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
-        let code_offset = WordByteCapGadget::construct(cb, code_size.expr());
+        let code_hash = cb.query_cell_phase2();
+        let not_exists = IsZeroGadget::construct(cb, code_hash.clone().expr());
+        let exists = not::expr(not_exists.expr());
 
+        let code_len_gadget = cb.condition(exists.expr(), |cb| {
+            BytecodeLengthGadget::construct(cb, code_hash.clone())
+        });
+
+        let code_offset = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
         cb.stack_pop(external_address_word.expr());
         cb.stack_pop(memory_offset.expr());
         cb.stack_pop(code_offset.original_word());
@@ -86,13 +91,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.expr(),
         );
-        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
-        let exists = not::expr(not_exists.expr());
-        cb.condition(exists.expr(), |cb| {
-            cb.bytecode_length(code_hash.expr(), code_size.expr());
-        });
+
         cb.condition(not_exists.expr(), |cb| {
-            cb.require_zero("code_size is zero when non_exists", code_size.expr());
+            cb.require_zero(
+                "code_size is zero when non_exists",
+                code_len_gadget.code_length.expr(),
+            );
         });
 
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_length);
@@ -115,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             let src_addr = select::expr(
                 code_offset.lt_cap(),
                 code_offset.valid_value(),
-                code_size.expr(),
+                code_len_gadget.code_length.expr(),
             );
 
             cb.copy_table_lookup(
@@ -124,7 +128,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
                 src_addr,
-                code_size.expr(),
+                code_len_gadget.code_length.expr(),
                 memory_address.offset(),
                 memory_address.length(),
                 0.expr(),
@@ -159,7 +163,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             is_warm,
             code_hash,
             not_exists,
-            code_size,
+            code_len_gadget,
             copy_rwc_inc,
             memory_expansion,
             memory_copier_gas,
@@ -215,8 +219,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 .bytes
                 .len() as u64
         };
-        self.code_size
-            .assign(region, offset, Value::known(F::from(code_size)))?;
+
+        self.code_len_gadget
+            .assign(region, offset, block, &code_hash)?;
 
         self.code_offset
             .assign(region, offset, code_offset, F::from(code_size))?;
