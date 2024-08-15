@@ -214,6 +214,9 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         };
 
         let enable_encoding = blob_bytes.len() < batch_bytes.len();
+        if !enable_encoding {
+            blob_bytes = batch_bytes.clone();
+        }
         blob_bytes.insert(0, enable_encoding as u8);
 
         assert!(blob_bytes.len() <= N_BLOB_BYTES, "too many blob bytes");
