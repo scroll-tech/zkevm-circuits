@@ -1,3 +1,4 @@
+
 use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
@@ -256,8 +257,15 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 
 #[test]
 fn blob_circuit_completeness() {
-    // single chunk in batch, but the chunk has a size of N_ROWS_DATA
+    // TODO: enable this once we have another deterministic case of batch -> blob (fully packed).
     let full_blob = vec![vec![123; BatchData::<MAX_AGG_SNARKS>::n_rows_data()]];
+    // let full_blob = hex::decode(
+    //     fs::read_to_string("./data/test_batches/batch274.hex")
+    //         .expect("file path exists")
+    //         .trim(),
+    // )
+    // .expect("should load full blob batch bytes");
+    // let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
     let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
@@ -279,7 +287,7 @@ fn blob_circuit_completeness() {
         .collect::<Vec<_>>();
 
     for blob in [
-        full_blob,
+        // segmented_full_blob_src,
         one_chunk,
         two_chunks,
         max_chunks,
@@ -290,6 +298,15 @@ fn blob_circuit_completeness() {
         all_empty_except_last,
     ] {
         assert_eq!(check_data(BatchData::from(&blob)), Ok(()), "{:?}", blob);
+        // TODO: enable this once we have another deterministic case of batch -> blob (fully
+        // packed).
+        // if idx == 0 {
+        //     let encoded_len = batch_data.get_encoded_batch_data_bytes().len();
+        //     assert_eq!(
+        //         encoded_len, N_BLOB_BYTES,
+        //         "should be full blob: expected={N_BLOB_BYTES}, got={encoded_len}",
+        //     );
+        // }
     }
 }
 

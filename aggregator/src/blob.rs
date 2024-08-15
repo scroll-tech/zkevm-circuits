@@ -300,7 +300,13 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
         // We only consider the data from `valid` chunks and ignore the padded chunks.
-        let blob_bytes = self.get_encoded_batch_data_bytes();
+        let batch_bytes = self.get_batch_data_bytes();
+        let mut blob_bytes = self.get_encoded_batch_data_bytes();
+
+        // Whether we encode batch -> blob or not.
+        let enable_encoding = blob_bytes.len() < batch_bytes.len();
+        blob_bytes.insert(0, enable_encoding as u8);
+
         assert!(
             blob_bytes.len() <= N_BLOB_BYTES,
             "too many bytes in batch data"
