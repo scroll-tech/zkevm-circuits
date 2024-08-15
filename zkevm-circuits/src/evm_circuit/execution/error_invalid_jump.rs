@@ -130,8 +130,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .bytecodes
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        let code_len = code.bytes.len() as u64;
-        self.code_len_gadget
+        let code_len = self
+            .code_len_gadget
             .assign(region, offset, block, &call.code_hash)?;
 
         let dest = block.rws[step.rw_indices[0]].stack_value();

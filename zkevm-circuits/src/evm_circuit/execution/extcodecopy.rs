@@ -209,18 +209,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.not_exists
             .assign_value(region, offset, region.code_hash(code_hash))?;
 
-        let code_size = if code_hash.is_zero() {
-            0
-        } else {
-            block
-                .bytecodes
-                .get(&code_hash)
-                .expect("could not find external bytecode")
-                .bytes
-                .len() as u64
-        };
-
-        self.code_len_gadget
+        let code_size = self
+            .code_len_gadget
             .assign(region, offset, block, &code_hash)?;
 
         self.code_offset

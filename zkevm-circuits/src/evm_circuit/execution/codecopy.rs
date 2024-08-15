@@ -168,12 +168,10 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let [dest_offset, code_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i]].stack_value());
 
-        let bytecode = block
-            .bytecodes
-            .get(&call.code_hash)
-            .expect("could not find current environment's bytecode");
+        let code_size = self
+            .code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
-        let code_size = bytecode.bytes.len() as u64;
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
 
@@ -204,9 +202,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
-
-        self.code_len_gadget
-            .assign(region, offset, block, &call.code_hash)?;
 
         Ok(())
     }

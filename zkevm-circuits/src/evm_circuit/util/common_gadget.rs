@@ -134,7 +134,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
         offset: usize,
         block: &Block,
         code_hash: &U256,
-    ) -> Result<(), Error> {
+    ) -> Result<u64, Error> {
         let code_length = if code_hash.is_zero() {
             0
         } else {
@@ -149,7 +149,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
         self.code_length
             .assign(region, offset, Value::known(F::from(code_length)))?;
 
-        Ok(())
+        Ok(code_length)
     }
 }
 
