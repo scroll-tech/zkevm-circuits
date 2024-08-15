@@ -92,7 +92,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let copy_rw_increase = cb.query_cell();
         let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        cb.opcode_lookup(opcode_gadget.opcode.expr(), 1.expr());
         cb.require_equal(
             "Opcode is CREATE or CREATE2",
             opcode_gadget.opcode.expr(),
