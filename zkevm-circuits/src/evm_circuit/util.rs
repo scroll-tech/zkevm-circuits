@@ -858,4 +858,10 @@ fn test_find_two_closest_subset() {
     // set1's sum: 27, set2's sum: 29, diff = 2
     assert_eq!(set1, [10, 5, 11, 1]);
     assert_eq!(set2, [4, 20, 5]);
+
+    nums = vec![100, 105, 110, 50, 100, 40, 200];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 350, set2's sum: 355, diff = 5
+    assert_eq!(set1, [200, 40, 110]);
+    assert_eq!(set2, [100, 50, 105, 100]);
 }
