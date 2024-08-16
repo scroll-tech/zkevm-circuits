@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::LtGadget,
-            CachedRegion, Cell,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -18,7 +18,7 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {

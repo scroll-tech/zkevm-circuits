@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            sum, CachedRegion, Cell, Word,
+            sum, CachedRegion, Word,
         },
     },
     table::CallContextFieldTag,
@@ -16,7 +16,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{ToLittleEndian, U256};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorPrecompileFailedGadget<F> {
