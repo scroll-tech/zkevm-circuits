@@ -45,6 +45,7 @@ impl ChunkProvingTask {
 pub struct BatchProvingTask {
     pub chunk_proofs: Vec<ChunkProof>,
     pub batch_header: BatchHeader<MAX_AGG_SNARKS>,
+    pub blob_bytes: Vec<u8>,
 }
 
 impl BatchProvingTask {

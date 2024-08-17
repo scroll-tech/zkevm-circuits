@@ -1,4 +1,5 @@
 use crate::aggregation::witgen::{process, MultiBlockProcessResult};
+use crate::eip4844::{get_blob_bytes, get_coefficients, get_versioned_hash};
 use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
@@ -107,9 +108,16 @@ impl Circuit<Fr> for BlobCircuit {
     ) -> Result<(), Error> {
         let challenge_values = config.challenges.values(&layouter);
 
-        config
-            .keccak_table
-            .dev_load(&mut layouter, &self.data.preimages(), &challenge_values)?;
+        let batch_bytes = self.data.get_batch_data_bytes();
+        let blob_bytes = get_blob_bytes(&batch_bytes);
+        let coeffs = get_coefficients(&blob_bytes);
+        let versioned_hash = get_versioned_hash(&coeffs);
+
+        config.keccak_table.dev_load(
+            &mut layouter,
+            &self.data.preimages(versioned_hash),
+            &challenge_values,
+        )?;
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         let barycentric_assignments = layouter.assign_region(
@@ -130,7 +138,8 @@ impl Circuit<Fr> for BlobCircuit {
                     },
                 );
 
-                let point_eval = PointEvaluationAssignments::from(&self.data);
+                let point_eval =
+                    PointEvaluationAssignments::new(&self.data, &blob_bytes, versioned_hash);
                 Ok(config.barycentric.assign(
                     &mut ctx,
                     &point_eval.coefficients,
@@ -167,7 +176,7 @@ impl Circuit<Fr> for BlobCircuit {
             &mut layouter,
             challenge_values,
             &config.rlc,
-            &self.data,
+            &blob_bytes,
             &barycentric_assignments.barycentric_assignments,
         )?;
 
@@ -178,6 +187,7 @@ impl Circuit<Fr> for BlobCircuit {
                     &mut region,
                     challenge_values,
                     &self.data,
+                    versioned_hash,
                 )?;
                 let assigned_batch_data_export = config.batch_data_config.assign_internal_checks(
                     &mut region,
@@ -361,9 +371,10 @@ fn zstd_encoding_consistency() {
 
     // Re-encode into blob bytes
     let re_encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_data);
-    let re_encoded_blob_bytes = re_encoded_batch_data.get_blob_data_bytes();
+    let batch_bytes = re_encoded_batch_data.get_batch_data_bytes();
+    let blob_bytes = get_blob_bytes(&batch_bytes);
 
-    assert_eq!(compressed, re_encoded_blob_bytes, "Blob bytes must match");
+    assert_eq!(compressed, blob_bytes, "Blob bytes must match");
 }
 
 #[test]
@@ -382,11 +393,12 @@ fn zstd_encoding_consistency_from_batch() {
 
     // Re-encode into blob bytes
     let encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_bytes);
-    let encoded_blob_bytes = encoded_batch_data.get_blob_data_bytes();
+    let batch_bytes = encoded_batch_data.get_batch_data_bytes();
+    let blob_bytes = get_blob_bytes(&batch_bytes);
 
     // full blob len sanity check
     assert_eq!(
-        encoded_blob_bytes.len(),
+        blob_bytes.len(),
         N_BLOB_BYTES,
         "full blob is the correct len"
     );
@@ -400,7 +412,7 @@ fn zstd_encoding_consistency_from_batch() {
         sequence_info_arr: _s,
         address_table_rows: _a,
         sequence_exec_results,
-    } = process::<Fr>(&encoded_blob_bytes, Value::known(Fr::from(123456789)));
+    } = process::<Fr>(&blob_bytes, Value::known(Fr::from(123456789)));
 
     let decoded_batch_bytes = sequence_exec_results
         .into_iter()

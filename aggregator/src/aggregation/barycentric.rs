@@ -351,6 +351,7 @@ mod tests {
     use super::*;
     use crate::{
         blob::{BatchData, KZG_TRUSTED_SETUP},
+        eip4844::{get_blob_bytes, get_coefficients},
         MAX_AGG_SNARKS,
     };
     use c_kzg::{Blob as RethBlob, KzgProof};
@@ -395,12 +396,15 @@ mod tests {
             vec![0; 340],
             vec![10; 23],
         ]);
+        let batch_bytes = batch.get_batch_data_bytes();
+        let blob_bytes = get_blob_bytes(&batch_bytes);
+        let coeffs = get_coefficients(&blob_bytes);
 
         for z in 0..10 {
             let z = Scalar::from(u64::try_from(13241234 + z).unwrap());
             assert_eq!(
-                reth_point_evaluation(z, &batch.get_coefficients().map(|c| Scalar::from_raw(c.0))),
-                interpolate(z, &batch.get_coefficients().map(|c| Scalar::from_raw(c.0)))
+                reth_point_evaluation(z, &coeffs.map(|c| Scalar::from_raw(c.0))),
+                interpolate(z, &coeffs.map(|c| Scalar::from_raw(c.0)))
             );
         }
     }
