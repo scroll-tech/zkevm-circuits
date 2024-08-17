@@ -468,7 +468,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
-                &batch_data,
+                &self.batch_hash.blob_bytes,
                 barycentric_assignments,
             )?;
 
@@ -478,6 +478,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 &config.rlc_config,
                 &assigned_batch_hash.chunks_are_padding,
                 &batch_data,
+                self.batch_hash.versioned_hash,
                 barycentric_assignments,
             )?;
 

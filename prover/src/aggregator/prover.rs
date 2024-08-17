@@ -165,6 +165,7 @@ impl Prover {
             batch.batch_header.parent_batch_hash,
             batch.batch_header.last_block_timestamp,
             &chunk_hashes,
+            &batch.blob_bytes,
         );
 
         // sanity check between:
@@ -194,7 +195,8 @@ impl Prover {
         );
 
         let batch_hash = batch_header.batch_hash();
-        let batch_info: BatchHash<N_SNARKS> = BatchHash::construct(&chunk_hashes, batch_header);
+        let batch_info: BatchHash<N_SNARKS> =
+            BatchHash::construct(&chunk_hashes, batch_header, &batch.blob_bytes);
 
         let layer3_snark = self.prover_impl.load_or_gen_agg_snark(
             name,

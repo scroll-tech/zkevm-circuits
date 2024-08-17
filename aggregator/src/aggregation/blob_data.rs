@@ -13,7 +13,7 @@ use zkevm_circuits::{table::U8Table, util::Challenges};
 
 use crate::{
     aggregation::{decoder::witgen::init_zstd_encoder, rlc::POWS_OF_256},
-    blob::{BatchData, BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
+    blob::{BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
     RlcConfig,
 };
 
@@ -155,12 +155,12 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         layouter: &mut impl Layouter<Fr>,
         challenge_value: Challenges<Value<Fr>>,
         rlc_config: &RlcConfig,
-        batch_data: &BatchData<N_SNARKS>,
+        blob_bytes: &[u8],
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
         let (assigned_bytes, bytes_rlc, bytes_len, enable_encoding_bool) = layouter.assign_region(
             || "BlobData bytes",
-            |mut region| self.assign_rows(&mut region, batch_data, &challenge_value),
+            |mut region| self.assign_rows(&mut region, blob_bytes, &challenge_value),
         )?;
         let enable_encoding = assigned_bytes[0].clone();
 
@@ -190,7 +190,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
     pub fn assign_rows(
         &self,
         region: &mut Region<Fr>,
-        batch_data: &BatchData<N_SNARKS>,
+        blob_bytes: &[u8],
         challenges: &Challenges<Value<Fr>>,
     ) -> Result<
         (
@@ -201,23 +201,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         ),
         Error,
     > {
-        let batch_bytes = batch_data.get_batch_data_bytes();
-        let mut blob_bytes = {
-            let mut encoder = init_zstd_encoder(None);
-            encoder
-                .set_pledged_src_size(Some(batch_bytes.len() as u64))
-                .map_err(|_| Error::Synthesis)?;
-            encoder
-                .write_all(&batch_bytes)
-                .map_err(|_| Error::Synthesis)?;
-            encoder.finish().map_err(|_| Error::Synthesis)?
-        };
-
-        let enable_encoding = blob_bytes.len() < batch_bytes.len();
-        if !enable_encoding {
-            blob_bytes = batch_bytes.clone();
-        }
-        blob_bytes.insert(0, enable_encoding as u8);
+        let enable_encoding = blob_bytes[0].eq(&1);
 
         assert!(blob_bytes.len() <= N_BLOB_BYTES, "too many blob bytes");
 

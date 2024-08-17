@@ -1,4 +1,5 @@
 
+use crate::eip4844::{get_blob_bytes, get_coefficients, get_versioned_hash};
 use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
@@ -106,9 +107,16 @@ impl Circuit<Fr> for BlobCircuit {
     ) -> Result<(), Error> {
         let challenge_values = config.challenges.values(&layouter);
 
-        config
-            .keccak_table
-            .dev_load(&mut layouter, &self.data.preimages(), &challenge_values)?;
+        let batch_bytes = self.data.get_batch_data_bytes();
+        let blob_bytes = get_blob_bytes(&batch_bytes);
+        let coeffs = get_coefficients(&blob_bytes);
+        let versioned_hash = get_versioned_hash(&coeffs);
+
+        config.keccak_table.dev_load(
+            &mut layouter,
+            &self.data.preimages(versioned_hash),
+            &challenge_values,
+        )?;
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         let barycentric_assignments = layouter.assign_region(
@@ -129,7 +137,8 @@ impl Circuit<Fr> for BlobCircuit {
                     },
                 );
 
-                let point_eval = PointEvaluationAssignments::from(&self.data);
+                let point_eval =
+                    PointEvaluationAssignments::new(&self.data, &blob_bytes, versioned_hash);
                 Ok(config.barycentric.assign(
                     &mut ctx,
                     &point_eval.coefficients,
@@ -166,7 +175,7 @@ impl Circuit<Fr> for BlobCircuit {
             &mut layouter,
             challenge_values,
             &config.rlc,
-            &self.data,
+            &blob_bytes,
             &barycentric_assignments.barycentric_assignments,
         )?;
 
@@ -177,6 +186,7 @@ impl Circuit<Fr> for BlobCircuit {
                     &mut region,
                     challenge_values,
                     &self.data,
+                    versioned_hash,
                 )?;
                 let assigned_batch_data_export = config.batch_data_config.assign_internal_checks(
                     &mut region,
