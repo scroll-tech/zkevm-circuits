@@ -64,8 +64,18 @@ impl ChunkInfo {
             .flat_map(|b| {
                 b.transactions
                     .iter()
-                    .filter(|tx| !tx.is_l1_tx())
-                    .flat_map(|tx| tx.to_eth_tx(None, None, None, None).rlp().to_vec())
+                    .enumerate()
+                    .filter(|(_idx, tx)| !tx.is_l1_tx())
+                    .flat_map(|(idx, tx)| {
+                        tx.to_eth_tx(
+                            b.header.hash,
+                            b.header.number,
+                            Some((idx as u64).into()),
+                            b.header.base_fee_per_gas,
+                        )
+                        .rlp()
+                        .to_vec()
+                    })
             })
             .collect::<Vec<u8>>();
 
