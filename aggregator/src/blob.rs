@@ -298,7 +298,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     }
 
     /// Get the batch data bytes that will be populated in BatchDataConfig.
-    pub(crate) fn get_batch_data_bytes(&self) -> Vec<u8> {
+    pub fn get_batch_data_bytes(&self) -> Vec<u8> {
         let metadata_bytes = self.to_metadata_bytes();
         metadata_bytes
             .iter()

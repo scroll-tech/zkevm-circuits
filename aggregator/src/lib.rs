@@ -18,7 +18,7 @@ mod constants;
 /// Core module for circuit assignment
 mod core;
 /// EIP-4844 related utils.
-mod eip4844;
+pub mod eip4844;
 /// Parameters for compression circuit
 mod param;
 /// utilities
