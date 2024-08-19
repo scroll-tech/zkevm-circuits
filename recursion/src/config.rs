@@ -1,9 +1,9 @@
-use halo2_proofs::plonk::{Column, Instance};
-use snark_verifier::loader::halo2::halo2_ecc::{
+use ce_snark_verifier::loader::halo2::halo2_ecc::{
     ecc::{BaseFieldEccChip, EccChip},
     fields::fp::FpConfig,
     halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig},
 };
+use halo2_proofs::plonk::{Column, Instance};
 
 use aggregator::ConfigParams as RecursionCircuitConfigParams;
 
@@ -12,7 +12,7 @@ use super::*;
 #[derive(Clone)]
 pub struct RecursionConfig {
     /// The non-native field arithmetic config from halo2-lib.
-    pub base_field_config: FpConfig<Fr, Fq>,
+    pub base_field_config: FpConfig<Fr>,
     /// The single instance column to hold the public input to the [`RecursionCircuit`].
     pub instance: Column<Instance>,
 }

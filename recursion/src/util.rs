@@ -1,15 +1,18 @@
 use std::path::Path;
 
+use crate::types::PoseidonTranscript;
+use ce_snark_verifier::{
+    pcs::kzg::Bdfg21,
+    pcs::kzg::KzgAs,
+    util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
+    verifier::plonk::PlonkProof,
+};
+use ce_snark_verifier_sdk::{gen_pk, CircuitExt, Snark};
 use halo2_proofs::{
     circuit::Layouter,
     plonk::keygen_vk,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use snark_verifier::{
-    pcs::kzg::{Bdfg21, Kzg},
-    util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
-};
-use snark_verifier_sdk::{gen_pk, CircuitExt, Snark};
 
 use super::*;
 
@@ -78,9 +81,9 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
     num_instance: &[usize],
     mut rng: impl Rng + Send,
 ) -> Snark {
-    use snark_verifier::cost::CostEstimation;
+    use ce_snark_verifier::cost::CostEstimation;
     use std::iter;
-    type Pcs = Kzg<Bn256, Bdfg21>;
+    type As = KzgAs<Bn256, Bdfg21>;
 
     let protocol = compile(
         params,
@@ -108,8 +111,8 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
         for _ in 0..protocol.evaluations.len() {
             transcript.write_scalar(Fr::random(&mut rng)).unwrap();
         }
-        let queries = PlonkProof::<G1Affine, NativeLoader, Pcs>::empty_queries(&protocol);
-        for _ in 0..Pcs::estimate_cost(&queries).num_commitment {
+        let queries = PlonkProof::<G1Affine, NativeLoader, As>::empty_queries(&protocol);
+        for _ in 0..As::estimate_cost(&queries).num_commitment {
             transcript
                 .write_ec_point(G1Affine::random(&mut rng))
                 .unwrap();

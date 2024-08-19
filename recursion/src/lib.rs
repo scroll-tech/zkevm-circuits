@@ -15,10 +15,27 @@ mod config;
 /// Some utility functions.
 mod util;
 
+/// Type aliases.
+mod types;
+
 pub use circuit::RecursionCircuit;
 pub(crate) use common::dynamic_verify;
 pub use util::{gen_recursion_pk, initial_recursion_snark};
 
+use ce_snark_verifier::{
+    loader::{
+        halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader, Loader, ScalarLoader,
+    },
+    system::halo2::{compile, Config},
+    // verifier::{PlonkProof, PlonkVerifier},
+};
+use ce_snark_verifier_sdk::{
+    // types::{PoseidonTranscript, POSEIDON_SPEC},
+    CircuitExt,
+    Snark,
+    BITS,
+    LIMBS,
+};
 use halo2_proofs::{
     halo2curves::{
         bn256::{Bn256, Fq, Fr, G1Affine},
@@ -28,17 +45,6 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
-use snark_verifier::{
-    loader::{
-        halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader, Loader, ScalarLoader,
-    },
-    system::halo2::{compile, Config},
-    verifier::{PlonkProof, PlonkVerifier},
-};
-use snark_verifier_sdk::{
-    types::{PoseidonTranscript, POSEIDON_SPEC},
-    CircuitExt, Snark, BITS, LIMBS,
-};
 use sv_halo2_base::halo2_proofs;
 
 /// Any data that can be recursively bundled must implement the described state transition

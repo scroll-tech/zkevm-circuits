@@ -1,18 +1,19 @@
-use std::rc::Rc;
-
-use snark_verifier::{
+use crate::sv_halo2_base::AssignedValue;
+use crate::types::{As, BaseFieldEccChip, PlonkSuccinctVerifier, Svk};
+use crate::G1Affine;
+use ce_snark_verifier::loader::Loader;
+use ce_snark_verifier::verifier::SnarkVerifier;
+use ce_snark_verifier::{
     loader::halo2::EccInstructions,
-    pcs::{kzg::KzgAccumulator, MultiOpenScheme, PolynomialCommitmentScheme},
+    pcs::kzg::{Bdfg21, KzgAs},
+    pcs::{kzg::KzgAccumulator, PolynomialCommitmentScheme},
     util::hash,
 };
-use snark_verifier_sdk::{
-    types::{BaseFieldEccChip, Halo2Loader, Plonk},
-    SnarkWitness,
+use ce_snark_verifier_sdk::{
+    halo2::{aggregation::Halo2Loader, PoseidonTranscript, POSEIDON_SPEC},
+    Snark,
 };
-
-use super::*;
-
-type AssignedScalar<'a> = <BaseFieldEccChip as EccInstructions<'a, G1Affine>>::AssignedScalar;
+use std::rc::Rc;
 
 fn poseidon<L: Loader<G1Affine>>(loader: &L, inputs: &[L::LoadedScalar]) -> L::LoadedScalar {
     let mut hasher = hash::Poseidon::from_spec(loader, POSEIDON_SPEC.clone());
@@ -23,18 +24,20 @@ fn poseidon<L: Loader<G1Affine>>(loader: &L, inputs: &[L::LoadedScalar]) -> L::L
 /// It is similar to `succinct_verify` method inside of snark-verifier
 /// but allow it allow loader to load preprocessed part as witness (so ANY circuit)
 /// can be verified.
-pub fn dynamic_verify<'a, PCS>(
-    svk: &PCS::SuccinctVerifyingKey,
+pub fn dynamic_verify<'a>(
+    svk: &Svk,
     loader: &Rc<Halo2Loader<'a>>,
-    snark: &SnarkWitness,
-    preprocessed_digest: Option<AssignedScalar<'a>>,
-) -> (Vec<Vec<AssignedScalar<'a>>>, Vec<PCS::Accumulator>)
+    snark: &Snark,
+    preprocessed_digest: Option<AssignedValue<Fr>>,
+)
+// -> (Vec<Vec<AssignedScalar<'a>>>, Vec<PCS::Accumulator>)
 where
-    PCS: PolynomialCommitmentScheme<
-            G1Affine,
-            Rc<Halo2Loader<'a>>,
-            Accumulator = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-        > + MultiOpenScheme<G1Affine, Rc<Halo2Loader<'a>>>,
+// PCS: PolynomialCommitmentScheme<
+//         G1Affine,
+//         Rc<Halo2Loader<'a>>,
+//         Accumulator = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
+//     >
+// + MultiOpenScheme<G1Affine, Rc<Halo2Loader<'a>>>,
 {
     let protocol = if let Some(preprocessed_digest) = preprocessed_digest {
         let preprocessed_digest = loader.scalar_from_assigned(preprocessed_digest);
@@ -68,8 +71,8 @@ where
         })
         .collect_vec();
     let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, snark.proof());
-    let proof = Plonk::<PCS>::read_proof(svk, &protocol, &instances, &mut transcript);
-    let accumulators = Plonk::<PCS>::succinct_verify(svk, &protocol, &instances, &proof);
+    let proof = PlonkSuccinctVerifier::read_proof(svk, &protocol, &instances, &mut transcript);
+    let accumulators = PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof);
 
     (
         instances

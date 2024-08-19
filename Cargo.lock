@@ -3900,8 +3900,7 @@ dependencies = [
  "log",
  "rand",
  "serde_json",
- "snark-verifier 0.1.0",
- "snark-verifier-sdk 0.0.1",
+ "snark-verifier 0.1.8",
  "snark-verifier-sdk 0.1.8",
 ]
 
