@@ -25,7 +25,7 @@ use sv_halo2_base::{
     QuantumCell::Existing,
 };
 
-use crate::param::ConfigParams as RecursionCircuitConfigParams;
+use aggregator::ConfigParams as RecursionCircuitConfigParams;
 
 use super::*;
 

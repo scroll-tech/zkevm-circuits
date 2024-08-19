@@ -3789,6 +3789,7 @@ dependencies = [
  "num-bigint",
  "rand",
  "rand_xorshift",
+ "recursion",
  "serde",
  "serde_derive",
  "serde_json",
@@ -3887,6 +3888,42 @@ checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "recursion"
+version = "0.12.0"
+dependencies = [
+ "aggregator",
+ "ark-std 0.3.0",
+ "bitstream-io",
+ "c-kzg 1.0.2",
+ "csv",
+ "ctor",
+ "encoder",
+ "env_logger",
+ "eth-types",
+ "ethers-core",
+ "gadgets",
+ "halo2-base 0.2.2",
+ "halo2-ecc 0.2.2",
+ "halo2_proofs",
+ "hex",
+ "itertools 0.11.0",
+ "log",
+ "num-bigint",
+ "once_cell",
+ "rand",
+ "revm-precompile 9.2.0",
+ "revm-primitives 7.1.0",
+ "serde",
+ "serde_json",
+ "snark-verifier 0.1.0",
+ "snark-verifier-sdk 0.0.1",
+ "snark-verifier-sdk 0.1.8",
+ "strum 0.25.0",
+ "strum_macros 0.25.3",
+ "zkevm-circuits",
 ]
 
 [[package]]

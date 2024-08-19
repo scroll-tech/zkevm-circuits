@@ -14,6 +14,7 @@ members = [
     "aggregator",
     "prover",
     "compression",
+    "recursion",
 ]
 resolver = "2"
 

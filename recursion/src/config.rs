@@ -5,7 +5,7 @@ use snark_verifier::loader::halo2::halo2_ecc::{
     halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig},
 };
 
-use crate::param::ConfigParams as RecursionCircuitConfigParams;
+use aggregator::ConfigParams as RecursionCircuitConfigParams;
 
 use super::*;
 

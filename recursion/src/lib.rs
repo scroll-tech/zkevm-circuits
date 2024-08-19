@@ -37,11 +37,9 @@ use snark_verifier::{
 };
 use snark_verifier_sdk::{
     types::{PoseidonTranscript, POSEIDON_SPEC},
-    CircuitExt, Snark,
+    CircuitExt, Snark, BITS, LIMBS,
 };
 use sv_halo2_base::halo2_proofs;
-
-use crate::constants::{BITS, LIMBS};
 
 /// Any data that can be recursively bundled must implement the described state transition
 /// trait.
