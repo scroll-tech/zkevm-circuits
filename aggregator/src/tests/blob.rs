@@ -268,7 +268,6 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 #[test]
 fn blob_circuit_completeness() {
     // TODO: enable this once we have another deterministic case of batch -> blob (fully packed).
-    let full_blob = vec![vec![123; BatchData::<MAX_AGG_SNARKS>::n_rows_data()]];
     // let full_blob = hex::decode(
     //     fs::read_to_string("./data/test_batches/batch274.hex")
     //         .expect("file path exists")
@@ -311,10 +310,10 @@ fn blob_circuit_completeness() {
         // TODO: enable this once we have another deterministic case of batch -> blob (fully
         // packed).
         // if idx == 0 {
-        //     let encoded_len = batch_data.get_encoded_batch_data_bytes().len();
+        //     let blob_data_bytes_len = batch_data.get_blob_data_bytes().len();
         //     assert_eq!(
-        //         encoded_len, N_BLOB_BYTES,
-        //         "should be full blob: expected={N_BLOB_BYTES}, got={encoded_len}",
+        //         blob_data_bytes_len, N_BLOB_BYTES,
+        //         "should be full blob: expected={N_BLOB_BYTES}, got={blob_data_bytes_len}",
         //     );
         // }
     }

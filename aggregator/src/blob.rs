@@ -1,5 +1,5 @@
 use crate::{
-    aggregation::{interpolate, witgen::init_zstd_encoder, BLS_MODULUS},
+    aggregation::{interpolate, BLS_MODULUS},
     eip4844::get_coefficients,
     BatchHash, ChunkInfo,
 };
@@ -13,7 +13,6 @@ use halo2_proofs::{
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::{
-    io::Write,
     iter::{once, repeat},
     sync::Arc,
 };

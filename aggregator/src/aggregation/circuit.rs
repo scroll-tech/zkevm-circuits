@@ -1,7 +1,7 @@
 use crate::{
     aggregation::decoder::WORKED_EXAMPLE,
     blob::BatchData,
-    witgen::{init_zstd_encoder, MultiBlockProcessResult},
+    witgen::{zstd_encode, MultiBlockProcessResult},
     LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
     PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
@@ -21,7 +21,7 @@ use itertools::Itertools;
 use rand::Rng;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use std::rc::Rc;
-use std::{env, fs::File, io::Write};
+use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
@@ -483,22 +483,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             )?;
 
             // conditionally encode those bytes. By default we use a worked example.
-            let (batch_bytes, encoded_bytes) = if blob_data_exports.enable_encoding_bool {
-                (
-                    batch_data.get_batch_data_bytes(),
-                    batch_data.get_encoded_batch_data_bytes(),
-                )
+            let raw_bytes = if blob_data_exports.enable_encoding_bool {
+                batch_data.get_batch_data_bytes()
             } else {
-                let dummy_bytes = WORKED_EXAMPLE.as_bytes().to_vec();
-                let mut encoder = init_zstd_encoder(None);
-                encoder
-                    .set_pledged_src_size(Some(dummy_bytes.len() as u64))
-                    .map_err(|_| Error::Synthesis)?;
-                encoder
-                    .write_all(&dummy_bytes)
-                    .map_err(|_| Error::Synthesis)?;
-                (dummy_bytes, encoder.finish().map_err(|_| Error::Synthesis)?)
+                WORKED_EXAMPLE.as_bytes().to_vec()
             };
+            let encoded_bytes = zstd_encode(&raw_bytes);
 
             let MultiBlockProcessResult {
                 witness_rows,
@@ -521,14 +511,14 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             );
             if blob_data_exports.enable_encoding_bool {
                 assert_eq!(
-                    batch_bytes, recovered_bytes,
+                    raw_bytes, recovered_bytes,
                     "original and recovered bytes mismatch"
                 );
             }
 
             let decoder_exports = config.decoder_config.assign(
                 &mut layouter,
-                &batch_bytes,
+                &raw_bytes,
                 &encoded_bytes,
                 witness_rows,
                 decoded_literals,

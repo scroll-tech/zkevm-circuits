@@ -1,4 +1,3 @@
-use std::io::Write;
 
 use gadgets::util::Expr;
 use halo2_ecc::bigint::CRTInteger;
@@ -12,7 +11,7 @@ use itertools::Itertools;
 use zkevm_circuits::{table::U8Table, util::Challenges};
 
 use crate::{
-    aggregation::{decoder::witgen::init_zstd_encoder, rlc::POWS_OF_256},
+    aggregation::rlc::POWS_OF_256,
     blob::{BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
     RlcConfig,
 };
