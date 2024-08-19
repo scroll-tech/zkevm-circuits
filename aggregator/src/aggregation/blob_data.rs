@@ -1,4 +1,3 @@
-
 use gadgets::util::Expr;
 use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
