@@ -46,7 +46,6 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         let opcode_gadget = cb.condition(is_within_range.expr(), |cb| {
             BytecodeLookupGadget::construct(cb)
         });
-
         // We do the responsible opcode check explicitly here because we're not using
         // the `SameContextGadget` for `STOP`.
         cb.require_equal(
@@ -112,19 +111,15 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let code = block
-            .bytecodes
-            .get(&call.code_hash)
-            .expect("could not find current environment's bytecode");
-
-        self.code_len_gadget
+        let code_len = self
+            .code_len_gadget
             .assign(region, offset, block, &call.code_hash)?;
 
         self.is_within_range.assign(
             region,
             offset,
             F::from(step.program_counter),
-            F::from(code.bytes.len() as u64),
+            F::from(code_len),
         )?;
 
         self.opcode_gadget

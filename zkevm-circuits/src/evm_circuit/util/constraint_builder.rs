@@ -303,7 +303,6 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
-    program_counter_offset: Expression<F>,
     stack_pointer_offset: Expression<F>,
     log_id_offset: usize,
     in_next_step: bool,
@@ -351,7 +350,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 not_step_last: Vec::new(),
             },
             rw_counter_offset: 0.expr(),
-            program_counter_offset: 0.expr(),
             stack_pointer_offset: 0.expr(),
             log_id_offset: 0,
             in_next_step: false,
@@ -695,26 +693,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
-        self.opcode_lookup_at_rlc(
-            self.curr.state.program_counter.expr() + self.program_counter_offset.clone(),
-            opcode,
-            push_rlc,
-        );
-        // self.program_counter_offset += 1;
-        self.program_counter_offset = self.program_counter_offset.clone() * self.condition_expr();
+        self.opcode_lookup_at_rlc(self.curr.state.program_counter.expr(), opcode, push_rlc);
     }
 
     #[cfg(feature = "dual_bytecode")]
     // helper to lookup second bytecode table.
     pub(crate) fn opcode_lookup_rlc2(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
         self.opcode_lookup_at_rlc2(
-            self.curr.state.program_counter.expr()
-                + self.program_counter_offset.expr() * self.condition_expr(),
+            self.curr.state.program_counter.expr() + self.condition_expr(),
             opcode,
             push_rlc,
         );
-        // self.program_counter_offset += 1;
-        self.program_counter_offset = self.program_counter_offset.clone() * self.condition_expr();
     }
 
     // lookup bytecode_table.

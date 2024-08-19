@@ -76,8 +76,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let code_len_gadget = cb.condition(exists.expr(), |cb| {
             BytecodeLengthGadget::construct(cb, code_hash.clone())
         });
-        let code_offset = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
 
+        let code_offset = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
         cb.stack_pop(external_address_word.expr());
         cb.stack_pop(memory_offset.expr());
         cb.stack_pop(code_offset.original_word());
@@ -218,16 +218,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.not_exists
             .assign_value(region, offset, region.code_hash(code_hash))?;
 
-        let code_size = if code_hash.is_zero() {
-            0
-        } else {
-            block
-                .bytecodes
-                .get(&code_hash)
-                .expect("could not find external bytecode")
-                .bytes
-                .len() as u64
-        };
+        let code_size = self
+            .code_len_gadget
+            .assign(region, offset, block, &code_hash)?;
 
         self.code_len_gadget
             .assign(region, offset, block, &code_hash)?;

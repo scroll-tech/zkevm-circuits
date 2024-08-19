@@ -128,8 +128,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         let opcode = step.opcode.unwrap();
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
-        self.opcode_gadget
-            .assign(region, offset, block, call, step)?;
 
         let [gas, callee_address] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
@@ -145,7 +143,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             step.rw_indices[is_call_or_callcode + 5],
         ]
         .map(|idx| block.rws[idx].stack_value());
-
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
         self.is_call.assign(
             region,
             offset,

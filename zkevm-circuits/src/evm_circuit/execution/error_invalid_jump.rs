@@ -39,8 +39,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        // Look up bytecode length
         let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
-
         let dest = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
 
         let opcode = cb.query_cell();
@@ -153,7 +153,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .bytecodes
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        let code_len = code.bytes.len() as u64;
+        let code_len = self
+            .code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
         let dest = block.rws[step.rw_indices[0]].stack_value();
         self.dest.assign(region, offset, dest, F::from(code_len))?;

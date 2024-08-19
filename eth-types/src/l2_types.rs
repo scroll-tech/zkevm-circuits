@@ -44,6 +44,8 @@ pub struct BlockTraceV2 {
     /// l1 tx queue
     #[serde(rename = "startL1QueueIndex", default)]
     pub start_l1_queue_index: u64,
+    /// Withdraw root
+    pub withdraw_trie_root: H256,
 }
 
 /// Block header used by l2 block
@@ -98,6 +100,7 @@ impl From<BlockTrace> for BlockTraceV2 {
             transactions: b.transactions,
             storage_trace: b.storage_trace,
             start_l1_queue_index: b.start_l1_queue_index,
+            withdraw_trie_root: b.withdraw_trie_root,
         }
     }
 }
@@ -451,6 +454,15 @@ pub struct StorageTrace {
     #[serde(rename = "deletionProofs", default)]
     /// additional deletion proofs
     pub deletion_proofs: Vec<Bytes>,
+    #[serde(rename = "flattenProofs", default)]
+    ///
+    pub flatten_proofs: HashMap<H256, Bytes>,
+    #[serde(rename = "addressHashes", default)]
+    ///
+    pub address_hashes: HashMap<Address, Hash>,
+    #[serde(rename = "storeKeyHashes", default)]
+    ///
+    pub store_key_hashes: HashMap<H256, Hash>,
 }
 
 /// extension of `GethExecTrace`, with compatible serialize form

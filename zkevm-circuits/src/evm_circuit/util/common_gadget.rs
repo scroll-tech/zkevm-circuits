@@ -168,7 +168,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
         offset: usize,
         block: &Block,
         code_hash: &U256,
-    ) -> Result<(), Error> {
+    ) -> Result<u64, Error> {
         let code_length = if code_hash.is_zero() {
             0
         } else {
@@ -188,7 +188,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
             offset,
             Value::known(F::from(block.is_first_sub_bytecode_circuit(code_hash))),
         )?;
-        Ok(())
+        Ok(code_length)
     }
 }
 
