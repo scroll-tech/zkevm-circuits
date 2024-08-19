@@ -222,8 +222,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             .code_len_gadget
             .assign(region, offset, block, &code_hash)?;
 
-        self.code_len_gadget
-            .assign(region, offset, block, &code_hash)?;
         self.code_offset
             .assign(region, offset, code_offset, F::from(code_size))?;
 
