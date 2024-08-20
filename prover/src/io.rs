@@ -102,7 +102,7 @@ pub fn serialize_vk(vk: &VerifyingKey<G1Affine>) -> Vec<u8> {
 
 pub fn deserialize_vk<C: Circuit<Fr>>(raw_vk: &[u8]) -> VerifyingKey<G1Affine> {
     VerifyingKey::<G1Affine>::read::<_, C>(&mut Cursor::new(raw_vk), SerdeFormat::Processed)
-        .unwrap()
+        .unwrap_or_else(|_| panic!("failed to deserialize vk with len {}", raw_vk.len()))
 }
 
 pub fn write_snark(file_path: &str, snark: &Snark) {

@@ -33,7 +33,7 @@ impl<C: CircuitExt<Fr>> Verifier<C> {
     }
 
     pub fn from_params_dir(params_dir: &str, degree: u32, vk: &[u8]) -> Self {
-        let params = load_params(params_dir, degree, None).unwrap();
+        let params = load_params(params_dir, degree, None).expect("load params failed");
 
         Self::from_params(params, vk)
     }
