@@ -3,6 +3,7 @@ use super::*;
 use crate::{
     common::{poseidon, succinct_verify},
     types::{As, BaseFieldEccChip, PlonkSuccinctVerifier, Svk},
+    SECURE_MDS,
 };
 use aggregator::ConfigParams as RecursionCircuitConfigParams;
 use ce_snark_verifier::{
@@ -31,8 +32,6 @@ use halo2_proofs::{
 };
 use rand::rngs::OsRng;
 use std::{fs::File, iter, marker::PhantomData, mem, rc::Rc};
-
-const SECURE_MDS: usize = 0;
 
 /// Select condition ? LHS : RHS.
 fn select_accumulator<'a>(
@@ -180,7 +179,8 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
                     .map(|i| &app.instances[0][i]),
             )
             .next()
-            .unwrap();
+            .unwrap()
+            .clone();
         let initial_state = if round > 0 {
             // pick from prev snark
             Vec::from(
@@ -195,7 +195,8 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
                 .collect::<Vec<_>>()
         }
         .first()
-        .unwrap();
+        .unwrap()
+        .clone();
 
         let instances = [
             accumulator.lhs.x,
@@ -207,13 +208,13 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
         .chain([
             preprocessed_digest,
-            *initial_state,
-            *state,
+            initial_state,
+            state,
             Fr::from(round as u64),
         ])
         .collect();
 
-        let inner = BaseCircuitBuilder::new(false).use_params(config_params);
+        let inner = BaseCircuitBuilder::new(false).use_params(load_base_circuit_params());
         let mut circuit = Self {
             svk,
             default_accumulator,
@@ -367,22 +368,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let path = std::env::var("BUNDLE_CONFIG")
-            .unwrap_or_else(|_| "configs/bundle_circuit.config".to_owned());
-        let bundle_params: RecursionCircuitConfigParams = serde_json::from_reader(
-            File::open(path.as_str()).unwrap_or_else(|err| panic!("{err:?}")),
-        )
-        .unwrap();
-
-        let base_circuit_params = BaseCircuitParams {
-            k: usize::try_from(bundle_params.degree).unwrap(),
-            lookup_bits: Some(bundle_params.lookup_bits),
-            num_lookup_advice_per_phase: bundle_params.num_lookup_advice,
-            num_advice_per_phase: bundle_params.num_advice,
-            num_fixed: bundle_params.num_fixed,
-            num_instance_columns: 1,
-        };
-        Self::Config::configure(meta, base_circuit_params)
+        Self::Config::configure(meta, load_base_circuit_params())
     }
 
     fn synthesize(&self, config: Self::Config, layouter: impl Layouter<Fr>) -> Result<(), Error> {
@@ -408,5 +394,22 @@ impl<ST: StateTransition> CircuitExt<Fr> for RecursionCircuit<ST> {
             .iter()
             .map(|gate| gate.q_enable)
             .collect()
+    }
+}
+
+fn load_base_circuit_params() -> BaseCircuitParams {
+    let path = std::env::var("BUNDLE_CONFIG")
+        .unwrap_or_else(|_| "configs/bundle_circuit.config".to_owned());
+    let bundle_params: RecursionCircuitConfigParams =
+        serde_json::from_reader(File::open(path.as_str()).unwrap_or_else(|err| panic!("{err:?}")))
+            .unwrap();
+
+    BaseCircuitParams {
+        k: usize::try_from(bundle_params.degree).unwrap(),
+        lookup_bits: Some(bundle_params.lookup_bits),
+        num_lookup_advice_per_phase: bundle_params.num_lookup_advice,
+        num_advice_per_phase: bundle_params.num_advice,
+        num_fixed: bundle_params.num_fixed,
+        num_instance_columns: 1,
     }
 }

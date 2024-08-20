@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use super::*;
+use crate::SECURE_MDS;
 use ce_snark_verifier::{
     pcs::kzg::{Bdfg21, KzgAs},
     util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
@@ -11,8 +13,6 @@ use halo2_proofs::{
     plonk::keygen_vk,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-
-use super::*;
 
 mod dummy_circuit {
     use super::*;
@@ -95,7 +95,7 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
         .map(|&n| iter::repeat_with(|| Fr::random(&mut rng)).take(n).collect())
         .collect();
     let proof = {
-        let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(Vec::new());
+        let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(Vec::new());
         for _ in 0..protocol
             .num_witness
             .iter()

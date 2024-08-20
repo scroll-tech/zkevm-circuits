@@ -38,6 +38,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use rand::Rng;
 use sv_halo2_base::halo2_proofs;
+const SECURE_MDS: usize = 0;
 
 /// Any data that can be recursively bundled must implement the described state transition
 /// trait.
