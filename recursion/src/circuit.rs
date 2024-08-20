@@ -1,20 +1,29 @@
 #![allow(clippy::type_complexity)]
 use super::*;
 use crate::{
-    common::poseidon,
-    types::{As, PlonkSuccinctVerifier, Svk},
+    common::{poseidon, succinct_verify},
+    types::{As, BaseFieldEccChip, PlonkSuccinctVerifier, Svk},
 };
 use aggregator::ConfigParams as RecursionCircuitConfigParams;
 use ce_snark_verifier::{
     halo2_base::{
-        gates::GateInstructions, AssignedValue, Context, QuantumCell::Existing, SKIP_FIRST_PASS,
+        gates::{
+            circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig},
+            GateInstructions, RangeInstructions,
+        },
+        AssignedValue, Context,
+        QuantumCell::Existing,
     },
-    loader::halo2::{EccInstructions, IntegerInstructions},
-    pcs::kzg::{Bdfg21, KzgAccumulator},
+    loader::halo2::{
+        halo2_ecc::{bn254::FpChip, ecc::EcPoint},
+        EccInstructions, IntegerInstructions,
+    },
+    pcs::{kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver},
     util::{
         arithmetic::{fe_to_fe, fe_to_limbs},
         hash,
     },
+    verifier::SnarkVerifier,
 };
 use ce_snark_verifier_sdk::{
     halo2::{aggregation::Halo2Loader, PoseidonTranscript, POSEIDON_SPEC},
@@ -24,7 +33,10 @@ use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use std::{fs::File, iter, marker::PhantomData, rc::Rc};
+use rand::rngs::OsRng;
+use std::{fs::File, iter, marker::PhantomData, mem, rc::Rc};
+
+const SECURE_MDS: usize = 0;
 
 /// Select condition ? LHS : RHS.
 fn select_accumulator<'a>(
@@ -37,9 +49,12 @@ fn select_accumulator<'a>(
         .iter()
         .zip([rhs.lhs.assigned(), rhs.rhs.assigned()].iter())
         .map(|(lhs, rhs)| {
-            loader
-                .ecc_chip()
-                .select(&mut loader.ctx_mut(), lhs, rhs, condition)
+            loader.ecc_chip().select(
+                loader.ctx_mut().main(),
+                EcPoint::clone(lhs),
+                EcPoint::clone(rhs),
+                *condition,
+            )
         })
         .collect::<Vec<_>>()
         .try_into()
@@ -54,9 +69,10 @@ fn select_accumulator<'a>(
 fn accumulate<'a>(
     loader: &Rc<Halo2Loader<'a>>,
     accumulators: Vec<KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>,
-    as_proof: Value<&'_ [u8]>,
+    as_proof: &[u8],
 ) -> KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>> {
-    let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, as_proof);
+    let mut transcript =
+        PoseidonTranscript::<Rc<Halo2Loader>, _>::new::<SECURE_MDS>(loader, as_proof);
     let proof = As::read_proof(&Default::default(), &accumulators, &mut transcript).unwrap();
     As::verify(&Default::default(), &accumulators, &proof).unwrap()
 }
@@ -77,7 +93,9 @@ pub struct RecursionCircuit<ST> {
     /// The public inputs to the RecursionCircuit itself.
     instances: Vec<Fr>,
     /// The accumulation of the SNARK proofs recursed over thus far.
-    as_proof: Value<Vec<u8>>,
+    as_proof: Vec<u8>,
+
+    inner: BaseCircuitBuilder<Fr>,
 
     _marker: PhantomData<ST>,
 }
@@ -93,6 +111,9 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
     /// The index within the instances to find the "initial" state in the state transition.
     const INITIAL_STATE_ROW: usize = Self::PREPROCESSED_DIGEST_ROW + 1;
 
+    const STATE_ROW: usize = 4 * LIMBS + 2;
+    const ROUND_ROW: usize = 4 * LIMBS + 3;
+
     /// Construct a new instance of the [`RecursionCircuit`] given the SNARKs from the current and
     /// previous [`BatchCircuit`], and the recursion round.
     ///
@@ -101,21 +122,23 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         params: &ParamsKZG<Bn256>,
         app: Snark,
         previous: Snark,
-        rng: impl Rng + Send,
+        _rng: impl Rng + Send,
         round: usize,
     ) -> Self {
         let svk = params.get_g()[0].into();
         let default_accumulator = KzgAccumulator::new(params.get_g()[1], params.get_g()[0]);
 
         let succinct_verify = |snark: &Snark| {
-            let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
+            let mut transcript =
+                PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(snark.proof.as_slice());
             let proof = PlonkSuccinctVerifier::read_proof(
                 &svk,
                 &snark.protocol,
                 &snark.instances,
                 &mut transcript,
-            );
-            PlonkSuccinctVerifier::verify(&svk, &snark.protocol, &snark.instances, &proof)
+            )
+            .unwrap();
+            PlonkSuccinctVerifier::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap()
         };
 
         let accumulators = iter::empty()
@@ -131,34 +154,13 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
             .collect_vec();
 
         let (accumulator, as_proof) = {
-            let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(Vec::new());
+            let mut transcript =
+                PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(Vec::new());
             let accumulator =
-                As::create_proof(&Default::default(), &accumulators, &mut transcript, rng).unwrap();
+                As::create_proof(&Default::default(), &accumulators, &mut transcript, OsRng)
+                    .unwrap();
             (accumulator, transcript.finalize())
         };
-
-        let init_instances = if round > 0 {
-            // pick from prev snark
-            Vec::from(
-                &previous.instances[0][Self::INITIAL_STATE_ROW
-                    ..Self::INITIAL_STATE_ROW + ST::num_transition_instance()],
-            )
-        } else {
-            // pick from app
-            ST::state_prev_indices()
-                .into_iter()
-                .map(|i| app.instances[0][i])
-                .collect::<Vec<_>>()
-        };
-
-        let state_instances = ST::state_indices()
-            .into_iter()
-            .map(|i| &app.instances[0][i])
-            .chain(
-                ST::additional_indices()
-                    .into_iter()
-                    .map(|i| &app.instances[0][i]),
-            );
 
         let preprocessed_digest = {
             let inputs = previous
@@ -172,6 +174,33 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
             poseidon(&NativeLoader, &inputs)
         };
 
+        // TODO: allow more than 1 element for state.
+        let state = ST::state_indices()
+            .into_iter()
+            .map(|i| &app.instances[0][i])
+            .chain(
+                ST::additional_indices()
+                    .into_iter()
+                    .map(|i| &app.instances[0][i]),
+            )
+            .next()
+            .unwrap();
+        let initial_state = if round > 0 {
+            // pick from prev snark
+            Vec::from(
+                &previous.instances[0][Self::INITIAL_STATE_ROW
+                    ..Self::INITIAL_STATE_ROW + ST::num_transition_instance()],
+            )
+        } else {
+            // pick from app
+            ST::state_prev_indices()
+                .into_iter()
+                .map(|i| app.instances[0][i])
+                .collect::<Vec<_>>()
+        }
+        .first()
+        .unwrap();
+
         let instances = [
             accumulator.lhs.x,
             accumulator.lhs.y,
@@ -180,28 +209,127 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
         ]
         .into_iter()
         .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-        .chain(iter::once(preprocessed_digest))
-        .chain(init_instances)
-        .chain(state_instances.copied())
-        .chain(iter::once(Fr::from(round as u64)))
+        .chain([
+            preprocessed_digest,
+            *initial_state,
+            *state,
+            Fr::from(round as u64),
+        ])
         .collect();
 
-        log::debug!("recursive instance: {:#?}", instances);
-
-        Self {
+        let inner = BaseCircuitBuilder::new(false).use_params(config_params);
+        let mut circuit = Self {
             svk,
             default_accumulator,
-            app: app.into(),
-            previous: previous.into(),
+            app,
+            previous,
             round,
             instances,
-            as_proof: Value::known(as_proof),
+            as_proof,
+            inner,
             _marker: Default::default(),
-        }
+        };
+        circuit.build();
+        circuit
     }
 
-    fn as_proof(&self) -> Value<&[u8]> {
-        self.as_proof.as_ref().map(Vec::as_slice)
+    fn build(&mut self) {
+        let range = self.inner.range_chip();
+        let main_gate = range.gate();
+        let pool = self.inner.pool(0);
+        let [preprocessed_digest, initial_state, state, round] = [
+            self.instances[Self::PREPROCESSED_DIGEST_ROW],
+            self.instances[Self::INITIAL_STATE_ROW],
+            self.instances[Self::STATE_ROW],
+            self.instances[Self::ROUND_ROW],
+        ]
+        .map(|instance| main_gate.assign_integer(pool, instance));
+        let first_round = main_gate.is_zero(pool.main(), round);
+        let not_first_round = main_gate.not(pool.main(), first_round);
+
+        let fp_chip = FpChip::<Fr>::new(&range, BITS, LIMBS);
+        let ecc_chip = BaseFieldEccChip::new(&fp_chip);
+        let loader = Halo2Loader::new(ecc_chip, mem::take(self.inner.pool(0)));
+        let (mut app_instances, app_accumulators) =
+            succinct_verify(&self.svk, &loader, &self.app, None);
+        let (mut previous_instances, previous_accumulators) = succinct_verify(
+            &self.svk,
+            &loader,
+            &self.previous,
+            Some(preprocessed_digest),
+        );
+
+        let default_accmulator = self.load_default_accumulator(&loader).unwrap();
+        let previous_accumulators = previous_accumulators
+            .iter()
+            .map(|previous_accumulator| {
+                select_accumulator(
+                    &loader,
+                    &first_round,
+                    &default_accmulator,
+                    previous_accumulator,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let KzgAccumulator { lhs, rhs } = accumulate(
+            &loader,
+            [app_accumulators, previous_accumulators].concat(),
+            self.as_proof(),
+        );
+
+        let lhs = lhs.into_assigned();
+        let rhs = rhs.into_assigned();
+        let app_instances = app_instances.pop().unwrap();
+        let previous_instances = previous_instances.pop().unwrap();
+
+        let mut pool = loader.take_ctx();
+        let ctx = pool.main();
+        for (lhs, rhs) in [
+            // Propagate preprocessed_digest
+            (
+                &main_gate.mul(ctx, preprocessed_digest, not_first_round),
+                &previous_instances[Self::PREPROCESSED_DIGEST_ROW],
+            ),
+            // Propagate initial_state
+            (
+                &main_gate.mul(ctx, initial_state, not_first_round),
+                &previous_instances[Self::INITIAL_STATE_ROW],
+            ),
+            // Verify initial_state is same as the first application snark
+            (
+                &main_gate.mul(ctx, initial_state, first_round),
+                &main_gate.mul(ctx, app_instances[0], first_round),
+            ),
+            // Verify current state is same as the current application snark
+            (&state, &app_instances[1]),
+            // Verify previous state is same as the current application snark
+            (
+                &main_gate.mul(ctx, app_instances[0], not_first_round),
+                &previous_instances[Self::STATE_ROW],
+            ),
+            // Verify round is increased by 1 when not at first round
+            (
+                &round,
+                &main_gate.add(ctx, not_first_round, previous_instances[Self::ROUND_ROW]),
+            ),
+        ] {
+            ctx.constrain_equal(lhs, rhs);
+        }
+        *self.inner.pool(0) = pool;
+
+        self.inner.assigned_instances[0].extend(
+            [lhs.x(), lhs.y(), rhs.x(), rhs.y()]
+                .into_iter()
+                .flat_map(|coordinate| coordinate.limbs())
+                .chain([preprocessed_digest, initial_state, state, round].iter())
+                .copied(),
+        );
+    }
+
+    fn as_proof(&self) -> &[u8] {
+        &self.as_proof
     }
 
     fn load_default_accumulator<'a>(
@@ -212,8 +340,7 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
             [self.default_accumulator.lhs, self.default_accumulator.rhs].map(|default| {
                 let assigned = loader
                     .ecc_chip()
-                    .assign_constant(&mut loader.ctx_mut(), default)
-                    .unwrap();
+                    .assign_constant(&mut loader.ctx_mut(), default);
                 loader.ec_point_from_assigned(assigned)
             });
         Ok(KzgAccumulator::new(lhs, rhs))
@@ -235,320 +362,35 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
 }
 
 impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
-    type Config = config::RecursionConfig;
+    type Config = BaseConfig<Fr>;
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
+    type Params = BaseCircuitParams;
 
     fn without_witnesses(&self) -> Self {
-        Self {
-            svk: self.svk,
-            default_accumulator: self.default_accumulator.clone(),
-            app: self.app.without_witnesses(),
-            previous: self.previous.without_witnesses(),
-            round: self.round,
-            instances: self.instances.clone(),
-            as_proof: Value::unknown(),
-            _marker: Default::default(),
-        }
+        unimplemented!()
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let path = std::env::var("BUNDLE_CONFIG")
             .unwrap_or_else(|_| "configs/bundle_circuit.config".to_owned());
-        let params: RecursionCircuitConfigParams = serde_json::from_reader(
+        let bundle_params: RecursionCircuitConfigParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|err| panic!("{err:?}")),
         )
         .unwrap();
 
-        Self::Config::configure(meta, params)
+        let base_circuit_params = BaseCircuitParams {
+            k: usize::try_from(bundle_params.degree).unwrap(),
+            lookup_bits: Some(bundle_params.lookup_bits),
+            num_lookup_advice_per_phase: bundle_params.num_lookup_advice,
+            num_advice_per_phase: bundle_params.num_advice,
+            num_fixed: bundle_params.num_fixed,
+            num_instance_columns: 1,
+        };
+        Self::Config::configure(meta, base_circuit_params)
     }
 
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<Fr>,
-    ) -> Result<(), Error> {
-        config.range().load_lookup_table(&mut layouter)?;
-        let max_rows = config.range().gate.max_rows;
-        let main_gate = config.gate();
-
-        let mut first_pass = SKIP_FIRST_PASS; // assume using simple floor planner
-        let assigned_instances = layouter.assign_region(
-            || "recursion circuit",
-            |region| -> Result<Vec<Cell>, Error> {
-                if first_pass {
-                    first_pass = false;
-                    return Ok(vec![]);
-                }
-                return Ok(vec![]);
-
-                // let mut ctx = Context::new(
-                //     region,
-                //     ContextParams {
-                //         max_rows,
-                //         num_context_ids: 1,
-                //         fixed_columns: config.base_field_config.range.gate.constants.clone(),
-                //     },
-                // );
-
-                // // The index of the "initial state", i.e. the state last finalised on L1.
-                // let index_init_state = Self::INITIAL_STATE_ROW;
-                // // The index of the "state", i.e. the state achieved post the current batch.
-                // let index_state = index_init_state + ST::num_transition_instance();
-                // // The index where the "additional" fields required to define the state are
-                // // present. The first field in the "additional" fields is the chain ID.
-                // let index_additional_state = index_state + ST::num_transition_instance();
-                // // The index to find the "round" of recursion in the current instance of the
-                // // Recursion Circuit.
-                // let index_round = index_additional_state + ST::num_additional_instance();
-
-                // log::debug!(
-                //     "indices within instances: init {} |cur {} | add {} | round {}",
-                //     index_init_state,
-                //     index_state,
-                //     index_additional_state,
-                //     index_round,
-                // );
-
-                // // Get the field elements representing the "preprocessed digest" and "recursion
-                // round". let [preprocessed_digest, round] = [
-                //     self.instances[Self::PREPROCESSED_DIGEST_ROW],
-                //     self.instances[index_round],
-                // ]
-                // .map(|instance| {
-                //     main_gate
-                //         .assign_integer(&mut ctx, Value::known(instance))
-                //         .unwrap()
-                // });
-
-                // // Get the field elements representing the "initial state"
-                // let initial_state = self.instances[index_init_state..index_state]
-                //     .iter()
-                //     .map(|&instance| {
-                //         main_gate
-                //             .assign_integer(&mut ctx, Value::known(instance))
-                //             .unwrap()
-                //     })
-                //     .collect::<Vec<_>>();
-
-                // // Get the field elements representing the "state" post batch. This includes the
-                // // additional state fields as well.
-                // let state = self.instances[index_state..index_round]
-                //     .iter()
-                //     .map(|&instance| {
-                //         main_gate
-                //             .assign_integer(&mut ctx, Value::known(instance))
-                //             .unwrap()
-                //     })
-                //     .collect::<Vec<_>>();
-
-                // // Whether or not we are in the first round of recursion.
-                // let first_round = main_gate.is_zero(&mut ctx, &round);
-                // let not_first_round = main_gate.not(&mut ctx, Existing(first_round));
-
-                // let loader = Halo2Loader::new(config.ecc_chip(), ctx);
-                // let (mut app_instances, app_accumulators) =
-                //     dynamic_verify(&self.svk, &loader, &self.app, None);
-                // let (mut previous_instances, previous_accumulators) = dynamic_verify(
-                //     &self.svk,
-                //     &loader,
-                //     &self.previous,
-                //     Some(preprocessed_digest),
-                // );
-
-                // // Choose between the default accumulator or the previous accumulator depending
-                // on // whether or not we are in the first round of recursion.
-                // let default_accumulator = self.load_default_accumulator(&loader)?;
-                // let previous_accumulators = previous_accumulators
-                //     .iter()
-                //     .map(|previous_accumulator| {
-                //         select_accumulator(
-                //             &loader,
-                //             &first_round,
-                //             &default_accumulator,
-                //             previous_accumulator,
-                //         )
-                //     })
-                //     .collect::<Result<Vec<_>, Error>>()?;
-
-                // // Accumulate the accumulators over the previous accumulators, to compute the
-                // // accumulator values for this instance of the Recursion Circuit.
-                // let KzgAccumulator { lhs, rhs } = accumulate(
-                //     &loader,
-                //     [app_accumulators, previous_accumulators].concat(),
-                //     self.as_proof(),
-                // );
-
-                // let lhs = lhs.into_assigned();
-                // let rhs = rhs.into_assigned();
-                // let app_instances = app_instances.pop().unwrap();
-                // let previous_instances = previous_instances.pop().unwrap();
-
-                // let mut ctx = loader.ctx_mut();
-
-                // /////////////////////////////////////////////////////////////////////////////////
-                // / /////////////////////////////// CONSTRAINTS
-                // ////////////////////////////////////// //////////////////////////
-                // ////////////////////////////////////////////////////////
-
-                // // Propagate the "initial state"
-                // let initial_state_propagate = initial_state
-                //     .iter()
-                //     .zip_eq(previous_instances[index_init_state..index_state].iter())
-                //     .zip_eq(
-                //         ST::state_prev_indices()
-                //             .into_iter()
-                //             .map(|i| &app_instances[i]),
-                //     )
-                //     .flat_map(|((&st, &previous_st), &app_inst)| {
-                //         [
-                //             // Verify initial_state is same as the first application snark in the
-                //             // first round of recursion.
-                //             (
-                //                 "initial state equal to app's initial (first round)",
-                //                 main_gate.mul(&mut ctx, Existing(st), Existing(first_round)),
-                //                 main_gate.mul(&mut ctx, Existing(app_inst),
-                // Existing(first_round)),             ),
-                //             // Propagate initial_state for subsequent rounds of recursion.
-                //             (
-                //                 "initial state equal to prev_recursion's initial (not first
-                // round)",                 main_gate.mul(&mut ctx, Existing(st),
-                // Existing(not_first_round)),                 previous_st,
-                //             ),
-                //         ]
-                //     })
-                //     .collect::<Vec<_>>();
-
-                // // Verify that the current "state" is the same as the state defined in the
-                // // application SNARK.
-                // let verify_app_state = state
-                //     .iter()
-                //     .zip_eq(
-                //         ST::state_indices()
-                //             .into_iter()
-                //             .map(|i| &app_instances[i])
-                //             .chain(
-                //                 ST::additional_indices()
-                //                     .into_iter()
-                //                     .map(|i| &app_instances[i]),
-                //             ),
-                //     )
-                //     .map(|(&st, &app_inst)| ("passing cur state to app", st, app_inst))
-                //     .collect::<Vec<_>>();
-
-                // // Pick additional inst part in "previous state", verify the items at the front
-                // // is currently propagated to the app inst which is marked as "propagated"
-                // let propagate_app_states =
-                // previous_instances[index_additional_state..index_round]
-                //     .iter()
-                //     .zip(
-                //         ST::propagate_indices()
-                //             .into_iter()
-                //             .map(|i| &app_instances[i]),
-                //     )
-                //     .map(|(&st, &app_propagated_inst)| {
-                //         (
-                //             "propagate additional states in app (not first round)",
-                //             main_gate.mul(
-                //                 &mut ctx,
-                //                 Existing(app_propagated_inst),
-                //                 Existing(not_first_round),
-                //             ),
-                //             st,
-                //         )
-                //     })
-                //     .collect::<Vec<_>>();
-
-                // // Verify that the "previous state" (additional state not included) is the same
-                // // as the previous state defined in the current application SNARK. This check is
-                // // meaningful only in subsequent recursion rounds after the first round.
-                // let verify_app_init_state =
-                // previous_instances[index_state..index_additional_state]
-                //     .iter()
-                //     .zip_eq(
-                //         ST::state_prev_indices()
-                //             .into_iter()
-                //             .map(|i| &app_instances[i]),
-                //     )
-                //     .map(|(&st, &app_inst)| {
-                //         (
-                //             "chain prev state with cur init state (not first round)",
-                //             main_gate.mul(&mut ctx, Existing(app_inst),
-                // Existing(not_first_round)),             st,
-                //         )
-                //     })
-                //     .collect::<Vec<_>>();
-
-                // // Finally apply the equality constraints between the (LHS, RHS) values
-                // constructed // above.
-                // for (comment, lhs, rhs) in [
-                //     // Propagate the preprocessed digest.
-                //     (
-                //         "propagate preprocessed digest",
-                //         main_gate.mul(
-                //             &mut ctx,
-                //             Existing(preprocessed_digest),
-                //             Existing(not_first_round),
-                //         ),
-                //         previous_instances[Self::PREPROCESSED_DIGEST_ROW],
-                //     ),
-                //     // Verify that "round" increments by 1 when not the first round of recursion.
-                //     (
-                //         "increment recursion round",
-                //         round,
-                //         main_gate.add(
-                //             &mut ctx,
-                //             Existing(not_first_round),
-                //             Existing(previous_instances[index_round]),
-                //         ),
-                //     ),
-                // ]
-                // .into_iter()
-                // .chain(initial_state_propagate)
-                // .chain(verify_app_state)
-                // .chain(verify_app_init_state)
-                // .chain(propagate_app_states)
-                // {
-                //     use halo2_proofs::dev::unwrap_value;
-                //     debug_assert_eq!(
-                //         unwrap_value(lhs.value()),
-                //         unwrap_value(rhs.value()),
-                //         "equality constraint fail: {}",
-                //         comment
-                //     );
-                //     ctx.region.constrain_equal(lhs.cell(), rhs.cell())?;
-                // }
-
-                // // Mark the end of this phase.
-                // config.base_field_config.finalize(&mut ctx);
-
-                // #[cfg(feature = "display")]
-                // dbg!(ctx.total_advice);
-                // #[cfg(feature = "display")]
-                // println!("Advice columns used: {}", ctx.advice_alloc[0][0].0 + 1);
-
-                // // Return the computed instance cells for this Recursion Circuit.
-                // Ok([lhs.x(), lhs.y(), rhs.x(), rhs.y()]
-                //     .into_iter()
-                //     .flat_map(|coordinate| coordinate.limbs())
-                //     .chain(iter::once(&preprocessed_digest))
-                //     .chain(initial_state.iter())
-                //     .chain(state.iter())
-                //     .chain(iter::once(&round))
-                //     .map(|assigned| assigned.cell())
-                //     .collect())
-            },
-        )?;
-
-        let assigned_instances = vec![];
-        assert_eq!(assigned_instances.len(), self.num_instance()[0]);
-
-        // Ensure that the computed instances are in fact the instances for this circuit.
-        for (row, limb) in assigned_instances.into_iter().enumerate() {
-            layouter.constrain_instance(limb, config.instance, row)?;
-        }
-
-        Ok(())
+    fn synthesize(&self, config: Self::Config, layouter: impl Layouter<Fr>) -> Result<(), Error> {
+        self.inner.synthesize(config, layouter)
     }
 }
 
@@ -566,7 +408,7 @@ impl<ST: StateTransition> CircuitExt<Fr> for RecursionCircuit<ST> {
     }
 
     fn selectors(config: &Self::Config) -> Vec<Selector> {
-        config.base_field_config.range.gate.basic_gates[0]
+        config.gate().basic_gates[0]
             .iter()
             .map(|gate| gate.q_enable)
             .collect()

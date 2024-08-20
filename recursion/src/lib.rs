@@ -9,8 +9,8 @@ mod circuit;
 /// Common functionality utilised by the recursion circuit.
 mod common;
 
-/// Config for recursion circuit
-mod config;
+// /// Config for recursion circuit
+// mod config;
 
 /// Some utility functions.
 mod util;
@@ -19,7 +19,7 @@ mod util;
 mod types;
 
 pub use circuit::RecursionCircuit;
-pub(crate) use common::dynamic_verify;
+// pub(crate) use common::dynamic_verify;
 pub use util::{gen_recursion_pk, initial_recursion_snark};
 
 use ce_snark_verifier::{
