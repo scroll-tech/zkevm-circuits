@@ -1,21 +1,25 @@
-use crate::sv_halo2_base::AssignedValue;
-use crate::types::{As, BaseFieldEccChip, PlonkSuccinctVerifier, Svk};
-use crate::G1Affine;
-use ce_snark_verifier::loader::Loader;
-use ce_snark_verifier::verifier::SnarkVerifier;
+use crate::{
+    sv_halo2_base::AssignedValue,
+    types::{As, BaseFieldEccChip, PlonkSuccinctVerifier, Svk},
+    G1Affine,
+};
 use ce_snark_verifier::{
-    loader::halo2::EccInstructions,
-    pcs::kzg::{Bdfg21, KzgAs},
-    pcs::{kzg::KzgAccumulator, PolynomialCommitmentScheme},
+    loader::{halo2::EccInstructions, Loader},
+    pcs::{
+        kzg::{Bdfg21, KzgAccumulator, KzgAs},
+        PolynomialCommitmentScheme,
+    },
     util::hash,
+    verifier::SnarkVerifier,
 };
 use ce_snark_verifier_sdk::{
     halo2::{aggregation::Halo2Loader, PoseidonTranscript, POSEIDON_SPEC},
     Snark,
 };
+use halo2curves::bn256::Fr;
 use std::rc::Rc;
 
-fn poseidon<L: Loader<G1Affine>>(loader: &L, inputs: &[L::LoadedScalar]) -> L::LoadedScalar {
+pub fn poseidon<L: Loader<G1Affine>>(loader: &L, inputs: &[L::LoadedScalar]) -> L::LoadedScalar {
     let mut hasher = hash::Poseidon::from_spec(loader, POSEIDON_SPEC.clone());
     hasher.update(inputs);
     hasher.squeeze()
@@ -31,7 +35,7 @@ pub fn dynamic_verify<'a>(
     preprocessed_digest: Option<AssignedValue<Fr>>,
 )
 // -> (Vec<Vec<AssignedScalar<'a>>>, Vec<PCS::Accumulator>)
-where
+//where
 // PCS: PolynomialCommitmentScheme<
 //         G1Affine,
 //         Rc<Halo2Loader<'a>>,

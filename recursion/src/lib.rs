@@ -23,19 +23,11 @@ pub(crate) use common::dynamic_verify;
 pub use util::{gen_recursion_pk, initial_recursion_snark};
 
 use ce_snark_verifier::{
-    loader::{
-        halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader, Loader, ScalarLoader,
-    },
+    loader::{halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader, ScalarLoader},
     system::halo2::{compile, Config},
     // verifier::{PlonkProof, PlonkVerifier},
 };
-use ce_snark_verifier_sdk::{
-    // types::{PoseidonTranscript, POSEIDON_SPEC},
-    CircuitExt,
-    Snark,
-    BITS,
-    LIMBS,
-};
+use ce_snark_verifier_sdk::{CircuitExt, BITS, LIMBS};
 use halo2_proofs::{
     halo2curves::{
         bn256::{Bn256, Fq, Fr, G1Affine},

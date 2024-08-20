@@ -3895,7 +3895,8 @@ name = "recursion"
 version = "0.12.0"
 dependencies = [
  "aggregator",
- "halo2-base 0.2.2",
+ "halo2_proofs",
+ "halo2curves",
  "itertools 0.11.0",
  "log",
  "rand",

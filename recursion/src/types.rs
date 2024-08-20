@@ -1,11 +1,6 @@
-use ce_snark_verifier::{
-    loader::halo2::halo2_ecc::halo2_base::halo2_proofs::halo2curves::{
-        bn256::{Bn256, G1Affine},
-        Fr,
-    },
-    pcs::kzg::{Bdfg21, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding},
-};
+use ce_snark_verifier::pcs::kzg::{Bdfg21, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding};
 use ce_snark_verifier_sdk::{BITS, LIMBS};
+use halo2curves::bn256::{Bn256, Fr, G1Affine};
 
 // becomes LoadedScalar
 // type AssignedScalar<'a> = <BaseFieldEccChip as EccInstructions<G1Affine>>::AssignedScalar;
@@ -27,5 +22,4 @@ const R_P: usize = 57;
 
 use ce_snark_verifier::util::hash;
 pub type Poseidon<L> = hash::Poseidon<Fr, L, T, RATE>;
-use ce_snark_verifier::loader::halo2::transcript::halo2;
-pub type PoseidonTranscript<L, S> = halo2::PoseidonTranscript<G1Affine, L, S, T, RATE, R_F, R_P>;
+// pub type PoseidonTranscript<L, S> = halo2::PoseidonTranscript<G1Affine, L, S, T, RATE, R_F, R_P>;

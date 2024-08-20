@@ -1,7 +1,10 @@
 use ce_snark_verifier::loader::halo2::halo2_ecc::{
     ecc::{BaseFieldEccChip, EccChip},
     fields::fp::FpConfig,
-    halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig},
+    halo2_base::{
+        gates::{flex_gate::FlexGateConfig, range::RangeConfig},
+        utils::modulus,
+    },
 };
 use halo2_proofs::plonk::{Column, Instance};
 
@@ -36,7 +39,7 @@ impl RecursionConfig {
             params.lookup_bits,
             params.limb_bits,
             params.num_limbs,
-            halo2_base::utils::modulus::<Fq>(),
+            modulus::<Fq>(),
             0,
             params.degree as usize,
         );

@@ -1,13 +1,11 @@
 use std::path::Path;
 
-use crate::types::PoseidonTranscript;
 use ce_snark_verifier::{
-    pcs::kzg::Bdfg21,
-    pcs::kzg::KzgAs,
+    pcs::kzg::{Bdfg21, KzgAs},
     util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
     verifier::plonk::PlonkProof,
 };
-use ce_snark_verifier_sdk::{gen_pk, CircuitExt, Snark};
+use ce_snark_verifier_sdk::{gen_pk, halo2::PoseidonTranscript, CircuitExt, Snark};
 use halo2_proofs::{
     circuit::Layouter,
     plonk::keygen_vk,
