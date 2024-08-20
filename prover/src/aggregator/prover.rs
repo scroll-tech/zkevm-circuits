@@ -93,7 +93,8 @@ impl<'params> Prover<'params> {
             .or_else(|| self.raw_vk_bundle.clone())
     }
 
-    // Return the EVM proof for verification.
+    // Return the batch proof for a BatchProvingTask.
+    // TODO: should we rename the method name to `load_or_gen_batch_proof`?
     pub fn gen_batch_proof(
         &mut self,
         batch: BatchProvingTask,
@@ -101,11 +102,19 @@ impl<'params> Prover<'params> {
         output_dir: Option<&str>,
     ) -> Result<BatchProof> {
         let name = name.map_or_else(|| batch.identifier(), |name| name.to_string());
+        log::info!("gen_batch_proof with identifier {name}");
+
+        if let Some(output_dir) = output_dir {
+            if let Ok(batch_proof) = BatchProof::from_json_file(output_dir, &name) {
+                log::info!("batch proof loaded from {output_dir}");
+                return Ok(batch_proof);
+            }
+        }
 
         let (layer3_snark, batch_hash) =
             self.load_or_gen_last_agg_snark::<MAX_AGG_SNARKS>(&name, batch, output_dir)?;
 
-        // Load or generate final compression thin EVM proof (layer-4).
+        // Load or generate batch compression thin proof (layer-4).
         let layer4_snark = self.prover_impl.load_or_gen_comp_snark(
             &name,
             LayerId::Layer4.id(),
@@ -114,14 +123,16 @@ impl<'params> Prover<'params> {
             layer3_snark,
             output_dir,
         )?;
-        log::info!("Got final compression thin EVM proof (layer-4): {name}");
+        log::info!("Got batch compression thin proof (layer-4): {name}");
 
         self.check_batch_vk();
 
         let pk = self.prover_impl.pk(LayerId::Layer4.id());
         let batch_proof = BatchProof::new(layer4_snark, pk, batch_hash)?;
         if let Some(output_dir) = output_dir {
-            batch_proof.dump(output_dir, "agg")?;
+            batch_proof.dump_vk(output_dir, "agg")?;
+            batch_proof.dump(output_dir, &name)?;
+            log::debug!("batch proof dumped to {output_dir}");
         }
 
         Ok(batch_proof)

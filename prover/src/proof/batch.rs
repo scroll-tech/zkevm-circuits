@@ -45,11 +45,18 @@ impl BatchProof {
         from_json_file(dir, &dump_filename(name))
     }
 
+    pub fn dump_vk(&self, dir: &str, name: &str) -> Result<()> {
+        let filename = dump_filename(name);
+        if self.proof.vk.is_empty() {
+            log::warn!("batch proof vk is empty, skip dumping");
+        } else {
+            dump_vk(dir, &filename, &self.proof.vk)
+        }
+        Ok(())
+    }
+
     pub fn dump(&self, dir: &str, name: &str) -> Result<()> {
         let filename = dump_filename(name);
-
-        dump_vk(dir, &filename, &self.proof.vk);
-
         dump_as_json(dir, &filename, &self)
     }
 }
