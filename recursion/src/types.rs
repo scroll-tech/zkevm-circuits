@@ -1,6 +1,6 @@
 use ce_snark_verifier::pcs::kzg::{Bdfg21, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding};
 use ce_snark_verifier_sdk::{BITS, LIMBS};
-use halo2curves::bn256::{Bn256, Fr, G1Affine};
+use halo2curves::bn256::{Bn256, G1Affine};
 
 pub type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 pub type As = KzgAs<Bn256, Bdfg21>;

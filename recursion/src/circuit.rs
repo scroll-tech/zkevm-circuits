@@ -11,26 +11,22 @@ use ce_snark_verifier::{
             circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig},
             GateInstructions, RangeInstructions,
         },
-        AssignedValue, Context,
-        QuantumCell::Existing,
+        AssignedValue,
     },
     loader::halo2::{
         halo2_ecc::{bn254::FpChip, ecc::EcPoint},
         EccInstructions, IntegerInstructions,
     },
     pcs::{kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver},
-    util::{
-        arithmetic::{fe_to_fe, fe_to_limbs},
-        hash,
-    },
+    util::arithmetic::{fe_to_fe, fe_to_limbs},
     verifier::SnarkVerifier,
 };
 use ce_snark_verifier_sdk::{
-    halo2::{aggregation::Halo2Loader, PoseidonTranscript, POSEIDON_SPEC},
+    halo2::{aggregation::Halo2Loader, PoseidonTranscript},
     Snark, BITS, LIMBS,
 };
 use halo2_proofs::{
-    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, SimpleFloorPlanner},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::rngs::OsRng;

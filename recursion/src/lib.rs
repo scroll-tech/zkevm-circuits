@@ -23,14 +23,14 @@ pub use circuit::RecursionCircuit;
 pub use util::{gen_recursion_pk, initial_recursion_snark};
 
 use ce_snark_verifier::{
-    loader::{halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader, ScalarLoader},
+    loader::{halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader},
     system::halo2::{compile, Config},
     // verifier::{PlonkProof, PlonkVerifier},
 };
 use ce_snark_verifier_sdk::{CircuitExt, BITS, LIMBS};
 use halo2_proofs::{
     halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine},
+        bn256::{Bn256, Fr, G1Affine},
         group::ff::Field,
     },
     plonk::{Circuit, ConstraintSystem, Error, ProvingKey, Selector, VerifyingKey},
