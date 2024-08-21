@@ -283,16 +283,6 @@ impl Block {
         log::debug!("start num: {}", self.rws.rw_num(RwTableTag::Start));
     }
 
-    // /// TODO: migrate copy circuit and delete this!!!!!
-    // pub fn bytecode_map(&self) -> Option<BTreeMap<Word, bool>> {
-    //     Some(
-    //         self.bytecodes
-    //             .values()
-    //             .map(|b| (b.hash, b.in_first_table))
-    //             .collect(),
-    //     )
-    // }
-
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
     // always return true when feature 'dual_bytecode' is disabled.
     pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
