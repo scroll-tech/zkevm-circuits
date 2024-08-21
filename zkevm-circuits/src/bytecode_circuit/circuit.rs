@@ -1054,14 +1054,28 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
-        (
-            block
-                .bytecodes
-                .values()
-                .map(witness::Bytecode::rows_required)
-                .sum(), // TODO: need to group by table.
-            block.circuits_params.max_bytecode,
-        )
+        #[cfg(feature = "dual_bytecode")]
+        let rows_required = {
+            let (first, second): (Vec<_>, _) =
+                block.bytecodes.values().partition(|b| b.in_first_table);
+            max(
+                first
+                    .into_iter()
+                    .map(witness::Bytecode::rows_required)
+                    .sum(),
+                second
+                    .into_iter()
+                    .map(witness::Bytecode::rows_required)
+                    .sum(),
+            )
+        };
+        #[cfg(not(feature = "dual_bytecode"))]
+        let rows_required = block
+            .bytecodes
+            .values()
+            .map(witness::Bytecode::rows_required)
+            .sum();
+        (rows_required, block.circuits_params.max_bytecode)
     }
 
     /// Make the assignments to the TxCircuit
