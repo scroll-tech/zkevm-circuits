@@ -532,7 +532,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         {
             // when enable feature "dual_bytecode", get two sets of bytecodes here.
             let (first_bytecodes, second_bytecodes): (Vec<_>, Vec<_>) =
-                block.bytecodes.values().partition(|b| b.table);
+                block.bytecodes.values().partition(|b| b.in_first_table);
             if !first_bytecodes.is_empty() {
                 // assign first bytecode_table
                 config

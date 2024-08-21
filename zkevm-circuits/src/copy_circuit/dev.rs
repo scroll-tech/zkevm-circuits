@@ -4,7 +4,6 @@ use crate::{
     copy_circuit::{CopyCircuitConfig, CopyCircuitConfigArgs},
     table::{BytecodeTable, CopyTable, RwTable, TxTable},
     util::{Challenges, Field, SubCircuit, SubCircuitConfig},
-    witness::Block,
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
@@ -81,7 +80,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
                 .external_data
                 .bytecodes
                 .values()
-                .partition(|b| b.table == false);
+                .partition(|b| b.in_first_table);
             config
                 .0
                 .bytecode_table

@@ -283,13 +283,12 @@ impl Block {
         log::debug!("start num: {}", self.rws.rw_num(RwTableTag::Start));
     }
 
-    // TODO: migrate copy circuit and delete this!!!!!
-    /// as;dlfkjaw;elkrjasd;lkfja;lsfj
+    /// TODO: migrate copy circuit and delete this!!!!!
     pub fn bytecode_map(&self) -> Option<BTreeMap<Word, bool>> {
         Some(
             self.bytecodes
                 .values()
-                .map(|b| (b.hash, b.table == false)) // TODO: did you get the direction correct?
+                .map(|b| (b.hash, b.in_first_table))
                 .collect(),
         )
     }
@@ -297,7 +296,16 @@ impl Block {
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
     // always return true when feature 'dual_bytecode' is disabled.
     pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
-        self.bytecodes.get(code_hash).map_or(true, |b| !b.table)
+        self.bytecodes.get(code_hash).map_or(true, |b| {
+            #[cfg(feature = "dual_bytecode")]
+            {
+                b.in_first_table
+            }
+            #[cfg(not(feature = "dual_bytecode"))]
+            {
+                true
+            }
+        })
     }
 }
 
@@ -653,7 +661,7 @@ fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
         .map(|(code_hash, bytes)| {
             let hash = Word::from_big_endian(code_hash.as_bytes());
             #[cfg(feature = "dual_bytecode")]
-            let table = if first_set.contains(&bytes.len()) {
+            let in_first_table = if first_set.contains(&bytes.len()) {
                 let index = first_set.iter().position(|&x| x == bytes.len()).unwrap();
                 first_set.remove(index);
                 true
@@ -670,7 +678,7 @@ fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
                     hash,
                     bytes: bytes.clone(),
                     #[cfg(feature = "dual_bytecode")]
-                    table,
+                    in_first_table,
                 },
             )
         })

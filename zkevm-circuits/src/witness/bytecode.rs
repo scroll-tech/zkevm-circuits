@@ -13,8 +13,8 @@ pub struct Bytecode {
     /// Raw bytes
     pub bytes: Vec<u8>,
     #[cfg(feature = "dual_bytecode")]
-    /// as;dlfkjasd;lfkjas
-    pub table: bool, // TODO make this an enum or usize?
+    /// This bytecode is in the first bytecode table.
+    pub in_first_table: bool,
 }
 
 impl Bytecode {
