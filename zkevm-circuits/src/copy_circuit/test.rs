@@ -57,9 +57,9 @@ pub fn test_copy_circuit(
 /// Test copy circuit with the provided block witness
 pub fn test_copy_circuit_from_block(block: Block) -> Result<(), Vec<VerifyFailure>> {
     test_copy_circuit(
-        block.copy_events,
+        block.copy_events.clone(),
         block.circuits_params.max_copy_rows,
-        block.bytecode_map,
+        block.bytecode_map(),
         ExternalData {
             max_txs: block.circuits_params.max_txs,
             max_calldata: block.circuits_params.max_calldata,
@@ -582,16 +582,16 @@ fn variadic_size_check() {
     let block2 = block_convert(&builder.block, &builder.code_db).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(
-        block1.copy_events,
+        block1.copy_events.clone(),
         block1.circuits_params.max_copy_rows,
-        block1.bytecode_map,
+        block1.bytecode_map(),
     );
     let prover1 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(
         block2.copy_events.clone(),
         block2.circuits_params.max_copy_rows,
-        block2.bytecode_map,
+        block2.bytecode_map(),
     );
     let prover2 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
 

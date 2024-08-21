@@ -12,6 +12,9 @@ pub struct Bytecode {
     pub hash: Word,
     /// Raw bytes
     pub bytes: Vec<u8>,
+    #[cfg(feature = "dual_bytecode")]
+    /// as;dlfkjasd;lfkjas
+    pub table: bool, // TODO make this an enum or usize?
 }
 
 impl Bytecode {
@@ -125,5 +128,10 @@ impl Bytecode {
         };
 
         (byte, is_code, push_rlc)
+    }
+
+    /// a;sldkfja;welkfjas;ldkfjasdf
+    pub fn rows_required(&self) -> usize {
+        self.bytes.len() + 1
     }
 }

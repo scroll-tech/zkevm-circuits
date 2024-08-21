@@ -2095,7 +2095,7 @@ impl CopyTable {
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
                     let copy_rows =
-                        Self::assignments(copy_event, *challenges, block.bytecode_map.as_ref());
+                        Self::assignments(copy_event, *challenges, block.bytecode_map().as_ref());
 
                     for (tag, row, _) in copy_rows {
                         region.assign_fixed(

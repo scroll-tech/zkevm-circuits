@@ -213,6 +213,9 @@ pub enum CopyDataType {
     Padding,
     /// When the source for the copy event is the bytecode table.
     Bytecode,
+    #[cfg(feature = "dual_bytecode")]
+    /// When the source for the copy event is the second bytecode table.
+    Bytecode2,
     /// When the source/destination for the copy event is memory.
     Memory,
     /// When the source for the copy event is tx's calldata.

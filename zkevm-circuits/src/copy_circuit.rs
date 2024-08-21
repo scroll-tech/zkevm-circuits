@@ -1236,7 +1236,7 @@ impl<F: Field> CopyCircuit<F> {
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
             //#[cfg(feature = "dual_bytecode")]
-            block.bytecode_map.clone(),
+            block.bytecode_map(),
         )
     }
 }
@@ -1254,7 +1254,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         Self::new_with_external_data(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
-            block.bytecode_map.clone(),
+            block.bytecode_map(),
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
                 max_calldata: block.circuits_params.max_calldata,

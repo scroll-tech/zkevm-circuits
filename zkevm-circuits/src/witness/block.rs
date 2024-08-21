@@ -50,8 +50,6 @@ pub struct Block {
     pub rws: RwMap,
     /// Bytecode used in the block
     pub bytecodes: BTreeMap<Word, Bytecode>,
-    /// Bytecode map <code_hash, is_first_bytecode_circuit> in the block
-    pub bytecode_map: Option<BTreeMap<Word, bool>>,
     /// The block context
     pub context: BlockContexts,
     /// Copy events for the copy circuit's table.
@@ -285,38 +283,27 @@ impl Block {
         log::debug!("start num: {}", self.rws.rw_num(RwTableTag::Start));
     }
 
+    // TODO: migrate copy circuit and delete this!!!!!
+    /// as;dlfkjaw;elkrjasd;lkfja;lsfj
+    pub fn bytecode_map(&self) -> Option<BTreeMap<Word, bool>> {
+        Some(
+            self.bytecodes
+                .values()
+                .map(|b| (b.hash, b.table == false)) // TODO: did you get the direction correct?
+                .collect(),
+        )
+    }
+
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
     // always return true when feature 'dual_bytecode' is disabled.
     pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
-        // bytecode_map should cover the target 'code_hash',
-        // but for extcodecopy, the external_address can be non existed code hash.
-        // `unwrap` here is not safe.
-        if self.bytecode_map.is_none() {
-            // not config feature 'dual_bytecode' case.
-            true
-        } else {
-            let bytecode_map = self
-                .bytecode_map
-                .as_ref()
-                .expect("bytecode_map is not none when enable 'dual_bytecode' feature");
-            *bytecode_map.get(code_hash).unwrap_or(&true)
-        }
+        self.bytecodes.get(code_hash).map_or(true, |b| !b.table)
     }
 
     // Get two sets of bytecodes for two bytecode sub circuits when enable feature 'dual_bytecode'.
     pub(crate) fn get_bytecodes_for_dual_sub_circuits(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
-        if self.bytecode_map.is_none() {
-            println!("error: bytecode_map is none ");
-        }
-        let (first_subcircuit_bytecodes, second_subcircuit_bytecodes) =
-            Self::split_bytecodes_for_dual_sub_circuits(
-                &self.bytecodes,
-                self.bytecode_map
-                    .as_ref()
-                    .expect("bytecode_map is not none when enable feature 'dual_bytecode'"),
-            );
-
-        (first_subcircuit_bytecodes, second_subcircuit_bytecodes)
+        // first value is b.table == true, second is b.table == false.
+        self.bytecodes.values().partition(|b| b.table)
     }
 
     // Split two sets of bytecodes for two bytecode sub circuits.
@@ -669,7 +656,6 @@ pub fn block_convert(
         padding_step,
         end_block_step,
         bytecodes,
-        bytecode_map,
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
@@ -709,6 +695,7 @@ pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
                 Bytecode {
                     hash,
                     bytes: bytes.clone(),
+                    table: true, // TODO: actually put in correct value here!!!!
                 },
             )
         })
