@@ -299,40 +299,6 @@ impl Block {
     pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
         self.bytecodes.get(code_hash).map_or(true, |b| !b.table)
     }
-
-    // Get two sets of bytecodes for two bytecode sub circuits when enable feature 'dual_bytecode'.
-    pub(crate) fn get_bytecodes_for_dual_sub_circuits(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
-        // first value is b.table == true, second is b.table == false.
-        self.bytecodes.values().partition(|b| b.table)
-    }
-
-    // Split two sets of bytecodes for two bytecode sub circuits.
-    //#[cfg(feature = "dual_bytecode")]
-    pub(crate) fn split_bytecodes_for_dual_sub_circuits<'a>(
-        bytecodes: &'a BTreeMap<Word, Bytecode>,
-        bytecode_map: &BTreeMap<Word, bool>,
-    ) -> (Vec<&'a Bytecode>, Vec<&'a Bytecode>) {
-        let mut first_subcircuit_bytecodes = Vec::<&Bytecode>::new();
-        let mut second_subcircuit_bytecodes = Vec::<&Bytecode>::new();
-
-        let first_subcircuit_code_hashes: Vec<Word> = bytecode_map
-            .iter()
-            .filter_map(|item| if *item.1 { Some(*item.0) } else { None })
-            .collect();
-
-        let _ = bytecodes
-            .iter()
-            .map(|code| {
-                if first_subcircuit_code_hashes.contains(code.0) {
-                    first_subcircuit_bytecodes.push(code.1)
-                } else {
-                    second_subcircuit_bytecodes.push(code.1)
-                }
-            })
-            .collect::<Vec<_>>();
-
-        (first_subcircuit_bytecodes, second_subcircuit_bytecodes)
-    }
 }
 
 #[cfg(feature = "test")]
@@ -628,14 +594,6 @@ pub fn block_convert(
         log::error!("withdraw root is not available");
     }
 
-    let bytecodes: BTreeMap<Word, Bytecode> = get_bytecodes(code_db);
-    // if not enable 'dual_bytecode' feature, set bytecode_map to None.
-    let bytecode_map = if cfg!(feature = "dual_bytecode") {
-        Some(get_bytecode_map(&bytecodes))
-    } else {
-        None
-    };
-
     let block = Block {
         context: BlockContexts::from(block),
         rws,
@@ -655,7 +613,7 @@ pub fn block_convert(
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
         padding_step,
         end_block_step,
-        bytecodes,
+        bytecodes: get_bytecodes(code_db),
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
@@ -683,53 +641,39 @@ pub fn dummy_witness_block(chain_id: u64) -> Block {
     block_convert(&builder.block, &builder.code_db).expect("should not fail")
 }
 
-// helper to extract bytecode info from CodeDB.
-pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
+// Generate bytecode map from CodeDB.
+fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
+    #[cfg(feature = "dual_bytecode")]
+    let (mut first_set, mut second_set) =
+        find_two_closest_subset(&code_db.0.values().map(Vec::len).collect_vec());
+
     let bytecodes: BTreeMap<Word, Bytecode> = code_db
         .0
         .iter()
         .map(|(code_hash, bytes)| {
             let hash = Word::from_big_endian(code_hash.as_bytes());
+            #[cfg(feature = "dual_bytecode")]
+            let table = if first_set.contains(&bytes.len()) {
+                let index = first_set.iter().position(|&x| x == bytes.len()).unwrap();
+                first_set.remove(index);
+                true
+            } else if second_set.contains(&bytes.len()) {
+                let index = second_set.iter().position(|&x| x == bytes.len()).unwrap();
+                second_set.remove(index);
+                false
+            } else {
+                unreachable!("Find an unexpected element that is not present in either first_set or second_set");
+            };
             (
                 hash,
                 Bytecode {
                     hash,
                     bytes: bytes.clone(),
-                    table: true, // TODO: actually put in correct value here!!!!
+                    #[cfg(feature = "dual_bytecode")]
+                    table,
                 },
             )
         })
         .collect();
     bytecodes
-}
-
-// helper to extract bytecode map info (code_hash, is_first_bytecode_table) when enable feature 'dual_bytecode'.
-pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
-    let bytecode_lens = bytecodes
-        .values()
-        .map(|bytecode| bytecode.bytes.len())
-        .collect_vec();
-    let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
-
-    let bytecode_map: BTreeMap<Word, bool> = bytecodes
-        .iter()
-        .map(|(hash, bytecode)| {
-            let len = bytecode.bytes.len();
-            if first_set.contains(&len) {
-                let index = first_set.iter().position(|x| *x == len).unwrap();
-                first_set.remove(index);
-                (*hash, true)
-            } else if second_set.contains(&len) {
-                let index = second_set.iter().position(|x| *x == len).unwrap();
-                second_set.remove(index);
-                (*hash, false)
-            } else {
-                // here should be not reachable, panic or return a placeholder.
-                //panic!("“Find an unexpected element that is not present in either first_set or second_set”)
-                (U256::zero(), false)
-            }
-        })
-        .collect();
-
-    bytecode_map
 }
