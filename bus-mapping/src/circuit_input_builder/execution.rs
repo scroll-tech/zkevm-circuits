@@ -211,11 +211,11 @@ pub enum CopyDataType {
     /// When we need to pad the Copy rows of the circuit up to a certain maximum
     /// with rows that are not "useful".
     Padding,
-    /// When the source for the copy event is the bytecode table.
+    /// When the source for the copy event is the (first) bytecode table.
     Bytecode,
     #[cfg(feature = "dual_bytecode")]
     /// When the source for the copy event is the second bytecode table.
-    Bytecode2,
+    Bytecode1,
     /// When the source/destination for the copy event is memory.
     Memory,
     /// When the source for the copy event is tx's calldata.
@@ -255,6 +255,7 @@ impl CopyDataTypeIter {
             5usize => Some(CopyDataType::RlcAcc),
             6usize => Some(CopyDataType::AccessListAddresses),
             7usize => Some(CopyDataType::AccessListStorageKeys),
+            8usize => Some(CopyDataType::Bytecode1),
             _ => None,
         }
     }
@@ -323,22 +324,14 @@ impl From<CopyDataType> for usize {
             CopyDataType::RlcAcc => 5,
             CopyDataType::AccessListAddresses => 6,
             CopyDataType::AccessListStorageKeys => 7,
+            CopyDataType::Bytecode1 => 8,
         }
     }
 }
 
 impl From<&CopyDataType> for u64 {
     fn from(t: &CopyDataType) -> Self {
-        match t {
-            CopyDataType::Padding => 0,
-            CopyDataType::Bytecode => 1,
-            CopyDataType::Memory => 2,
-            CopyDataType::TxCalldata => 3,
-            CopyDataType::TxLog => 4,
-            CopyDataType::RlcAcc => 5,
-            CopyDataType::AccessListAddresses => 6,
-            CopyDataType::AccessListStorageKeys => 7,
-        }
+        usize::from(*t).try_into().unwrap()
     }
 }
 
@@ -363,7 +356,7 @@ pub struct CopyStep {
 }
 
 /// Defines an enum type that can hold either a number or a hash value.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NumberOrHash {
     /// Variant to indicate a number value.
     Number(usize),
@@ -526,7 +519,10 @@ impl CopyEvent {
     pub fn has_rlc(&self) -> bool {
         matches!(
             (self.src_type, self.dst_type),
-            (CopyDataType::RlcAcc, _) | (_, CopyDataType::RlcAcc) | (_, CopyDataType::Bytecode)
+            (CopyDataType::RlcAcc, _)
+                | (_, CopyDataType::RlcAcc)
+                | (_, CopyDataType::Bytecode)
+                | (_, CopyDataType::Bytecode1)
         )
     }
 

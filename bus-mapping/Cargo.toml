@@ -45,7 +45,7 @@ rayon.workspace = true
 [features]
 default = ["test"]
 test = ["mock", "rand"]
-scroll = ["eth-types/scroll", "mock?/scroll"]
+scroll = ["eth-types/scroll", "mock?/scroll", "dual_bytecode"]
 strict-ccc = []
 tracer-tests = ["enable-memory"]
 enable-stack = ["eth-types/enable-stack", "mock?/enable-stack"]
@@ -57,3 +57,4 @@ rpc-legacy-tracer = []
 # and must be rebuild
 fix-refund = ["rpc-legacy-tracer"]
 retrace-tx = ["scroll", "external-tracer"]
+dual_bytecode = []

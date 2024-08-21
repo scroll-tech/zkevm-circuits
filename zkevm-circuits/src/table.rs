@@ -1802,7 +1802,6 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
-        bytecode_map: Option<&BTreeMap<Word, bool>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
         assert!(
@@ -1986,23 +1985,28 @@ impl CopyTable {
                 (rw_counter, rwc_inc_left)
             };
 
-            #[cfg(feature = "dual_bytecode")]
-            // For codecopy & extcodecopy copy bytecodes, src_type == Bytecode.
-            // For return in creating/deploy contract case, dst_type == Bytecode.
-            let is_first_bytecode_table = if copy_event.src_type == CopyDataType::Bytecode {
-                let code_hash = Word::from_big_endian(copy_event.src_id.get_hash().as_bytes());
-                // bytecode_map includes all the code_hash, for normal cases, unwrap would be safe.
-                // but for extcodecopy, the external_address can be non existed code hash, hence use `unwrap_or`.
-                *bytecode_map.unwrap().get(&code_hash).unwrap_or(&true)
-            } else if copy_event.dst_type == CopyDataType::Bytecode {
-                let code_hash = Word::from_big_endian(copy_event.dst_id.get_hash().as_bytes());
+            // #[cfg(feature = "dual_bytecode")]
+            // // For codecopy & extcodecopy copy bytecodes, src_type == Bytecode.
+            // // For return in creating/deploy contract case, dst_type == Bytecode.
+            // let is_first_bytecode_table = copy_event.src_type == CopyDataType::Bytecode || copy_event.dst_type == CopyDataType::Bytecode
+            // let is_first_bytecode_table = if matches!(copy_event.src_type, CopyDataType::Bytecode |  CopyDataType::Bytecode1 {
+            //     let code_hash = Word::from_big_endian(copy_event.src_id.get_hash().as_bytes());
+            //     // bytecode_map includes all the code_hash, for normal cases, unwrap would be safe.
+            //     // but for extcodecopy, the external_address can be non existed code hash, hence use `unwrap_or`.
+            //     *bytecode_map.unwrap().get(&code_hash).unwrap_or(&true)
+            //     is_first_bytecode_table
+            // } else if copy_event.dst_type == CopyDataType::Bytecode {
+            //     let code_hash = Word::from_big_endian(copy_event.dst_id.get_hash().as_bytes());
 
-                *bytecode_map.unwrap().get(&code_hash).unwrap()
-            } else {
-                // if not code related copy case, default value is true, even it is true, copy circuit will not do lookup if current row is
-                // not bytecode type.
-                true
-            };
+            //     *bytecode_map.unwrap().get(&code_hash).unwrap()
+            // } else {
+            //     // if not code related copy case, default value is true, even it is true, copy circuit will not do lookup if current row is
+            //     // not bytecode type.
+            //     true
+            // };
+            #[cfg(feature = "dual_bytecode")]
+            let is_first_bytecode_table = copy_event.src_type != CopyDataType::Bytecode1
+                && copy_event.dst_type != CopyDataType::Bytecode1;
 
             assignments.push((
                 thread.tag,
@@ -2094,8 +2098,7 @@ impl CopyTable {
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
-                    let copy_rows =
-                        Self::assignments(copy_event, *challenges, block.bytecode_map().as_ref());
+                    let copy_rows = Self::assignments(copy_event, *challenges);
 
                     for (tag, row, _) in copy_rows {
                         region.assign_fixed(

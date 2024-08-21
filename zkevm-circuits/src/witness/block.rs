@@ -14,15 +14,15 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{
-        self, BigModExp, CircuitInputBuilder, CircuitsParams, CopyEvent, EcAddOp, EcMulOp,
-        EcPairingOp, ExpEvent, PrecompileEvents, SHA256,
+        self, BigModExp, CircuitInputBuilder, CircuitsParams, CopyDataType, CopyEvent, EcAddOp,
+        EcMulOp, EcPairingOp, ExpEvent, NumberOrHash, PrecompileEvents, SHA256,
     },
     Error,
 };
 use eth_types::{
     sign_types::SignData,
     state_db::{CodeDB, StateDB},
-    Address, ToLittleEndian, Word, H256, U256,
+    Address, ToLittleEndian, ToWord, Word, H256, U256,
 };
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
@@ -283,15 +283,15 @@ impl Block {
         log::debug!("start num: {}", self.rws.rw_num(RwTableTag::Start));
     }
 
-    /// TODO: migrate copy circuit and delete this!!!!!
-    pub fn bytecode_map(&self) -> Option<BTreeMap<Word, bool>> {
-        Some(
-            self.bytecodes
-                .values()
-                .map(|b| (b.hash, b.in_first_table))
-                .collect(),
-        )
-    }
+    // /// TODO: migrate copy circuit and delete this!!!!!
+    // pub fn bytecode_map(&self) -> Option<BTreeMap<Word, bool>> {
+    //     Some(
+    //         self.bytecodes
+    //             .values()
+    //             .map(|b| (b.hash, b.in_first_table))
+    //             .collect(),
+    //     )
+    // }
 
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
     // always return true when feature 'dual_bytecode' is disabled.
@@ -473,8 +473,6 @@ impl BlockContext {
     }
 
     fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
-        use eth_types::ToWord;
-
         #[cfg(not(feature = "scroll"))]
         let history_hashes: &[U256] = &self.history_hashes;
         #[cfg(feature = "scroll")]
@@ -602,6 +600,12 @@ pub fn block_convert(
         log::error!("withdraw root is not available");
     }
 
+    let bytecodes = get_bytecodes(code_db);
+    #[cfg(feature = "dual_bytecode")]
+    let copy_events = get_copy_events(&block.copy_events, &bytecodes);
+    #[cfg(not(feature = "dual_bytecode"))]
+    let copy_events = block.copy_events.clone();
+
     let block = Block {
         context: BlockContexts::from(block),
         rws,
@@ -621,8 +625,8 @@ pub fn block_convert(
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
         padding_step,
         end_block_step,
-        bytecodes: get_bytecodes(code_db),
-        copy_events: block.copy_events.clone(),
+        bytecodes,
+        copy_events,
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: CircuitsParams {
@@ -684,4 +688,32 @@ fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
         })
         .collect();
     bytecodes
+}
+
+#[cfg(feature = "dual_bytecode")]
+fn get_copy_events(
+    copy_events: &[CopyEvent],
+    bytecodes: &BTreeMap<U256, Bytecode>,
+) -> Vec<CopyEvent> {
+    let update = |id: NumberOrHash, copy_data_type: &mut CopyDataType| {
+        if let NumberOrHash::Hash(hash) = id {
+            if bytecodes
+                .get(&hash.to_word())
+                .map_or(true, |b| b.in_first_table)
+                == false
+            {
+                assert_eq!(copy_data_type, &CopyDataType::Bytecode);
+                *copy_data_type = CopyDataType::Bytecode1;
+            }
+        }
+    };
+    copy_events
+        .iter()
+        .map(|event| {
+            let mut event = event.clone();
+            update(event.src_id, &mut event.src_type);
+            update(event.dst_id, &mut event.dst_type);
+            event
+        })
+        .collect()
 }
