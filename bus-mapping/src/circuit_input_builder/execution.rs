@@ -255,6 +255,7 @@ impl CopyDataTypeIter {
             5usize => Some(CopyDataType::RlcAcc),
             6usize => Some(CopyDataType::AccessListAddresses),
             7usize => Some(CopyDataType::AccessListStorageKeys),
+            #[cfg(feature = "dual_bytecode")]
             8usize => Some(CopyDataType::Bytecode1),
             _ => None,
         }
@@ -324,6 +325,7 @@ impl From<CopyDataType> for usize {
             CopyDataType::RlcAcc => 5,
             CopyDataType::AccessListAddresses => 6,
             CopyDataType::AccessListStorageKeys => 7,
+            #[cfg(feature = "dual_bytecode")]
             CopyDataType::Bytecode1 => 8,
         }
     }
@@ -517,13 +519,27 @@ impl CopyEvent {
 
     /// Whether the RLC of data must be computed.
     pub fn has_rlc(&self) -> bool {
-        matches!(
-            (self.src_type, self.dst_type),
-            (CopyDataType::RlcAcc, _)
-                | (_, CopyDataType::RlcAcc)
-                | (_, CopyDataType::Bytecode)
-                | (_, CopyDataType::Bytecode1)
-        )
+        #[cfg(feature = "dual_bytecode")]
+        {
+            matches!(
+                (self.src_type, self.dst_type),
+                (CopyDataType::RlcAcc, _)
+                    | (_, CopyDataType::RlcAcc)
+                    | (_, CopyDataType::Bytecode)
+                    | (_, CopyDataType::Bytecode1)
+            )
+        }
+        #[cfg(not(feature = "dual_bytecode"))]
+        {
+            matches!(
+                (self.src_type, self.dst_type),
+                (CopyDataType::RlcAcc, _)
+                    | (_, CopyDataType::RlcAcc)
+                    | (_, CopyDataType::Bytecode)
+                    #[cfg(feature = "dual_bytecode")]
+                    | (_, CopyDataType::Bytecode1)
+            )
+        }
     }
 
     /// The RW counter of the first RW lookup performed by this copy event.
