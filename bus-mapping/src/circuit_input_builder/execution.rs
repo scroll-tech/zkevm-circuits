@@ -536,8 +536,6 @@ impl CopyEvent {
                 (CopyDataType::RlcAcc, _)
                     | (_, CopyDataType::RlcAcc)
                     | (_, CopyDataType::Bytecode)
-                    #[cfg(feature = "dual_bytecode")]
-                    | (_, CopyDataType::Bytecode1)
             )
         }
     }
