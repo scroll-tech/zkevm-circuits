@@ -96,7 +96,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
             cb.copy_table_lookup(
                 code_hash.expr(),
-                CopyDataType::Bytecode.expr(),
+                CopyDataType::Bytecode(Default::default()).expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
                 src_addr,

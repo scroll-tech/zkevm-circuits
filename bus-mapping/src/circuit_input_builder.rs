@@ -35,9 +35,10 @@ use eth_types::{
 };
 use ethers_core::utils::keccak256;
 pub use execution::{
-    BigModExp, CopyAccessList, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep,
-    EcAddOp, EcMulOp, EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep,
-    NumberOrHash, PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP, SHA256,
+    BigModExp, BytecodeTable, CopyAccessList, CopyBytes, CopyDataType, CopyEvent,
+    CopyEventStepsBuilder, CopyStep, EcAddOp, EcMulOp, EcPairingOp, EcPairingPair, ExecState,
+    ExecStep, ExpEvent, ExpStep, NumberOrHash, PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR,
+    N_PAIRING_PER_OP, SHA256,
 };
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;

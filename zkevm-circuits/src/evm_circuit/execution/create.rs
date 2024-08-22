@@ -338,7 +338,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb.curr.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
                     create.code_hash_word_rlc(),
-                    CopyDataType::Bytecode.expr(),
+                    CopyDataType::Bytecode(Default::default()).expr(),
                     init_code.offset(),
                     init_code.end_offset(),
                     0.expr(),

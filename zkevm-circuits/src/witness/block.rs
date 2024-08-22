@@ -14,8 +14,8 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{
-        self, BigModExp, CircuitInputBuilder, CircuitsParams, CopyDataType, CopyEvent, EcAddOp,
-        EcMulOp, EcPairingOp, ExpEvent, NumberOrHash, PrecompileEvents, SHA256,
+        self, BigModExp, BytecodeTable, CircuitInputBuilder, CircuitsParams, CopyDataType,
+        CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent, NumberOrHash, PrecompileEvents, SHA256,
     },
     Error,
 };
@@ -692,8 +692,11 @@ fn get_copy_events(
                 .map_or(true, |b| b.in_first_table)
                 == false
             {
-                assert_eq!(copy_data_type, &CopyDataType::Bytecode);
-                *copy_data_type = CopyDataType::Bytecode1;
+                assert_eq!(
+                    copy_data_type,
+                    &CopyDataType::Bytecode(BytecodeTable::First)
+                );
+                *copy_data_type = CopyDataType::Bytecode(BytecodeTable::Second);
             }
         }
     };

@@ -391,7 +391,7 @@ fn handle_copy(
             src_id: NumberOrHash::Number(call_id),
             src_addr: offset.try_into().unwrap(),
             src_addr_end: (offset + length).try_into().unwrap(),
-            dst_type: CopyDataType::Bytecode,
+            dst_type: CopyDataType::Bytecode(Default::default()),
             dst_id: NumberOrHash::Hash(code_hash),
             dst_addr: 0,
             log_id: None,

@@ -434,16 +434,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.condition(not::expr(is_call_data_empty.expr()), |cb| {
                 // Constrain the initcode is exactly the code we are executing
                 cb.copy_table_lookup(
-                    tx_id.expr(),                    // src_id
-                    CopyDataType::TxCalldata.expr(), // src_tag
-                    cb.curr.state.code_hash.expr(),  // dst_id
-                    CopyDataType::Bytecode.expr(),   // dst_tag
-                    0.expr(),                        // src_addr
-                    tx_call_data_length.expr(),      // src_addr_end
-                    0.expr(),                        // dst_addr
-                    tx_call_data_length.expr(),      // length
-                    init_code_rlc.expr(),            // rlc_acc
-                    0.expr(),                        // rwc increase
+                    tx_id.expr(),                                      // src_id
+                    CopyDataType::TxCalldata.expr(),                   // src_tag
+                    cb.curr.state.code_hash.expr(),                    // dst_id
+                    CopyDataType::Bytecode(Default::default()).expr(), // dst_tag
+                    0.expr(),                                          // src_addr
+                    tx_call_data_length.expr(),                        // src_addr_end
+                    0.expr(),                                          // dst_addr
+                    tx_call_data_length.expr(),                        // length
+                    init_code_rlc.expr(),                              // rlc_acc
+                    0.expr(),                                          // rwc increase
                 )
             });
 

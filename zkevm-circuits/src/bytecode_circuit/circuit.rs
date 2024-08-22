@@ -446,6 +446,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         meta.create_gate("Byte to Header row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
+            // this one.....
             cb.require_equal(
                 "cur.index + 1 == cur.length",
                 meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),

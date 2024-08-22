@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     circuit_input_builder::{
-        curie::is_curie_enabled, Call, CircuitInputStateRef, CopyAccessList, CopyBytes,
-        CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        curie::is_curie_enabled, BytecodeTable, Call, CircuitInputStateRef, CopyAccessList,
+        CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     l2_predeployed::l1_gas_price_oracle,
     operation::{
@@ -312,7 +312,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 src_type: CopyDataType::TxCalldata,
                 src_id: NumberOrHash::Number(state.tx_ctx.id()),
                 dst_addr: 0,
-                dst_type: CopyDataType::Bytecode,
+                dst_type: CopyDataType::Bytecode(BytecodeTable::First),
                 dst_id: NumberOrHash::Hash(code_hash),
                 log_id: None,
                 rw_counter_start,

@@ -126,7 +126,7 @@ fn gen_copy_event(
     Ok(CopyEvent {
         src_addr,
         src_addr_end,
-        src_type: CopyDataType::Bytecode,
+        src_type: CopyDataType::Bytecode(Default::default()),
         src_id: NumberOrHash::Hash(code_hash),
         dst_addr,
         dst_type: CopyDataType::Memory,
@@ -414,7 +414,10 @@ mod extcodecopy_tests {
         assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(code_hash));
         assert_eq!(copy_events[0].src_addr as usize, data_offset);
         assert_eq!(copy_events[0].src_addr_end as usize, code_ext.len());
-        assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);
+        assert_eq!(
+            copy_events[0].src_type,
+            CopyDataType::Bytecode(Default::default())
+        );
         assert_eq!(
             copy_events[0].dst_id,
             NumberOrHash::Number(expected_call_id)

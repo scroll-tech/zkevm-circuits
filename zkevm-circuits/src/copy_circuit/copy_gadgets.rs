@@ -35,7 +35,8 @@ pub fn constrain_tag<F: Field>(
             enabled.expr()
                 * (is_tx_calldata - tag.value_equals(CopyDataType::TxCalldata, CURRENT)(meta)),
             enabled.expr()
-                * (is_bytecode - tag.value_equals(CopyDataType::Bytecode, CURRENT)(meta)),
+                * (is_bytecode
+                    - tag.value_equals(CopyDataType::Bytecode(Default::default()), CURRENT)(meta)),
             enabled.expr() * (is_memory - tag.value_equals(CopyDataType::Memory, CURRENT)(meta)),
             enabled.expr() * (is_tx_log - tag.value_equals(CopyDataType::TxLog, CURRENT)(meta)),
             enabled.expr()

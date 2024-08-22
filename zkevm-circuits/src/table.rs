@@ -16,8 +16,8 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{
-        BigModExp, CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEcParams,
+        BigModExp, BytecodeTable as BytecodeTableEnum, CopyDataType, CopyEvent, CopyStep, EcAddOp,
+        EcMulOp, EcPairingOp, ExpEvent, PrecompileEcParams,
     },
     precompile::PrecompileCalls,
 };
@@ -2005,8 +2005,9 @@ impl CopyTable {
             //     true
             // };
             #[cfg(feature = "dual_bytecode")]
-            let is_first_bytecode_table = copy_event.src_type != CopyDataType::Bytecode1
-                && copy_event.dst_type != CopyDataType::Bytecode1;
+            let is_first_bytecode_table = copy_event.src_type
+                != CopyDataType::Bytecode(BytecodeTableEnum::Second)
+                && copy_event.dst_type != CopyDataType::Bytecode(BytecodeTableEnum::Second);
 
             assignments.push((
                 thread.tag,

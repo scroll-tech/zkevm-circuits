@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
                 code_hash.expr(),
-                CopyDataType::Bytecode.expr(),
+                CopyDataType::Bytecode(Default::default()).expr(),
                 range.offset(),
                 range.end_offset(),
                 0.expr(),

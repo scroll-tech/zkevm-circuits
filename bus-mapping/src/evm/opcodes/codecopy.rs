@@ -69,7 +69,7 @@ fn gen_copy_event(
         state.gen_copy_steps_for_bytecode(exec_step, &bytecode, src_addr, dst_addr, length)?;
 
     Ok(CopyEvent {
-        src_type: CopyDataType::Bytecode,
+        src_type: CopyDataType::Bytecode(Default::default()),
         src_id: NumberOrHash::Hash(code_hash),
         src_addr,
         src_addr_end,
@@ -212,7 +212,10 @@ mod codecopy_tests {
         );
         assert_eq!(copy_events[0].src_addr as usize, code_offset);
         assert_eq!(copy_events[0].src_addr_end as usize, code.to_vec().len());
-        assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);
+        assert_eq!(
+            copy_events[0].src_type,
+            CopyDataType::Bytecode(Default::default())
+        );
         assert_eq!(
             copy_events[0].dst_id,
             NumberOrHash::Number(expected_call_id)

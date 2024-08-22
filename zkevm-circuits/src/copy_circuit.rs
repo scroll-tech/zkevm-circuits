@@ -808,7 +808,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 || format!("is_bytecode at row: {}", *offset),
                 self.is_bytecode,
                 *offset,
-                || Value::known(F::from(tag.eq(&CopyDataType::Bytecode))),
+                || Value::known(F::from(matches!(tag, CopyDataType::Bytecode(_)))),
             )?;
             region.assign_advice(
                 || format!("is_memory at row: {}", *offset),

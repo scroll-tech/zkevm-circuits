@@ -356,7 +356,7 @@ fn handle_create(
             src_id: NumberOrHash::Number(source.id),
             src_addr: source.offset.try_into().unwrap(),
             src_addr_end: (source.offset + source.length).try_into().unwrap(),
-            dst_type: CopyDataType::Bytecode,
+            dst_type: CopyDataType::Bytecode(Default::default()),
             dst_id,
             dst_addr: 0,
             log_id: None,

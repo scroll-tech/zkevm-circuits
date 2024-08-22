@@ -212,10 +212,7 @@ pub enum CopyDataType {
     /// with rows that are not "useful".
     Padding,
     /// When the source for the copy event is the (first) bytecode table.
-    Bytecode,
-    #[cfg(feature = "dual_bytecode")]
-    /// When the source for the copy event is the second bytecode table.
-    Bytecode1,
+    Bytecode(BytecodeTable),
     /// When the source/destination for the copy event is memory.
     Memory,
     /// When the source for the copy event is tx's calldata.
@@ -234,6 +231,18 @@ pub enum CopyDataType {
     AccessListStorageKeys,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Defines the various source/destination types for a copy event.
+
+pub enum BytecodeTable {
+    #[default]
+    /// Defines the various source/destination types for a copy event.
+    First,
+    #[cfg(feature = "dual_bytecode")]
+    /// Defines the various source/destination types for a copy event.
+    Second,
+}
+
 impl CopyDataType {
     /// How many bits are necessary to represent a copy data type.
     pub const N_BITS: usize = 3usize;
@@ -248,15 +257,13 @@ impl CopyDataTypeIter {
     fn get(&self, idx: usize) -> Option<CopyDataType> {
         match idx {
             0usize => Some(CopyDataType::Padding),
-            1usize => Some(CopyDataType::Bytecode),
+            1usize => Some(CopyDataType::Bytecode(BytecodeTable::First)),
             2usize => Some(CopyDataType::Memory),
             3usize => Some(CopyDataType::TxCalldata),
             4usize => Some(CopyDataType::TxLog),
             5usize => Some(CopyDataType::RlcAcc),
             6usize => Some(CopyDataType::AccessListAddresses),
             7usize => Some(CopyDataType::AccessListStorageKeys),
-            #[cfg(feature = "dual_bytecode")]
-            8usize => Some(CopyDataType::Bytecode1),
             _ => None,
         }
     }
@@ -318,15 +325,13 @@ impl From<CopyDataType> for usize {
     fn from(t: CopyDataType) -> Self {
         match t {
             CopyDataType::Padding => 0,
-            CopyDataType::Bytecode => 1,
+            CopyDataType::Bytecode(_) => 1,
             CopyDataType::Memory => 2,
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
             CopyDataType::AccessListAddresses => 6,
             CopyDataType::AccessListStorageKeys => 7,
-            #[cfg(feature = "dual_bytecode")]
-            CopyDataType::Bytecode1 => 8,
         }
     }
 }
@@ -519,25 +524,10 @@ impl CopyEvent {
 
     /// Whether the RLC of data must be computed.
     pub fn has_rlc(&self) -> bool {
-        #[cfg(feature = "dual_bytecode")]
-        {
-            matches!(
-                (self.src_type, self.dst_type),
-                (CopyDataType::RlcAcc, _)
-                    | (_, CopyDataType::RlcAcc)
-                    | (_, CopyDataType::Bytecode)
-                    | (_, CopyDataType::Bytecode1)
-            )
-        }
-        #[cfg(not(feature = "dual_bytecode"))]
-        {
-            matches!(
-                (self.src_type, self.dst_type),
-                (CopyDataType::RlcAcc, _)
-                    | (_, CopyDataType::RlcAcc)
-                    | (_, CopyDataType::Bytecode)
-            )
-        }
+        matches!(
+            (self.src_type, self.dst_type),
+            (CopyDataType::RlcAcc, _) | (_, CopyDataType::RlcAcc) | (_, CopyDataType::Bytecode(_))
+        )
     }
 
     /// The RW counter of the first RW lookup performed by this copy event.
