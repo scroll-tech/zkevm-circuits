@@ -687,10 +687,9 @@ fn get_copy_events(
 ) -> Vec<CopyEvent> {
     let update = |id: NumberOrHash, copy_data_type: &mut CopyDataType| {
         if let NumberOrHash::Hash(hash) = id {
-            if bytecodes
+            if !bytecodes
                 .get(&hash.to_word())
                 .map_or(true, |b| b.in_first_table)
-                == false
             {
                 assert_eq!(
                     copy_data_type,

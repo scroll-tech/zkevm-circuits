@@ -48,7 +48,6 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
 use std::array;
-use std::collections::BTreeMap;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used to define lookup tables
@@ -1985,26 +1984,9 @@ impl CopyTable {
                 (rw_counter, rwc_inc_left)
             };
 
-            // #[cfg(feature = "dual_bytecode")]
-            // // For codecopy & extcodecopy copy bytecodes, src_type == Bytecode.
-            // // For return in creating/deploy contract case, dst_type == Bytecode.
-            // let is_first_bytecode_table = copy_event.src_type == CopyDataType::Bytecode || copy_event.dst_type == CopyDataType::Bytecode
-            // let is_first_bytecode_table = if matches!(copy_event.src_type, CopyDataType::Bytecode |  CopyDataType::Bytecode1 {
-            //     let code_hash = Word::from_big_endian(copy_event.src_id.get_hash().as_bytes());
-            //     // bytecode_map includes all the code_hash, for normal cases, unwrap would be safe.
-            //     // but for extcodecopy, the external_address can be non existed code hash, hence use `unwrap_or`.
-            //     *bytecode_map.unwrap().get(&code_hash).unwrap_or(&true)
-            //     is_first_bytecode_table
-            // } else if copy_event.dst_type == CopyDataType::Bytecode {
-            //     let code_hash = Word::from_big_endian(copy_event.dst_id.get_hash().as_bytes());
-
-            //     *bytecode_map.unwrap().get(&code_hash).unwrap()
-            // } else {
-            //     // if not code related copy case, default value is true, even it is true, copy circuit will not do lookup if current row is
-            //     // not bytecode type.
-            //     true
-            // };
             #[cfg(feature = "dual_bytecode")]
+            // is_first_bytecode_table is true for non-bytecode copy events. This is fine, because the
+            // copy circuit will not do lookup if current row is not bytecode type.
             let is_first_bytecode_table = copy_event.src_type
                 != CopyDataType::Bytecode(BytecodeTableEnum::Second)
                 && copy_event.dst_type != CopyDataType::Bytecode(BytecodeTableEnum::Second);

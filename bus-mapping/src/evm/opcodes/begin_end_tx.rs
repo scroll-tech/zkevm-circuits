@@ -896,7 +896,7 @@ fn add_access_list_address_copy_event(
     let copy_event = CopyEvent {
         src_type: CopyDataType::AccessListAddresses,
         dst_type: CopyDataType::AccessListAddresses,
-        src_id: tx_id.clone(),
+        src_id: tx_id,
         dst_id: tx_id,
         // Access list address index starts from 1 in tx-table.
         src_addr: 1,
@@ -981,7 +981,7 @@ fn add_access_list_storage_key_copy_event(
     let copy_event = CopyEvent {
         src_type: CopyDataType::AccessListStorageKeys,
         dst_type: CopyDataType::AccessListStorageKeys,
-        src_id: tx_id.clone(),
+        src_id: tx_id,
         dst_id: tx_id,
         // Access list storage key index starts from 0 in tx-table.
         src_addr: 0,
