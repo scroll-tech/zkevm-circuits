@@ -27,14 +27,14 @@ impl<'params> Prover<'params> {
     pub fn degrees() -> Vec<u32> {
         (*ZKEVM_DEGREES).clone()
     }
-    pub fn from_params_map(
+    pub fn from_params_and_assets(
         params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
         assets_dir: &str,
     ) -> Self {
-        let prover_impl = common::Prover::from_params(params_map);
+        let prover_impl = common::Prover::from_params_map(params_map);
 
         let raw_vk = try_to_read(assets_dir, &CHUNK_VK_FILENAME);
-        let _verifier = if raw_vk.is_none() {
+        let verifier = if raw_vk.is_none() {
             log::warn!(
                 "zkevm-prover: {} doesn't exist in {}",
                 *CHUNK_VK_FILENAME,
@@ -42,7 +42,7 @@ impl<'params> Prover<'params> {
             );
             None
         } else {
-            Some(super::verifier::Verifier::from_params_map(
+            Some(super::verifier::Verifier::from_params_and_assets(
                 prover_impl.params_map,
                 assets_dir,
             ))
@@ -50,7 +50,7 @@ impl<'params> Prover<'params> {
         Self {
             prover_impl,
             raw_vk,
-            verifier: None,
+            verifier,
         }
     }
 

@@ -18,7 +18,7 @@ static PARAMS_MAP: LazyLock<BTreeMap<u32, ParamsKZG<Bn256>>> = LazyLock::new(|| 
 });
 
 static INNER_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
-    let prover = Prover::from_params(&PARAMS_MAP);
+    let prover = Prover::from_params_map(&PARAMS_MAP);
     log::info!("Constructed inner-prover");
 
     Mutex::new(prover)

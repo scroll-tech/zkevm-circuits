@@ -18,13 +18,13 @@ mod utils;
 #[derive(Debug)]
 pub struct Prover<'params> {
     // degree -> params (use BTreeMap to find proper degree for params downsize)
-    pub(crate) params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
+    pub params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
     // Cached id -> pk
     pk_map: HashMap<String, ProvingKey<G1Affine>>,
 }
 
 impl<'params> Prover<'params> {
-    pub fn from_params(params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>) -> Self {
+    pub fn from_params_map(params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>) -> Self {
         Self {
             params_map,
             pk_map: HashMap::new(),
