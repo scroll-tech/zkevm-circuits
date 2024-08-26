@@ -1,15 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    common,
-    config::{LayerId, ZKEVM_DEGREES},
-    consts::CHUNK_VK_FILENAME,
-    io::try_to_read,
-    proof::compare_chunk_info,
-    types::ChunkProvingTask,
-    utils::chunk_trace_to_witness_block,
-    zkevm::circuit::calculate_row_usage_of_witness_block,
-    ChunkProof,
+    common, config::LayerId, consts::CHUNK_VK_FILENAME, io::try_to_read, proof::compare_chunk_info,
+    types::ChunkProvingTask, utils::chunk_trace_to_witness_block,
+    zkevm::circuit::calculate_row_usage_of_witness_block, ChunkProof,
 };
 use aggregator::ChunkInfo;
 use anyhow::Result;
@@ -24,9 +18,6 @@ pub struct Prover<'params> {
 }
 
 impl<'params> Prover<'params> {
-    pub fn degrees() -> Vec<u32> {
-        (*ZKEVM_DEGREES).clone()
-    }
     pub fn from_params_and_assets(
         params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
         assets_dir: &str,
