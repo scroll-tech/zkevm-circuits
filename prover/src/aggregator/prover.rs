@@ -9,7 +9,7 @@ use snark_verifier_sdk::Snark;
 
 use crate::{
     common,
-    config::{LayerId, AGG_DEGREES},
+    config::LayerId,
     consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
     io::{force_to_read, try_to_read},
     proof::BundleProof,
@@ -27,9 +27,6 @@ pub struct Prover<'params> {
 }
 
 impl<'params> Prover<'params> {
-    pub fn degrees() -> Vec<u32> {
-        (*AGG_DEGREES).clone()
-    }
     pub fn from_params_and_assets(
         params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
         assets_dir: &str,
