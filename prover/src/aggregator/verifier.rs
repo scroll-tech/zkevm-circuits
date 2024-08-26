@@ -36,7 +36,7 @@ impl<'params> Verifier<'params> {
         }
     }
 
-    pub fn from_params_map(
+    pub fn from_params_and_assets(
         params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
         assets_dir: &str,
     ) -> Self {

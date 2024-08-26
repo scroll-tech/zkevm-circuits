@@ -18,7 +18,7 @@ static PARAMS_MAP: LazyLock<BTreeMap<u32, ParamsKZG<Bn256>>> = LazyLock::new(|| 
 
 static CHUNK_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
     let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
-    let prover = Prover::from_params_map(&PARAMS_MAP, &assets_dir);
+    let prover = Prover::from_params_and_assets(&PARAMS_MAP, &assets_dir);
     log::info!("Constructed chunk-prover");
 
     Mutex::new(prover)
@@ -36,7 +36,7 @@ pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
 
     let verifier = {
         let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
-        let verifier = Verifier::from_params_map(prover.prover_impl.params_map, &assets_dir);
+        let verifier = Verifier::from_params_and_assets(prover.prover_impl.params_map, &assets_dir);
         log::info!("Constructed chunk-verifier");
         verifier
     };

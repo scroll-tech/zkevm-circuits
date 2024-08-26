@@ -22,7 +22,7 @@ static PARAMS_MAP: LazyLock<BTreeMap<u32, ParamsKZG<Bn256>>> = LazyLock::new(|| 
 static BATCH_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
     let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
 
-    let prover = Prover::from_dirs(&PARAMS_MAP, &assets_dir);
+    let prover = Prover::from_params_and_assets(&PARAMS_MAP, &assets_dir);
     log::info!("Constructed batch-prover");
 
     Mutex::new(prover)
