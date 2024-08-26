@@ -13,18 +13,18 @@ use halo2_proofs::{
 };
 use snark_verifier_sdk::verify_evm_calldata;
 use snark_verifier_sdk::Snark;
-use std::env;
+use std::{collections::BTreeMap, env};
 
 #[derive(Debug)]
-pub struct Verifier {
+pub struct Verifier<'params> {
     // Make it public for testing with inner functions (unnecessary for FFI).
-    pub inner: common::Verifier<CompressionCircuit>,
+    pub inner: common::Verifier<'params, CompressionCircuit>,
     deployment_code: Option<Vec<u8>>,
 }
 
-impl Verifier {
+impl<'params> Verifier<'params> {
     pub fn new(
-        params: ParamsKZG<Bn256>,
+        params: &'params ParamsKZG<Bn256>,
         vk: VerifyingKey<G1Affine>,
         deployment_code: Vec<u8>,
     ) -> Self {
@@ -36,12 +36,16 @@ impl Verifier {
         }
     }
 
-    pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
+    pub fn from_params_map(
+        params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
+        assets_dir: &str,
+    ) -> Self {
         let raw_vk = force_to_read(assets_dir, &batch_vk_filename());
         let deployment_code = try_to_read(assets_dir, &DEPLOYMENT_CODE_FILENAME);
 
         env::set_var("COMPRESSION_CONFIG", &*LAYER4_CONFIG_PATH);
-        let inner = common::Verifier::from_params_dir(params_dir, *LAYER4_DEGREE, &raw_vk);
+        let params = params_map.get(&*LAYER4_DEGREE).expect("should be loaded");
+        let inner = common::Verifier::from_params(params, &raw_vk);
 
         Self {
             inner,
