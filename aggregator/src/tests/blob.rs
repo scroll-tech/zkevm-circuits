@@ -1,13 +1,4 @@
-use crate::aggregation::witgen::{process, MultiBlockProcessResult};
-use crate::eip4844::{get_blob_bytes, get_coefficients, get_versioned_hash};
-use crate::{
-    aggregation::{
-        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
-    },
-    blob::{BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256},
-    param::ConfigParams,
-    BatchDataConfig, MAX_AGG_SNARKS,
-};
+use ark_std::test_rng;
 use halo2_base::{
     gates::range::{RangeConfig, RangeStrategy},
     Context, ContextParams,
@@ -18,10 +9,23 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use rand::Rng;
 use std::fs;
 use zkevm_circuits::{
     table::{KeccakTable, RangeTable, U8Table},
     util::Challenges,
+};
+
+use crate::{
+    aggregation::{
+        witgen::{process, MultiBlockProcessResult},
+        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig,
+        RlcConfig,
+    },
+    blob::{BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256},
+    eip4844::{decode_blob, get_blob_bytes, get_coefficients, get_versioned_hash},
+    param::ConfigParams,
+    BatchDataConfig, ChunkInfo, MAX_AGG_SNARKS,
 };
 
 #[derive(Default)]
@@ -580,4 +584,43 @@ fn overwrite_is_padding() {
         };
         assert!(check_circuit(&circuit).is_err())
     }
+}
+
+#[test]
+fn test_decode_blob() {
+    let mut rng = test_rng();
+
+    let num_chunks = rng.gen_range(0..MAX_AGG_SNARKS);
+    let mut chunks = (0..num_chunks)
+        .map(|_| ChunkInfo::mock_random_chunk_info_for_testing(&mut rng))
+        .collect::<Vec<_>>();
+    for i in 0..num_chunks - 1 {
+        chunks[i + 1].prev_state_root = chunks[i].post_state_root;
+    }
+    let padded_chunk = ChunkInfo::mock_padded_chunk_info_for_testing(&chunks[num_chunks - 1]);
+    let padded_chunks = [chunks, vec![padded_chunk; MAX_AGG_SNARKS - num_chunks]].concat();
+
+    let batch_data = BatchData::<MAX_AGG_SNARKS>::new(num_chunks, &padded_chunks);
+    let batch_bytes = batch_data.get_batch_data_bytes();
+
+    let conditional_encode = |bytes: &[u8], encode: bool| -> Vec<u8> {
+        let mut encoded_bytes = crate::witgen::zstd_encode(bytes);
+        if !encode {
+            encoded_bytes = batch_bytes.to_vec();
+        }
+        encoded_bytes.insert(0, encode as u8);
+        encoded_bytes
+    };
+
+    // case 1: no encode
+    assert_eq!(
+        conditional_encode(batch_bytes.as_slice(), false)[1..],
+        batch_bytes,
+    );
+
+    // case 2: yes encode
+    assert_eq!(
+        decode_blob(&conditional_encode(batch_bytes.as_slice(), true)).expect("should decode"),
+        batch_bytes,
+    );
 }
