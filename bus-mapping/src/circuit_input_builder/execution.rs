@@ -211,7 +211,7 @@ pub enum CopyDataType {
     /// When we need to pad the Copy rows of the circuit up to a certain maximum
     /// with rows that are not "useful".
     Padding,
-    /// When the source for the copy event is the (first) bytecode table.
+    /// When the source for the copy event is the bytecode table(s).
     Bytecode(BytecodeTable),
     /// When the source/destination for the copy event is memory.
     Memory,
@@ -232,14 +232,14 @@ pub enum CopyDataType {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-/// Defines the various source/destination types for a copy event.
-
+/// There are 1 or 2 bytecode tables depending on if the "dual_bytecode" feature is set.
 pub enum BytecodeTable {
     #[default]
-    /// Defines the various source/destination types for a copy event.
+    /// All bytecodes are initially assigned to the first bytecode table.
     First,
     #[cfg(feature = "dual_bytecode")]
-    /// Defines the various source/destination types for a copy event.
+    /// Some bytecodes are partitioned into the second bytecode, if it is available, in
+    /// the witness::block_convert function.
     Second,
 }
 
