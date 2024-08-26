@@ -1,14 +1,17 @@
-use std::{env, iter::repeat};
+use std::{collections::BTreeMap, env, iter::repeat};
 
-use aggregator::{BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
+use aggregator::{
+    eip4844::decode_blob, BatchData, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS,
+};
 use anyhow::{bail, Result};
 use eth_types::H256;
+use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
 use sha2::{Digest, Sha256};
 use snark_verifier_sdk::Snark;
 
 use crate::{
     common,
-    config::{LayerId, AGG_DEGREES},
+    config::LayerId,
     consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
     io::{force_to_read, try_to_read},
     proof::BundleProof,
@@ -17,20 +20,23 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct Prover {
+pub struct Prover<'params> {
     // Make it public for testing with inner functions (unnecessary for FFI).
-    pub prover_impl: common::Prover,
+    pub prover_impl: common::Prover<'params>,
     pub chunk_protocol: Vec<u8>,
     raw_vk_batch: Option<Vec<u8>>,
     raw_vk_bundle: Option<Vec<u8>>,
 }
 
-impl Prover {
-    pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
+impl<'params> Prover<'params> {
+    pub fn from_params_and_assets(
+        params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
+        assets_dir: &str,
+    ) -> Self {
         log::debug!("set env KECCAK_ROWS={}", BATCH_KECCAK_ROW.to_string());
         env::set_var("KECCAK_ROWS", BATCH_KECCAK_ROW.to_string());
 
-        let prover_impl = common::Prover::from_params_dir(params_dir, &AGG_DEGREES);
+        let prover_impl = common::Prover::from_params_map(params_map);
         let chunk_protocol = force_to_read(assets_dir, &CHUNK_PROTOCOL_FILENAME);
 
         let raw_vk_batch = try_to_read(assets_dir, &BATCH_VK_FILENAME);
@@ -208,6 +214,16 @@ impl Prover {
         let batch_hash = batch_header.batch_hash();
         let batch_info: BatchHash<N_SNARKS> =
             BatchHash::construct(&chunk_hashes, batch_header, &batch.blob_bytes);
+        let batch_data: BatchData<N_SNARKS> = BatchData::from(&batch_info);
+
+        // sanity check:
+        // - conditionally decoded blob should match batch data.
+        let batch_bytes = batch_data.get_batch_data_bytes();
+        let decoded_blob_bytes = decode_blob(&batch.blob_bytes)?;
+        assert_eq!(
+            batch_bytes, decoded_blob_bytes,
+            "BatchProvingTask(sanity) mismatch batch bytes and decoded blob bytes",
+        );
 
         let layer3_snark = self.prover_impl.load_or_gen_agg_snark(
             name,

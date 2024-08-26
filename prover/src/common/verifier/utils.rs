@@ -6,9 +6,9 @@ use halo2_proofs::{
 };
 use snark_verifier_sdk::CircuitExt;
 
-impl<C: CircuitExt<Fr>> Verifier<C> {
+impl<'params, C: CircuitExt<Fr>> Verifier<'params, C> {
     pub fn params(&self) -> &ParamsKZG<Bn256> {
-        &self.params
+        self.params
     }
 
     pub fn vk(&self) -> &VerifyingKey<G1Affine> {
