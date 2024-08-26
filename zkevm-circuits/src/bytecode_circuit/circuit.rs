@@ -1060,11 +1060,11 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
             let minimum_row: usize = max(
                 first_bytecodes
                     .iter()
-                    .map(|bytecode| bytecode.bytes.len() + 1)
+                    .map(|bytecode| bytecode.rows_required())
                     .sum(),
                 second_bytecodes
                     .iter()
-                    .map(|bytecode| bytecode.bytes.len() + 1)
+                    .map(|bytecode| bytecode.rows_required())
                     .sum(),
             );
             (minimum_row, block.circuits_params.max_bytecode)
@@ -1073,7 +1073,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
                 block
                     .bytecodes
                     .values()
-                    .map(|bytecode| bytecode.bytes.len() + 1)
+                    .map(|bytecode| bytecode.rows_required())
                     .sum(),
                 block.circuits_params.max_bytecode,
             )
