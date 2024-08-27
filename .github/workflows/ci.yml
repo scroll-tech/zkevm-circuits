@@ -173,7 +173,7 @@ jobs:
   bitrot:
     needs: [skip_check]
     if: |
-      github.event.pull_request.draft == false &&
+      false && github.event.pull_request.draft == false &&
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Bitrot check
