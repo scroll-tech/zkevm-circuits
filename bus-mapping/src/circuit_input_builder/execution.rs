@@ -368,6 +368,24 @@ pub enum NumberOrHash {
     Hash(H256),
 }
 
+impl NumberOrHash {
+    /// get hash value for NumberOrHash::Hash type
+    pub fn get_hash(&self) -> H256 {
+        match self {
+            Self::Hash(val) => *val,
+            _ => panic!("not a hash type"),
+        }
+    }
+
+    /// get number value for NumberOrHash::Number type
+    pub fn get_number(&self) -> usize {
+        match self {
+            Self::Number(val) => *val,
+            _ => panic!("not a number type"),
+        }
+    }
+}
+
 /// Represents all bytes related in one copy event.
 ///
 /// - When the source is memory, `bytes` is the memory content, including masked areas. The
