@@ -183,13 +183,14 @@ impl MptUpdates {
 
         let root_pair2 = (self.old_root, self.new_root);
         if root_pair2 != root_pair {
-            log::error!(
+            log::warn!(
                 "roots non consistent ({:#x},{:#x}) vs ({:#x},{:#x})",
                 root_pair.0,
                 root_pair.1,
                 root_pair2.0,
                 root_pair2.1
             );
+            #[cfg(debug_assertions)]
             wit_gen.dump(
                 self.updates
                     .iter()

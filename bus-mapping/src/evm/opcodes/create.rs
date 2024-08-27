@@ -400,7 +400,7 @@ fn handle_copy(
             copy_bytes: CopyBytes::new(copy_steps, None, None),
             access_list: vec![],
         },
-    );
+    )?;
 
     Ok((initialization_bytes, keccak_code_hash, code_hash))
 }
