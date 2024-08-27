@@ -65,7 +65,7 @@ impl ChunkInfo {
                 b.transactions
                     .iter()
                     .enumerate()
-                    .filter(|(idx, tx)| !tx.is_l1_tx())
+                    .filter(|(_idx, tx)| !tx.is_l1_tx())
                     .flat_map(|(idx, tx)| {
                         tx.to_eth_tx(
                             b.header.hash,

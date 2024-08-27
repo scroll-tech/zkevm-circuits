@@ -303,7 +303,6 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
-    program_counter_offset: usize,
     stack_pointer_offset: Expression<F>,
     log_id_offset: usize,
     in_next_step: bool,
@@ -351,7 +350,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 not_step_last: Vec::new(),
             },
             rw_counter_offset: 0.expr(),
-            program_counter_offset: 0,
             stack_pointer_offset: 0.expr(),
             log_id_offset: 0,
             in_next_step: false,
@@ -404,8 +402,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_counter_offset.clone()
     }
 
-    pub(crate) fn program_counter_offset(&self) -> usize {
-        self.program_counter_offset
+    // Warn: this is a debug helper,only used in debug purpose: if we want to diagnose which `copy_table_lookup` failed, can comment that
+    // `copy_table_lookup` codes, and call this method to increase rw_counter correctly, thus make other constraints succeed.
+    pub(crate) fn add_counter_offset(&mut self, offset: Expression<F>) {
+        self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * offset;
     }
 
     pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
@@ -667,12 +667,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
-        self.opcode_lookup_at_rlc(
-            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
-            opcode,
-            push_rlc,
-        );
-        self.program_counter_offset += 1;
+        self.opcode_lookup_at_rlc(self.curr.state.program_counter.expr(), opcode, push_rlc);
     }
 
     pub(crate) fn opcode_lookup_at_rlc(

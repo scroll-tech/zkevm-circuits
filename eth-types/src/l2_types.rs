@@ -393,7 +393,11 @@ impl TransactionTrace {
             access_list: self.access_list.as_ref().map(|al| AccessList(al.clone())),
             max_priority_fee_per_gas: self.gas_tip_cap,
             max_fee_per_gas: self.gas_fee_cap,
-            chain_id: Some(self.chain_id),
+            chain_id: if self.type_ != 0 || self.v.as_u64() >= 35 {
+                Some(self.chain_id)
+            } else {
+                None
+            },
             other: Default::default(),
         }
     }
