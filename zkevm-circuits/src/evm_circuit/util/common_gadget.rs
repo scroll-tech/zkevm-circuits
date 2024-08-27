@@ -112,6 +112,79 @@ impl<F: Field> SameContextGadget<F> {
     }
 }
 
+// this helper does bytecode length lookup.
+#[derive(Clone, Debug)]
+pub(crate) struct BytecodeLengthGadget<F> {
+    pub(crate) code_length: Cell<F>,
+    // more fields here later
+}
+
+impl<F: Field> BytecodeLengthGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, code_hash: Cell<F>) -> Self {
+        // Fetch the bytecode length from the bytecode table.
+        let code_length = cb.query_cell();
+        cb.bytecode_length(code_hash.expr(), code_length.expr());
+
+        Self { code_length }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block,
+        code_hash: &U256,
+    ) -> Result<u64, Error> {
+        let code_length = if code_hash.is_zero() {
+            0
+        } else {
+            block
+                .bytecodes
+                .get(code_hash)
+                .expect("could not find bytecode")
+                .bytes
+                .len() as u64
+        };
+
+        self.code_length
+            .assign(region, offset, Value::known(F::from(code_length)))?;
+
+        Ok(code_length)
+    }
+}
+
+// this helper does opcode lookup for some opcodes(callop, create, return_revert etc.),
+// which don't use SameContextGadget.
+#[derive(Clone, Debug)]
+pub(crate) struct BytecodeLookupGadget<F> {
+    pub(crate) opcode: Cell<F>,
+    // more fields here later
+}
+
+impl<F: Field> BytecodeLookupGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let opcode = cb.query_cell();
+        cb.opcode_lookup(opcode.expr(), 1.expr());
+
+        Self { opcode }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        _block: &Block,
+        _call: &Call,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        let opcode = step.opcode.unwrap();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+        Ok(())
+    }
+}
+
 /// Construction of step state transition that restores caller's state.
 #[derive(Clone, Debug)]
 pub(crate) struct RestoreContextGadget<F> {
