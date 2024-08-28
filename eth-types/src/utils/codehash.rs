@@ -30,43 +30,7 @@ pub fn hash_code_keccak(code: &[u8]) -> Hash {
 
 /// Poseidon code hash
 pub fn hash_code_poseidon(code: &[u8]) -> Hash {
-    use crate::U256;
-    use halo2curves::{bn256::Fr, ff::PrimeField};
-    use poseidon_base::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
-
-    let bytes_in_field = POSEIDON_HASH_BYTES_IN_FIELD;
-    let fls = (0..(code.len() / bytes_in_field))
-        .map(|i| i * bytes_in_field)
-        .map(|i| {
-            let mut buf: [u8; 32] = [0; 32];
-            U256::from_big_endian(&code[i..i + bytes_in_field]).to_little_endian(&mut buf);
-            Fr::from_bytes(&buf).unwrap()
-        });
-    let msgs: Vec<_> = fls
-        .chain(if code.len() % bytes_in_field == 0 {
-            None
-        } else {
-            let last_code = &code[code.len() - code.len() % bytes_in_field..];
-            // pad to bytes_in_field
-            let mut last_buf = vec![0u8; bytes_in_field];
-            last_buf.as_mut_slice()[..last_code.len()].copy_from_slice(last_code);
-            let mut buf: [u8; 32] = [0; 32];
-            U256::from_big_endian(&last_buf).to_little_endian(&mut buf);
-            Some(Fr::from_bytes(&buf).unwrap())
-        })
-        .collect();
-
-    let h = if msgs.is_empty() {
-        // the empty code hash is overlapped with simple hash on [0, 0]
-        // an issue in poseidon primitive prevent us calculate it from hash_msg
-        Fr::hash_with_domain([Fr::zero(), Fr::zero()], Fr::zero())
-    } else {
-        Fr::hash_msg(&msgs, Some(code.len() as u128 * HASHABLE_DOMAIN_SPEC))
-    };
-
-    let mut buf: [u8; 32] = [0; 32];
-    U256::from_little_endian(h.to_repr().as_ref()).to_big_endian(&mut buf);
-    Hash::from_slice(&buf)
+    Hash::from(poseidon_bn254::hash_code(code))
 }
 
 #[test]

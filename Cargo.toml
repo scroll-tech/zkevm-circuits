@@ -35,7 +35,7 @@ ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch
 ff = "0.13"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
 halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "feat/sp1", features = [ "derive_serde" ] }
-poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "feat/sp1" }
+poseidon-bn254 = { git = "https://github.com/scroll-tech/poseidon-bn254", branch = "master" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
 halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
@@ -65,8 +65,8 @@ strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
-revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/feat/v40/sp1", default-features = false, features = ["std"] } # v40
-revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/feat/v40/sp1", default-features = false, features = ["std"] } # v40
+revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/feat/v41/sp1", default-features = false, features = ["std"] } # v40
+revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/feat/v41/sp1", default-features = false, features = ["std"] } # v40
 c-kzg = "1.0.2"
 primitive-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }
 ethereum-types = { git = "https://github.com/scroll-tech/parity-common.git", branch = "feat/rkyv", features = ["rkyv"] }

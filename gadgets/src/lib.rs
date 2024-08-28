@@ -35,9 +35,7 @@ use halo2_proofs::{
 
 /// Trait used to reduce verbosity with the declaration of the [`Field`]
 /// trait and its repr.
-pub trait Field:
-    PrimeField<Repr = [u8; 32]> + poseidon_base::hash::Hashable + std::convert::From<Fr>
-{
+pub trait Field: PrimeField<Repr = [u8; 32]> + hash_circuit::Hashable + From<Fr> {
     /// Re-expose zero element as a function
     fn zero() -> Self {
         Self::ZERO
