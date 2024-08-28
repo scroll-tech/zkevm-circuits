@@ -44,6 +44,8 @@ pub struct BlockTraceV2 {
     /// l1 tx queue
     #[serde(rename = "startL1QueueIndex", default)]
     pub start_l1_queue_index: u64,
+    /// Withdraw root
+    pub withdraw_trie_root: H256,
 }
 
 /// Block header used by l2 block
@@ -98,6 +100,7 @@ impl From<BlockTrace> for BlockTraceV2 {
             transactions: b.transactions,
             storage_trace: b.storage_trace,
             start_l1_queue_index: b.start_l1_queue_index,
+            withdraw_trie_root: b.withdraw_trie_root,
         }
     }
 }
@@ -385,7 +388,11 @@ impl TransactionTrace {
             access_list: self.access_list.as_ref().map(|al| AccessList(al.clone())),
             max_priority_fee_per_gas: self.gas_tip_cap,
             max_fee_per_gas: self.gas_fee_cap,
-            chain_id: Some(self.chain_id),
+            chain_id: if self.type_ != 0 || self.v.as_u64() >= 35 {
+                Some(self.chain_id)
+            } else {
+                None
+            },
             other: Default::default(),
         }
     }
@@ -451,6 +458,15 @@ pub struct StorageTrace {
     #[serde(rename = "deletionProofs", default)]
     /// additional deletion proofs
     pub deletion_proofs: Vec<Bytes>,
+    #[serde(rename = "flattenProofs", default)]
+    ///
+    pub flatten_proofs: HashMap<H256, Bytes>,
+    #[serde(rename = "addressHashes", default)]
+    ///
+    pub address_hashes: HashMap<Address, Hash>,
+    #[serde(rename = "storeKeyHashes", default)]
+    ///
+    pub store_key_hashes: HashMap<H256, Hash>,
 }
 
 /// extension of `GethExecTrace`, with compatible serialize form
