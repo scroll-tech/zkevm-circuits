@@ -34,7 +34,7 @@ bincode.workspace = true
 default = ["warn-unimplemented", "secp256k1", "poseidon-bn254/halo2curves_v1"]
 warn-unimplemented = []
 secp256k1 = ["halo2curves"]
-poseidon-bn254 = ["poseidon-bn254/halo2curves_v1"]
+poseidon-bn254 = ["poseidon-bn254/bn254"]
 scroll = ["revm-precompile/scroll", "revm-primitives/scroll"]
 
 # trace heap allocation related feature switches
