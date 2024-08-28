@@ -3870,8 +3870,8 @@ dependencies = [
 
 [[package]]
 name = "revm-precompile"
-version = "9.2.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#03b072906faf3f826e4daf38ca0be69a73d90ce3"
+version = "10.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v41#c7f33a1800cf69e78db0d81fc6ae4b5cc65a32c2"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
@@ -3887,8 +3887,8 @@ dependencies = [
 
 [[package]]
 name = "revm-primitives"
-version = "7.1.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#03b072906faf3f826e4daf38ca0be69a73d90ce3"
+version = "8.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v41#c7f33a1800cf69e78db0d81fc6ae4b5cc65a32c2"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -3900,11 +3900,9 @@ dependencies = [
  "derive_more",
  "dyn-clone",
  "enumn",
- "halo2curves",
  "hashbrown 0.14.3",
  "hex",
  "once_cell",
- "poseidon-base",
  "serde",
 ]
 
