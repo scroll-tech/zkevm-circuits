@@ -3,7 +3,6 @@
 #[cfg(feature = "scroll")]
 use crate::l2_types::BlockTrace;
 use crate::{
-    sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk2, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
@@ -11,7 +10,6 @@ use ethers_core::types::{
     transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, Eip2930TransactionRequest,
     NameOrAddress, TransactionRequest, H256,
 };
-use halo2curves::{group::ff::PrimeField, secp256k1::Fq};
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
@@ -19,6 +17,13 @@ use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use strum_macros::EnumIter;
+
+#[cfg(feature = "secp256k1")]
+use crate::sign_types::{
+    biguint_to_32bytes_le, ct_option_ok_or, recover_pk2, SignData, SECP256K1_Q,
+};
+#[cfg(feature = "secp256k1")]
+use halo2curves::{group::ff::PrimeField, secp256k1::Fq};
 
 /// Tx type
 #[derive(Default, Debug, Copy, Clone, EnumIter, Serialize, PartialEq, Eq)]
@@ -358,6 +363,7 @@ impl From<&Transaction> for TransactionRequest {
 
 impl Transaction {
     /// Return the SignData associated with this Transaction.
+    #[cfg(feature = "secp256k1")]
     pub fn sign_data(&self) -> Result<SignData, Error> {
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();

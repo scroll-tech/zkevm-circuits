@@ -10,8 +10,7 @@ use std::{
     sync::Once,
 };
 
-use halo2curves::{bn256::Fr, group::ff::PrimeField};
-use poseidon_base::hash::Hashable;
+use poseidon_bn254::{hash_with_domain, Fr, PrimeField};
 
 /// Init hash scheme
 pub fn init_hash_scheme() {
@@ -40,7 +39,8 @@ fn poseidon_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: &[u8; 32]) -> Option
     } else {
         return None;
     };
-    Some(Fr::hash_with_domain([fa, fb], fdomain).to_repr())
+
+    Some(hash_with_domain(&[fa, fb], fdomain).to_bytes())
 }
 
 pub(crate) const NODE_TYPE_MIDDLE_0: u8 = 6;
@@ -315,7 +315,7 @@ pub(crate) fn verify_proof_leaf<T: Default>(inp: TrieProof<T>, key_buf: &[u8; 32
         let rev_key_bytes: Vec<u8> = key.to_fixed_bytes().into_iter().rev().collect();
         let key_fr = Fr::from_bytes(&rev_key_bytes.try_into().unwrap()).unwrap();
 
-        let secure_hash = Fr::hash_with_domain([bt_high, bt_low], Fr::from(SECURE_HASH_DOMAIN));
+        let secure_hash = hash_with_domain(&[bt_high, bt_low], Fr::from(SECURE_HASH_DOMAIN));
 
         if key_fr == secure_hash {
             inp
