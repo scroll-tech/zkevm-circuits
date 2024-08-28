@@ -5,7 +5,6 @@
 .idea
 *.log
 *.json
-*.sh
 *.txt
 *.srs
 tmp
