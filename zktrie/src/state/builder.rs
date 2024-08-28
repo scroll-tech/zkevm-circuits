@@ -40,7 +40,7 @@ fn poseidon_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: &[u8; 32]) -> Option
         return None;
     };
 
-    Some(hash_with_domain(&[fa, fb], fdomain).to_bytes())
+    Some(hash_with_domain(&[fa, fb], fdomain).to_repr())
 }
 
 pub(crate) const NODE_TYPE_MIDDLE_0: u8 = 6;
