@@ -10,7 +10,7 @@ use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::witness::Block;
 
-impl<C: TargetCircuit> Prover<C> {
+impl<'params, C: TargetCircuit> Prover<'params, C> {
     pub fn mock_prove_target_circuit(block_trace: BlockTrace) -> anyhow::Result<()> {
         Self::mock_prove_target_circuit_chunk(vec![block_trace])
     }
