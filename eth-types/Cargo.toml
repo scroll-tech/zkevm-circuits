@@ -8,7 +8,7 @@ license.workspace = true
 ethers-core.workspace = true
 ethers-signers.workspace = true
 hex.workspace = true
-halo2curves.workspace = true
+halo2curves = { workspace = true, optional = true }
 log.workspace = true
 regex.workspace = true
 serde.workspace = true
@@ -22,7 +22,7 @@ num.workspace = true
 num-bigint.workspace = true
 strum_macros.workspace = true
 strum.workspace = true
-poseidon-base.workspace = true
+poseidon-bn254.workspace = true
 base64.workspace = true
 revm-precompile.workspace = true
 revm-primitives.workspace = true
@@ -34,8 +34,10 @@ ethereum-types.workspace = true
 bincode.workspace = true
 
 [features]
-default = ["warn-unimplemented"]
+default = ["warn-unimplemented", "secp256k1", "poseidon-bn254/halo2curves_v1"]
 warn-unimplemented = []
+secp256k1 = ["halo2curves"]
+poseidon-bn254 = ["poseidon-bn254/halo2curves_v1"]
 scroll = ["revm-precompile/scroll", "revm-primitives/scroll"]
 
 # trace heap allocation related feature switches

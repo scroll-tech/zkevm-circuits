@@ -1489,8 +1489,7 @@ dependencies = [
  "log",
  "num",
  "num-bigint",
- "poseidon-base",
- "primitive-types",
+ "poseidon-bn254",
  "regex",
  "revm-precompile",
  "revm-primitives",
@@ -2025,7 +2024,8 @@ version = "0.12.0"
 dependencies = [
  "eth-types",
  "halo2_proofs",
- "poseidon-base",
+ "poseidon-bn254",
+ "poseidon-circuit",
  "rand",
  "rand_xorshift",
  "sha3 0.10.8",
@@ -2661,6 +2661,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2919,11 +2928,10 @@ version = "0.12.0"
 dependencies = [
  "env_logger",
  "eth-types",
- "halo2curves",
  "hex",
  "log",
  "num-bigint",
- "poseidon-base",
+ "poseidon-bn254",
  "serde",
  "serde_json",
  "zktrie",
@@ -3432,6 +3440,15 @@ dependencies = [
  "bitvec",
  "halo2curves",
  "lazy_static",
+]
+
+[[package]]
+name = "poseidon-bn254"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/poseidon-bn254?branch=master#9a4f940c968aef3d017da9b68129c1ffadc21621"
+dependencies = [
+ "halo2curves",
+ "itertools 0.13.0",
 ]
 
 [[package]]
