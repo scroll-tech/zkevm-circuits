@@ -1502,6 +1502,7 @@ dependencies = [
  "num",
  "num-bigint",
  "poseidon-bn254",
+ "primitive-types",
  "regex",
  "revm-precompile",
  "revm-primitives",

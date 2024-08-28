@@ -34,7 +34,7 @@ ethereum-types.workspace = true
 bincode.workspace = true
 
 [features]
-default = ["warn-unimplemented", "secp256k1", "poseidon-bn254/halo2curves_v1"]
+default = ["warn-unimplemented"]
 warn-unimplemented = []
 secp256k1 = ["halo2curves"]
 poseidon-bn254 = ["poseidon-bn254/bn254"]
