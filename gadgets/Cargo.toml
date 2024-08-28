@@ -9,7 +9,7 @@ halo2_proofs.workspace = true
 sha3.workspace = true
 eth-types = { path = "../eth-types" }
 strum.workspace = true
-poseidon-bn254.workspace = true
+poseidon-bn254 = { workspace = true, features = ["halo2curves_v1"] }
 hash-circuit.workspace = true
 
 [dev-dependencies]
