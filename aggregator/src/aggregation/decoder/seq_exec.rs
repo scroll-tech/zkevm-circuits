@@ -1696,7 +1696,7 @@ mod tests {
 
         assert_eq!(output, Vec::from("abcddeabcdeabbf".as_bytes()));
 
-        let mut output_mis = Vec::new();
+        let mut output_mismatch = Vec::new();
         SeqExecMock::mock_generate(
             1,
             Vec::from("abcdef".as_bytes()),
@@ -1706,25 +1706,25 @@ mod tests {
                 [3, 0, 4, 5, 6, 1],
                 [4, 0, 2, 1, 5, 6],
             ]),
-            &mut output_mis,
+            &mut output_mismatch,
         );
 
-        assert_eq!(output_mis, Vec::from("abcddeabcdeabbbf".as_bytes()));
+        assert_eq!(output_mismatch, Vec::from("abcddeabcdeabbbf".as_bytes()));
 
         let mut mismatch_inst_blk = base_trace_blk.clone();
         let tr = &mut mismatch_inst_blk.exec_trace[5].1;
         assert_eq!(*tr, SequenceExecInfo::BackRef(12..13));
-        // build the mis-match len to 2
+        // build the mismatch len to 2
         *tr = SequenceExecInfo::BackRef(12..14);
 
         let circuit_mismatch_inst_1 = SeqExecMockCircuit {
             traces: vec![mismatch_inst_blk],
-            output: output_mis,
+            output: output_mismatch,
             ..Default::default()
         };
         let mut mismatch_inst_blk = base_trace_blk.clone();
         let tr = &mut mismatch_inst_blk.exec_trace[5].1;
-        // build the mis-match offset to 2
+        // build the mismatch offset to 2
         *tr = SequenceExecInfo::BackRef(11..12);
         let circuit_mismatch_inst_2 = SeqExecMockCircuit {
             traces: vec![mismatch_inst_blk],
