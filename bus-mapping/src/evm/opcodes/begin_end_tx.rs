@@ -319,7 +319,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 copy_bytes: CopyBytes::new(bytes, None, None),
                 access_list: vec![],
             },
-        );
+        )?;
     }
 
     let mut precompile_step = None;
@@ -466,7 +466,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                     copy_bytes: CopyBytes::new(copy_steps, None, None),
                     access_list: vec![],
                 },
-            );
+            )?;
 
             let call_success = call.is_success;
             // modexp's oog error is handled in ModExpGadget
@@ -908,7 +908,7 @@ fn add_access_list_address_copy_event(
         log_id: None,
     };
 
-    state.push_copy(exec_step, copy_event);
+    state.push_copy(exec_step, copy_event)?;
 
     Ok(())
 }
@@ -993,7 +993,7 @@ fn add_access_list_storage_key_copy_event(
         log_id: None,
     };
 
-    state.push_copy(exec_step, copy_event);
+    state.push_copy(exec_step, copy_event)?;
 
     Ok(())
 }

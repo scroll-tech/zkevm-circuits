@@ -14,14 +14,14 @@ use std::marker::PhantomData;
 mod mock;
 
 #[derive(Debug)]
-pub struct Prover<C: TargetCircuit> {
+pub struct Prover<'params, C: TargetCircuit> {
     // Make it public for testing with inner functions (unnecessary for FFI).
-    pub prover_impl: common::Prover,
+    pub prover_impl: common::Prover<'params>,
     phantom: PhantomData<C>,
 }
 
-impl<C: TargetCircuit> From<common::Prover> for Prover<C> {
-    fn from(prover_impl: common::Prover) -> Self {
+impl<'params, C: TargetCircuit> From<common::Prover<'params>> for Prover<'params, C> {
+    fn from(prover_impl: common::Prover<'params>) -> Self {
         Self {
             prover_impl,
             phantom: PhantomData,
@@ -29,9 +29,9 @@ impl<C: TargetCircuit> From<common::Prover> for Prover<C> {
     }
 }
 
-impl<C: TargetCircuit> Prover<C> {
-    pub fn from_params_dir(params_dir: &str) -> Self {
-        common::Prover::from_params_dir(params_dir, &[*INNER_DEGREE]).into()
+impl<'params, C: TargetCircuit> Prover<'params, C> {
+    pub fn degrees() -> Vec<u32> {
+        vec![*INNER_DEGREE]
     }
 
     pub fn gen_inner_snark(&mut self, id: &str, block_traces: Vec<BlockTrace>) -> Result<Snark> {

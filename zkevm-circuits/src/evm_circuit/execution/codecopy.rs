@@ -9,7 +9,7 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordByteCapGadget},
+            common_gadget::{BytecodeLengthGadget, SameContextGadget, WordByteCapGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
@@ -46,6 +46,8 @@ pub(crate) struct CodeCopyGadget<F> {
     /// RW inverse counter from the copy table at the start of related copy
     /// steps.
     copy_rwc_inc: Cell<F>,
+    /// Wraps the bytecode length and lookup.
+    code_len_gadget: BytecodeLengthGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
@@ -72,9 +74,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Fetch the hash of bytecode running in current environment.
         let code_hash = cb.curr.state.code_hash.clone();
-
-        // Fetch the bytecode length from the bytecode table.
-        cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -128,6 +127,14 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
+        // Fetch the bytecode length from the bytecode table.
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
+        cb.require_equal(
+            "code_size == code_len_gadget::code_length",
+            code_size.expr(),
+            code_len_gadget.code_length.expr(),
+        );
+
         Self {
             same_context,
             code_offset,
@@ -136,6 +143,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             memory_expansion,
             memory_copier_gas,
             copy_rwc_inc,
+            code_len_gadget,
         }
     }
 
@@ -160,12 +168,10 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let [dest_offset, code_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i]].stack_value());
 
-        let bytecode = block
-            .bytecodes
-            .get(&call.code_hash)
-            .expect("could not find current environment's bytecode");
+        let code_size = self
+            .code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
-        let code_size = bytecode.bytes.len() as u64;
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
 

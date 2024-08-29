@@ -7,7 +7,7 @@ use crate::{
     evm_circuit::{
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{BytecodeLengthGadget, SameContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
@@ -24,7 +24,7 @@ use super::ExecutionGadget;
 pub(crate) struct CodesizeGadget<F> {
     same_context: SameContextGadget<F>,
     codesize_bytes: [Cell<F>; 8],
-    codesize: Cell<F>,
+    code_len_gadget: BytecodeLengthGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
@@ -38,14 +38,6 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         let codesize_bytes = array_init(|_| cb.query_byte());
 
         let code_hash = cb.curr.state.code_hash.clone();
-        let codesize = cb.query_cell();
-        cb.bytecode_length(code_hash.expr(), codesize.expr());
-
-        cb.require_equal(
-            "Constraint: bytecode length lookup == codesize",
-            from_bytes::expr(&codesize_bytes),
-            codesize.expr(),
-        );
 
         cb.stack_push(cb.word_rlc(codesize_bytes.clone().map(|c| c.expr())));
 
@@ -57,11 +49,18 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, code_hash);
+
+        cb.require_equal(
+            "Constraint: bytecode length lookup == codesize",
+            from_bytes::expr(&codesize_bytes),
+            code_len_gadget.code_length.expr(),
+        );
 
         Self {
             same_context,
             codesize_bytes,
-            codesize,
+            code_len_gadget,
         }
     }
 
@@ -87,8 +86,8 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             c.assign(region, offset, Value::known(F::from(*b as u64)))?;
         }
 
-        self.codesize
-            .assign(region, offset, Value::known(F::from(codesize)))?;
+        self.code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
         Ok(())
     }
