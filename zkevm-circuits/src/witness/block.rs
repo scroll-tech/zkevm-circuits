@@ -6,10 +6,10 @@ use std::collections::{BTreeMap, HashMap};
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
 use crate::{
-    evm_circuit::util::rlc,
+    evm_circuit::util::{greedy_simple_partition, rlc},
     super_circuit::params::get_super_circuit_params,
     table::{BlockContextFieldTag, RwTableTag},
-    util::{find_two_closest_subset, Field, SubCircuit},
+    util::{Field, SubCircuit},
     witness::keccak::keccak_inputs,
 };
 use bus_mapping::{
@@ -722,7 +722,8 @@ pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, 
         .values()
         .map(|bytecode| bytecode.bytes.len())
         .collect_vec();
-    let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
+    //let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
+    let (mut first_set, mut second_set) = greedy_simple_partition(bytecode_lens);
 
     let bytecode_map: BTreeMap<Word, bool> = bytecodes
         .iter()
