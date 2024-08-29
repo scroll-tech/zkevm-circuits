@@ -415,7 +415,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             copy_bytes: CopyBytes::new(copy_steps, None, None),
                             access_list: vec![],
                         },
-                    );
+                    )?;
                     Some(input_bytes)
                 } else {
                     None
@@ -446,7 +446,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
                             access_list: vec![],
                         },
-                    );
+                    )?;
                     Some(output_bytes)
                 } else {
                     None
@@ -486,7 +486,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             ),
                             access_list: vec![],
                         },
-                    );
+                    )?;
                     Some(returned_bytes)
                 } else {
                     None

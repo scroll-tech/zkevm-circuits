@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     blob::{BatchData, PointEvaluationAssignments},
     chunk::ChunkInfo,
+    eip4844::{get_coefficients, get_versioned_hash},
 };
 
 /// Batch header provides additional fields from the context (within recursion)
@@ -37,6 +38,7 @@ pub struct BatchHeader<const N_SNARKS: usize> {
 
 impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
     /// Constructs the correct batch header from chunks data and context variables
+    #[allow(clippy::too_many_arguments)]
     pub fn construct_from_chunks(
         version: u8,
         batch_index: u64,
@@ -45,6 +47,7 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
         parent_batch_hash: H256,
         last_block_timestamp: u64,
         chunks: &[ChunkInfo],
+        blob_bytes: &[u8],
     ) -> Self {
         assert_ne!(chunks.len(), 0);
         assert!(chunks.len() <= N_SNARKS);
@@ -76,7 +79,10 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
         let batch_data_hash = keccak256(batch_data_hash_preimage);
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, &chunks_with_padding);
-        let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
+        let coeffs = get_coefficients(blob_bytes);
+        let blob_versioned_hash = get_versioned_hash(&coeffs);
+        let point_evaluation_assignments =
+            PointEvaluationAssignments::new(&batch_data, blob_bytes, blob_versioned_hash);
 
         Self {
             version,
@@ -86,7 +92,7 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
             parent_batch_hash,
             last_block_timestamp,
             data_hash: batch_data_hash.into(),
-            blob_versioned_hash: batch_data.get_versioned_hash(),
+            blob_versioned_hash,
             blob_data_proof: [
                 H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
                 H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
@@ -126,7 +132,6 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
     }
 }
 
-#[derive(Default, Debug, Clone)]
 /// A batch is a set of N_SNARKS num of continuous chunks
 /// - the first k chunks are from real traces
 /// - the last (#N_SNARKS-k) chunks are from empty traces
@@ -134,6 +139,7 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
 /// - batchHash := keccak256(version || batch_index || l1_message_popped || total_l1_message_popped ||
 ///   batch_data_hash || versioned_hash || parent_batch_hash || last_block_timestamp || z || y)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
+#[derive(Default, Debug, Clone)]
 pub struct BatchHash<const N_SNARKS: usize> {
     /// Chain ID of the network.
     pub(crate) chain_id: u64,
@@ -163,6 +169,8 @@ pub struct BatchHash<const N_SNARKS: usize> {
     pub(crate) versioned_hash: H256,
     /// The context batch header
     pub(crate) batch_header: BatchHeader<N_SNARKS>,
+    /// The blob bytes (may be encoded batch bytes, or may be raw batch bytes).
+    pub(crate) blob_bytes: Vec<u8>,
 }
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
@@ -170,6 +178,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
     pub fn construct_with_unpadded(
         chunks: &[ChunkInfo],
         batch_header: BatchHeader<N_SNARKS>,
+        blob_bytes: &[u8],
     ) -> Self {
         assert_ne!(chunks.len(), 0);
         assert!(chunks.len() <= N_SNARKS);
@@ -186,13 +195,14 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             chunks_with_padding
                 .extend(std::iter::repeat(padding_chunk).take(N_SNARKS - chunks.len()));
         }
-        Self::construct(&chunks_with_padding, batch_header)
+        Self::construct(&chunks_with_padding, batch_header, blob_bytes)
     }
 
     /// Build Batch hash from an ordered list of #N_SNARKS of chunks.
     pub fn construct(
         chunks_with_padding: &[ChunkInfo],
         batch_header: BatchHeader<N_SNARKS>,
+        blob_bytes: &[u8],
     ) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
@@ -275,7 +285,10 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         );
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
-        let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
+        let coeffs = get_coefficients(blob_bytes);
+        let versioned_hash = get_versioned_hash(&coeffs);
+        let point_evaluation_assignments =
+            PointEvaluationAssignments::new(&batch_data, blob_bytes, versioned_hash);
 
         assert_eq!(
             batch_header.blob_data_proof[0],
@@ -287,8 +300,6 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
             "Expect provided BatchHeader's blob_data_proof field 1 to be correct"
         );
-
-        let versioned_hash = batch_data.get_versioned_hash();
 
         assert_eq!(
             batch_header.blob_versioned_hash, versioned_hash,
@@ -318,6 +329,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             point_evaluation_assignments,
             versioned_hash,
             batch_header,
+            blob_bytes: blob_bytes.to_vec(),
         }
     }
 
@@ -411,7 +423,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         // - preimage for each chunk's flattened L2 signed tx data
         // - preimage for the challenge digest
         let batch_data = BatchData::from(self);
-        let dynamic_preimages = batch_data.preimages();
+        let dynamic_preimages = batch_data.preimages(self.versioned_hash);
         for dynamic_preimage in dynamic_preimages {
             res.push(dynamic_preimage);
         }
