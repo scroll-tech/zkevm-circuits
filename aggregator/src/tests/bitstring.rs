@@ -412,7 +412,7 @@ fn run(case: UnsoundCase) -> Result<(), Vec<VerifyFailure>> {
             .expect("Encoder src_size: raw.len()");
         // include the content size to know at decode time the expected size of decoded data.
 
-        encoder.write_all(&raw).expect("Encoder wirte_all");
+        encoder.write_all(&raw).expect("Encoder write_all");
         encoder.finish().expect("Encoder success")
     };
 

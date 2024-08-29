@@ -297,7 +297,7 @@ fn run(case: UnsoundCase) -> Result<(), Vec<VerifyFailure>> {
 
         encoder
             .write_all(&multi_batch_data)
-            .expect("Encoder wirte_all");
+            .expect("Encoder write_all");
         encoder.finish().expect("Encoder success")
     };
 

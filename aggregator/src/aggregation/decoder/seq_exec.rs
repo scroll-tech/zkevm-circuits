@@ -1590,56 +1590,57 @@ mod tests {
         assert_eq!(output, Vec::from("abcddeabcdeabbfgggg".as_bytes()));
 
         // try to put the final phase into previous one
-        let mut mis_phase_blk1 = base_trace_blk1.clone();
-        assert_eq!(mis_phase_blk1.exec_trace.len(), 7);
-        assert_eq!(mis_phase_blk1.exec_trace[6].0, 4);
-        assert_eq!(mis_phase_blk1.exec_trace[5].0, 3);
-        mis_phase_blk1.exec_trace[6].0 = 3;
-        mis_phase_blk1.mocks = vec![
+        let mut mismatch_phase_blk1 = base_trace_blk1.clone();
+        assert_eq!(mismatch_phase_blk1.exec_trace.len(), 7);
+        assert_eq!(mismatch_phase_blk1.exec_trace[6].0, 4);
+        assert_eq!(mismatch_phase_blk1.exec_trace[5].0, 3);
+        mismatch_phase_blk1.exec_trace[6].0 = 3;
+        mismatch_phase_blk1.mocks = vec![
             (14, MockEntry::Index([None, Some(Fr::from(3u64))])),
             (14, MockEntry::Phase([Some(false), None, None])),
         ];
 
-        let circuit_mis_phase_1 = SeqExecMockCircuit {
-            traces: vec![mis_phase_blk1, base_trace_blk2.clone()],
+        let circuit_mismatch_phase_1 = SeqExecMockCircuit {
+            traces: vec![mismatch_phase_blk1, base_trace_blk2.clone()],
             output: output.clone(),
             ..Default::default()
         };
 
         // try to make last cp phase cross instruction
-        let mut mis_phase_blk2 = base_trace_blk1.clone();
-        mis_phase_blk2.mocks = vec![(13, MockEntry::Phase([Some(true), None, None]))];
-        let circuit_mis_phase_2 = SeqExecMockCircuit {
-            traces: vec![mis_phase_blk2, base_trace_blk2.clone()],
+        let mut mismatch_phase_blk2 = base_trace_blk1.clone();
+        mismatch_phase_blk2.mocks = vec![(13, MockEntry::Phase([Some(true), None, None]))];
+        let circuit_mismatch_phase_2 = SeqExecMockCircuit {
+            traces: vec![mismatch_phase_blk2, base_trace_blk2.clone()],
             output: output.clone(),
             ..Default::default()
         };
 
         // try to a phase both lit-cp and backref
-        let mut mis_phase_blk3 = base_trace_blk1.clone();
-        mis_phase_blk3.mocks = vec![(13, MockEntry::Phase([Some(false), Some(true), Some(true)]))];
-        let circuit_mis_phase_3 = SeqExecMockCircuit {
-            traces: vec![mis_phase_blk3, base_trace_blk2.clone()],
+        let mut mismatch_phase_blk3 = base_trace_blk1.clone();
+        mismatch_phase_blk3.mocks =
+            vec![(13, MockEntry::Phase([Some(false), Some(true), Some(true)]))];
+        let circuit_mismatch_phase_3 = SeqExecMockCircuit {
+            traces: vec![mismatch_phase_blk3, base_trace_blk2.clone()],
             output: output.clone(),
             ..Default::default()
         };
 
         // detect phase must work in a normal row
-        let mut mis_phase_blk4 = base_trace_blk2.clone();
-        mis_phase_blk4.mocks = vec![
+        let mut mismatch_phase_blk4 = base_trace_blk2.clone();
+        mismatch_phase_blk4.mocks = vec![
             (3, MockEntry::Phase([Some(false), Some(false), Some(false)])),
             (3, MockEntry::Decode([Some(Fr::from(18)), Some(Fr::zero())])),
         ];
-        let circuit_mis_phase_4 = SeqExecMockCircuit {
-            traces: vec![base_trace_blk1.clone(), mis_phase_blk4],
+        let circuit_mismatch_phase_4 = SeqExecMockCircuit {
+            traces: vec![base_trace_blk1.clone(), mismatch_phase_blk4],
             output: Vec::from("abcddeabcdeabbfggg".as_bytes()),
             all_padding_mocks: vec![MockEntry::Decode([Some(Fr::from(18)), None])],
             ..Default::default()
         };
 
         // detect out of order phases
-        let mut mis_phase_blk5 = base_trace_blk2.clone();
-        mis_phase_blk5.mocks = vec![
+        let mut mismatch_phase_blk5 = base_trace_blk2.clone();
+        mismatch_phase_blk5.mocks = vec![
             (0, MockEntry::Decode([None, Some(Fr::from(0x66))])), //the decoded byte become 'f'
             (
                 0,
@@ -1656,19 +1657,19 @@ mod tests {
             (0, MockEntry::Phase([None, Some(false), Some(true)])),
             (2, MockEntry::Phase([None, Some(true), Some(false)])),
         ];
-        let circuit_mis_phase_5 = SeqExecMockCircuit {
-            traces: vec![base_trace_blk1.clone(), mis_phase_blk5],
+        let circuit_mismatch_phase_5 = SeqExecMockCircuit {
+            traces: vec![base_trace_blk1.clone(), mismatch_phase_blk5],
             output: output.clone(),
             ..Default::default()
         };
 
         let k = 12;
         for circuit in [
-            circuit_mis_phase_1,
-            circuit_mis_phase_2,
-            circuit_mis_phase_3,
-            circuit_mis_phase_4,
-            circuit_mis_phase_5,
+            circuit_mismatch_phase_1,
+            circuit_mismatch_phase_2,
+            circuit_mismatch_phase_3,
+            circuit_mismatch_phase_4,
+            circuit_mismatch_phase_5,
         ] {
             let mock_prover =
                 MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
@@ -1710,29 +1711,29 @@ mod tests {
 
         assert_eq!(output_mis, Vec::from("abcddeabcdeabbbf".as_bytes()));
 
-        let mut mis_inst_blk = base_trace_blk.clone();
-        let tr = &mut mis_inst_blk.exec_trace[5].1;
+        let mut mismatch_inst_blk = base_trace_blk.clone();
+        let tr = &mut mismatch_inst_blk.exec_trace[5].1;
         assert_eq!(*tr, SequenceExecInfo::BackRef(12..13));
         // build the mis-match len to 2
         *tr = SequenceExecInfo::BackRef(12..14);
 
-        let circuit_mis_inst_1 = SeqExecMockCircuit {
-            traces: vec![mis_inst_blk],
+        let circuit_mismatch_inst_1 = SeqExecMockCircuit {
+            traces: vec![mismatch_inst_blk],
             output: output_mis,
             ..Default::default()
         };
-        let mut mis_inst_blk = base_trace_blk.clone();
-        let tr = &mut mis_inst_blk.exec_trace[5].1;
+        let mut mismatch_inst_blk = base_trace_blk.clone();
+        let tr = &mut mismatch_inst_blk.exec_trace[5].1;
         // build the mis-match offset to 2
         *tr = SequenceExecInfo::BackRef(11..12);
-        let circuit_mis_inst_2 = SeqExecMockCircuit {
-            traces: vec![mis_inst_blk],
+        let circuit_mismatch_inst_2 = SeqExecMockCircuit {
+            traces: vec![mismatch_inst_blk],
             output: Vec::from("abcddeabcdeabaf".as_bytes()),
             ..Default::default()
         };
 
         let k = 12;
-        for circuit in [circuit_mis_inst_1, circuit_mis_inst_2] {
+        for circuit in [circuit_mismatch_inst_1, circuit_mismatch_inst_2] {
             let mock_prover =
                 MockProver::<Fr>::run(k, &circuit, vec![]).expect("failed to run mock prover");
             let ret = mock_prover.verify();
