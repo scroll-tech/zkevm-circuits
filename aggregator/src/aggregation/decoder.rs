@@ -1,5 +1,5 @@
 mod seq_exec;
-mod tables;
+pub mod tables;
 pub mod witgen;
 
 use gadgets::{

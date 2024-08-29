@@ -51,7 +51,7 @@ pub struct SequenceInfo {
 }
 
 /// The type for indicate each range in output bytes by sequence execution
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SequenceExecInfo {
     LiteralCopy(std::ops::Range<usize>),
     BackRef(std::ops::Range<usize>),
