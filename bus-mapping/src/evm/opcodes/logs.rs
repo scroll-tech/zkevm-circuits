@@ -95,7 +95,7 @@ impl Opcode for Log {
             // https://github.com/ethereum/go-ethereum/blob/b80f05bde2c4e93ae64bb3813b6d67266b5fc0e6/core/vm/instructions.go#L850
             let copy_event =
                 gen_copy_event(state, mstart.low_u64(), msize.low_u64(), &mut exec_step)?;
-            state.push_copy(&mut exec_step, copy_event);
+            state.push_copy(&mut exec_step, copy_event)?;
             state.tx_ctx.log_id += 1;
         }
 

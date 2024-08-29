@@ -10,7 +10,7 @@ use rand::Rng;
 use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 use zkevm_circuits::evm_circuit::witness::Block;
 
-impl Prover {
+impl<'params> Prover<'params> {
     pub fn gen_inner_snark<C: TargetCircuit>(
         &mut self,
         id: &str,
