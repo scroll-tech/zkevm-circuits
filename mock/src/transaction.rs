@@ -339,13 +339,15 @@ impl MockTransaction {
             return self.build_2930();
         }
 
+        println!("tx_type {:?}", self.transaction_type);
+
         let tx = TransactionRequest::new()
             .from(self.from.address())
             .nonce(self.nonce)
             .value(self.value)
             .data(self.input.clone())
-            .gas(self.gas)
-            .chain_id(self.chain_id);
+            .gas(self.gas);
+        //.chain_id(None);
 
         let tx = if let Some(gas_price) = self.gas_price {
             tx.gas_price(gas_price)
@@ -365,7 +367,7 @@ impl MockTransaction {
                     let sig = self
                         .from
                         .as_wallet()
-                        .with_chain_id(self.chain_id)
+                        //.with_chain_id(self.chain_id)
                         .sign_transaction_sync(&tx.into()) // sign for legacy tx type in ethers-rs.
                         .expect("sign mock tx");
                     // Set sig parameters

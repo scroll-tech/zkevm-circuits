@@ -205,6 +205,15 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    // TODO: move test to approriate place
+    #[test]
+    fn test_legacy_tx_no_chain_id() {
+        // pre-eip255
+
+        let ctx = build_legacy_ctx(gwei(80_000)).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
     // test with non empty access list(only address list)
     #[test]
     fn test_eip2930_only_address_access_list() {
@@ -251,6 +260,29 @@ mod test {
                 if let Some(acc_list) = access_list {
                     txs[0].access_list(acc_list);
                 }
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+    }
+    // build pre-eip155 tx
+    fn build_legacy_ctx(sender_balance: Word) -> Result<TestContext<2, 1>, Error> {
+        TestContext::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(MOCK_WALLETS[0].address())
+                    .balance(sender_balance);
+                accs[1].address(MOCK_ACCOUNTS[0]).balance(eth(1));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_WALLETS[0].clone())
+                    .to(MOCK_ACCOUNTS[0])
+                    .gas(40_000.into())
+                    .gas_price(30_000.into())
+                    .value(gwei(20_000));
+                //.chain_id(chain_id)
+                //.transaction_type(1); // Set tx type to EIP-2930.
             },
             |block, _tx| block.number(0xcafeu64),
         )
