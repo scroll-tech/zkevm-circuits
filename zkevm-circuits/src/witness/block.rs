@@ -718,28 +718,26 @@ pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
 
 // helper to extract bytecode map info (code_hash, is_first_bytecode_table) when enable feature 'dual_bytecode'.
 pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
-    let bytecode_lens = bytecodes
-        .values()
-        .map(|bytecode| bytecode.bytes.len())
-        .collect_vec();
-    //let (mut first_set, mut second_set) = find_two_closest_subset(&bytecode_lens);
-    let (mut first_set, mut second_set) = greedy_simple_partition(bytecode_lens);
-
-    let bytecode_map: BTreeMap<Word, bool> = bytecodes
+    let bytecode_pairs = bytecodes
         .iter()
-        .map(|(hash, bytecode)| {
-            let len = bytecode.bytes.len();
-            if first_set.contains(&len) {
-                let index = first_set.iter().position(|x| *x == len).unwrap();
-                first_set.remove(index);
+        .map(|(hash, bytecode)| (*hash, bytecode.bytes.len()))
+        .collect_vec();
+    let partition_result = greedy_simple_partition(bytecode_pairs.clone());
+
+    let bytecode_map: BTreeMap<Word, bool> = bytecode_pairs
+        .iter()
+        .map(|(hash, len)| {
+            if partition_result.first_part.contains(&(*hash, *len)) {
                 (*hash, true)
-            } else if second_set.contains(&len) {
-                let index = second_set.iter().position(|x| *x == len).unwrap();
-                second_set.remove(index);
+            } else if partition_result.second_part.contains(&(*hash, *len)) {
                 (*hash, false)
             } else {
                 // here should be not reachable, panic or return a placeholder.
-                //panic!("“Find an unexpected element that is not present in either first_set or second_set”)
+                // panic!("“Find an unexpected element that is not present in either first_set or second_set”)
+                log::error!(
+                    "found unexpected code_hash {:?} when generate bytecode_map",
+                    hash,
+                );
                 (U256::zero(), false)
             }
         })
