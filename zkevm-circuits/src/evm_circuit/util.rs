@@ -892,8 +892,8 @@ fn test_find_two_closest_subset() {
 /// the sums of the two subsets are close, but not necessarily the most optimal result.
 pub(crate) fn greedy_simple_partition(nums: Vec<usize>) -> (Vec<usize>, Vec<usize>) {
     let mut nums = nums;
-    //let mut nums: &mut [usize] = nums;
-    nums.sort_by(|a, b| b.cmp(a)); // 降序排序
+    // sorted in descending order
+    nums.sort_by(|a, b| b.cmp(a));
     let mut sum1 = 0;
     let mut sum2 = 0;
 
