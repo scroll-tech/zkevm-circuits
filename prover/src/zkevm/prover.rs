@@ -1,28 +1,28 @@
+use std::collections::BTreeMap;
+
 use crate::{
-    common,
-    config::{LayerId, ZKEVM_DEGREES},
-    consts::CHUNK_VK_FILENAME,
-    io::try_to_read,
-    proof::compare_chunk_info,
-    types::ChunkProvingTask,
-    utils::chunk_trace_to_witness_block,
-    zkevm::circuit::calculate_row_usage_of_witness_block,
-    ChunkProof,
+    common, config::LayerId, consts::CHUNK_VK_FILENAME, io::try_to_read, proof::compare_chunk_info,
+    types::ChunkProvingTask, utils::chunk_trace_to_witness_block,
+    zkevm::circuit::calculate_row_usage_of_witness_block, ChunkProof,
 };
 use aggregator::ChunkInfo;
 use anyhow::Result;
+use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
 
 #[derive(Debug)]
-pub struct Prover {
+pub struct Prover<'params> {
     // Make it public for testing with inner functions (unnecessary for FFI).
-    pub prover_impl: common::Prover,
-    verifier: Option<super::verifier::Verifier>,
+    pub prover_impl: common::Prover<'params>,
+    verifier: Option<super::verifier::Verifier<'params>>,
     raw_vk: Option<Vec<u8>>,
 }
 
-impl Prover {
-    pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        let prover_impl = common::Prover::from_params_dir(params_dir, &ZKEVM_DEGREES);
+impl<'params> Prover<'params> {
+    pub fn from_params_and_assets(
+        params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
+        assets_dir: &str,
+    ) -> Self {
+        let prover_impl = common::Prover::from_params_map(params_map);
 
         let raw_vk = try_to_read(assets_dir, &CHUNK_VK_FILENAME);
         let verifier = if raw_vk.is_none() {
@@ -33,9 +33,11 @@ impl Prover {
             );
             None
         } else {
-            Some(super::verifier::Verifier::from_dirs(params_dir, assets_dir))
+            Some(super::verifier::Verifier::from_params_and_assets(
+                prover_impl.params_map,
+                assets_dir,
+            ))
         };
-
         Self {
             prover_impl,
             raw_vk,

@@ -14,7 +14,7 @@ use crate::{
 
 use super::Prover;
 
-impl Prover {
+impl<'params> Prover<'params> {
     pub fn gen_recursion_snark(
         &mut self,
         id: &str,

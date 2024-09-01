@@ -7,7 +7,7 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            common_gadget::{get_copy_bytes, TransferGadget},
+            common_gadget::{get_copy_bytes, BytecodeLookupGadget, TransferGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -41,7 +41,7 @@ use std::iter::once;
 /// Gadget for CREATE and CREATE2 opcodes
 #[derive(Clone, Debug)]
 pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionState> {
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     depth: Cell<F>,
@@ -89,13 +89,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     const EXECUTION_STATE: ExecutionState = S;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
         let copy_rw_increase = cb.query_cell();
+        let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        cb.opcode_lookup(opcode.expr(), 1.expr());
         cb.require_equal(
             "Opcode is CREATE or CREATE2",
-            opcode.expr(),
+            opcode_gadget.opcode.expr(),
             if IS_CREATE2 {
                 OpcodeId::CREATE2
             } else {
@@ -535,7 +534,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
 
         Self {
-            opcode,
+            opcode_gadget,
             tx_id,
             reversion_info,
             depth,
@@ -578,9 +577,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_create2 = opcode == OpcodeId::CREATE2;
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
         self.tx_id
             .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
         self.depth.assign(

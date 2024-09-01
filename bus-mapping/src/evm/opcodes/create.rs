@@ -398,7 +398,7 @@ fn handle_copy(
             copy_bytes: CopyBytes::new(copy_steps, None, None),
             access_list: vec![],
         },
-    );
+    )?;
 
     Ok((initcode, keccak_code_hash, code_hash))
 }

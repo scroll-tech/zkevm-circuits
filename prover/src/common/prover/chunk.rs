@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use snark_verifier_sdk::Snark;
 use zkevm_circuits::evm_circuit::witness::Block;
 
-impl Prover {
+impl<'params> Prover<'params> {
     pub fn load_or_gen_final_chunk_snark(
         &mut self,
         name: &str,
