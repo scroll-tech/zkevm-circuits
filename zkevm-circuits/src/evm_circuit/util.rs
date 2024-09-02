@@ -895,9 +895,11 @@ pub(crate) struct PartitionData<T> {
 
 /// The function of this algorithm： Split a vec into two subsets such that
 /// the sums of the two subsets are close, but not necessarily return the most optimal result.
+/// Note: if stable result is required, make use you pass the stable parameter vec.
 pub(crate) fn greedy_simple_partition<T>(nums: Vec<(T, usize)>) -> PartitionData<T> {
     let mut nums = nums;
     // sorted in descending order
+    // sort_by helper is stable, see doc at https://doc.rust-lang.org/std/vec/struct.Vec.html#method.sort_by
     nums.sort_by(|a, b| b.1.cmp(&a.1));
     let mut sum1 = 0;
     let mut sum2 = 0;
@@ -963,7 +965,7 @@ fn test_greedy_partition() {
     ];
     partition_data = greedy_simple_partition(nums);
 
-    //close to the most optimal sets: set1 [10, 5, 1], set2 [11, 5]
+    // close to the most optimal sets: set1 [10, 5, 1], set2 [11, 5]
     assert_eq!(
         partition_data.first_part,
         [("key3", 11), ("key2", 5), ("key1", 1)]
