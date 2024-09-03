@@ -16,14 +16,19 @@ use crate::{
     BatchData, ChunkInfo,
 };
 
-// See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866
 #[test]
-fn test_max_agg_snarks_batch_circuit() {
+fn batch_circuit_raw() {
     let k = 21;
-
-    // This set up requires one round of keccak for chunk's data hash
-    // let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
     let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_batch_circuit_skip_encoding();
+    let instance = circuit.instances();
+    let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+    mock_prover.assert_satisfied_par();
+}
+
+#[test]
+fn batch_circuit_encode() {
+    let k = 21;
+    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
