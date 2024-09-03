@@ -16,7 +16,7 @@ The spec has the following form
 
 where 
 
-- `txparams` have the form `call|create`;`calldata`;`value`;`gas`
+- `txparams` have the form `callcreate`;`calldata`;`value`;`gas`
   - if `create`is specified the `to` field in the tx is left blank, is not the first account specified is used as the contract to call
   - `calldata`,`value` and `gas` are optional
 - `account` have the form `address`;`code`;`balance`;`slot 1`:`value 1`;..`slot n`..`value n`
