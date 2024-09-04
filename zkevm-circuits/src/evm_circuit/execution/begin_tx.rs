@@ -1274,19 +1274,28 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 mod test {
     use std::{str::FromStr, vec};
 
-    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use crate::{
+        evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder, witness::Transaction,
+    };
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode,
         evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
         evm_types::GasCost,
+        geth_types::TxType::PreEip155,
         word, Address, Bytecode, Error, Hash, Word, H160, H256, U256, U64,
     };
-    use ethers_core::types::{
-        transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, NameOrAddress,
-        Signature, Transaction as EthTransaction, TransactionRequest,
-    };
     use ethers_core::{types::Bytes, utils::get_contract_address};
+    use ethers_core::{
+        types::{
+            transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, NameOrAddress,
+            Signature, Transaction as EthTransaction, TransactionRequest,
+        },
+        utils::{
+            keccak256,
+            rlp::{Decodable, Rlp},
+        },
+    };
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
@@ -1778,17 +1787,19 @@ mod test {
         TestContext::new(
             None,
             |accs| {
-                accs[0].address(MOCK_ACCOUNTS[0]).balance(sender_balance);
+                accs[0]
+                    .address(address!("0xcf40d0d2b44f2b66e07cace1372ca42b73cf21a3"))
+                    .balance(sender_balance);
                 accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(1));
             },
             |mut txs, _accs| {
-                build_pre_eip155_tx();
+                txs[0].sig_data(data) = build_pre_eip155_tx();
             },
             |block, _tx| block.number(0xcafeu64),
         )
     }
 
-    fn build_pre_eip155_tx() -> Transaction {
+    fn build_pre_eip155_tx() -> wineTransaction {
         // pre-eip155 tx downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
         let eth_tx = TransactionRequest::new()
             .from(address!("0xcf40d0d2b44f2b66e07cace1372ca42b73cf21a3"))
