@@ -6,7 +6,7 @@ WORKDIR /src
 ADD . /src
 RUN mkdir /.cargo && echo 'paths = ["/src/halo2-gpu/halo2_proofs"]' > /.cargo/config
 RUN cargo build --features $TESTOOL_FEATURE --release
-Run cd ./target/release && find -name libzktrie.so | xargs -I {} cp {} ./
+RUN cd ./target/release && find -name libzktrie.so | xargs -I {} cp {} ./
 RUN apt update && apt install -y curl
 RUN mkdir test_assets
 RUN curl -o ./test_assets/layer1.config https://circuit-release.s3.us-west-2.amazonaws.com/release-v0.9.5/layer1.config
