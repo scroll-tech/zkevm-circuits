@@ -532,19 +532,15 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         {
             // when enable feature "dual-bytecode", get two sets of bytecodes here.
             let (first_bytecodes, second_bytecodes) = block.get_bytecodes_for_dual_sub_circuits();
-            if !first_bytecodes.is_empty() {
-                // assign first bytecode_table
-                config
-                    .bytecode_table
-                    .dev_load(&mut layouter, first_bytecodes, &challenges)?;
-            }
+            // assign first bytecode_table
+            config
+                .bytecode_table
+                .dev_load(&mut layouter, first_bytecodes, &challenges)?;
 
-            if !second_bytecodes.is_empty() {
-                // assign second bytecode_table
-                config
-                    .bytecode_table1
-                    .dev_load(&mut layouter, second_bytecodes, &challenges)?;
-            }
+            // assign second bytecode_table
+            config
+                .bytecode_table1
+                .dev_load(&mut layouter, second_bytecodes, &challenges)?;
         }
 
         #[cfg(not(feature = "dual-bytecode"))]

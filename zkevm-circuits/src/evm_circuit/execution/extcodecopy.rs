@@ -44,7 +44,6 @@ pub(crate) struct ExtcodecopyGadget<F> {
     copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
-    is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
@@ -54,7 +53,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_first_bytecode_table = cb.query_bool();
 
         let external_address_word = cb.query_word_rlc();
         let external_address =
@@ -67,11 +65,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let not_exists = IsZeroGadget::construct(cb, code_hash.clone().expr());
         let exists = not::expr(not_exists.expr());
 
-        // the reason why not use `same_context.is_first_sub_bytecode` to construct `code_len_gadget` includes
-        // 1: `same_context` requires rw_counter_offset info, which depends on `code_offset` info, the latter relies on
-        // `code_len` of `code_len_gadget`
-        // 2: `same_context.is_first_sub_bytecode` returns current call bytecode info, in extcodecopy, code_hash is not
-        // necessary current call code hash.
         let code_len_gadget = cb.condition(exists.expr(), |cb| {
             BytecodeLengthGadget::construct(cb, code_hash.clone())
         });
@@ -174,7 +167,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             copy_rwc_inc,
             memory_expansion,
             memory_copier_gas,
-            is_first_bytecode_table,
         }
     }
 
@@ -248,11 +240,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             memory_expansion_gas_cost,
         )?;
 
-        self.is_first_bytecode_table.assign(
-            region,
-            offset,
-            Value::known(F::from(block.is_first_bytecode_circuit(&code_hash))),
-        )?;
         Ok(())
     }
 }
