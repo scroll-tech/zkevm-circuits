@@ -16,22 +16,22 @@ mod recursion;
 mod utils;
 
 #[derive(Debug)]
-pub struct Prover {
+pub struct Prover<'params> {
     // degree -> params (use BTreeMap to find proper degree for params downsize)
-    params_map: BTreeMap<u32, ParamsKZG<Bn256>>,
+    pub params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
     // Cached id -> pk
     pk_map: HashMap<String, ProvingKey<G1Affine>>,
 }
 
-impl Prover {
-    pub fn from_params(params_map: BTreeMap<u32, ParamsKZG<Bn256>>) -> Self {
+impl<'params> Prover<'params> {
+    pub fn from_params_map(params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>) -> Self {
         Self {
             params_map,
             pk_map: HashMap::new(),
         }
     }
 
-    pub fn from_params_dir(params_dir: &str, degrees: &[u32]) -> Self {
+    pub fn load_params_map(params_dir: &str, degrees: &[u32]) -> BTreeMap<u32, ParamsKZG<Bn256>> {
         let degrees = BTreeSet::from_iter(degrees);
         let max_degree = **degrees.last().unwrap();
 
@@ -63,9 +63,6 @@ impl Prover {
             params_map.insert(*d, params);
         }
 
-        Self {
-            params_map,
-            pk_map: HashMap::new(),
-        }
+        params_map
     }
 }

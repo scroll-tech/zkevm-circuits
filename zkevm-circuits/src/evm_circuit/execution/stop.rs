@@ -4,13 +4,13 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
+            common_gadget::{BytecodeLengthGadget, BytecodeLookupGadget, RestoreContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same, To},
             },
             math_gadget::LtGadget,
-            CachedRegion, Cell,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -18,14 +18,15 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
-    code_length: Cell<F>,
     is_within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     restore_context: RestoreContextGadget<F>,
+    /// Wraps the bytecode length and lookup.
+    code_len_gadget: BytecodeLengthGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
@@ -34,20 +35,22 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let code_length = cb.query_cell();
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
-        let is_within_range =
-            LtGadget::construct(cb, cb.curr.state.program_counter.expr(), code_length.expr());
-        let opcode = cb.query_cell();
-        cb.condition(is_within_range.expr(), |cb| {
-            cb.opcode_lookup(opcode.expr(), 1.expr());
-        });
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
 
+        let is_within_range = LtGadget::construct(
+            cb,
+            cb.curr.state.program_counter.expr(),
+            code_len_gadget.code_length.expr(),
+        );
+
+        let opcode_gadget = cb.condition(is_within_range.expr(), |cb| {
+            BytecodeLookupGadget::construct(cb)
+        });
         // We do the responsible opcode check explicitly here because we're not using
         // the `SameContextGadget` for `STOP`.
         cb.require_equal(
             "Opcode should be STOP",
-            opcode.expr(),
+            opcode_gadget.opcode.expr(),
             OpcodeId::STOP.expr(),
         );
 
@@ -86,10 +89,10 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         });
 
         Self {
-            code_length,
             is_within_range,
-            opcode,
+            opcode_gadget,
             restore_context,
+            code_len_gadget,
         }
     }
 
@@ -102,26 +105,19 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let code = block
-            .bytecodes
-            .get(&call.code_hash)
-            .expect("could not find current environment's bytecode");
-        self.code_length.assign(
-            region,
-            offset,
-            Value::known(F::from(code.bytes.len() as u64)),
-        )?;
+        let code_len = self
+            .code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
         self.is_within_range.assign(
             region,
             offset,
             F::from(step.program_counter),
-            F::from(code.bytes.len() as u64),
+            F::from(code_len),
         )?;
 
-        let opcode = step.opcode.unwrap();
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
 
         if !call.is_root {
             self.restore_context

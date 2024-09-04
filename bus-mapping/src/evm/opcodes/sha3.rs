@@ -94,7 +94,7 @@ impl Opcode for Sha3 {
                 copy_bytes: CopyBytes::new(copy_steps, None, None),
                 access_list: vec![],
             },
-        );
+        )?;
 
         Ok(vec![exec_step])
     }

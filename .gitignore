@@ -4,7 +4,6 @@
 .vscode
 .idea
 *.log
-*.json
 *.sh
 *.txt
 *.srs

@@ -1,3 +1,4 @@
+use eth_types::H256;
 use ethers_core::utils::keccak256;
 use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
@@ -372,6 +373,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn assign(
         &self,
         layouter: &mut impl Layouter<Fr>,
@@ -381,13 +383,14 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         // `core.rs`. Since these are already constrained, we can just use them as is.
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
         batch_data: &BatchData<N_SNARKS>,
+        versioned_hash: H256,
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBatchDataExport, Error> {
         self.load_range_tables(layouter)?;
 
         let assigned_rows = layouter.assign_region(
             || "BatchData rows",
-            |mut region| self.assign_rows(&mut region, challenge_value, batch_data),
+            |mut region| self.assign_rows(&mut region, challenge_value, batch_data, versioned_hash),
         )?;
 
         layouter.assign_region(
@@ -415,13 +418,14 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         region: &mut Region<Fr>,
         challenge_value: Challenges<Value<Fr>>,
         batch_data: &BatchData<N_SNARKS>,
+        versioned_hash: H256,
     ) -> Result<Vec<AssignedBatchDataConfig>, Error> {
         let n_rows_data = BatchData::<N_SNARKS>::n_rows_data();
         let n_rows_metadata = BatchData::<N_SNARKS>::n_rows_metadata();
         let n_rows_digest_rlc = BatchData::<N_SNARKS>::n_rows_digest_rlc();
         let n_rows_total = BatchData::<N_SNARKS>::n_rows();
 
-        let rows = batch_data.to_rows(challenge_value);
+        let rows = batch_data.to_rows(versioned_hash, challenge_value);
         assert_eq!(rows.len(), n_rows_total);
 
         // enable data selector

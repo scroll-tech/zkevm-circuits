@@ -2191,7 +2191,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "1.1.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#6c5e9eec5088dc8b4a23edcdd1eaf8705b5fc7dc"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#e5ddf67e5ae16be38d6368ed355c7c41906272ab"
 dependencies = [
  "ark-std 0.3.0",
  "blake2b_simd",
@@ -3351,17 +3351,18 @@ dependencies = [
 [[package]]
 name = "poseidon-base"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#7b96835c6201afdbfaf3d13d641efbaaf5db2d20"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#6cc36ab9dfa153f554ff7b84305f39838366a8df"
 dependencies = [
  "bitvec",
  "halo2curves",
  "lazy_static",
+ "once_cell",
 ]
 
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#7b96835c6201afdbfaf3d13d641efbaaf5db2d20"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#6cc36ab9dfa153f554ff7b84305f39838366a8df"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -5559,7 +5560,7 @@ dependencies = [
 [[package]]
 name = "zktrie"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#2a19ee2155ecb959ba518384e448a638ae9858f2"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#49e0f027d12abf7f2049c2cf1034128fc14f47dd"
 dependencies = [
  "gobuild",
  "zktrie_rust",
@@ -5568,7 +5569,7 @@ dependencies = [
 [[package]]
 name = "zktrie_rust"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#2a19ee2155ecb959ba518384e448a638ae9858f2"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=main#49e0f027d12abf7f2049c2cf1034128fc14f47dd"
 dependencies = [
  "hex",
  "lazy_static",

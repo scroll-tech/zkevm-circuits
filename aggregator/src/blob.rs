@@ -1,22 +1,18 @@
 use crate::{
-    aggregation::{interpolate, witgen::init_zstd_encoder, BLS_MODULUS},
+    aggregation::{interpolate, BLS_MODULUS},
+    eip4844::get_coefficients,
     BatchHash, ChunkInfo,
 };
 
-use eth_types::{ToBigEndian, H256, U256};
-use ethers_core::{
-    k256::sha2::{Digest, Sha256},
-    utils::keccak256,
-};
+use eth_types::{H256, U256};
+use ethers_core::utils::keccak256;
 use halo2_proofs::{
     circuit::Value,
     halo2curves::{bls12_381::Scalar, bn256::Fr},
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use revm_primitives::VERSIONED_HASH_VERSION_KZG;
 use std::{
-    io::Write,
     iter::{once, repeat},
     sync::Arc,
 };
@@ -189,12 +185,6 @@ impl<const N_SNARKS: usize> Default for BatchData<N_SNARKS> {
     }
 }
 
-fn kzg_to_versioned_hash(commitment: &c_kzg::KzgCommitment) -> H256 {
-    let mut res = Sha256::digest(commitment.as_slice());
-    res[0] = VERSIONED_HASH_VERSION_KZG;
-    H256::from_slice(&res[..])
-}
-
 impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     /// The number of rows in Blob Data config's layout to represent the "digest rlc" section.
     /// - metadata digest RLC (1 row)
@@ -281,27 +271,10 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         }
     }
 
-    /// Get the versioned hash as per EIP-4844.
-    pub(crate) fn get_versioned_hash(&self) -> H256 {
-        let coefficients = self.get_coefficients();
-        let blob = c_kzg::Blob::from_bytes(
-            &coefficients
-                .iter()
-                .cloned()
-                .flat_map(|coeff| coeff.to_be_bytes())
-                .collect::<Vec<_>>(),
-        )
-        .expect("blob-coefficients to 4844 blob should succeed");
-        let c = c_kzg::KzgCommitment::blob_to_kzg_commitment(&blob, &KZG_TRUSTED_SETUP)
-            .expect("blob to kzg commitment should succeed");
-        kzg_to_versioned_hash(&c)
-    }
-
     /// Get the preimage of the challenge digest.
-    pub(crate) fn get_challenge_digest_preimage(&self) -> Vec<u8> {
+    pub(crate) fn get_challenge_digest_preimage(&self, versioned_hash: H256) -> Vec<u8> {
         let metadata_digest = keccak256(self.to_metadata_bytes());
         let chunk_digests = self.chunk_data.iter().map(keccak256);
-        let blob_versioned_hash = self.get_versioned_hash();
 
         // preimage =
         //     metadata_digest ||
@@ -314,18 +287,18 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         metadata_digest
             .into_iter()
             .chain(chunk_digests.flatten())
-            .chain(blob_versioned_hash.to_fixed_bytes())
+            .chain(versioned_hash.to_fixed_bytes())
             .collect::<Vec<_>>()
     }
 
     /// Compute the challenge digest from blob bytes.
-    pub(crate) fn get_challenge_digest(&self) -> U256 {
-        let challenge_digest = keccak256(self.get_challenge_digest_preimage());
+    pub(crate) fn get_challenge_digest(&self, versioned_hash: H256) -> U256 {
+        let challenge_digest = keccak256(self.get_challenge_digest_preimage(versioned_hash));
         U256::from_big_endian(&challenge_digest)
     }
 
     /// Get the batch data bytes that will be populated in BatchDataConfig.
-    pub(crate) fn get_batch_data_bytes(&self) -> Vec<u8> {
+    pub fn get_batch_data_bytes(&self) -> Vec<u8> {
         let metadata_bytes = self.to_metadata_bytes();
         metadata_bytes
             .iter()
@@ -339,47 +312,10 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .collect()
     }
 
-    /// Get the zstd encoded batch data bytes.
-    pub fn get_encoded_batch_data_bytes(&self) -> Vec<u8> {
-        let batch_data_bytes = self.get_batch_data_bytes();
-        let mut encoder = init_zstd_encoder(None);
-        encoder
-            .set_pledged_src_size(Some(batch_data_bytes.len() as u64))
-            .expect("infallible");
-        encoder.write_all(&batch_data_bytes).expect("infallible");
-        let encoded_bytes = encoder.finish().expect("infallible");
-        log::info!(
-            "compress batch data from {} to {}, compression ratio {:.2}, blob usage {:.3}",
-            batch_data_bytes.len(),
-            encoded_bytes.len(),
-            batch_data_bytes.len() as f32 / encoded_bytes.len() as f32,
-            encoded_bytes.len() as f32 / N_BLOB_BYTES as f32
-        );
-        encoded_bytes
-    }
-
-    /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
-    pub(crate) fn get_coefficients(&self) -> [U256; BLOB_WIDTH] {
-        let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
-
-        // We only consider the data from `valid` chunks and ignore the padded chunks.
-        let blob_bytes = self.get_encoded_batch_data_bytes();
-        assert!(
-            blob_bytes.len() <= N_BLOB_BYTES,
-            "too many bytes in batch data"
-        );
-
-        for (i, &byte) in blob_bytes.iter().enumerate() {
-            coefficients[i / 31][1 + (i % 31)] = byte;
-        }
-
-        coefficients.map(|coeff| U256::from_big_endian(&coeff))
-    }
-
     /// Get the list of preimages that need to go through the keccak hashing function, and
     /// eventually required to be checked for the consistency of blob's metadata, its chunks' bytes
     /// and the final blob preimage.
-    pub fn preimages(&self) -> Vec<Vec<u8>> {
+    pub fn preimages(&self, versioned_hash: H256) -> Vec<Vec<u8>> {
         let mut preimages = Vec::with_capacity(2 + N_SNARKS);
 
         // metadata
@@ -391,20 +327,24 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         }
 
         // preimage for challenge digest
-        preimages.push(self.get_challenge_digest_preimage());
+        preimages.push(self.get_challenge_digest_preimage(versioned_hash));
 
         preimages
     }
 
     /// Get the witness rows for assignment to the BlobDataConfig.
-    pub(crate) fn to_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BatchDataRow<Fr>> {
+    pub(crate) fn to_rows(
+        &self,
+        versioned_hash: H256,
+        challenge: Challenges<Value<Fr>>,
+    ) -> Vec<BatchDataRow<Fr>> {
         let metadata_rows = self.to_metadata_rows(challenge);
         assert_eq!(metadata_rows.len(), Self::n_rows_metadata());
 
         let data_rows = self.to_data_rows(challenge);
         assert_eq!(data_rows.len(), Self::n_rows_data());
 
-        let digest_rows = self.to_digest_rows(challenge);
+        let digest_rows = self.to_digest_rows(versioned_hash, challenge);
         assert_eq!(digest_rows.len(), Self::n_rows_digest());
 
         metadata_rows
@@ -541,7 +481,11 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     }
 
     /// Get the witness rows for both "digest rlc" and "digest bytes" sections of Blob data config.
-    fn to_digest_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BatchDataRow<Fr>> {
+    fn to_digest_rows(
+        &self,
+        versioned_hash: H256,
+        challenge: Challenges<Value<Fr>>,
+    ) -> Vec<BatchDataRow<Fr>> {
         let zero = Value::known(Fr::zero());
 
         // metadata
@@ -568,7 +512,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
             .unzip();
 
         // challenge digest
-        let challenge_digest_preimage = self.get_challenge_digest_preimage();
+        let challenge_digest_preimage = self.get_challenge_digest_preimage(versioned_hash);
         let challenge_digest_preimage_rlc =
             challenge_digest_preimage.iter().fold(zero, |acc, &byte| {
                 acc * challenge.keccak_input() + Value::known(Fr::from(byte as u64))
@@ -579,7 +523,6 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
         });
 
         // blob versioned hash
-        let versioned_hash = self.get_versioned_hash();
         let versioned_hash_rlc = versioned_hash.as_bytes().iter().fold(zero, |acc, &byte| {
             acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
         });
@@ -682,18 +625,23 @@ impl Default for PointEvaluationAssignments {
     }
 }
 
-impl<const N_SNARKS: usize> From<&BatchData<N_SNARKS>> for PointEvaluationAssignments {
-    fn from(batch_data: &BatchData<N_SNARKS>) -> Self {
+impl PointEvaluationAssignments {
+    /// Construct the point evaluation assignments.
+    pub fn new<const N_SNARKS: usize>(
+        batch_data: &BatchData<N_SNARKS>,
+        blob_bytes: &[u8],
+        versioned_hash: H256,
+    ) -> Self {
         // blob polynomial in evaluation form.
         //
         // also termed P(x)
-        let coefficients = batch_data.get_coefficients();
+        let coefficients = get_coefficients(blob_bytes);
         let coefficients_as_scalars = coefficients.map(|coeff| Scalar::from_raw(coeff.0));
 
         // challenge := challenge_digest % BLS_MODULUS
         //
         // also termed z
-        let challenge_digest = batch_data.get_challenge_digest();
+        let challenge_digest = batch_data.get_challenge_digest(versioned_hash);
         let (_, challenge) = challenge_digest.div_mod(*BLS_MODULUS);
 
         // y = P(z)
@@ -743,7 +691,10 @@ impl BatchDataRow<Fr> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MAX_AGG_SNARKS;
+    use crate::{
+        eip4844::{get_blob_bytes, get_versioned_hash},
+        MAX_AGG_SNARKS,
+    };
 
     #[test]
     #[ignore = "only required for logging challenge digest"]
@@ -805,7 +756,6 @@ mod tests {
         ]
         .iter()
         {
-            // batch header
             let batch_header = crate::batch::BatchHeader {
                 version: 3,
                 batch_index: 6789,
@@ -815,16 +765,19 @@ mod tests {
                 last_block_timestamp: 192837,
                 ..Default::default()
             };
+            let batch_data: BatchData<MAX_AGG_SNARKS> = tcase.into();
+            let batch_bytes = batch_data.get_batch_data_bytes();
+            let blob_bytes = get_blob_bytes(&batch_bytes);
+            let coeffs = get_coefficients(&blob_bytes);
+            let versioned_hash = get_versioned_hash(&coeffs);
             let chunks_without_padding = crate::chunk::ChunkInfo::mock_chunk_infos(tcase);
             let batch_hash = BatchHash::<MAX_AGG_SNARKS>::construct_with_unpadded(
                 &chunks_without_padding,
                 batch_header,
+                &blob_bytes,
             );
-
-            // blob data
-            let batch_data: BatchData<MAX_AGG_SNARKS> = tcase.into();
-            let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
-            let versioned_hash = batch_data.get_versioned_hash();
+            let point_evaluation_assignments =
+                PointEvaluationAssignments::new(&batch_data, &blob_bytes, versioned_hash);
             println!(
                 "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}, batch_hash = {:0>64x}\n\n",
                 annotation,
@@ -844,9 +797,15 @@ mod tests {
         let default_chunk_digests = [keccak256([]); MAX_AGG_SNARKS];
 
         let default_batch = BatchData::<MAX_AGG_SNARKS>::default();
-        let versioned_hash = default_batch.get_versioned_hash();
+        let batch_bytes = default_batch.get_batch_data_bytes();
+        let blob_bytes = get_blob_bytes(&batch_bytes);
+        let coeffs = get_coefficients(&blob_bytes);
+        let versioned_hash = get_versioned_hash(&coeffs);
+        let point_evaluation_assignments =
+            PointEvaluationAssignments::new(&default_batch, &blob_bytes, versioned_hash);
+        let versioned_hash = get_versioned_hash(&point_evaluation_assignments.coefficients);
         assert_eq!(
-            default_batch.get_challenge_digest(),
+            default_batch.get_challenge_digest(versioned_hash),
             U256::from(keccak256(
                 default_metadata_digest
                     .into_iter()
