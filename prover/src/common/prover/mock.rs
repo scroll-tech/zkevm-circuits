@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 pub static MOCK_PROVE: LazyLock<bool> = LazyLock::new(|| read_env_var("MOCK_PROVE", false));
 
-impl Prover {
+impl<'params> Prover<'params> {
     pub fn assert_if_mock_prover<C: CircuitExt<Fr>>(id: &str, degree: u32, circuit: &C) {
         if !*MOCK_PROVE {
             return;

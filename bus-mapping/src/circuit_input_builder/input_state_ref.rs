@@ -1629,9 +1629,13 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push a copy event to the state.
-    pub fn push_copy(&mut self, step: &mut ExecStep, event: CopyEvent) {
+    pub fn push_copy(&mut self, step: &mut ExecStep, event: CopyEvent) -> Result<(), Error> {
         step.copy_rw_counter_delta += event.rw_counter_delta();
-        self.block.add_copy_event(event);
+        let result = self.block.add_copy_event(event);
+        if result.is_err() {
+            log::error!("push_copy failed {result:?}, step {step:?}");
+        }
+        result
     }
 
     /// Push a exponentiation event to the state.

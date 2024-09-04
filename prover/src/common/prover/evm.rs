@@ -11,7 +11,7 @@ use rand::Rng;
 use snark_verifier_sdk::{gen_evm_proof_shplonk, CircuitExt, Snark};
 use std::env;
 
-impl Prover {
+impl<'params> Prover<'params> {
     pub fn load_or_gen_comp_evm_proof(
         &mut self,
         name: &str,

@@ -299,7 +299,7 @@ impl ChunkInfo {
     }
 
     /// Build a padded chunk from previous one
-    pub(crate) fn mock_padded_chunk_info_for_testing(previous_chunk: &Self) -> Self {
+    pub fn mock_padded_chunk_info_for_testing(previous_chunk: &Self) -> Self {
         assert!(
             !previous_chunk.is_padding,
             "previous chunk is padded already"
