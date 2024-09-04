@@ -101,7 +101,7 @@ impl<F: Field> SameContextGadget<F> {
     }
 
     // Check if current bytecode is belong to first bytecode table.
-    // Note: always return true when feature 'dual_bytecode' is disabled.
+    // Note: always return true when feature 'dual-bytecode' is disabled.
     pub(crate) fn is_first_sub_bytecode(&self) -> Expression<F> {
         self.is_first_bytecode_table.expr()
     }
@@ -151,7 +151,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
             cb.bytecode_length(code_hash.expr(), code_length.expr());
         });
 
-        #[cfg(feature = "dual_bytecode")]
+        #[cfg(feature = "dual-bytecode")]
         cb.condition(not::expr(is_first_bytecode_table.clone().expr()), |cb| {
             cb.bytecode1_length(code_hash.expr(), code_length.expr());
         });
@@ -1625,7 +1625,7 @@ impl<F: Field> CommonErrorGadget<F> {
             cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
         });
 
-        #[cfg(feature = "dual_bytecode")]
+        #[cfg(feature = "dual-bytecode")]
         cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
             cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
         });

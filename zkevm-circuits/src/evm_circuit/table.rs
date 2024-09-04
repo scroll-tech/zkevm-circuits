@@ -169,7 +169,7 @@ pub(crate) enum Table {
     Tx,
     Rw,
     Bytecode,
-    #[cfg(feature = "dual_bytecode")]
+    #[cfg(feature = "dual-bytecode")]
     Bytecode1,
     Block,
     Copy,
@@ -275,7 +275,7 @@ pub(crate) enum Lookup<F> {
         push_rlc: Expression<F>,
     },
 
-    #[cfg(feature = "dual_bytecode")]
+    #[cfg(feature = "dual-bytecode")]
     /// Lookup to second bytecode table, which contains all used creation code and
     /// contract code.
     Bytecode1 {
@@ -405,7 +405,7 @@ impl<F: Field> Lookup<F> {
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
-            #[cfg(feature = "dual_bytecode")]
+            #[cfg(feature = "dual-bytecode")]
             Self::Bytecode1 { .. } => Table::Bytecode1,
             Self::Block { .. } => Table::Block,
             Self::CopyTable { .. } => Table::Copy,
@@ -474,7 +474,7 @@ impl<F: Field> Lookup<F> {
                     push_rlc.clone(),
                 ]
             }
-            #[cfg(feature = "dual_bytecode")]
+            #[cfg(feature = "dual-bytecode")]
             Self::Bytecode1 {
                 hash,
                 tag,

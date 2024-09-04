@@ -668,7 +668,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
         });
 
-        #[cfg(feature = "dual_bytecode")]
+        #[cfg(feature = "dual-bytecode")]
         self.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
             cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
         });
@@ -686,7 +686,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             cb.opcode_lookup_at_rlc(index.clone(), opcode.clone(), 0.expr());
         });
 
-        #[cfg(feature = "dual_bytecode")]
+        #[cfg(feature = "dual-bytecode")]
         self.condition(not::expr(is_first_bytecode_table), |cb| {
             cb.opcode_lookup_at_rlc2(index, opcode, 0.expr());
         });
@@ -696,7 +696,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.opcode_lookup_at_rlc(self.curr.state.program_counter.expr(), opcode, push_rlc);
     }
 
-    #[cfg(feature = "dual_bytecode")]
+    #[cfg(feature = "dual-bytecode")]
     // helper to lookup second bytecode table.
     pub(crate) fn opcode_lookup_rlc2(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
         self.opcode_lookup_at_rlc2(self.curr.state.program_counter.expr(), opcode, push_rlc);
@@ -724,7 +724,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    #[cfg(feature = "dual_bytecode")]
+    #[cfg(feature = "dual-bytecode")]
     // lookup bytecode_table1.
     pub(crate) fn opcode_lookup_at_rlc2(
         &mut self,
@@ -770,7 +770,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    #[cfg(feature = "dual_bytecode")]
+    #[cfg(feature = "dual-bytecode")]
     pub(crate) fn bytecode_lookup2(
         &mut self,
         code_hash: Expression<F>,
@@ -806,7 +806,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    #[cfg(feature = "dual_bytecode")]
+    #[cfg(feature = "dual-bytecode")]
     pub(crate) fn bytecode1_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
         self.add_lookup(
             "Bytecode1 (length)",

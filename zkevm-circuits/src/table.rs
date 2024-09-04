@@ -1760,10 +1760,10 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-#[cfg(feature = "dual_bytecode")]
+#[cfg(feature = "dual-bytecode")]
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
 
-#[cfg(not(feature = "dual_bytecode"))]
+#[cfg(not(feature = "dual-bytecode"))]
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
 
 /// CopyThread is the state used while generating rows of the copy table.
@@ -1986,7 +1986,7 @@ impl CopyTable {
                 (rw_counter, rwc_inc_left)
             };
 
-            #[cfg(feature = "dual_bytecode")]
+            #[cfg(feature = "dual-bytecode")]
             // For codecopy & extcodecopy copy bytecodes, src_type == Bytecode.
             // For return in creating/deploy contract case, dst_type == Bytecode.
             let is_first_bytecode_table = if copy_event.src_type == CopyDataType::Bytecode {
@@ -2030,7 +2030,7 @@ impl CopyTable {
                     (Value::known(F::from(copy_step.mask)), "mask"),
                     (Value::known(F::from(thread.front_mask)), "front_mask"),
                     (Value::known(F::from(word_index)), "word_index"),
-                    #[cfg(feature = "dual_bytecode")]
+                    #[cfg(feature = "dual-bytecode")]
                     (
                         // set value from block get bytecode circuit.
                         Value::known(F::from(is_first_bytecode_table)),

@@ -286,24 +286,24 @@ impl Block {
     }
 
     // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
-    // always return true when feature 'dual_bytecode' is disabled.
+    // always return true when feature 'dual-bytecode' is disabled.
     pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
         // bytecode_map should cover the target 'code_hash',
         // but for extcodecopy, the external_address can be non existed code hash.
         // `unwrap` here is not safe.
         if self.bytecode_map.is_none() {
-            // not config feature 'dual_bytecode' case.
+            // not config feature 'dual-bytecode' case.
             true
         } else {
             let bytecode_map = self
                 .bytecode_map
                 .as_ref()
-                .expect("bytecode_map is not none when enable 'dual_bytecode' feature");
+                .expect("bytecode_map is not none when enable 'dual-bytecode' feature");
             *bytecode_map.get(code_hash).unwrap_or(&true)
         }
     }
 
-    // Get two sets of bytecodes for two bytecode sub circuits when enable feature 'dual_bytecode'.
+    // Get two sets of bytecodes for two bytecode sub circuits when enable feature 'dual-bytecode'.
     pub(crate) fn get_bytecodes_for_dual_sub_circuits(&self) -> (Vec<&Bytecode>, Vec<&Bytecode>) {
         if self.bytecode_map.is_none() {
             log::error!("error: bytecode_map is none");
@@ -314,14 +314,14 @@ impl Block {
                 &self.bytecodes,
                 self.bytecode_map
                     .as_ref()
-                    .expect("bytecode_map is not none when enable feature 'dual_bytecode'"),
+                    .expect("bytecode_map is not none when enable feature 'dual-bytecode'"),
             );
 
         (first_subcircuit_bytecodes, second_subcircuit_bytecodes)
     }
 
     // Split two sets of bytecodes for two bytecode sub circuits.
-    //#[cfg(feature = "dual_bytecode")]
+    //#[cfg(feature = "dual-bytecode")]
     pub(crate) fn split_bytecodes_for_dual_sub_circuits<'a>(
         bytecodes: &'a BTreeMap<Word, Bytecode>,
         bytecode_map: &BTreeMap<Word, bool>,
@@ -643,8 +643,8 @@ pub fn block_convert(
     }
 
     let bytecodes: BTreeMap<Word, Bytecode> = get_bytecodes(code_db);
-    // if not enable 'dual_bytecode' feature, set bytecode_map to None.
-    let bytecode_map = if cfg!(feature = "dual_bytecode") {
+    // if not enable 'dual-bytecode' feature, set bytecode_map to None.
+    let bytecode_map = if cfg!(feature = "dual-bytecode") {
         Some(get_bytecode_map(&bytecodes))
     } else {
         None
@@ -717,7 +717,7 @@ pub fn get_bytecodes(code_db: &CodeDB) -> BTreeMap<Word, Bytecode> {
     bytecodes
 }
 
-// helper to extract bytecode map info (code_hash, is_first_bytecode_table) when enable feature 'dual_bytecode'.
+// helper to extract bytecode map info (code_hash, is_first_bytecode_table) when enable feature 'dual-bytecode'.
 pub fn get_bytecode_map(bytecodes: &BTreeMap<Word, Bytecode>) -> BTreeMap<Word, bool> {
     let bytecode_pairs = bytecodes
         .iter()

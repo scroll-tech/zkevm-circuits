@@ -88,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
                 );
             });
 
-            #[cfg(feature = "dual_bytecode")]
+            #[cfg(feature = "dual-bytecode")]
             cb.condition(
                 not::expr(code_len_gadget.is_first_bytecode_table.expr()),
                 |cb| {

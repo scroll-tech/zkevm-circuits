@@ -1015,7 +1015,7 @@ impl<F: Field> BytecodeCircuit<F> {
         Self::new(bytecodes, bytecode_size)
     }
 
-    #[cfg(feature = "dual_bytecode")]
+    #[cfg(feature = "dual-bytecode")]
     /// Creates bytecode sub circuit from block, is_first_bytecode indicates first or second
     /// sub bytecode circuit.
     pub fn new_from_block_for_dual_circuit(
@@ -1055,7 +1055,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
         if block.bytecode_map.is_some() {
-            // when enable feature "dual_bytecode", get two sets of bytecodes here.
+            // when enable feature "dual-bytecode", get two sets of bytecodes here.
             let (first_bytecodes, second_bytecodes) = block.get_bytecodes_for_dual_sub_circuits();
             let minimum_row: usize = max(
                 first_bytecodes

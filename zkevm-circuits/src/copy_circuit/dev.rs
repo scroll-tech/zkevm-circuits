@@ -25,7 +25,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
-        #[cfg(feature = "dual_bytecode")]
+        #[cfg(feature = "dual-bytecode")]
         let bytecode_table1 = BytecodeTable::construct(meta);
 
         let q_enable = meta.fixed_column();
@@ -40,7 +40,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
                     tx_table,
                     rw_table,
                     bytecode_table,
-                    #[cfg(feature = "dual_bytecode")]
+                    #[cfg(feature = "dual-bytecode")]
                     bytecode_table1,
                     copy_table,
                     q_enable,
@@ -74,21 +74,21 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             challenge_values.evm_word(),
         )?;
 
-        // when enable feature "dual_bytecode", get two sets of bytecodes here.
+        // when enable feature "dual-bytecode", get two sets of bytecodes here.
         if self.bytecode_map.is_some() {
-            // enable feature = "dual_bytecode"
+            // enable feature = "dual-bytecode"
             let (first_bytecodes, second_bytecodes) = Block::split_bytecodes_for_dual_sub_circuits(
                 &self.external_data.bytecodes,
                 self.bytecode_map
                     .as_ref()
-                    .expect("bytecode_map is not none when enable feature 'dual_bytecode'"),
+                    .expect("bytecode_map is not none when enable feature 'dual-bytecode'"),
             );
             config
                 .0
                 .bytecode_table
                 .dev_load(&mut layouter, first_bytecodes, &challenge_values)?;
 
-            #[cfg(feature = "dual_bytecode")]
+            #[cfg(feature = "dual-bytecode")]
             config.0.bytecode_table1.dev_load(
                 &mut layouter,
                 second_bytecodes,
