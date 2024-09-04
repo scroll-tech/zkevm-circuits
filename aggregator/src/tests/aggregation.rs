@@ -148,6 +148,19 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
 ) -> BatchCircuit<N_SNARKS> {
     // inner circuit: Mock circuit
     let k0 = 8;
+    #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+    pub struct ChunkProof {
+        pub chunk_info: ChunkInfo,
+    }
+    #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+    struct BatchProvingTask {
+        pub chunk_proofs: Vec<ChunkProof>,
+        pub batch_header: BatchHeader<MAX_AGG_SNARKS>,
+    }
+    let file = std::fs::File::open("data/batch-task.json").expect("batch-task.json exists");
+    let reader = std::io::BufReader::new(file);
+    let batch_proving_task: BatchProvingTask =
+        serde_json::from_reader(reader).expect("deserialisation should succeed");
 
     let mut rng = test_rng();
     let params = gen_srs(k0);
@@ -168,6 +181,16 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
     let batch_data = BatchData::<N_SNARKS>::new(num_real_chunks, &chunks_with_padding);
     let batch_bytes = batch_data.get_batch_data_bytes();
     let blob_bytes = get_blob_bytes(&batch_bytes);
+    let batch_header = BatchHeader::construct_from_chunks(
+        batch_proving_task.batch_header.version,
+        batch_proving_task.batch_header.batch_index,
+        batch_proving_task.batch_header.l1_message_popped,
+        batch_proving_task.batch_header.total_l1_message_popped,
+        batch_proving_task.batch_header.parent_batch_hash,
+        batch_proving_task.batch_header.last_block_timestamp,
+        &chunks_with_padding,
+        &blob_bytes,
+    );
 
     // ==========================
     // real chunks
@@ -195,8 +218,7 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
     // ==========================
     // batch
     // ==========================
-    let batch_hash =
-        BatchHash::construct(&chunks_with_padding, BatchHeader::default(), &blob_bytes);
+    let batch_hash = BatchHash::construct(&chunks_with_padding, batch_header, &blob_bytes);
 
     BatchCircuit::new(
         &params,
