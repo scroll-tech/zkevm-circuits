@@ -102,7 +102,7 @@ impl<F: Field> SameContextGadget<F> {
 
     // Check if current bytecode is belong to first bytecode table.
     // Note: always return true when feature 'dual-bytecode' is disabled.
-    pub(crate) fn is_first_sub_bytecode(&self) -> Expression<F> {
+    pub(crate) fn is_first_bytecode_table(&self) -> Expression<F> {
         self.is_first_bytecode_table.expr()
     }
 

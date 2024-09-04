@@ -50,7 +50,9 @@ pub struct Block {
     pub rws: RwMap,
     /// Bytecode used in the block
     pub bytecodes: BTreeMap<Word, Bytecode>,
-    /// Bytecode map <code_hash, is_first_bytecode_circuit> in the block
+    /// Map from code hash to boolean (<code_hash, is_first_bytecode_circuit>) that
+    /// indicates whether the code with the said code hash belongs to the first or second
+    /// instance of the bytecode table.
     pub bytecode_map: Option<BTreeMap<Word, bool>>,
     /// The block context
     pub context: BlockContexts,

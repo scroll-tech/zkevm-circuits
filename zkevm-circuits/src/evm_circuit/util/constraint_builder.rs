@@ -665,7 +665,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         is_first_bytecode_table: Expression<F>,
     ) {
         self.condition(is_first_bytecode_table.expr(), |cb| {
-            cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
+            cb.opcode_lookup_rlc(opcode.expr(), push_rlc.expr());
         });
 
         #[cfg(feature = "dual-bytecode")]
@@ -678,17 +678,15 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         &mut self,
         index: Expression<F>,
         opcode: Expression<F>,
-        is_code: Expression<F>,
         is_first_bytecode_table: Expression<F>,
     ) {
-        assert_eq!(is_code, 1.expr());
         self.condition(is_first_bytecode_table.clone(), |cb| {
             cb.opcode_lookup_at_rlc(index.clone(), opcode.clone(), 0.expr());
         });
 
         #[cfg(feature = "dual-bytecode")]
         self.condition(not::expr(is_first_bytecode_table), |cb| {
-            cb.opcode_lookup_at_rlc2(index, opcode, 0.expr());
+            cb.opcode_lookup_at_rlc1(index, opcode, 0.expr());
         });
     }
 
@@ -699,7 +697,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     #[cfg(feature = "dual-bytecode")]
     // helper to lookup second bytecode table.
     pub(crate) fn opcode_lookup_rlc2(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
-        self.opcode_lookup_at_rlc2(self.curr.state.program_counter.expr(), opcode, push_rlc);
+        self.opcode_lookup_at_rlc1(self.curr.state.program_counter.expr(), opcode, push_rlc);
     }
 
     // lookup bytecode_table.
@@ -726,7 +724,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     #[cfg(feature = "dual-bytecode")]
     // lookup bytecode_table1.
-    pub(crate) fn opcode_lookup_at_rlc2(
+    pub(crate) fn opcode_lookup_at_rlc1(
         &mut self,
         index: Expression<F>,
         opcode: Expression<F>,
@@ -771,7 +769,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     #[cfg(feature = "dual-bytecode")]
-    pub(crate) fn bytecode_lookup2(
+    pub(crate) fn bytecode_lookup1(
         &mut self,
         code_hash: Expression<F>,
         index: Expression<F>,

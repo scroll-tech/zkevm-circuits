@@ -74,8 +74,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
             cb.opcode_lookup_at(
                 dest.valid_value(),
                 OpcodeId::JUMPDEST.expr(),
-                1.expr(),
-                same_context.is_first_sub_bytecode(),
+                same_context.is_first_bytecode_table(),
             );
         });
 

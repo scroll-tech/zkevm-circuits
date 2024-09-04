@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             cb.condition(
                 not::expr(code_len_gadget.is_first_bytecode_table.expr()),
                 |cb| {
-                    cb.bytecode_lookup2(
+                    cb.bytecode_lookup1(
                         cb.curr.state.code_hash.expr(),
                         dest.valid_value(),
                         is_code.expr(),

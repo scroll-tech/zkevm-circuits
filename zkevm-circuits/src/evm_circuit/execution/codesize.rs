@@ -59,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         cb.require_equal(
             "code_len_gadget and same_context have the same is_first_bytecode_table",
             code_len_gadget.is_first_bytecode_table.expr(),
-            same_context.is_first_sub_bytecode(),
+            same_context.is_first_bytecode_table(),
         );
 
         Self {

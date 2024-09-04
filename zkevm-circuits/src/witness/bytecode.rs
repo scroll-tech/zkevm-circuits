@@ -127,7 +127,8 @@ impl Bytecode {
         (byte, is_code, push_rlc)
     }
 
-    /// Number of rows a BytecodeCircuit uses to include this. The +1 is for the header row.
+    /// The number of rows the `BytecodeCircuit` utilises to include the bytecode.
+    /// We use a single header row, plus a row per byte.
     pub fn rows_required(&self) -> usize {
         self.bytes.len() + 1
     }

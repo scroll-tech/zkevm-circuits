@@ -189,6 +189,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "poseidon table");
 
         let bytecode_table = BytecodeTable::construct(meta);
+        #[cfg(feature = "dual-bytecode")]
         let bytecode_table1 = BytecodeTable::construct(meta);
 
         log_circuit_info(meta, "bytecode table");

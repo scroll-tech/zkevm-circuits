@@ -50,8 +50,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
         cb.opcode_lookup_at(
             from_bytes::expr(&destination.cells),
             OpcodeId::JUMPDEST.expr(),
-            1.expr(),
-            same_context.is_first_sub_bytecode(),
+            same_context.is_first_bytecode_table(),
         );
 
         Self {
