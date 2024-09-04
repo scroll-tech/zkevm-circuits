@@ -11,9 +11,7 @@ use crate::{
     batch::{BatchHash, BatchHeader},
     constants::MAX_AGG_SNARKS,
     eip4844::get_blob_bytes,
-    layer_0,
-    MockChunkCircuit,
-    BatchData, ChunkInfo,
+    layer_0, BatchData, ChunkInfo, MockChunkCircuit,
 };
 
 // See https://github.com/scroll-tech/zkevm-circuits/pull/1311#issuecomment-2139559866
