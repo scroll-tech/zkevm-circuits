@@ -9,9 +9,9 @@ use mpt_circuits::{
 };
 use mpt_zktrie::{
     extend_address_to_h256, state::StorageData, AccountData, BytesArray, CanRead, TrieProof,
-    ZkTrie, ZkTrieNode, ZktrieState, SECURE_HASH_DOMAIN,
+    ZkMemoryDb, ZkTrie, ZkTrieNode, ZktrieState, SECURE_HASH_DOMAIN,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use num_bigint::BigUint;
 use std::{
@@ -40,18 +40,25 @@ fn to_smt_account(acc: AccountData) -> SMTAccount {
 pub struct WitnessGenerator {
     trie: ZkTrie,
     storages_cache: HashMap<Address, ZkTrie>,
+    ref_db: Rc<ZkMemoryDb>,
 }
 
 impl From<&ZktrieState> for WitnessGenerator {
     fn from(state: &ZktrieState) -> Self {
         Self {
-            trie: state.zk_db.borrow_mut().new_trie(&state.trie_root).unwrap(),
+            trie: state.zk_db.new_trie(&state.trie_root).unwrap(),
             storages_cache: HashMap::new(),
+            ref_db: state.zk_db.clone(),
         }
     }
 }
 
 impl WitnessGenerator {
+    /// output all updated ZkTrie
+    pub fn into_updated_trie(self) -> impl Iterator<Item = ZkTrie> {
+        std::iter::once(self.trie).chain(self.storages_cache.into_values())
+    }
+
     /// dump inner data for debugging
     pub fn dump<'a>(&self, addrs: impl Iterator<Item = &'a Address>) {
         for addr in addrs {
@@ -74,17 +81,18 @@ impl WitnessGenerator {
             HexBytes(word_buf)
         };
 
-        self.storages_cache
-            .get(&address)
-            .map(Clone::clone)
-            .or_else(|| {
-                self.trie
-                    .get_account(address.as_bytes())
-                    .map(AccountData::from)
-                    .and_then(|account| self.trie.get_db().new_trie(&account.storage_root.0))
-            })
-            .and_then(|trie| trie.prove(key.as_ref()).ok())
-            .unwrap_or_default()
+        if let Some(trie) = self.storages_cache.get(&address) {
+            // trie is under updating
+            trie.prove(key.as_ref()).ok()
+        } else {
+            // create a temporary trie and prove it
+            self.trie
+                .get_account(address.as_bytes())
+                .map(AccountData::from)
+                .and_then(|account| self.ref_db.new_trie(&account.storage_root.0))
+                .and_then(|trie| trie.prove(key.as_ref()).ok())
+        }
+        .unwrap_or_default()
     }
     fn fetch_storage_cache(&mut self, address: Address) -> Option<&mut ZkTrie> {
         let cache_entry = self.storages_cache.entry(address);
@@ -95,8 +103,7 @@ impl WitnessGenerator {
                     .map(AccountData::from)
                     .and_then(|acc_data| {
                         // all trie share the same underlay db, so we can create new trie here
-                        let zk_db = self.trie.get_db();
-                        zk_db.new_trie(&acc_data.storage_root.0)
+                        self.ref_db.new_trie(&acc_data.storage_root.0)
                     })
                     .map(|trie| entry.insert(trie))
             }

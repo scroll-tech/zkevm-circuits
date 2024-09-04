@@ -1,27 +1,27 @@
+use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
+
 use crate::{
+    config::ZKEVM_DEGREES,
     utils::read_env_var,
     zkevm::{Prover, Verifier},
     ChunkProof, ChunkProvingTask,
 };
-use std::sync::{LazyLock, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{LazyLock, Mutex},
+};
+
+static PARAMS_MAP: LazyLock<BTreeMap<u32, ParamsKZG<Bn256>>> = LazyLock::new(|| {
+    let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
+    crate::common::Prover::load_params_map(&params_dir, &ZKEVM_DEGREES)
+});
 
 static CHUNK_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
-    let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
     let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
-    let prover = Prover::from_dirs(&params_dir, &assets_dir);
+    let prover = Prover::from_params_and_assets(&PARAMS_MAP, &assets_dir);
     log::info!("Constructed chunk-prover");
 
     Mutex::new(prover)
-});
-
-static CHUNK_VERIFIER: LazyLock<Mutex<Verifier>> = LazyLock::new(|| {
-    let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
-    let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
-
-    let verifier = Verifier::from_dirs(&params_dir, &assets_dir);
-    log::info!("Constructed chunk-verifier");
-
-    Mutex::new(verifier)
 });
 
 pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
@@ -34,7 +34,12 @@ pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
         .unwrap_or_else(|err| panic!("{desc}: failed to generate chunk snark: {err}"));
     log::info!("{desc}: generated chunk proof");
 
-    let verifier = CHUNK_VERIFIER.lock().expect("poisoned chunk-verifier");
+    let verifier = {
+        let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
+        let verifier = Verifier::from_params_and_assets(prover.prover_impl.params_map, &assets_dir);
+        log::info!("Constructed chunk-verifier");
+        verifier
+    };
 
     let verified = verifier.verify_chunk_proof(proof.clone());
     assert!(verified, "{desc}: failed to verify chunk snark");

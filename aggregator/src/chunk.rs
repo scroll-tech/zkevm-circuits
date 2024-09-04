@@ -64,8 +64,18 @@ impl ChunkInfo {
             .flat_map(|b| {
                 b.transactions
                     .iter()
-                    .filter(|tx| !tx.is_l1_tx())
-                    .flat_map(|tx| tx.to_eth_tx(None, None, None, None).rlp().to_vec())
+                    .enumerate()
+                    .filter(|(_idx, tx)| !tx.is_l1_tx())
+                    .flat_map(|(idx, tx)| {
+                        tx.to_eth_tx(
+                            b.header.hash,
+                            b.header.number,
+                            Some((idx as u64).into()),
+                            b.header.base_fee_per_gas,
+                        )
+                        .rlp()
+                        .to_vec()
+                    })
             })
             .collect::<Vec<u8>>();
 
@@ -290,8 +300,7 @@ impl ChunkInfo {
     }
 
     /// Build a padded chunk from previous one
-    #[cfg(test)]
-    pub(crate) fn mock_padded_chunk_info_for_testing(previous_chunk: &Self) -> Self {
+    pub fn mock_padded_chunk_info_for_testing(previous_chunk: &Self) -> Self {
         assert!(
             !previous_chunk.is_padding,
             "previous chunk is padded already"
