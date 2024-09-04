@@ -1,3 +1,4 @@
+// Migration to community edition snark verifier
 use ce_snark_verifier_sdk::CircuitExt as CeCircuitExt;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
