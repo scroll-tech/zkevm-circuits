@@ -60,7 +60,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let external_address =
             from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
 
-        //let code_size = cb.query_cell();
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
 
@@ -252,7 +251,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(block.is_first_sub_bytecode_circuit(&code_hash))),
+            Value::known(F::from(block.is_first_bytecode_circuit(&code_hash))),
         )?;
         Ok(())
     }

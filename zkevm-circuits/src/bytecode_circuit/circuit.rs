@@ -1025,7 +1025,7 @@ impl<F: Field> BytecodeCircuit<F> {
         let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .iter()
-            .filter(|code| block.is_first_sub_bytecode_circuit(code.0) == is_first_bytecode)
+            .filter(|code| block.is_first_bytecode_circuit(code.0) == is_first_bytecode)
             .map(|(codehash, b)| unroll_with_codehash(*codehash, b.bytes.clone()))
             .collect();
         Self::new(bytecodes, block.circuits_params.max_bytecode)

@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         // Transit program_counter to destination when should_jump, otherwise by
         // delta 1.
         let next_program_counter = select::expr(
-            should_jump.clone(),
+            should_jump.expr(),
             dest.valid_value(),
             cb.curr.state.program_counter.expr() + 1.expr(),
         );
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         // Lookup opcode at destination when should_jump
-        cb.condition(should_jump.clone(), |cb| {
+        cb.condition(should_jump.expr(), |cb| {
             cb.require_equal(
                 "JUMPI destination must be within range if condition is non-zero",
                 dest.not_overflow(),

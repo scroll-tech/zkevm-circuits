@@ -285,9 +285,9 @@ impl Block {
         log::debug!("start num: {}", self.rws.rw_num(RwTableTag::Start));
     }
 
-    // This helper returns bytecodes's whether `code_hash` is belong to first bytecode circuit.
-    // always return true when feature 'dual-bytecode' is disabled.
-    pub(crate) fn is_first_sub_bytecode_circuit(&self, code_hash: &U256) -> bool {
+    // A helper that returns a boolean that indicates whether the bytecode with `code_hash` belongs to first bytecode circuit.
+    // Always return true when the feature `dual-bytecode` is disabled.
+    pub(crate) fn is_first_bytecode_circuit(&self, code_hash: &U256) -> bool {
         // bytecode_map should cover the target 'code_hash',
         // but for extcodecopy, the external_address can be non existed code hash.
         // `unwrap` here is not safe.

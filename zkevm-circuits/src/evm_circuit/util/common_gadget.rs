@@ -115,7 +115,7 @@ impl<F: Field> SameContextGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
+        let is_first_bytecode_table = block.is_first_bytecode_circuit(&call.code_hash);
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -186,7 +186,7 @@ impl<F: Field> BytecodeLengthGadget<F> {
         self.is_first_bytecode_table.assign(
             region,
             offset,
-            Value::known(F::from(block.is_first_sub_bytecode_circuit(code_hash))),
+            Value::known(F::from(block.is_first_bytecode_circuit(code_hash))),
         )?;
         Ok(code_length)
     }
@@ -224,7 +224,7 @@ impl<F: Field> BytecodeLookupGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
+        let is_first_bytecode_table = block.is_first_bytecode_circuit(&call.code_hash);
         self.is_first_bytecode_table.assign(
             region,
             offset,
@@ -1709,7 +1709,7 @@ impl<F: Field> CommonErrorGadget<F> {
         self.restore_context
             .assign(region, offset, block, call, step, rw_offset)?;
 
-        let is_first_bytecode_table = block.is_first_sub_bytecode_circuit(&call.code_hash);
+        let is_first_bytecode_table = block.is_first_bytecode_circuit(&call.code_hash);
         self.is_first_bytecode_table.assign(
             region,
             offset,

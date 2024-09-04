@@ -494,7 +494,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         // lookup second bytecode table
         #[cfg(feature = "dual-bytecode")]
-        meta.lookup_any("Bytecode lookup", |meta| {
+        meta.lookup_any("Bytecode1 lookup", |meta| {
             let is_first_bytecode = meta.query_advice(is_first_bytecode_table, CURRENT);
 
             let cond = meta.query_fixed(q_enable, CURRENT)
@@ -1223,7 +1223,6 @@ impl<F: Field> CopyCircuit<F> {
         Self::new(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
-            //#[cfg(feature = "dual-bytecode")]
             block.bytecode_map.clone(),
         )
     }

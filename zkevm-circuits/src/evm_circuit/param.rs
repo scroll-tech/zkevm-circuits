@@ -80,8 +80,6 @@ pub const RW_TABLE_LOOKUPS: usize = 8;
 
 /// Bytecode Table lookups done in EVMCircuit
 pub const BYTECODE_TABLE_LOOKUPS: usize = 1;
-// #[cfg(feature = "dual-bytecode")]
-// pub const BYTECODE_TABLE_LOOKUPS: usize = 2;
 
 /// Block Table lookups done in EVMCircuit
 pub const BLOCK_TABLE_LOOKUPS: usize = 1;
