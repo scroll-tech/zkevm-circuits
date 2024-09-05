@@ -343,6 +343,7 @@ impl Transaction {
         );
 
         let tx_type = TxType::get_tx_type(eth_tx);
+        log::info!("bus mapping: tx_type {:?}", tx_type);
         let (l1_fee, l1_fee_committed) = if tx_type.is_l1_msg() {
             Default::default()
         } else {

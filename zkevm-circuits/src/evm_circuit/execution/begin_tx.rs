@@ -1791,7 +1791,7 @@ mod test {
     // build pre-eip155 tx
     fn build_legacy_ctx(sender_balance: Word) -> Result<TestContext<1, 1>, Error> {
         let sig_data = (
-            0x1c_u64,
+            0x1c_u64, // TODO： add V 0 or 1 test
             word!("0x90b751c5870e9bc071c8d6b2bf1ee80f36ee7efd8e6fbabaa25bd3b8b68cfe9b"),
             word!("0x79c25a01f12493a6d35f1330306d4e3c4e782fcbffc64c6809959577f41ff248"),
         );
@@ -1817,7 +1817,7 @@ mod test {
                 //.transaction_type(0) // Set tx type to pre-eip155.
                 .input(hex::decode("606060405260008054600160a060020a0319163317905560f2806100236000396000f3606060405260e060020a6000350463f5537ede8114601c575b6002565b3460025760f06004356024356044356000805433600160a060020a039081169116141560ea5783905080600160a060020a031663a9059cbb84846000604051602001526040518360e060020a0281526004018083600160a060020a0316815260200182815260200192505050602060405180830381600087803b1560025760325a03f1156002575050604080518481529051600160a060020a0386811693508716917fd0ed88a3f042c6bbb1e3ea406079b5f2b4b198afccaa535d837f4c63abbc4de6919081900360200190a35b50505050565b00")
                 .expect("hex data can be decoded").into())
-                .hash(tx_hash)
+                //.hash(tx_hash)
                 .sig_data(sig_data);
             },
             |block, _tx| block.number(0xcafeu64),
