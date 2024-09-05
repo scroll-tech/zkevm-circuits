@@ -1277,12 +1277,13 @@ mod test {
     use crate::{
         evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder, witness::Transaction,
     };
-    use bus_mapping::evm::OpcodeId;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{
         self, address, bytecode,
         evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
         evm_types::GasCost,
         geth_types::TxType::PreEip155,
+        l2_predeployed::l1_gas_price_oracle::default_contract_account,
         word, Address, Bytecode, Error, Hash, Word, H160, H256, U256, U64,
     };
     use ethers_core::{types::Bytes, utils::get_contract_address};
@@ -1778,8 +1779,13 @@ mod test {
     // TODO: move test to appropriate place
     #[test]
     fn test_legacy_tx_pre_eip155() {
-        let ctx = build_legacy_ctx(gwei(80_000)).unwrap();
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        let ctx = build_legacy_ctx(gwei(8000_000)).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_calldata: 300,
+                ..Default::default()
+            })
+            .run()
     }
 
     // build pre-eip155 tx
@@ -1790,31 +1796,36 @@ mod test {
             word!("0x79c25a01f12493a6d35f1330306d4e3c4e782fcbffc64c6809959577f41ff248"),
         );
 
+        let tx_hash = build_pre_eip155_tx();
+
         TestContext::new(
             None,
             |accs| {
                 accs[0]
                     .address(address!("0xcf40d0d2b44f2b66e07cace1372ca42b73cf21a3"))
-                    .balance(sender_balance);
+                    .balance(sender_balance)
+                    .nonce(word!("0x2ea8"));
                 //accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(1));
             },
             |mut txs, _accs| {
                 txs[0]
                 .from(address!("0xcf40d0d2b44f2b66e07cace1372ca42b73cf21a3"))
                 .nonce(word!("0x2ea8"))
-                .gas(word!("0x0249f0"))
                 .gas_price(word!("0x098bca5a00"))
+                .gas(word!("0x0249f0"))
                 .value(word!("0x00"))
-                //.transaction_type(0); // Set tx type to pre-eip155.
+                //.transaction_type(0) // Set tx type to pre-eip155.
                 .input(hex::decode("606060405260008054600160a060020a0319163317905560f2806100236000396000f3606060405260e060020a6000350463f5537ede8114601c575b6002565b3460025760f06004356024356044356000805433600160a060020a039081169116141560ea5783905080600160a060020a031663a9059cbb84846000604051602001526040518360e060020a0281526004018083600160a060020a0316815260200182815260200192505050602060405180830381600087803b1560025760325a03f1156002575050604080518481529051600160a060020a0386811693508716917fd0ed88a3f042c6bbb1e3ea406079b5f2b4b198afccaa535d837f4c63abbc4de6919081900360200190a35b50505050565b00")
                 .expect("hex data can be decoded").into())
+                .hash(tx_hash)
                 .sig_data(sig_data);
             },
             |block, _tx| block.number(0xcafeu64),
         )
     }
 
-    fn build_pre_eip155_tx() -> Transaction {
+    // this helper can be removed if above MockTransaction test pass.
+    fn build_pre_eip155_tx() -> H256 {
         // pre-eip155 tx downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
         let eth_tx = TransactionRequest::new()
             .from(address!("0xcf40d0d2b44f2b66e07cace1372ca42b73cf21a3"))
@@ -1861,6 +1872,6 @@ mod test {
         tx.r = eth_sig.r;
         tx.s = eth_sig.s;
 
-        tx
+        tx.hash
     }
 }

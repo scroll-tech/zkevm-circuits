@@ -347,7 +347,6 @@ impl MockTransaction {
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas);
-        //.chain_id(None);
 
         let tx = if let Some(gas_price) = self.gas_price {
             tx.gas_price(gas_price)
@@ -362,6 +361,7 @@ impl MockTransaction {
 
         match (self.v, self.r, self.s) {
             (Some(_), Some(_), Some(_)) => {
+                println!("come to place where nothing need to do about sig");
                 // already have entire signature data, won't do anything.
             }
             (None, None, None) => {
