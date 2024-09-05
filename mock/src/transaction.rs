@@ -361,6 +361,9 @@ impl MockTransaction {
         };
 
         match (self.v, self.r, self.s) {
+            (Some(_), Some(_), Some(_)) => {
+                // already have entire signature data, won't do anything.
+            }
             (None, None, None) => {
                 // Compute sig params and set them in case we have a wallet as `from` attr.
                 if self.from.is_wallet() && self.hash.is_none() {
@@ -374,6 +377,7 @@ impl MockTransaction {
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
             }
+
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
 
