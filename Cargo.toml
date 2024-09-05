@@ -58,8 +58,8 @@ serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_stacker = "0.1"
 sha3 = "0.10"
-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "feat/circuit_params" }
-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "feat/circuit_params", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
 ce-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "axiom-community-edition", package = "snark-verifier", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"] }
 ce-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "axiom-community-edition", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"], package = "snark-verifier-sdk" }
 strum = "0.25"
