@@ -37,7 +37,7 @@ impl Opcode for MCopy {
             length.as_u64(),
             &mut exec_step,
         )?;
-        state.push_copy(&mut exec_step, copy_event);
+        state.push_copy(&mut exec_step, copy_event)?;
         Ok(vec![exec_step])
     }
 }

@@ -80,7 +80,7 @@ impl Opcode for Extcodecopy {
             length,
             &mut exec_step,
         )?;
-        state.push_copy(&mut exec_step, copy_event);
+        state.push_copy(&mut exec_step, copy_event)?;
         Ok(vec![exec_step])
     }
 }

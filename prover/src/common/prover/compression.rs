@@ -10,7 +10,7 @@ use rand::Rng;
 use snark_verifier_sdk::Snark;
 use std::env;
 
-impl Prover {
+impl<'params> Prover<'params> {
     pub fn gen_comp_snark(
         &mut self,
         id: &str,

@@ -4,12 +4,12 @@ use anyhow::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::{keygen_pk2, Circuit, ProvingKey},
-    poly::{commitment::Params, kzg::commitment::ParamsKZG},
+    poly::kzg::commitment::ParamsKZG,
 };
 use rand::Rng;
 use snark_verifier_sdk::{gen_snark_shplonk, CircuitExt, Snark};
 
-impl Prover {
+impl<'params> Prover<'params> {
     pub fn gen_snark<C: CircuitExt<Fr>>(
         &mut self,
         id: &str,
@@ -32,25 +32,7 @@ impl Prover {
         Ok(snark)
     }
 
-    pub fn params(&mut self, degree: u32) -> &ParamsKZG<Bn256> {
-        if self.params_map.contains_key(&degree) {
-            return &self.params_map[&degree];
-        }
-
-        log::warn!("Optimization: download params{degree} to params dir");
-
-        log::info!("Before generate params of {degree}");
-        let mut new_params = self
-            .params_map
-            .range(degree..)
-            .next()
-            .unwrap_or_else(|| panic!("Must have params of degree-{degree}"))
-            .1
-            .clone();
-        new_params.downsize(degree);
-        log::info!("After generate params of {degree}");
-
-        self.params_map.insert(degree, new_params);
+    pub fn params(&self, degree: u32) -> &ParamsKZG<Bn256> {
         &self.params_map[&degree]
     }
 
