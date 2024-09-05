@@ -39,7 +39,7 @@ The goal of this crate is to serve as:
   and witness it with few function calls.
 
 ### Parsing
-Provided a JSON file or a JSON as a stream of bytes, which contains an
+Provided a JSON file as a stream of bytes, which contains an
 execution trace from an EVM, you can parse it and construct an
 `ExecutionTrace` instance from it. That will automatically fill all of the
 bus-mapping instances of each
