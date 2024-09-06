@@ -32,13 +32,11 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
-mod curie;
 mod tx_access_list;
 mod tx_eip1559;
 mod tx_l1_fee;
 mod tx_l1_msg;
 
-pub(crate) use curie::CurieGadget;
 pub(crate) use tx_access_list::TxAccessListGadget;
 pub(crate) use tx_eip1559::TxEip1559Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
