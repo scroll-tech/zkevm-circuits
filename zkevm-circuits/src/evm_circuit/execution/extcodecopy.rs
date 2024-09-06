@@ -60,6 +60,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
+
         let code_hash = cb.query_cell_phase2();
         let not_exists = IsZeroGadget::construct(cb, code_hash.clone().expr());
         let exists = not::expr(not_exists.expr());

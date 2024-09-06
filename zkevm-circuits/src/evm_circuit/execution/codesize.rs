@@ -56,6 +56,11 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             from_bytes::expr(&codesize_bytes),
             code_len_gadget.code_length.expr(),
         );
+        cb.require_equal(
+            "code_len_gadget and same_context have the same is_first_bytecode_table",
+            code_len_gadget.is_first_bytecode_table.expr(),
+            same_context.is_first_bytecode_table(),
+        );
 
         Self {
             same_context,
@@ -88,7 +93,6 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
         self.code_len_gadget
             .assign(region, offset, block, &call.code_hash)?;
-
         Ok(())
     }
 }
