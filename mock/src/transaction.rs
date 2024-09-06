@@ -339,14 +339,14 @@ impl MockTransaction {
             return self.build_2930();
         }
 
-        println!("tx_type {:?}", self.transaction_type);
-
         let tx = TransactionRequest::new()
             .from(self.from.address())
             .nonce(self.nonce)
             .value(self.value)
             .data(self.input.clone())
-            .gas(self.gas);
+            .gas(self.gas)
+            // TODO: investigate why add chain_id still work for pre-eip155 tests
+            .chain_id(self.chain_id);
 
         let tx = if let Some(gas_price) = self.gas_price {
             tx.gas_price(gas_price)
@@ -361,7 +361,6 @@ impl MockTransaction {
 
         match (self.v, self.r, self.s) {
             (Some(_), Some(_), Some(_)) => {
-                println!("come to place where nothing need to do about sig");
                 // already have entire signature data, won't do anything.
             }
             (None, None, None) => {
@@ -370,7 +369,7 @@ impl MockTransaction {
                     let sig = self
                         .from
                         .as_wallet()
-                        //.with_chain_id(self.chain_id)
+                        .with_chain_id(self.chain_id)
                         .sign_transaction_sync(&tx.into()) // sign for legacy tx type in ethers-rs.
                         .expect("sign mock tx");
                     // Set sig parameters
