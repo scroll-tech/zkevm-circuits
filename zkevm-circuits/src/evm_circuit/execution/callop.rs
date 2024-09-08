@@ -782,7 +782,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
-
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
         // opcode DELEGATECALL has two extra call context lookups - current
@@ -849,8 +850,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             }
         }
 
-        self.opcode_gadget
-            .assign(region, offset, block, call, step)?;
         self.is_call.assign(
             region,
             offset,

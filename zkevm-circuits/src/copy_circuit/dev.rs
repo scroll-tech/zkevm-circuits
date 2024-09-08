@@ -4,6 +4,7 @@ use crate::{
     copy_circuit::{CopyCircuitConfig, CopyCircuitConfigArgs},
     table::{BytecodeTable, CopyTable, RwTable, TxTable},
     util::{Challenges, Field, SubCircuit, SubCircuitConfig},
+    witness::Block,
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
@@ -23,6 +24,9 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
+        #[cfg(feature = "dual-bytecode")]
+        let bytecode_table1 = BytecodeTable::construct(meta);
+
         let q_enable = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_enable);
         let challenges = Challenges::construct(meta);
@@ -35,6 +39,8 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
                     tx_table,
                     rw_table,
                     bytecode_table,
+                    #[cfg(feature = "dual-bytecode")]
+                    bytecode_table1,
                     copy_table,
                     q_enable,
                     challenges: challenge_exprs,
@@ -67,11 +73,34 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             challenge_values.evm_word(),
         )?;
 
-        config.0.bytecode_table.dev_load(
-            &mut layouter,
-            self.external_data.bytecodes.values(),
-            &challenge_values,
-        )?;
+        // when enable feature "dual-bytecode", get two sets of bytecodes here.
+        if self.bytecode_map.is_some() {
+            // enable feature = "dual-bytecode"
+            let (first_bytecodes, second_bytecodes) = Block::split_bytecodes_for_dual_sub_circuits(
+                &self.external_data.bytecodes,
+                self.bytecode_map
+                    .as_ref()
+                    .expect("bytecode_map is not none when enable feature 'dual-bytecode'"),
+            );
+            config
+                .0
+                .bytecode_table
+                .dev_load(&mut layouter, first_bytecodes, &challenge_values)?;
+
+            #[cfg(feature = "dual-bytecode")]
+            config.0.bytecode_table1.dev_load(
+                &mut layouter,
+                second_bytecodes,
+                &challenge_values,
+            )?;
+        } else {
+            config.0.bytecode_table.dev_load(
+                &mut layouter,
+                self.external_data.bytecodes.values(),
+                &challenge_values,
+            )?;
+        };
+
         self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
     }
 }
