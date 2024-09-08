@@ -16,6 +16,7 @@ halo2_proofs.workspace = true
 halo2curves.workspace = true
 ce-snark-verifier.workspace = true
 ce-snark-verifier-sdk.workspace = true
+snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
 [dev-dependencies]

@@ -2,7 +2,7 @@
 
 use crate::params::ConfigParams;
 use ark_std::{end_timer, start_timer};
-use ce_snark_verifier::halo2_base::gates::circuit::{BaseConfig, CircuitBuilderStage};
+use ce_snark_verifier::{halo2_base::gates::circuit::{BaseConfig, CircuitBuilderStage}, system::halo2::transcript};
 use ce_snark_verifier_sdk::{
     halo2::aggregation::{AggregationCircuit, AggregationConfigParams, VerifierUniversality},
     CircuitExt as CeCircuitExt, SHPLONK,
@@ -10,11 +10,21 @@ use ce_snark_verifier_sdk::{
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error, Selector},
-    poly::kzg::commitment::ParamsKZG,
+    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use halo2curves::bn256::{Bn256, Fr};
+use halo2curves::{bn256::{Bn256, Fq, Fr, G1Affine, G2Affine}, pairing::Engine};
 use rand::Rng;
-use snark_verifier_sdk::CircuitExt;
+use snark_verifier::{
+    loader::native::NativeLoader,
+    verifier::PlonkVerifier,
+    pcs::{
+        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
+        AccumulationSchemeProver,
+    },
+};
+use snark_verifier_sdk::{
+    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC}, CircuitExt,
+};
 use std::fs::File;
 
 /// Input a proof, this compression circuit generates a new proof that may have smaller size.
@@ -89,6 +99,7 @@ impl CompressionCircuit {
         has_accumulator: bool,
         rng: impl Rng + Send,
     ) -> Result<Self, ce_snark_verifier::Error> {
+        verify_snark_accumulator_pairing(&snark, &params).expect("Compression circuit accumulator pre-check should not fail.");
         Self::new_from_ce_snark(params, to_ce_snark(&snark), has_accumulator, rng)
     }
 
@@ -108,6 +119,41 @@ impl CompressionCircuit {
         inner.expose_previous_instances(has_accumulator);
         Ok(Self(inner))
     }
+}
+
+pub(crate) fn verify_snark_accumulator_pairing<'a>(
+    snark: &'a snark_verifier_sdk::Snark,
+    params: &ParamsKZG<Bn256>
+) -> Result<&'a snark_verifier_sdk::Snark, snark_verifier::Error> {
+    let svk = params.get_g()[0].into();
+    let mut transcript_read =
+        PoseidonTranscript::<NativeLoader, &[u8]>::from_spec(&[], POSEIDON_SPEC.clone());
+
+    transcript_read.new_stream(snark.proof.as_slice());
+
+    let proof = Shplonk::read_proof(
+        &svk,
+        &snark.protocol,
+        &snark.instances,
+        &mut transcript_read,
+    );
+
+    let acc = Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)[0].clone();
+
+    let KzgAccumulator { lhs, rhs } = acc;
+    let left = Bn256::pairing(&lhs, &params.g2());
+    let right = Bn256::pairing(&rhs, &params.s_g2());
+
+    log::trace!("compression circuit accumulator pre-check: left {:?}", left);
+    log::trace!("compression circuit accumulator pre-check: right {:?}", right);
+
+    if left != right {
+        return Err(snark_verifier::Error::AssertionFailure(format!(
+            "accumulator check failed {left:?} {right:?}",
+        )));
+    }
+
+    Ok(snark)
 }
 
 fn load_params() -> AggregationConfigParams {
