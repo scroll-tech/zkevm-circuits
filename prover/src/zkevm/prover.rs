@@ -100,7 +100,7 @@ impl<'params> Prover<'params> {
                     output_dir,
                 )?;
 
-                // Check pairing for chunk proof.
+                // Check pairing for chunk snark.
                 let params = self.prover_impl.params_map.get(&*LAYER2_DEGREE).expect("params should be loaded");
                 extract_proof_and_instances_with_pairing_check(
                     params,
