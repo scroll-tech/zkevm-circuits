@@ -1,15 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    common,
-    config::LayerId,
-    consts::CHUNK_VK_FILENAME,
-    io::try_to_read,
-    proof::compare_chunk_info,
-    types::ChunkProvingTask,
-    utils::chunk_trace_to_witness_block,
-    zkevm::circuit::calculate_row_usage_of_witness_block,
-    ChunkProof,
+    common, config::LayerId, consts::CHUNK_VK_FILENAME, io::try_to_read, proof::compare_chunk_info,
+    types::ChunkProvingTask, utils::chunk_trace_to_witness_block,
+    zkevm::circuit::calculate_row_usage_of_witness_block, ChunkProof,
 };
 use aggregator::ChunkInfo;
 use anyhow::Result;

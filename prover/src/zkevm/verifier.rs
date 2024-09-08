@@ -2,10 +2,12 @@ use crate::{
     common,
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
     consts::chunk_vk_filename,
-    utils::gen_rng,
     io::force_to_read,
+    utils::gen_rng,
     ChunkProof,
 };
+use aggregator::extract_proof_and_instances_with_pairing_check;
+use anyhow::anyhow;
 use compression::CompressionCircuit;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
@@ -13,8 +15,6 @@ use halo2_proofs::{
     poly::kzg::commitment::ParamsKZG,
 };
 use std::{collections::BTreeMap, env};
-use aggregator::extract_proof_and_instances_with_pairing_check;
-use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
 pub struct Verifier<'params> {
