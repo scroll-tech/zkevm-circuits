@@ -23,7 +23,7 @@ impl<'params> Prover<'params> {
 
         let circuit: BatchCircuit<N_SNARKS> =
             BatchCircuit::new(self.params(degree), previous_snarks, &mut rng, batch_info)
-                .map_err(|err| anyhow!("Failed to construct aggregation circuit: {err:?}"))?;
+                .map_err(|err| anyhow!("Failed to construct batch circuit: {err:?}"))?;
 
         self.gen_snark(id, degree, &mut rng, circuit, "gen_agg_snark")
     }

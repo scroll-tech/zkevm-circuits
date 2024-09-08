@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    common, config::LayerId, consts::CHUNK_VK_FILENAME, io::try_to_read, proof::compare_chunk_info,
-    types::ChunkProvingTask, utils::chunk_trace_to_witness_block,
+    common, config::{LayerId, LAYER2_DEGREE}, consts::CHUNK_VK_FILENAME, io::try_to_read, proof::compare_chunk_info,
+    types::ChunkProvingTask, utils::{chunk_trace_to_witness_block, gen_rng},
     zkevm::circuit::calculate_row_usage_of_witness_block, ChunkProof,
 };
-use aggregator::ChunkInfo;
-use anyhow::Result;
+use aggregator::{extract_proof_and_instances_with_pairing_check, ChunkInfo};
+use anyhow::{anyhow, Result};
 use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
 
 #[derive(Debug)]
@@ -99,6 +99,15 @@ impl<'params> Prover<'params> {
                     inner_id,
                     output_dir,
                 )?;
+
+                // Check pairing for chunk proof.
+                let params = self.prover_impl.params_map.get(&*LAYER2_DEGREE).expect("params should be loaded");
+                extract_proof_and_instances_with_pairing_check(
+                    params,
+                    &[snark.clone()],
+                    gen_rng(),
+                )
+                .map_err(|err| anyhow!("Failed to check pairing for chunk prover: {err:?}"))?;
 
                 self.check_vk();
 
