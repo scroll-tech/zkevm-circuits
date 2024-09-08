@@ -2,7 +2,7 @@
 
 use crate::params::ConfigParams;
 use ark_std::{end_timer, start_timer};
-use ce_snark_verifier::{halo2_base::gates::circuit::{BaseConfig, CircuitBuilderStage}, system::halo2::transcript};
+use ce_snark_verifier::halo2_base::gates::circuit::{BaseConfig, CircuitBuilderStage};
 use ce_snark_verifier_sdk::{
     halo2::aggregation::{AggregationCircuit, AggregationConfigParams, VerifierUniversality},
     CircuitExt as CeCircuitExt, SHPLONK,
@@ -12,15 +12,12 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use halo2curves::{bn256::{Bn256, Fq, Fr, G1Affine, G2Affine}, pairing::Engine};
+use halo2curves::{bn256::{Bn256, Fr}, pairing::Engine};
 use rand::Rng;
 use snark_verifier::{
     loader::native::NativeLoader,
     verifier::PlonkVerifier,
-    pcs::{
-        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
-        AccumulationSchemeProver,
-    },
+    pcs::kzg::KzgAccumulator,
 };
 use snark_verifier_sdk::{
     types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC}, CircuitExt,
@@ -99,7 +96,7 @@ impl CompressionCircuit {
         has_accumulator: bool,
         rng: impl Rng + Send,
     ) -> Result<Self, ce_snark_verifier::Error> {
-        verify_snark_accumulator_pairing(&snark, &params).expect("Compression circuit accumulator pre-check should not fail.");
+        verify_snark_accumulator_pairing(&snark, params).expect("Compression circuit accumulator pre-check should not fail.");
         Self::new_from_ce_snark(params, to_ce_snark(&snark), has_accumulator, rng)
     }
 
