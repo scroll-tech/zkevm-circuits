@@ -12,15 +12,17 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use halo2curves::{bn256::{Bn256, Fr}, pairing::Engine};
+use halo2curves::{
+    bn256::{Bn256, Fr},
+    pairing::Engine,
+};
 use rand::Rng;
 use snark_verifier::{
-    loader::native::NativeLoader,
-    verifier::PlonkVerifier,
-    pcs::kzg::KzgAccumulator,
+    loader::native::NativeLoader, pcs::kzg::KzgAccumulator, verifier::PlonkVerifier,
 };
 use snark_verifier_sdk::{
-    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC}, CircuitExt,
+    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
+    CircuitExt,
 };
 use std::fs::File;
 
@@ -96,7 +98,8 @@ impl CompressionCircuit {
         has_accumulator: bool,
         rng: impl Rng + Send,
     ) -> Result<Self, ce_snark_verifier::Error> {
-        verify_snark_accumulator_pairing(&snark, params).expect("Compression circuit accumulator pre-check should not fail.");
+        verify_snark_accumulator_pairing(&snark, params)
+            .expect("Compression circuit accumulator pre-check should not fail.");
         Self::new_from_ce_snark(params, to_ce_snark(&snark), has_accumulator, rng)
     }
 
@@ -120,7 +123,7 @@ impl CompressionCircuit {
 
 pub(crate) fn verify_snark_accumulator_pairing<'a>(
     snark: &'a snark_verifier_sdk::Snark,
-    params: &ParamsKZG<Bn256>
+    params: &ParamsKZG<Bn256>,
 ) -> Result<&'a snark_verifier_sdk::Snark, snark_verifier::Error> {
     let svk = params.get_g()[0].into();
     let mut transcript_read =
@@ -142,7 +145,10 @@ pub(crate) fn verify_snark_accumulator_pairing<'a>(
     let right = Bn256::pairing(&rhs, &params.s_g2());
 
     log::trace!("compression circuit accumulator pre-check: left {:?}", left);
-    log::trace!("compression circuit accumulator pre-check: right {:?}", right);
+    log::trace!(
+        "compression circuit accumulator pre-check: right {:?}",
+        right
+    );
 
     if left != right {
         return Err(snark_verifier::Error::AssertionFailure(format!(
