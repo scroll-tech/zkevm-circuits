@@ -2,6 +2,7 @@ use crate::{
     common,
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
     consts::chunk_vk_filename,
+    utils::gen_rng,
     io::force_to_read,
     ChunkProof,
 };
@@ -12,6 +13,8 @@ use halo2_proofs::{
     poly::kzg::commitment::ParamsKZG,
 };
 use std::{collections::BTreeMap, env};
+use aggregator::extract_proof_and_instances_with_pairing_check;
+use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
 pub struct Verifier<'params> {
@@ -42,6 +45,13 @@ impl<'params> Verifier<'params> {
     }
 
     pub fn verify_chunk_proof(&self, proof: ChunkProof) -> bool {
-        self.inner.verify_snark(proof.to_snark())
+        let snark = proof.to_snark();
+        let params = self.inner.params();
+
+        extract_proof_and_instances_with_pairing_check(params, &[snark.clone()], gen_rng())
+            .map_err(|err| anyhow!("Failed to check pairing for the final chunk snark: {err:?}"))
+            .expect("Accumulator pairing pre-check for chunk proof verification should not fail.");
+
+        self.inner.verify_snark(snark)
     }
 }
