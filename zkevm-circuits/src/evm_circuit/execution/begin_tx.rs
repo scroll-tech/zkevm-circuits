@@ -858,7 +858,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         //          if scroll:
         //              KeccakCodeHash
         // else:
-        //      3 or 6 l1 fee rw
+        //      6 l1 fee rw
         // RwCounterEndOfReversion
         // IsPersistent
         // IsSuccess

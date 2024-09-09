@@ -95,7 +95,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             }
         }
     } else {
-        // else, add 3 ( or 6 after curie) RW read operations for transaction L1 fee.
+        // else, add 6 RW read operations for transaction L1 fee.
         gen_tx_l1_fee_ops(state, &mut exec_step)?;
     }
 
@@ -727,7 +727,7 @@ fn write_tx_receipt(
     Ok(())
 }
 
-// Add 3(or 6 after curie) RW read operations for transaction L1 fee.
+// Add 6 RW read operations for transaction L1 fee.
 fn gen_tx_l1_fee_ops(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
@@ -786,47 +786,52 @@ fn gen_tx_l1_fee_ops(
         ),
     )?;
 
-    // curie operations
+    // Sanity check: we do not support pre-curie blocks as of <https://github.com/scroll-tech/zkevm-circuits/pull/1415>
+    //
+    // We expect a post-curie block.
     let chain_id = state.block.chain_id;
     let block_number = state.tx.block_num;
-    if is_curie_enabled(chain_id, block_number) {
-        state.push_op(
-            exec_step,
-            RW::READ,
-            StorageOp::new(
-                *l1_gas_price_oracle::ADDRESS,
-                *l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
-                l1_blob_basefee,
-                l1_blob_basefee,
-                tx_id,
-                l1_blob_basefee_committed,
-            ),
-        )?;
-        state.push_op(
-            exec_step,
-            RW::READ,
-            StorageOp::new(
-                *l1_gas_price_oracle::ADDRESS,
-                *l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
-                commit_scalar,
-                commit_scalar,
-                tx_id,
-                commit_scalar_committed,
-            ),
-        )?;
-        state.push_op(
-            exec_step,
-            RW::READ,
-            StorageOp::new(
-                *l1_gas_price_oracle::ADDRESS,
-                *l1_gas_price_oracle::BLOB_SCALAR_SLOT,
-                blob_scalar,
-                blob_scalar,
-                tx_id,
-                blob_scalar_committed,
-            ),
-        )?;
-    }
+    debug_assert!(
+        is_curie_enabled(chain_id, block_number),
+        "block {block_number} is pre-curie",
+    );
+
+    state.push_op(
+        exec_step,
+        RW::READ,
+        StorageOp::new(
+            *l1_gas_price_oracle::ADDRESS,
+            *l1_gas_price_oracle::L1_BLOB_BASEFEE_SLOT,
+            l1_blob_basefee,
+            l1_blob_basefee,
+            tx_id,
+            l1_blob_basefee_committed,
+        ),
+    )?;
+    state.push_op(
+        exec_step,
+        RW::READ,
+        StorageOp::new(
+            *l1_gas_price_oracle::ADDRESS,
+            *l1_gas_price_oracle::COMMIT_SCALAR_SLOT,
+            commit_scalar,
+            commit_scalar,
+            tx_id,
+            commit_scalar_committed,
+        ),
+    )?;
+    state.push_op(
+        exec_step,
+        RW::READ,
+        StorageOp::new(
+            *l1_gas_price_oracle::ADDRESS,
+            *l1_gas_price_oracle::BLOB_SCALAR_SLOT,
+            blob_scalar,
+            blob_scalar,
+            tx_id,
+            blob_scalar_committed,
+        ),
+    )?;
 
     Ok(())
 }
