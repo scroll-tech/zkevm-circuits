@@ -1779,16 +1779,17 @@ mod test {
     // TODO: move test to appropriate place
     #[test]
     fn test_legacy_tx_pre_eip155() {
-        let mut tx = MockTransaction::default();
-        // pre-eip155 tx downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
+        let mut tx1 = MockTransaction::default();
+        // pre-eip155 tx1 downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
         // Note: have signature data, don't generate dynamically because ethers-rs lib  only implemented for eip155 type tx.
-        let sig_data = (
+        // tx with signature::v =0x1c (28).
+        let sig_data1 = (
             0x1c_u64,
             word!("0x90b751c5870e9bc071c8d6b2bf1ee80f36ee7efd8e6fbabaa25bd3b8b68cfe9b"),
             word!("0x79c25a01f12493a6d35f1330306d4e3c4e782fcbffc64c6809959577f41ff248"),
         );
 
-        tx
+        tx1
             .from(address!("0xcf40d0d2b44f2b66e07cace1372ca42b73cf21a3"))
             .nonce(word!("0x2ea8"))
             .gas_price(word!("0x098bca5a00"))
@@ -1797,16 +1798,35 @@ mod test {
             .transaction_type(0) // Set tx type to pre-eip155.
             .input(hex::decode("606060405260008054600160a060020a0319163317905560f2806100236000396000f3606060405260e060020a6000350463f5537ede8114601c575b6002565b3460025760f06004356024356044356000805433600160a060020a039081169116141560ea5783905080600160a060020a031663a9059cbb84846000604051602001526040518360e060020a0281526004018083600160a060020a0316815260200182815260200192505050602060405180830381600087803b1560025760325a03f1156002575050604080518481529051600160a060020a0386811693508716917fd0ed88a3f042c6bbb1e3ea406079b5f2b4b198afccaa535d837f4c63abbc4de6919081900360200190a35b50505050565b00")
             .expect("hex data can be decoded").into())
-            .sig_data(sig_data);
-        let ctx = build_legacy_ctx(gwei(8000_000), &tx).unwrap();
-        //let ctx = build_legacy_ctx2(gwei(8000_000)).unwrap();
+            .sig_data(sig_data1);
+        
+        // TODO: add pre-eip155 tx2 source path. 
+        let mut tx2 = MockTransaction::default();
+        // tx with signature::v =0x1b (27).
+        let sig_data2 = (
+            0x1b_u64,
+            word!("0x88544c93a564b4c28d2ffac2074a0c55fdd4658fe0d215596ed2e32e3ef7f56b"),
+            word!("0x7fb4075d54190f825d7c47bb820284757b34fd6293904a93cddb1d3aa961ac28"),
+        );
 
-        CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
-                max_calldata: 300,
-                ..Default::default()
-            })
-            .run()
+        tx2.from(address!("0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"))
+            .to(address!("0x095e7baea6a6c7c4c2dfeb977efac326af552d87"))
+            .nonce(word!("0x0"))
+            .gas_price(word!("0x1"))
+            .gas(word!("0x5f5e100"))
+            .value(word!("0x186a0"))
+            .transaction_type(0) // Set tx type to pre-eip155.
+            .sig_data(sig_data2);
+
+        for tx in [tx1, tx2] {
+            let ctx = build_legacy_ctx(gwei(8000_000), &tx).unwrap();
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(CircuitsParams {
+                    max_calldata: 300,
+                    ..Default::default()
+                })
+                .run()
+        }
     }
 
     // build pre-eip155 tx
@@ -1824,41 +1844,6 @@ mod test {
             },
             |mut txs, _accs| {
                 txs[0].copy_from(tx.clone());
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-    }
-
-    // add tx which signature::v =0x1b.
-    fn build_legacy_ctx2(sender_balance: Word) -> Result<TestContext<1, 1>, Error> {
-        // pre-eip155 tx downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
-        // Note: have signature data, don't generate dynamically because ethers-rs lib  only implemented for eip155 type tx.
-        let sig_data = (
-            0x1b_u64,
-            word!("0x88544c93a564b4c28d2ffac2074a0c55fdd4658fe0d215596ed2e32e3ef7f56b"),
-            word!("0x7fb4075d54190f825d7c47bb820284757b34fd6293904a93cddb1d3aa961ac28"),
-        );
-
-        TestContext::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"))
-                    .balance(sender_balance)
-                    //.nonce(word!("0x2ea8"));
-                    .nonce(word!("0x0"));
-            },
-            |mut txs, _accs| {
-                txs[0]
-                    .from(address!("0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"))
-                    .to(address!("0x095e7baea6a6c7c4c2dfeb977efac326af552d87"))
-                    .nonce(word!("0x0"))
-                    .gas_price(word!("0x1"))
-                    .gas(word!("0x5f5e100"))
-                    .value(word!("0x186a0"))
-                    //.transaction_type(0) // Set tx type to pre-eip155.
-                    .sig_data(sig_data);
-                //.hash(Hash::from("0x72fadbef39cd251a437eea619cfeda752271a5faaaa2147df012e112159ffb81"));
             },
             |block, _tx| block.number(0xcafeu64),
         )
