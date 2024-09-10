@@ -246,7 +246,6 @@ impl<ST: StateTransition> RecursionCircuit<ST> {
 impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
     type Config = config::RecursionConfig;
     type FloorPlanner = SimpleFloorPlanner;
-    #[cfg(feature = "circuit-params")]
     type Params = ();
 
     fn without_witnesses(&self) -> Self {

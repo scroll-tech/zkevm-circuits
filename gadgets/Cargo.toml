@@ -16,4 +16,4 @@ rand_xorshift.workspace = true
 rand.workspace = true
 
 [features]
-circuit-params = ["halo2_proofs/circuit-params"]
+default = ["halo2_proofs/circuit-params"]
