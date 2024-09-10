@@ -188,18 +188,22 @@ pub enum FseTableKind {
 impl_expr!(FseTableKind);
 
 impl std::fmt::Display for ZstdTag {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", match self {
-            Self::Null => "null",
-            Self::FrameHeaderDescriptor => "FrameHeaderDescriptor",
-            Self::FrameContentSize => "FrameContentSize",
-            Self::BlockHeader => "BlockHeader",
-            Self::ZstdBlockLiteralsHeader => "ZstdBlockLiteralsHeader",
-            Self::ZstdBlockLiteralsRawBytes => "ZstdBlockLiteralsRawBytes",
-            Self::ZstdBlockSequenceHeader => "ZstdBlockSequenceHeader",
-            Self::ZstdBlockSequenceFseCode => "ZstdBlockSequenceFseCode",
-            Self::ZstdBlockSequenceData => "ZstdBlockSequenceData",
-        })
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Null => "null",
+                Self::FrameHeaderDescriptor => "FrameHeaderDescriptor",
+                Self::FrameContentSize => "FrameContentSize",
+                Self::BlockHeader => "BlockHeader",
+                Self::ZstdBlockLiteralsHeader => "ZstdBlockLiteralsHeader",
+                Self::ZstdBlockLiteralsRawBytes => "ZstdBlockLiteralsRawBytes",
+                Self::ZstdBlockSequenceHeader => "ZstdBlockSequenceHeader",
+                Self::ZstdBlockSequenceFseCode => "ZstdBlockSequenceFseCode",
+                Self::ZstdBlockSequenceData => "ZstdBlockSequenceData",
+            }
+        )
     }
 }
 
@@ -521,17 +525,6 @@ impl SequenceFixedStateActionTable {
 
         Self { states_to_actions }
     }
-}
-
-/// Data for the FSE table's witness values.
-#[derive(Clone, Debug)]
-pub struct FseTableData {
-    /// The byte offset in the frame at which the FSE table is described.
-    pub byte_offset: u64,
-    /// The FSE table's size, i.e. 1 << AL (accuracy log).
-    pub table_size: u64,
-    /// Represent the states, symbols, and so on of this FSE table.
-    pub rows: Vec<FseTableRow>,
 }
 
 /// Auxiliary data accompanying the FSE table's witness values.

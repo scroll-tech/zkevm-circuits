@@ -7,13 +7,13 @@ use crate::aggregation::decoder::{
 
 pub struct RomSeqDataInterleavedOrder {
     /// FSE table used in the previous bitstring.
-    pub table_kind_prev: FseTableKind,
+    pub _table_kind_prev: FseTableKind,
     /// FSE table used in the current bitstring.
-    pub table_kind_curr: FseTableKind,
+    pub _table_kind_curr: FseTableKind,
     /// Boolean flag to indicate whether we are initialising the FSE state.
-    pub is_init_state: bool,
+    pub _is_init_state: bool,
     /// Boolean flag to indicate whether we are updating the FSE state.
-    pub is_update_state: bool,
+    pub _is_update_state: bool,
 }
 
 impl FixedLookupValues for RomSeqDataInterleavedOrder {

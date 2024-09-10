@@ -295,7 +295,7 @@ pub struct LiteralsBlockResult<F> {
     pub offset: usize,
     pub witness_rows: Vec<ZstdWitnessRow<F>>,
     pub literals: Vec<u64>,
-    pub regen_size: usize,
+    pub _regen_size: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -318,7 +318,7 @@ fn process_block_zstd<F: Field>(
         offset: byte_offset,
         witness_rows: rows,
         regen_size,
-        compressed_size: _,
+        _compressed_size: _,
     } = process_block_zstd_literals_header::<F>(src, block_idx, byte_offset, last_row, randomness);
 
     witness_rows.extend_from_slice(&rows);
@@ -327,7 +327,7 @@ fn process_block_zstd<F: Field>(
         offset: byte_offset,
         witness_rows: rows,
         literals,
-        regen_size: _,
+        _regen_size: _,
     } = {
         let last_row = rows.last().cloned().unwrap();
         let multiplier =
@@ -376,7 +376,7 @@ fn process_block_zstd<F: Field>(
                 })
                 .collect::<Vec<_>>(),
             literals: literals.iter().map(|b| *b as u64).collect::<Vec<u64>>(),
-            regen_size,
+            _regen_size: regen_size,
         }
     };
 
@@ -1606,7 +1606,7 @@ pub struct LiteralsHeaderProcessingResult<F> {
     pub offset: usize,
     pub witness_rows: Vec<ZstdWitnessRow<F>>,
     pub regen_size: usize,
-    pub compressed_size: usize,
+    pub _compressed_size: usize,
 }
 
 fn process_block_zstd_literals_header<F: Field>(
@@ -1698,7 +1698,7 @@ fn process_block_zstd_literals_header<F: Field>(
             })
             .collect::<Vec<_>>(),
         regen_size,
-        compressed_size,
+        _compressed_size: compressed_size,
     }
 }
 

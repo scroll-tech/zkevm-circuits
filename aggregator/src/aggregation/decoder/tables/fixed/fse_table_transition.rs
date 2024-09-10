@@ -4,13 +4,13 @@ use super::{FixedLookupTag, FixedLookupValues};
 
 pub struct RomFseTableTransition {
     /// The block index on the previous FSE table.
-    pub block_idx_prev: u64,
+    pub _block_idx_prev: u64,
     /// The block index on the current FSE table.
-    pub block_idx_curr: u64,
+    pub _block_idx_curr: u64,
     /// The FSE table previously decoded.
-    pub table_kind_prev: u64,
+    pub _table_kind_prev: u64,
     /// The FSE table currently decoded.
-    pub table_kind_curr: u64,
+    pub _table_kind_curr: u64,
 }
 
 impl FixedLookupValues for RomFseTableTransition {

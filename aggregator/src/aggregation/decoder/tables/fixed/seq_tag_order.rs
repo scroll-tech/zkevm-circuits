@@ -30,19 +30,19 @@ use super::FixedLookupValues;
 ///     - SequenceHeader > FseCode > SequenceData (MLT)
 pub struct RomSeqTagOrder {
     /// Boolean flag to mark if LLT is Fse_Compressed_Mode or Predefined_Mode.
-    pub cmode_llt: bool,
+    pub _cmode_llt: bool,
     /// Boolean flag to mark if MOT is Fse_Compressed_Mode or Predefined_Mode.
-    pub cmode_mot: bool,
+    pub _cmode_mot: bool,
     /// Boolean flag to mark if MLT is Fse_Compressed_Mode or Predefined_Mode.
-    pub cmode_mlt: bool,
+    pub _cmode_mlt: bool,
     /// Tag that was handled before the current tag.
-    pub tag_prev: ZstdTag,
+    pub _tag_prev: ZstdTag,
     /// Tag currently being handled.
-    pub tag_curr: ZstdTag,
+    pub _tag_curr: ZstdTag,
     /// Tag that will be handled after the current tag.
-    pub tag_next: ZstdTag,
+    pub _tag_next: ZstdTag,
     /// The FSE table that we expect with the current tag.
-    pub fse_table: FseTableKind,
+    pub _fse_table: FseTableKind,
 }
 
 impl FixedLookupValues for RomSeqTagOrder {

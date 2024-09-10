@@ -6,15 +6,15 @@ use super::FixedLookupValues;
 
 pub struct RomTagTransition {
     /// The current tag.
-    pub tag: ZstdTag,
+    pub _tag: ZstdTag,
     /// The tag that will be processed after the current tag is finished processing.
-    pub tag_next: ZstdTag,
+    pub _tag_next: ZstdTag,
     /// The maximum number of bytes that are needed to represent the current tag.
-    pub max_len: u64,
+    pub _max_len: u64,
     /// Whether this tag is processed from back-to-front or not.
-    pub is_reverse: bool,
+    pub _is_reverse: bool,
     /// Whether this tag belongs to a ``block`` in zstd or not.
-    pub is_block: bool,
+    pub _is_block: bool,
 }
 
 impl FixedLookupValues for RomTagTransition {
