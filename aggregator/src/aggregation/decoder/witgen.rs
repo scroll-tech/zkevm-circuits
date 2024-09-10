@@ -295,7 +295,6 @@ pub struct LiteralsBlockResult<F> {
     pub offset: usize,
     pub witness_rows: Vec<ZstdWitnessRow<F>>,
     pub literals: Vec<u64>,
-    pub _regen_size: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -318,7 +317,6 @@ fn process_block_zstd<F: Field>(
         offset: byte_offset,
         witness_rows: rows,
         regen_size,
-        _compressed_size: _,
     } = process_block_zstd_literals_header::<F>(src, block_idx, byte_offset, last_row, randomness);
 
     witness_rows.extend_from_slice(&rows);
@@ -327,7 +325,6 @@ fn process_block_zstd<F: Field>(
         offset: byte_offset,
         witness_rows: rows,
         literals,
-        _regen_size: _,
     } = {
         let last_row = rows.last().cloned().unwrap();
         let multiplier =
@@ -376,7 +373,6 @@ fn process_block_zstd<F: Field>(
                 })
                 .collect::<Vec<_>>(),
             literals: literals.iter().map(|b| *b as u64).collect::<Vec<u64>>(),
-            _regen_size: regen_size,
         }
     };
 
@@ -1606,7 +1602,6 @@ pub struct LiteralsHeaderProcessingResult<F> {
     pub offset: usize,
     pub witness_rows: Vec<ZstdWitnessRow<F>>,
     pub regen_size: usize,
-    pub _compressed_size: usize,
 }
 
 fn process_block_zstd_literals_header<F: Field>(
@@ -1626,12 +1621,11 @@ fn process_block_zstd_literals_header<F: Field>(
     let literals_block_type = BlockType::from(lh_bytes[0] & 0x3);
     let size_format = (lh_bytes[0] >> 2) & 3;
 
-    let [n_bits_fmt, n_bits_regen, n_bits_compressed, _n_streams, n_bytes_header, _branch]: [usize;
-        6] = match literals_block_type {
+    let [n_bits_fmt, n_bits_regen, n_bytes_header]: [usize; 3] = match literals_block_type {
         BlockType::RawBlock => match size_format {
-            0b00 | 0b10 => [1, 5, 0, 1, 1, 0],
-            0b01 => [2, 12, 0, 1, 2, 1],
-            0b11 => [2, 20, 0, 1, 3, 2],
+            0b00 | 0b10 => [1, 5, 1],
+            0b01 => [2, 12, 2],
+            0b11 => [2, 20, 3],
             _ => unreachable!("size_format out of bound"),
         },
         _ => unreachable!("BlockType::* unexpected. Must be raw bytes for literals."),
@@ -1644,8 +1638,6 @@ fn process_block_zstd_literals_header<F: Field>(
     })[(2 + n_bits_fmt)..(n_bytes_header * N_BITS_PER_BYTE)];
 
     let regen_size = le_bits_to_value(&sizing_bits[0..n_bits_regen]) as usize;
-    let compressed_size =
-        le_bits_to_value(&sizing_bits[n_bits_regen..(n_bits_regen + n_bits_compressed)]) as usize;
     let tag_next = match literals_block_type {
         BlockType::RawBlock => ZstdTag::ZstdBlockLiteralsRawBytes,
         _ => unreachable!("BlockType::* unexpected. Must be raw bytes for literals."),
@@ -1698,7 +1690,6 @@ fn process_block_zstd_literals_header<F: Field>(
             })
             .collect::<Vec<_>>(),
         regen_size,
-        _compressed_size: compressed_size,
     }
 }
 

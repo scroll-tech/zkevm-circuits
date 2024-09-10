@@ -5,16 +5,7 @@ use crate::aggregation::decoder::{
     witgen::FseTableKind,
 };
 
-pub struct RomSeqDataInterleavedOrder {
-    /// FSE table used in the previous bitstring.
-    pub _table_kind_prev: FseTableKind,
-    /// FSE table used in the current bitstring.
-    pub _table_kind_curr: FseTableKind,
-    /// Boolean flag to indicate whether we are initialising the FSE state.
-    pub _is_init_state: bool,
-    /// Boolean flag to indicate whether we are updating the FSE state.
-    pub _is_update_state: bool,
-}
+pub struct RomSeqDataInterleavedOrder;
 
 impl FixedLookupValues for RomSeqDataInterleavedOrder {
     fn values() -> Vec<[Value<Fr>; 7]> {
