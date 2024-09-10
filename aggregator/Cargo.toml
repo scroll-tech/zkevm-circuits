@@ -45,4 +45,6 @@ csv = "1.1"
 
 [features]
 default = ["revm-precompile/c-kzg"]
+display = []
 print-trace = ["ark-std/print-trace"]
+circuit-params = ["halo2_proofs/circuit-params"]

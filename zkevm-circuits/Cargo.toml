@@ -72,4 +72,5 @@ enable-stack = ["bus-mapping/enable-stack"]
 enable-memory = ["bus-mapping/enable-memory"]
 enable-storage = ["bus-mapping/enable-storage"]
 dual-bytecode = []
+circuit-params = ["halo2_proofs/circuit-params"]
 

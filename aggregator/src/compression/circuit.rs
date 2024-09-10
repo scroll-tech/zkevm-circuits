@@ -53,6 +53,8 @@ pub struct CompressionCircuit {
 impl Circuit<Fr> for CompressionCircuit {
     type Config = CompressionConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         let flattened_instances = self

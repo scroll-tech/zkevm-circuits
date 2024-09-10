@@ -416,6 +416,8 @@ pub(crate) mod cached {
     impl Circuit<Fr> for EvmCircuitCached {
         type Config = (EvmCircuitConfig<Fr>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self(self.0.without_witnesses())

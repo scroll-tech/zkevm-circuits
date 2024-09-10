@@ -207,9 +207,7 @@ pub fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
 /// Return a copy of the serialized public key with swapped Endianness.
 pub fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
     assert_eq!(pk.len(), 64);
-    let mut pk_swap = <&[T; 64]>::try_from(pk)
-        .map(|r| r.clone())
-        .expect("pk.len() != 64");
+    let mut pk_swap = <&[T; 64]>::try_from(pk).cloned().expect("pk.len() != 64");
     pk_swap[..32].reverse();
     pk_swap[32..].reverse();
     pk_swap

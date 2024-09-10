@@ -17,7 +17,7 @@ pub struct Verifier<'params, C: CircuitExt<Fr>> {
     phantom: PhantomData<C>,
 }
 
-impl<'params, C: CircuitExt<Fr>> Verifier<'params, C> {
+impl<'params, C: CircuitExt<Fr, Params = ()>> Verifier<'params, C> {
     pub fn new(params: &'params ParamsKZG<Bn256>, vk: VerifyingKey<G1Affine>) -> Self {
         Self {
             params,

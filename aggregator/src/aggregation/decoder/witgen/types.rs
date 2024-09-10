@@ -187,9 +187,9 @@ pub enum FseTableKind {
 
 impl_expr!(FseTableKind);
 
-impl ToString for ZstdTag {
-    fn to_string(&self) -> String {
-        String::from(match self {
+impl std::fmt::Display for ZstdTag {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", match self {
             Self::Null => "null",
             Self::FrameHeaderDescriptor => "FrameHeaderDescriptor",
             Self::FrameContentSize => "FrameContentSize",
@@ -787,7 +787,7 @@ impl FseAuxiliaryTableData {
             let mut count = 0;
             let mut states_with_skipped: Vec<(u64, bool)> = Vec::with_capacity(N);
             while count < N {
-                if allocated_states.get(&state).is_some() {
+                if allocated_states.contains_key(&state) {
                     // if state has been pre-allocated to some symbol with prob=-1.
                     states_with_skipped.push((state, true));
                 } else {

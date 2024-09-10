@@ -8,7 +8,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::{marker::PhantomData, u64};
+use std::marker::PhantomData;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
