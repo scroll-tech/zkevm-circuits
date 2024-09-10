@@ -1779,7 +1779,9 @@ mod test {
     // TODO: move test to appropriate place
     #[test]
     fn test_legacy_tx_pre_eip155() {
-        let ctx = build_legacy_ctx(gwei(8000_000)).unwrap();
+        //let ctx = build_legacy_ctx(gwei(8000_000)).unwrap();
+        let ctx = build_legacy_ctx2(gwei(8000_000)).unwrap();
+
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_calldata: 300,
@@ -1791,6 +1793,7 @@ mod test {
     // build pre-eip155 tx
     fn build_legacy_ctx(sender_balance: Word) -> Result<TestContext<1, 1>, Error> {
         // pre-eip155 tx downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
+        // Note: have signature data, don't generate dynamically because ethers-rs lib  only implemented for eip155 type tx.
         let sig_data = (
             0x1c_u64,
             word!("0x90b751c5870e9bc071c8d6b2bf1ee80f36ee7efd8e6fbabaa25bd3b8b68cfe9b"),
@@ -1822,5 +1825,38 @@ mod test {
         )
     }
 
-    // TODO: add tx which signature::v =0x1b.
+    // add tx which signature::v =0x1b.
+    fn build_legacy_ctx2(sender_balance: Word) -> Result<TestContext<1, 1>, Error> {
+        // pre-eip155 tx downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
+        // Note: have signature data, don't generate dynamically because ethers-rs lib  only implemented for eip155 type tx.
+        let sig_data = (
+            0x1b_u64,
+            word!("0x88544c93a564b4c28d2ffac2074a0c55fdd4658fe0d215596ed2e32e3ef7f56b"),
+            word!("0x7fb4075d54190f825d7c47bb820284757b34fd6293904a93cddb1d3aa961ac28"),
+        );
+
+        TestContext::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"))
+                    .balance(sender_balance)
+                    //.nonce(word!("0x2ea8"));
+                    .nonce(word!("0x0"));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(address!("0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"))
+                    .to(address!("0x095e7baea6a6c7c4c2dfeb977efac326af552d87"))
+                    .nonce(word!("0x0"))
+                    .gas_price(word!("0x1"))
+                    .gas(word!("0x5f5e100"))
+                    .value(word!("0x186a0"))
+                    //.transaction_type(0) // Set tx type to pre-eip155.
+                    .sig_data(sig_data);
+                //.hash(Hash::from("0x72fadbef39cd251a437eea619cfeda752271a5faaaa2147df012e112159ffb81"));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+    }
 }
