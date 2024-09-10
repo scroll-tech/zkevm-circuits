@@ -5560,7 +5560,7 @@ dependencies = [
 [[package]]
 name = "zktrie"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.9#460b8c22af65b7809164548cba1e0253b6db5a70"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=omerfirmak/send-sync-shared-db#566d4cc29d35744de1d1ab204a6ac95bceb15bbc"
 dependencies = [
  "gobuild",
  "zktrie_rust",
@@ -5569,10 +5569,11 @@ dependencies = [
 [[package]]
 name = "zktrie_rust"
 version = "0.3.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.9#460b8c22af65b7809164548cba1e0253b6db5a70"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=omerfirmak/send-sync-shared-db#566d4cc29d35744de1d1ab204a6ac95bceb15bbc"
 dependencies = [
  "hex",
  "lazy_static",
+ "log",
  "num",
  "num-derive",
  "num-traits",
