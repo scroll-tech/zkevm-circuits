@@ -516,4 +516,29 @@ impl MockTransaction {
             v
         }
     }
+
+    /// Copy from other MockTransaction instance.
+    pub fn copy_from(&mut self, other: MockTransaction) -> &mut Self {
+        self.hash = other.hash;
+        self.nonce = other.nonce;
+        self.block_hash = other.block_hash;
+        self.block_number = other.block_number;
+        self.transaction_index = other.transaction_index;
+        self.from = other.from;
+        self.to = other.to;
+        self.value = other.value;
+        self.gas_price = other.gas_price;
+        self.gas = other.gas;
+        self.input = other.input;
+        self.v = other.v;
+        self.r = other.r;
+        self.s = other.s;
+        self.transaction_type = other.transaction_type;
+        self.access_list = other.access_list;
+        self.max_priority_fee_per_gas = other.max_priority_fee_per_gas;
+        self.max_fee_per_gas = other.max_fee_per_gas;
+        self.chain_id = other.chain_id;
+
+        self
+    }
 }
