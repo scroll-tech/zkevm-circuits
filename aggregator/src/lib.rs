@@ -6,8 +6,6 @@ mod aggregation;
 mod batch;
 /// blob struct and constants
 mod blob;
-/// Config to recursive aggregate multiple aggregations
-mod recursion;
 // This module implements `Chunk` related data types.
 // A chunk is a list of blocks.
 mod chunk;
@@ -33,7 +31,6 @@ pub use chunk::ChunkInfo;
 pub use constants::MAX_AGG_SNARKS;
 pub(crate) use constants::*;
 pub use param::*;
-pub use recursion::*;
 
 mod mock_chunk;
 pub use mock_chunk::MockChunkCircuit;

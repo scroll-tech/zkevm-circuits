@@ -1,17 +1,18 @@
 use std::path::Path;
 
+use super::*;
+use crate::SECURE_MDS;
+use ce_snark_verifier::{
+    pcs::kzg::{Bdfg21, KzgAs},
+    util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
+    verifier::plonk::PlonkProof,
+};
+use ce_snark_verifier_sdk::{gen_pk, halo2::PoseidonTranscript, CircuitExt, Snark};
 use halo2_proofs::{
     circuit::Layouter,
     plonk::keygen_vk,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use snark_verifier::{
-    pcs::kzg::{Bdfg21, Kzg},
-    util::{arithmetic::fe_to_limbs, transcript::TranscriptWrite},
-};
-use snark_verifier_sdk::{gen_pk, CircuitExt, Snark};
-
-use super::*;
 
 mod dummy_circuit {
     use super::*;
@@ -78,9 +79,9 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
     num_instance: &[usize],
     mut rng: impl Rng + Send,
 ) -> Snark {
-    use snark_verifier::cost::CostEstimation;
+    use ce_snark_verifier::cost::CostEstimation;
     use std::iter;
-    type Pcs = Kzg<Bn256, Bdfg21>;
+    type As = KzgAs<Bn256, Bdfg21>;
 
     let protocol = compile(
         params,
@@ -94,7 +95,7 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
         .map(|&n| iter::repeat_with(|| Fr::random(&mut rng)).take(n).collect())
         .collect();
     let proof = {
-        let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(Vec::new());
+        let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(Vec::new());
         for _ in 0..protocol
             .num_witness
             .iter()
@@ -108,8 +109,8 @@ fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
         for _ in 0..protocol.evaluations.len() {
             transcript.write_scalar(Fr::random(&mut rng)).unwrap();
         }
-        let queries = PlonkProof::<G1Affine, NativeLoader, Pcs>::empty_queries(&protocol);
-        for _ in 0..Pcs::estimate_cost(&queries).num_commitment {
+        let queries = PlonkProof::<G1Affine, NativeLoader, As>::empty_queries(&protocol);
+        for _ in 0..As::estimate_cost(&queries).num_commitment {
             transcript
                 .write_ec_point(G1Affine::random(&mut rng))
                 .unwrap();

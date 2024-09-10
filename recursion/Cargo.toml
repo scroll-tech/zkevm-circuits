@@ -1,0 +1,17 @@
+[package]
+name = "recursion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aggregator = { path = "../aggregator" }
+
+log.workspace = true
+itertools.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+halo2_proofs.workspace = true
+halo2curves.workspace = true
+ce-snark-verifier.workspace = true
+ce-snark-verifier-sdk.workspace = true

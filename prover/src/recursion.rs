@@ -1,6 +1,7 @@
 use halo2_proofs::halo2curves::bn256::Fr;
 
-use aggregator::{BatchCircuit, StateTransition};
+use aggregator::BatchCircuit;
+use recursion::StateTransition;
 use snark_verifier_sdk::Snark;
 
 /// 4 fields for 2 hashes (Hi, Lo)

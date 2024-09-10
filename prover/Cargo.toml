@@ -12,6 +12,7 @@ bus-mapping = { path = "../bus-mapping", default-features = false }
 compression = { path = "../compression" }
 eth-types = { path = "../eth-types" }
 mpt-zktrie = { path = "../zktrie" }
+recursion = { path = "../recursion" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
 
 snark-verifier.workspace = true

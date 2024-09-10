@@ -1,6 +1,5 @@
 mod aggregation;
 mod blob;
-mod recursion;
 mod rlc;
 
 #[macro_export]

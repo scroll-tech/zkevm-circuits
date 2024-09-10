@@ -1,8 +1,9 @@
 use std::env;
 
-use aggregator::{initial_recursion_snark, RecursionCircuit, StateTransition, MAX_AGG_SNARKS};
+use aggregator::MAX_AGG_SNARKS;
 use anyhow::Result;
 use rand::Rng;
+use recursion::{initial_recursion_snark, RecursionCircuit, StateTransition};
 use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 
 use crate::{

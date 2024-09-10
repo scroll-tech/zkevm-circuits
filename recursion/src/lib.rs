@@ -9,39 +9,36 @@ mod circuit;
 /// Common functionality utilised by the recursion circuit.
 mod common;
 
-/// Config for recursion circuit
-mod config;
+// /// Config for recursion circuit
+// mod config;
 
 /// Some utility functions.
 mod util;
 
+/// Type aliases.
+mod types;
+
 pub use circuit::RecursionCircuit;
-pub(crate) use common::dynamic_verify;
+// pub(crate) use common::dynamic_verify;
 pub use util::{gen_recursion_pk, initial_recursion_snark};
 
+use ce_snark_verifier::{
+    loader::{halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader},
+    system::halo2::{compile, Config},
+    // verifier::{PlonkProof, PlonkVerifier},
+};
+use ce_snark_verifier_sdk::{CircuitExt, BITS, LIMBS};
 use halo2_proofs::{
     halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine},
+        bn256::{Bn256, Fr, G1Affine},
         group::ff::Field,
     },
     plonk::{Circuit, ConstraintSystem, Error, ProvingKey, Selector, VerifyingKey},
 };
 use itertools::Itertools;
 use rand::Rng;
-use snark_verifier::{
-    loader::{
-        halo2::halo2_ecc::halo2_base as sv_halo2_base, native::NativeLoader, Loader, ScalarLoader,
-    },
-    system::halo2::{compile, Config},
-    verifier::{PlonkProof, PlonkVerifier},
-};
-use snark_verifier_sdk::{
-    types::{PoseidonTranscript, POSEIDON_SPEC},
-    CircuitExt, Snark,
-};
 use sv_halo2_base::halo2_proofs;
-
-use crate::constants::{BITS, LIMBS};
+const SECURE_MDS: usize = 0;
 
 /// Any data that can be recursively bundled must implement the described state transition
 /// trait.

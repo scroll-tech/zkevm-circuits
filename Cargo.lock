@@ -3791,6 +3791,7 @@ dependencies = [
  "num-bigint",
  "rand",
  "rand_xorshift",
+ "recursion",
  "serde",
  "serde_derive",
  "serde_json",
@@ -3889,6 +3890,21 @@ checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "recursion"
+version = "0.12.0"
+dependencies = [
+ "aggregator",
+ "halo2_proofs",
+ "halo2curves",
+ "itertools 0.11.0",
+ "log",
+ "rand",
+ "serde_json",
+ "snark-verifier 0.1.8",
+ "snark-verifier-sdk 0.1.8",
 ]
 
 [[package]]
