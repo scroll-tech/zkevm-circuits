@@ -1274,29 +1274,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 mod test {
     use std::{str::FromStr, vec};
 
-    use crate::{
-        evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder, witness::Transaction,
-    };
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{
-        self, address, bytecode,
-        evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
-        evm_types::GasCost,
-        geth_types::TxType::PreEip155,
-        l2_predeployed::l1_gas_price_oracle::default_contract_account,
-        word, Address, Bytecode, Error, Hash, Word, H160, H256, U256, U64,
+        self, address, bytecode, evm_types::GasCost, word, Address, Bytecode, Error, Hash, Word,
+        U256,
     };
     use ethers_core::{types::Bytes, utils::get_contract_address};
-    use ethers_core::{
-        types::{
-            transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, NameOrAddress,
-            Signature, Transaction as EthTransaction, TransactionRequest,
-        },
-        utils::{
-            keccak256,
-            rlp::{Decodable, Rlp},
-        },
-    };
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
@@ -1821,7 +1805,7 @@ mod test {
             .sig_data(sig_data2);
 
         for tx in [tx1, tx2] {
-            let ctx = build_legacy_ctx(gwei(8000_000), &tx).unwrap();
+            let ctx = build_legacy_ctx(8_000_000.into(), &tx).unwrap();
             CircuitTestBuilder::new_from_test_ctx(ctx)
                 .params(CircuitsParams {
                     max_calldata: 300,

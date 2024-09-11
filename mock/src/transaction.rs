@@ -345,8 +345,8 @@ impl MockTransaction {
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
-            // Note: even pre-eip155 type transaction doesn't have chain_id field, here set chain_id won't
-            // have bad effect, because eventually geth_type::Transaction decide the tx type by TxType::get_tx_type(tx)
+            // Note: even pre-eip155 type transaction doesn't have chain_id field, here having chain_id won't
+            // result in negative effects, because eventually geth_type::Transaction decide the tx type by TxType::get_tx_type(tx)
             // then trace.go will treat it as correct pre-eip155 type transaction. the additional chain_id
             // is not used finally.
             .chain_id(self.chain_id);
