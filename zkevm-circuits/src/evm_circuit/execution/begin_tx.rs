@@ -1776,12 +1776,12 @@ mod test {
             .run();
     }
 
-    // TODO: move test to appropriate place
+    // Note: all pre-eip155 txs here for testing have signature data. don't need to generate signature dynamically
+    // because ethers-rs lib's helper `sign_transaction_sync` doesn't support pre-eip155 type.
     #[test]
     fn test_legacy_tx_pre_eip155() {
         let mut tx1 = MockTransaction::default();
         // pre-eip155 tx1 downloaded from [etherscan](https://etherscan.io/getRawTx?tx=0x9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff)
-        // Note: have signature data, don't generate dynamically because ethers-rs lib  only implemented for eip155 type tx.
         // tx with signature::v =0x1c (28).
         let sig_data1 = (
             0x1c_u64,
@@ -1795,12 +1795,13 @@ mod test {
             .gas_price(word!("0x098bca5a00"))
             .gas(word!("0x0249f0"))
             .value(word!("0x00"))
-            .transaction_type(0) // Set tx type to pre-eip155.
+            // Set tx type to pre-eip155.
+            .transaction_type(0)
             .input(hex::decode("606060405260008054600160a060020a0319163317905560f2806100236000396000f3606060405260e060020a6000350463f5537ede8114601c575b6002565b3460025760f06004356024356044356000805433600160a060020a039081169116141560ea5783905080600160a060020a031663a9059cbb84846000604051602001526040518360e060020a0281526004018083600160a060020a0316815260200182815260200192505050602060405180830381600087803b1560025760325a03f1156002575050604080518481529051600160a060020a0386811693508716917fd0ed88a3f042c6bbb1e3ea406079b5f2b4b198afccaa535d837f4c63abbc4de6919081900360200190a35b50505050565b00")
             .expect("hex data can be decoded").into())
             .sig_data(sig_data1);
-        
-        // TODO: add pre-eip155 tx2 source path. 
+
+        // pre-eip155 tx2 refers to https://github.com/scroll-tech/go-ethereum/blob/develop/cmd/evm/testdata/3/txs.json.
         let mut tx2 = MockTransaction::default();
         // tx with signature::v =0x1b (27).
         let sig_data2 = (
@@ -1815,7 +1816,8 @@ mod test {
             .gas_price(word!("0x1"))
             .gas(word!("0x5f5e100"))
             .value(word!("0x186a0"))
-            .transaction_type(0) // Set tx type to pre-eip155.
+            // Set tx type to pre-eip155.
+            .transaction_type(0)
             .sig_data(sig_data2);
 
         for tx in [tx1, tx2] {
