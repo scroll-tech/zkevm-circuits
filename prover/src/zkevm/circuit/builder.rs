@@ -146,14 +146,14 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
         );
         builder.add_more_l2_trace(block_trace)?;
     }
-    let witness_block = finalize_builder(&mut builder)?;
+    let witness_block = finalize_builder(&mut builder, false)?;
     // send to other thread to drop
     std::thread::spawn(move || drop(builder.block));
     Ok(witness_block)
 }
 
 /// Finalize building and return witness block
-pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block> {
+pub fn finalize_builder(builder: &mut CircuitInputBuilder, ccc_mode: bool) -> Result<Block> {
     builder.finalize_building()?;
 
     log::debug!("converting builder.block to witness block");
@@ -163,6 +163,8 @@ pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block> {
         "witness_block built with circuits_params {:?}",
         witness_block.circuits_params
     );
+    println!("finalize builder {}", ccc_mode);
+    witness_block.mpt_updates.ccc_mode = ccc_mode;
 
     if let Some(state) = &mut builder.mpt_init_state {
         if *state.root() != [0u8; 32] {

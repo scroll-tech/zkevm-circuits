@@ -41,6 +41,7 @@ pub struct WitnessGenerator {
     trie: ZkTrie,
     storages_cache: HashMap<Address, ZkTrie>,
     ref_db: Rc<ZkMemoryDb>,
+    ccc_mode: bool,
 }
 
 impl From<&ZktrieState> for WitnessGenerator {
@@ -49,11 +50,20 @@ impl From<&ZktrieState> for WitnessGenerator {
             trie: state.zk_db.new_trie(&state.trie_root).unwrap(),
             storages_cache: HashMap::new(),
             ref_db: state.zk_db.clone(),
+            ccc_mode: false,
         }
     }
 }
 
 impl WitnessGenerator {
+
+    /// set to ccc mode, would built SMTTrace without terminal node,
+    /// but do not require deletion proof
+    pub fn set_ccc_mode(mut self) -> Self {
+        self.ccc_mode = true;
+        self
+    }
+
     /// output all updated ZkTrie
     pub fn into_updated_trie(self) -> impl Iterator<Item = ZkTrie> {
         std::iter::once(self.trie).chain(self.storages_cache.into_values())
@@ -71,7 +81,7 @@ impl WitnessGenerator {
     }
     /// get account proof
     pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
-        self.trie.prove(address.as_bytes()).unwrap()
+        self.trie.prove(address.as_bytes(), false).unwrap()
     }
     /// get storage proof
     pub fn storage_proof(&self, address: Address, key: Word) -> Vec<Vec<u8>> {
@@ -83,14 +93,14 @@ impl WitnessGenerator {
 
         if let Some(trie) = self.storages_cache.get(&address) {
             // trie is under updating
-            trie.prove(key.as_ref()).ok()
+            trie.prove(key.as_ref(), false).ok()
         } else {
             // create a temporary trie and prove it
             self.trie
                 .get_account(address.as_bytes())
                 .map(AccountData::from)
                 .and_then(|account| self.ref_db.new_trie(&account.storage_root.0))
-                .and_then(|trie| trie.prove(key.as_ref()).ok())
+                .and_then(|trie| trie.prove(key.as_ref(), false).ok())
         }
         .unwrap_or_default()
     }
@@ -118,6 +128,7 @@ impl WitnessGenerator {
         new_value: Word,
         old_value: Word,
     ) -> SMTTrace {
+        let ccc_mode = self.ccc_mode;
         let (storage_key, key) = {
             let mut word_buf = [0u8; 32];
             key.to_big_endian(word_buf.as_mut_slice());
@@ -145,7 +156,7 @@ impl WitnessGenerator {
                 value: HexBytes(word_buf),
             }
         };
-        let storage_before_proofs = trie.prove(key.as_ref()).unwrap();
+        let storage_before_proofs = trie.prove(key.as_ref(), false).unwrap();
         let storage_before = decode_proof_for_mpt_path(storage_key, storage_before_proofs);
 
         let store_before = {
@@ -178,17 +189,20 @@ impl WitnessGenerator {
         } // notice if the value is both zero we never touch the trie layer
 
         let storage_root_after = H256(trie.root());
-        let storage_after_proofs = trie.prove(key.as_ref()).unwrap();
+        let storage_after_proofs = trie.prove(key.as_ref(), ccc_mode).unwrap();
         let storage_after = decode_proof_for_mpt_path(storage_key, storage_after_proofs);
 
         // sanity check
-        assert_eq!(
-            smt_hash_from_bytes(storage_root_after.as_bytes()),
-            storage_after
-                .as_ref()
-                .map(|(p, _)| p.root)
-                .unwrap_or(HexBytes([0; 32]))
-        );
+        if !ccc_mode {
+            assert_eq!(
+                smt_hash_from_bytes(storage_root_after.as_bytes()),
+                storage_after
+                    .as_ref()
+                    .map(|(p, _)| p.root)
+                    .unwrap_or(HexBytes([0; 32]))
+            );
+        }
+
 
         let mut out = self.trace_account_update(address, |acc| {
             if let Some(acc) = acc {
@@ -225,7 +239,7 @@ impl WitnessGenerator {
     where
         U: FnOnce(Option<&AccountData>) -> Option<AccountData>,
     {
-        let proofs = match self.trie.prove(address.as_bytes()) {
+        let proofs = match self.trie.prove(address.as_bytes(), false) {
             Ok(proofs) => proofs,
             Err(e) => {
                 panic!("cannot prove, addr {address:?}, err{e:?}");
@@ -281,7 +295,7 @@ impl WitnessGenerator {
             // self.accounts_cache.remove(&address);
         } // no touch for non-exist proof
 
-        let proofs = self.trie.prove(address.as_bytes()).unwrap();
+        let proofs = self.trie.prove(address.as_bytes(), self.ccc_mode).unwrap();
         let (account_path_after, _) = decode_proof_for_mpt_path(address_key, proofs).unwrap();
 
         SMTTrace {

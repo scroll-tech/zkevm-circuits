@@ -181,7 +181,7 @@ impl CircuitCapacityChecker {
                     None,
                 )
             };
-        let witness_block = finalize_builder(&mut estimate_builder)?;
+        let witness_block = finalize_builder(&mut estimate_builder, true)?;
         let mut rows = calculate_row_usage_of_witness_block(&witness_block)?;
 
         let mut code_db = codedb_prev.unwrap_or_else(CodeDB::new);

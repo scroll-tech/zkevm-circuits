@@ -104,6 +104,8 @@ pub struct MptUpdates {
     /// The detailed mpt witness
     pub smt_traces: Vec<SMTTrace>,
     pub(crate) proof_types: Vec<MPTProofType>,
+    /// set update used in ccc mode
+    pub ccc_mode: bool,
 }
 
 /// The field element encoding of an MPT update, which is used by the MptTable
@@ -176,9 +178,10 @@ impl MptUpdates {
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) -> WitnessGenerator {
         let root_pair = (self.old_root, self.new_root);
         self.old_root = init_trie.root().into();
-        log::trace!("fill_state_roots init {:?}", self.old_root);
+        log::trace!("fill_state_roots init {:?}, ccc_mode {}", self.old_root, self.ccc_mode);
 
         let wit_gen = WitnessGenerator::from(init_trie);
+        let wit_gen = if self.ccc_mode {wit_gen.set_ccc_mode()} else {wit_gen};
         let wit_gen = self.fill_state_roots_from_generator(wit_gen);
 
         let root_pair2 = (self.old_root, self.new_root);
@@ -206,7 +209,8 @@ impl MptUpdates {
         }
 
         let gen_withdraw_proof = false;
-        if gen_withdraw_proof {
+        // in ccc mode some full proof is not avaliable
+        if !self.ccc_mode && gen_withdraw_proof {
             // generate withdraw proof
             let address = *bus_mapping::l2_predeployed::message_queue::ADDRESS;
             let key = bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT;
