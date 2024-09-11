@@ -16,11 +16,7 @@ use ethers_core::{
 };
 use halo2curves::{
     ff::FromUniformBytes,
-    group::{
-        ff::{Field as GroupField, PrimeField},
-        prime::PrimeCurveAffine,
-        Curve,
-    },
+    group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
     secp256k1::{Fp, Fq, Secp256k1Affine},
     Coordinates, CurveAffine,
 };

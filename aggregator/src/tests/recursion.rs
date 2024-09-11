@@ -130,7 +130,6 @@ mod app {
     impl Circuit<Fr> for Square {
         type Config = Selector;
         type FloorPlanner = SimpleFloorPlanner;
-        #[cfg(feature = "circuit-params")]
         type Params = ();
 
         fn without_witnesses(&self) -> Self {
@@ -311,7 +310,6 @@ mod app_add_inst {
     impl Circuit<Fr> for Square {
         type Config = (Selector, Column<Advice>, Column<Instance>);
         type FloorPlanner = SimpleFloorPlanner;
-        #[cfg(feature = "circuit-params")]
         type Params = ();
 
         fn without_witnesses(&self) -> Self {

@@ -942,8 +942,7 @@ mod tests {
                 (0x1e, 0x0c, 2),
             ]
             .iter()
-            .enumerate()
-            .map(|(_i, &(state, baseline, num_bits))| FseTableRow {
+            .map(|&(state, baseline, num_bits)| FseTableRow {
                 state,
                 symbol: 1,
                 baseline,
