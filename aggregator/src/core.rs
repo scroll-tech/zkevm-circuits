@@ -71,20 +71,23 @@ pub(crate) fn extract_accumulators_and_proof(
             Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
         })
         .collect::<Vec<_>>();
+    log::debug!("len(acc)    = {len}", len = accumulators.len());
+    log::debug!("len(snarks) = {len}", len = snarks.len());
+    log::debug!("snark[0]    = {snark0:?}", snark0 = keccak256(&snarks[0].proof));
+    log::debug!("snark[1]    = {snark1:?}", snark1 = keccak256(&snarks[1].proof));
     // sanity check on the accumulator
     {
         for (i, acc) in accumulators.iter().enumerate() {
             let KzgAccumulator { lhs, rhs } = acc;
             let left = Bn256::pairing(lhs, g2);
             let right = Bn256::pairing(rhs, s_g2);
-            log::trace!("acc extraction {}-th acc check: left {:?}", i, left);
-            log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
+            log::debug!("acc extraction {}-th acc check: left {:?}", i, left);
+            log::debug!("acc extraction {}-th acc check: right {:?}", i, right);
             if left != right {
                 return Err(snark_verifier::Error::AssertionFailure(format!(
                     "accumulator check failed {left:?} {right:?}, index {i}",
                 )));
             }
-            //assert_eq!(left, right, "accumulator check failed");
         }
     }
 
