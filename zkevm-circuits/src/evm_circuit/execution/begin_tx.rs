@@ -1784,7 +1784,7 @@ mod test {
             .sig_data(sig_data2);
 
         for tx in [tx1, tx2] {
-            let ctx = build_legacy_ctx(8_000_000.into(), &tx).unwrap();
+            let ctx = build_legacy_ctx(gwei(8_000_000), &tx).unwrap();
             CircuitTestBuilder::new_from_test_ctx(ctx)
                 .params(CircuitsParams {
                     max_calldata: 300,
