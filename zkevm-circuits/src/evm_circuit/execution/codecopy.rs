@@ -134,6 +134,11 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             code_size.expr(),
             code_len_gadget.code_length.expr(),
         );
+        cb.require_equal(
+            "code_len_gadget and same_context have the same is_first_bytecode_table",
+            code_len_gadget.is_first_bytecode_table.expr(),
+            same_context.is_first_bytecode_table().expr(),
+        );
 
         Self {
             same_context,

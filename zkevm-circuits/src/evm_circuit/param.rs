@@ -34,6 +34,12 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + TX_TABLE_LOOKUPS
     + RW_TABLE_LOOKUPS
     + BYTECODE_TABLE_LOOKUPS
+    // only add when feature 'dual-bytecode' is enabled
+    + if cfg!(feature = "dual-bytecode"){
+        BYTECODE_TABLE_LOOKUPS
+    }else{
+        0
+    }
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
@@ -59,6 +65,8 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::ModExp, MODEXP_TABLE_LOOKUPS),
     (Table::Ecc, ECC_TABLE_LOOKUPS),
     (Table::PowOfRand, POW_OF_RAND_TABLE_LOOKUPS),
+    #[cfg(feature = "dual-bytecode")]
+    (Table::Bytecode1, BYTECODE_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit

@@ -391,6 +391,7 @@ impl<F: Field> ExecutionConfig<F> {
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
+        #[cfg(feature = "dual-bytecode")] bytecode_table1: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
@@ -687,6 +688,8 @@ impl<F: Field> ExecutionConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            #[cfg(feature = "dual-bytecode")]
+            bytecode_table1,
             block_table,
             copy_table,
             keccak_table,
@@ -956,6 +959,7 @@ impl<F: Field> ExecutionConfig<F> {
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
+        #[cfg(feature = "dual-bytecode")] bytecode_table1: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
@@ -977,6 +981,8 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Tx => tx_table,
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
+                        #[cfg(feature = "dual-bytecode")]
+                        Table::Bytecode1 => bytecode_table1,
                         Table::Block => block_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
@@ -1418,6 +1424,8 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_tx", TX_TABLE_LOOKUPS),
             ("EVM_lookup_rw", RW_TABLE_LOOKUPS),
             ("EVM_lookup_bytecode", BYTECODE_TABLE_LOOKUPS),
+            #[cfg(feature = "dual-bytecode")]
+            ("EVM_lookup_bytecode1", BYTECODE_TABLE_LOOKUPS),
             ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),

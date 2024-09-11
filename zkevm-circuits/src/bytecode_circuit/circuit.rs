@@ -16,7 +16,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::vec;
+use std::{cmp::max, vec};
 
 use super::{
     bytecode_unroller::{unroll_with_codehash, BytecodeRow, UnrolledBytecode},
@@ -1014,6 +1014,22 @@ impl<F: Field> BytecodeCircuit<F> {
             .collect();
         Self::new(bytecodes, bytecode_size)
     }
+
+    #[cfg(feature = "dual-bytecode")]
+    /// Creates bytecode sub circuit from block, is_first_bytecode indicates first or second
+    /// sub bytecode circuit.
+    pub fn new_from_block_for_dual_circuit(
+        block: &witness::Block,
+        is_first_bytecode: bool,
+    ) -> Self {
+        let bytecodes: Vec<UnrolledBytecode<F>> = block
+            .bytecodes
+            .iter()
+            .filter(|code| block.is_first_bytecode_circuit(code.0) == is_first_bytecode)
+            .map(|(codehash, b)| unroll_with_codehash(*codehash, b.bytes.clone()))
+            .collect();
+        Self::new(bytecodes, block.circuits_params.max_bytecode)
+    }
 }
 
 impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
@@ -1038,14 +1054,30 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block) -> (usize, usize) {
-        (
-            block
-                .bytecodes
-                .values()
-                .map(|bytecode| bytecode.bytes.len() + 1)
-                .sum(),
-            block.circuits_params.max_bytecode,
-        )
+        if block.bytecode_map.is_some() {
+            // when enable feature "dual-bytecode", get two sets of bytecodes here.
+            let (first_bytecodes, second_bytecodes) = block.get_bytecodes_for_dual_sub_circuits();
+            let minimum_row: usize = max(
+                first_bytecodes
+                    .iter()
+                    .map(|bytecode| bytecode.rows_required())
+                    .sum(),
+                second_bytecodes
+                    .iter()
+                    .map(|bytecode| bytecode.rows_required())
+                    .sum(),
+            );
+            (minimum_row, block.circuits_params.max_bytecode)
+        } else {
+            (
+                block
+                    .bytecodes
+                    .values()
+                    .map(|bytecode| bytecode.rows_required())
+                    .sum(),
+                block.circuits_params.max_bytecode,
+            )
+        }
     }
 
     /// Make the assignments to the TxCircuit

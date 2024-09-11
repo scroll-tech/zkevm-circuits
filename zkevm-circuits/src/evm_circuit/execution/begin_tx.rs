@@ -6,8 +6,8 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                CurieGadget, TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget,
-                TxEip1559Gadget, TxL1FeeGadget, TxL1MsgGadget,
+                TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget,
+                TxL1FeeGadget, TxL1MsgGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -100,7 +100,6 @@ pub(crate) struct BeginTxGadget<F> {
     tx_l1_msg: TxL1MsgGadget<F>,
     tx_access_list: TxAccessListGadget<F>,
     tx_eip1559: TxEip1559Gadget<F>,
-    curie: CurieGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -140,8 +139,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
-        let curie = CurieGadget::construct(cb, cb.curr.state.block_number.expr());
-
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
             cb.require_equal(
@@ -149,13 +146,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_nonce.expr(),
                 sender_nonce.expr(),
             );
-            TxL1FeeGadget::construct(
-                cb,
-                not::expr(curie.is_before_curie.expr()),
-                tx_id.expr(),
-                tx_data_gas_cost.expr(),
-                tx_signed_length.expr(),
-            )
+            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_signed_length.expr())
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
@@ -170,7 +161,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let l1_rw_delta = select::expr(
             tx_l1_msg.is_l1_msg(),
             tx_l1_msg.rw_delta(),
-            tx_l1_fee.rw_delta(not::expr(curie.is_before_curie.expr())),
+            tx_l1_fee.rw_delta(),
         ) + 1.expr();
 
         // the cost caused by l1
@@ -845,7 +836,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_msg,
             tx_access_list,
             tx_eip1559,
-            curie,
         }
     }
 
@@ -868,7 +858,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         //          if scroll:
         //              KeccakCodeHash
         // else:
-        //      3 or 6 l1 fee rw
+        //      6 l1 fee rw
         // RwCounterEndOfReversion
         // IsPersistent
         // IsSuccess
@@ -897,10 +887,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_l1_msg
             .assign(region, offset, tx_type, caller_code_hash)?;
 
-        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_enabled(
-            block.chain_id,
-            tx.block_number,
-        );
         // Add access-list RW offset.
         rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
 
@@ -920,15 +906,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 0
             }
         } else {
-            if is_curie {
-                6
-            } else {
-                3
-            }
+            6
         });
-
-        self.curie
-            .assign(region, offset, block.chain_id, tx.block_number)?;
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);

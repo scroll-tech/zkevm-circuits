@@ -15,6 +15,7 @@ use crate::{
 };
 use eth_types::{evm_types::OpcodeId, U256};
 
+use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -72,23 +73,45 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), 3.expr() + is_jumpi.expr());
+
         // If destination is in valid range, lookup for the value.
         cb.condition(dest.lt_cap(), |cb| {
-            cb.bytecode_lookup(
-                cb.curr.state.code_hash.expr(),
-                dest.valid_value(),
-                is_code.expr(),
-                value.expr(),
-                push_rlc.expr(),
+            cb.condition(code_len_gadget.is_first_bytecode_table.expr(), |cb| {
+                cb.bytecode_lookup(
+                    cb.curr.state.code_hash.expr(),
+                    dest.valid_value(),
+                    is_code.expr(),
+                    value.expr(),
+                    push_rlc.expr(),
+                );
+            });
+
+            #[cfg(feature = "dual-bytecode")]
+            cb.condition(
+                not::expr(code_len_gadget.is_first_bytecode_table.expr()),
+                |cb| {
+                    cb.bytecode_lookup1(
+                        cb.curr.state.code_hash.expr(),
+                        dest.valid_value(),
+                        is_code.expr(),
+                        value.expr(),
+                        push_rlc.expr(),
+                    );
+                },
             );
+
             cb.require_zero(
                 "is_code is false or not JUMPDEST",
                 is_code.expr() * is_jump_dest.expr(),
             );
         });
-
-        let common_error_gadget =
-            CommonErrorGadget::construct(cb, opcode.expr(), 3.expr() + is_jumpi.expr());
+        cb.require_equal(
+            "code_len_gadget and common_error_gadget have the same is_first_bytecode_table",
+            code_len_gadget.is_first_bytecode_table.expr(),
+            common_error_gadget.is_first_bytecode_table.expr(),
+        );
 
         Self {
             opcode,

@@ -887,3 +887,88 @@ fn test_find_two_closest_subset() {
     assert_eq!(set1, empty_vec);
     assert_eq!(set2, empty_vec);
 }
+
+pub(crate) struct PartitionData<T> {
+    pub(crate) first_part: Vec<(T, usize)>,
+    pub(crate) second_part: Vec<(T, usize)>,
+}
+
+/// The function of this algorithm： Split a vec into two subsets such that
+/// the sums of the two subsets are close, but not necessarily return the most optimal result.
+/// Note: if stable result is required, make use you pass the stable parameter vec.
+pub(crate) fn greedy_simple_partition<T>(nums: Vec<(T, usize)>) -> PartitionData<T> {
+    let mut nums = nums;
+    // sorted in descending order
+    // sort_by helper is stable, see doc at https://doc.rust-lang.org/std/vec/struct.Vec.html#method.sort_by
+    nums.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut sum1 = 0;
+    let mut sum2 = 0;
+
+    // construct two sub sets
+    let mut subset1 = Vec::new();
+    let mut subset2 = Vec::new();
+
+    for num in nums {
+        if sum1 <= sum2 + num.1 {
+            sum1 += num.1;
+            subset1.push(num);
+        } else {
+            sum2 += num.1;
+            subset2.push(num);
+        }
+    }
+
+    PartitionData {
+        first_part: subset1,
+        second_part: subset2,
+    }
+}
+
+// tests for algorithm of `greedy_simple_partition`
+#[test]
+fn test_greedy_partition() {
+    let mut nums = vec![("key1", 1), ("key2", 5), ("key3", 11), ("key4", 5)];
+    let mut partition_data = greedy_simple_partition(nums);
+
+    // the most optimal set: set1: [11], set2 [1, 5, 5]
+    assert_eq!(partition_data.first_part, [("key3", 11), ("key1", 1)]);
+    assert_eq!(partition_data.second_part, [("key2", 5), ("key4", 5)]);
+
+    nums = vec![("key1", 80), ("key2", 100), ("key3", 10), ("key4", 20)];
+    partition_data = greedy_simple_partition(nums);
+    // close to the most optimal set: set1: [20, 80], set2 [10, 100]
+    assert_eq!(partition_data.first_part, [("key2", 100), ("key4", 20)]);
+    assert_eq!(partition_data.second_part, [("key1", 80), ("key3", 10)]);
+
+    nums = vec![
+        ("key1", 80),
+        ("key2", 20),
+        ("key3", 50),
+        ("key4", 110),
+        ("key5", 32),
+    ];
+    partition_data = greedy_simple_partition(nums);
+    // close to the most optimal set: set1 [32, 110], set2 [50, 20, 80]
+
+    assert_eq!(partition_data.first_part, [("key4", 110), ("key3", 50)]);
+    assert_eq!(
+        partition_data.second_part,
+        [("key1", 80), ("key5", 32), ("key2", 20)]
+    );
+
+    nums = vec![
+        ("key1", 1),
+        ("key2", 5),
+        ("key3", 11),
+        ("key4", 5),
+        ("key5", 10),
+    ];
+    partition_data = greedy_simple_partition(nums);
+
+    // close to the most optimal sets: set1 [10, 5, 1], set2 [11, 5]
+    assert_eq!(
+        partition_data.first_part,
+        [("key3", 11), ("key2", 5), ("key1", 1)]
+    );
+    assert_eq!(partition_data.second_part, [("key5", 10), ("key4", 5)]);
+}
