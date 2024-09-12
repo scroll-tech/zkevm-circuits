@@ -1,10 +1,7 @@
 use ethers_core::utils::keccak256;
 use halo2_proofs::{
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
-    halo2curves::{
-        ff::Field,
-        bn256::Fr
-    },
+    halo2curves::{bn256::Fr, ff::Field},
     plonk::Error,
 };
 use zkevm_circuits::util::Challenges;
