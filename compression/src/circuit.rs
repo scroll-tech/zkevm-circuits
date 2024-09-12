@@ -138,7 +138,10 @@ pub(crate) fn verify_snark_accumulator_pairing<'a>(
         &mut transcript_read,
     );
 
-    for (idx, acc) in Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof).into_iter().enumerate() {
+    for (idx, acc) in Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
+        .into_iter()
+        .enumerate()
+    {
         let KzgAccumulator { lhs, rhs } = acc;
         let left = Bn256::pairing(&lhs, &params.g2());
         let right = Bn256::pairing(&rhs, &params.s_g2());
