@@ -536,7 +536,7 @@ pub fn run_test(
     };
 
     #[cfg(feature = "scroll")]
-    let (scroll_trace, witness_block, mut builder) = {
+    let (_scroll_trace, witness_block, mut builder) = {
         let result = trace_config_to_witness_block_l2(
             trace_config.clone(),
             st.clone(),
@@ -643,7 +643,10 @@ pub fn run_test(
         #[cfg(feature = "chunk-prove")]
         {
             eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
-            prover::test::chunk_prove(&test_id, prover::ChunkProvingTask::from(vec![scroll_trace]));
+            prover::test::chunk_prove(
+                &test_id,
+                prover::ChunkProvingTask::from(vec![_scroll_trace]),
+            );
         }
 
         #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]

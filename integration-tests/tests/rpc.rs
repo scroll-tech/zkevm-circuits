@@ -1,4 +1,3 @@
-#![feature(lazy_cell)]
 #![cfg(feature = "rpc")]
 
 use eth_types::{StorageProof, Word};

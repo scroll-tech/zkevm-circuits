@@ -58,6 +58,7 @@ struct BlobConfig {
 impl Circuit<Fr> for BlobCircuit {
     type Config = BlobConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
     fn without_witnesses(&self) -> Self {
         unimplemented!()
     }

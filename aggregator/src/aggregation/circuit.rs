@@ -132,6 +132,8 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
 impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
     type Config = (BatchCircuitConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
+
     fn without_witnesses(&self) -> Self {
         unimplemented!()
     }

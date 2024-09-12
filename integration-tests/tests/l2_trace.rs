@@ -1,4 +1,3 @@
-#![feature(lazy_cell)]
 #![cfg(feature = "scroll")]
 
 use bus_mapping::{
