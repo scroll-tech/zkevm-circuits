@@ -74,7 +74,6 @@ pub(crate) fn extract_accumulators_and_proof(
     log::debug!("len(acc)    = {len}", len = accumulators.len());
     log::debug!("len(snarks) = {len}", len = snarks.len());
     log::debug!("snark[0]    = {snark0:?}", snark0 = keccak256(&snarks[0].proof));
-    log::debug!("snark[1]    = {snark1:?}", snark1 = keccak256(&snarks[1].proof));
     // sanity check on the accumulator
     {
         for (i, acc) in accumulators.iter().enumerate() {
