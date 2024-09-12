@@ -138,22 +138,22 @@ pub(crate) fn verify_snark_accumulator_pairing<'a>(
         &mut transcript_read,
     );
 
-    let acc = Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)[0].clone();
+    for (idx, acc) in Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof).into_iter().enumerate() {
+        let KzgAccumulator { lhs, rhs } = acc;
+        let left = Bn256::pairing(&lhs, &params.g2());
+        let right = Bn256::pairing(&rhs, &params.s_g2());
 
-    let KzgAccumulator { lhs, rhs } = acc;
-    let left = Bn256::pairing(&lhs, &params.g2());
-    let right = Bn256::pairing(&rhs, &params.s_g2());
+        log::trace!("compression circuit accumulator pre-check: left {:?}", left);
+        log::trace!(
+            "compression circuit accumulator pre-check: right {:?}",
+            right
+        );
 
-    log::trace!("compression circuit accumulator pre-check: left {:?}", left);
-    log::trace!(
-        "compression circuit accumulator pre-check: right {:?}",
-        right
-    );
-
-    if left != right {
-        return Err(snark_verifier::Error::AssertionFailure(format!(
-            "accumulator check failed {left:?} {right:?}",
-        )));
+        if left != right {
+            return Err(snark_verifier::Error::AssertionFailure(format!(
+                "accumulator check failed in compression circuit construction {left:?} {right:?}, {idx:?}",
+            )));
+        }
     }
 
     Ok(snark)
