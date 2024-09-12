@@ -529,7 +529,7 @@ impl<ST: StateTransition> Circuit<Fr> for RecursionCircuit<ST> {
                 #[cfg(feature = "display")]
                 dbg!(ctx.total_advice);
                 #[cfg(feature = "display")]
-                println!("Advice columns used: {}", ctx.advice_alloc[0][0].0 + 1);
+                println!("Advice columns used: {:?}", ctx.advice_alloc[0]);
 
                 // Return the computed instance cells for this Recursion Circuit.
                 Ok([lhs.x(), lhs.y(), rhs.x(), rhs.y()]

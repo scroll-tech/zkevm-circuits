@@ -587,6 +587,7 @@ mod test {
         statetest::{run_test, CircuitsConfig, StateTestError},
     };
     use eth_types::{address, AccessList, AccessListItem};
+    use std::fmt::{Display, Formatter};
 
     const TEMPLATE: &str = r#"
 arith:
@@ -700,23 +701,27 @@ arith:
             }
         }
     }
-    impl ToString for Template {
-        fn to_string(&self) -> String {
-            TEMPLATE
-                .replace("{{ gas_limit }}", &self.gas_limit)
-                .replace("{{ pre_code }}", &self.pre_code)
-                .replace("{{ res_storage }}", &self.res_storage)
-                .replace("{{ res_balance }}", &self.res_balance)
-                .replace("{{ res_code }}", &self.res_code)
-                .replace("{{ res_nonce }}", &self.res_nonce)
-                .replace(
-                    "{{ expect_exception_network }}",
-                    if self.res_exception {
-                        ">=Istanbul"
-                    } else {
-                        "Istanbul"
-                    },
-                )
+    impl Display for Template {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "{}",
+                TEMPLATE
+                    .replace("{{ gas_limit }}", &self.gas_limit)
+                    .replace("{{ pre_code }}", &self.pre_code)
+                    .replace("{{ res_storage }}", &self.res_storage)
+                    .replace("{{ res_balance }}", &self.res_balance)
+                    .replace("{{ res_code }}", &self.res_code)
+                    .replace("{{ res_nonce }}", &self.res_nonce)
+                    .replace(
+                        "{{ expect_exception_network }}",
+                        if self.res_exception {
+                            ">=Istanbul"
+                        } else {
+                            "Istanbul"
+                        },
+                    )
+            )
         }
     }
 
@@ -980,7 +985,6 @@ arith:
         Ok(())
     }
 
-    #[cfg(feature = "warn-unimplemented")]
     #[test]
     fn fail_bad_code() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(

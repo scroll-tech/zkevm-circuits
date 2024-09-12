@@ -26,7 +26,6 @@ impl Circuit<Fr> for ArithTestCircuit {
     type Config = RlcConfig;
     type FloorPlanner = SimpleFloorPlanner;
     type Params = ();
-
     fn without_witnesses(&self) -> Self {
         Self::default()
     }

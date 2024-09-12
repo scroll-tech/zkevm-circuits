@@ -6,7 +6,6 @@ const CONFIG_FILE: &str = "Config.toml";
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub suite: Vec<TestSuite>,
-    pub set: Vec<TestsSet>,
     #[serde(default)]
     pub skip_paths: Vec<SkipPaths>,
     #[serde(default)]
@@ -62,13 +61,6 @@ impl Config {
             .find(|s| s.id == name)
             .ok_or_else(|| anyhow!("Suite not found"))
     }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct TestsSet {
-    pub id: String,
-    pub desc: Option<String>,
-    pub tests: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -1128,7 +1128,6 @@ mod tests {
         type Config = SeqExecMockConfig;
         type FloorPlanner = SimpleFloorPlanner;
         type Params = ();
-
         fn without_witnesses(&self) -> Self {
             unimplemented!()
         }

@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         });
 
         // calculate required gas for precompile
-        let precompiles_required_gas = vec![
+        let precompiles_required_gas = [
             (
                 addr_bits.value_equals(PrecompileCalls::Ecrecover),
                 GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
