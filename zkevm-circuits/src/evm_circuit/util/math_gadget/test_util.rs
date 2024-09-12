@@ -103,7 +103,6 @@ impl<G> UnitTestMathGadgetBaseCircuit<G> {
 impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseCircuit<G> {
     type Config = (UnitTestMathGadgetBaseCircuitConfig<F, G>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    #[cfg(feature = "circuit-params")]
     type Params = ();
 
     fn without_witnesses(&self) -> Self {

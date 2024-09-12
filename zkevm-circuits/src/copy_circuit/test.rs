@@ -40,10 +40,15 @@ fn copy_circuit_unusable_rows() {
 pub fn test_copy_circuit(
     copy_events: Vec<CopyEvent>,
     max_copy_rows: usize,
+    bytecode_map: Option<BTreeMap<Word, bool>>,
     external_data: ExternalData,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let circuit =
-        CopyCircuit::<Fr>::new_with_external_data(copy_events, max_copy_rows, external_data);
+    let circuit = CopyCircuit::<Fr>::new_with_external_data(
+        copy_events,
+        max_copy_rows,
+        bytecode_map,
+        external_data,
+    );
 
     let prover = MockProver::<Fr>::run(K, &circuit, vec![]).unwrap();
     prover.verify_par()
@@ -54,6 +59,7 @@ pub fn test_copy_circuit_from_block(block: Block) -> Result<(), Vec<VerifyFailur
     test_copy_circuit(
         block.copy_events,
         block.circuits_params.max_copy_rows,
+        block.bytecode_map,
         ExternalData {
             max_txs: block.circuits_params.max_txs,
             max_calldata: block.circuits_params.max_calldata,
@@ -450,7 +456,7 @@ fn copy_circuit_invalid_calldatacopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["rw lookup", "rw lookup"],
+        vec!["tx lookup for CallData", "rw lookup"],
     );
 }
 
@@ -575,12 +581,17 @@ fn variadic_size_check() {
         .unwrap();
     let block2 = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    let circuit = CopyCircuit::<Fr>::new(block1.copy_events, block1.circuits_params.max_copy_rows);
+    let circuit = CopyCircuit::<Fr>::new(
+        block1.copy_events,
+        block1.circuits_params.max_copy_rows,
+        block1.bytecode_map,
+    );
     let prover1 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(
         block2.copy_events.clone(),
         block2.circuits_params.max_copy_rows,
+        block2.bytecode_map,
     );
     let prover2 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
 

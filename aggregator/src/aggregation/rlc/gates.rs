@@ -1,6 +1,5 @@
 use ethers_core::utils::keccak256;
 use halo2_proofs::{
-    arithmetic::Field,
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
     halo2curves::bn256::Fr,
     plonk::Error,

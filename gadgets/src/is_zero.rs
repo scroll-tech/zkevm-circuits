@@ -1,8 +1,7 @@
 //! IsZero gadget works as follows:
 //!
 //! Given a `value` to be checked if it is zero:
-//!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
-//!  `1/x` otherwise
+//!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and `1/x` otherwise
 
 use crate::Field;
 use halo2_proofs::{
@@ -222,7 +221,6 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
-            #[cfg(feature = "circuit-params")]
             type Params = ();
 
             fn without_witnesses(&self) -> Self {
@@ -351,7 +349,6 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
-            #[cfg(feature = "circuit-params")]
             type Params = ();
 
             fn without_witnesses(&self) -> Self {

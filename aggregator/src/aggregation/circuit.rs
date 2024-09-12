@@ -1,16 +1,4 @@
-use crate::{
-    aggregation::decoder::WORKED_EXAMPLE,
-    blob::BatchData,
-    witgen::{zstd_encode, MultiBlockProcessResult},
-    LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
-    PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
-};
 use ark_std::{end_timer, start_timer};
-use halo2_base::{Context, ContextParams};
-
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use halo2_ecc::{ecc::EccChip, fields::fp::FpConfig};
-
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -19,33 +7,33 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use std::rc::Rc;
-use std::{env, fs::File};
-
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
-use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
-#[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
-    loader::halo2::halo2_ecc::halo2_base,
-    pcs::kzg::{Bdfg21, Kzg},
+    loader::halo2::{
+        halo2_ecc::{
+            ecc::EccChip,
+            fields::fp::FpConfig,
+            halo2_base::{AssignedValue, Context, ContextParams},
+        },
+        Halo2Loader,
+    },
+    pcs::kzg::{Bdfg21, Kzg, KzgSuccinctVerifyingKey},
 };
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier_sdk::{aggregate, flatten_accumulator};
-use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
+use snark_verifier_sdk::{aggregate, flatten_accumulator, CircuitExt, Snark, SnarkWitness};
+use std::{env, fs::File, rc::Rc};
 use zkevm_circuits::util::Challenges;
 
 use crate::{
-    aggregation::witgen::process,
+    aggregation::{decoder::WORKED_EXAMPLE, witgen::process, BatchCircuitConfig},
     batch::BatchHash,
+    blob::BatchData,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
-    AssignedBarycentricEvaluationConfig, ConfigParams,
+    witgen::{zstd_encode, MultiBlockProcessResult},
+    AssignedBarycentricEvaluationConfig, ConfigParams, LOG_DEGREE, PI_CHAIN_ID,
+    PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH,
+    PI_PARENT_STATE_ROOT,
 };
-
-use super::BatchCircuitConfig;
 
 /// Batch circuit, the chunk aggregation routine below recursion circuit
 #[derive(Clone)]
@@ -144,6 +132,8 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
 impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
     type Config = (BatchCircuitConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
+
     fn without_witnesses(&self) -> Self {
         unimplemented!()
     }
@@ -186,47 +176,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             .range()
             .load_lookup_table(&mut layouter)
             .expect("load range lookup table");
+
         // ==============================================
         // Step 1: snark aggregation circuit
         // ==============================================
-        #[cfg(feature = "disable_proof_aggregation")]
-        let barycentric = {
-            let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-            layouter.assign_region(
-                || "barycentric evaluation",
-                |region| {
-                    if first_pass {
-                        first_pass = false;
-                        return Ok(AssignedBarycentricEvaluationConfig::default());
-                    }
-
-                    let mut ctx = Context::new(
-                        region,
-                        ContextParams {
-                            max_rows: config.flex_gate().max_rows,
-                            num_context_ids: 1,
-                            fixed_columns: config.flex_gate().constants.clone(),
-                        },
-                    );
-
-                    let barycentric = config.barycentric.assign(
-                        &mut ctx,
-                        &self.batch_hash.point_evaluation_assignments.coefficients,
-                        self.batch_hash
-                            .point_evaluation_assignments
-                            .challenge_digest,
-                        self.batch_hash.point_evaluation_assignments.evaluation,
-                    );
-
-                    config.barycentric.scalar.range.finalize(&mut ctx);
-                    ctx.print_stats(&["barycentric evaluation"]);
-
-                    Ok(barycentric)
-                },
-            )?
-        };
-
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         let (accumulator_instances, snark_inputs, barycentric) = {
             use halo2_proofs::halo2curves::bn256::Fq;
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
@@ -375,21 +328,13 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
         };
 
         // Extract digests
-        #[cfg(feature = "disable_proof_aggregation")]
-        let (_batch_hash_digest, _chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
-            parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
-
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         let (_batch_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
 
         // ========================================================================
         // step 2.a: check accumulator including public inputs to the snarks
         // ========================================================================
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         layouter.assign_region(
             || "BatchCircuit: Chunk PI",
             |mut region| -> Result<(), Error> {
@@ -424,7 +369,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             },
         )?;
 
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         {
             assert!(accumulator_instances.len() == ACC_LEN);
             for (i, v) in accumulator_instances.iter().enumerate() {
