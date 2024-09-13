@@ -276,14 +276,14 @@ fn blob_circuit_completeness() {
     // TODO: enable this once we have another deterministic case of batch -> blob (fully packed).
     // Full blob test case
     // batch274 contains batch bytes that will produce a full blob
-    // let full_blob = hex::decode(
-    //     fs::read_to_string("./data/test_batches/batch274.hex")
-    //         .expect("file path exists")
-    //         .trim(),
-    // )
-    // .expect("should load full blob batch bytes");
+    let full_blob = hex::decode(
+        fs::read_to_string("./data/test_batches/batch274.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load full blob batch bytes");
     // batch274 contains metadata
-    // let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
+    let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
 
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
