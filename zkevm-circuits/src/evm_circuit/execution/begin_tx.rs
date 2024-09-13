@@ -1808,7 +1808,7 @@ mod test {
                     .nonce(tx.nonce);
             },
             |mut txs, _accs| {
-                txs[0].copy_from(tx.clone());
+                txs[0].clone_from(tx);
             },
             |block, _tx| block.number(0xcafeu64),
         )
