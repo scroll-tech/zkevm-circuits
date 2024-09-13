@@ -8,7 +8,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::{marker::PhantomData, u64};
+use std::marker::PhantomData;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -138,7 +138,6 @@ mod test {
     {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
-        #[cfg(feature = "circuit-params")]
         type Params = ();
 
         fn without_witnesses(&self) -> Self {

@@ -19,8 +19,26 @@ pub fn load_statetests_suite(
     config: Config,
     compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
-    let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
-    let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
+    let skip_paths: Vec<&String> = config
+        .skip_paths
+        .iter()
+        .flat_map(|t| {
+            t.desc.as_ref().inspect(|desc| {
+                log::info!("Skipping paths: {}", desc);
+            });
+            &t.paths
+        })
+        .collect();
+    let skip_tests: Vec<&String> = config
+        .skip_tests
+        .iter()
+        .flat_map(|t| {
+            t.desc.as_ref().inspect(|desc| {
+                log::info!("Skipping tests: {}", desc);
+            });
+            &t.tests
+        })
+        .collect();
 
     let tcs = suite
         .paths

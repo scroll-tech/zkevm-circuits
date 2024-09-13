@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 thread_local! {
     /// dirty hack to enable normalization
-    pub static ENABLE_NORMALIZE: RefCell<bool> = RefCell::new(true);
+    pub static ENABLE_NORMALIZE: RefCell<bool> = const {  RefCell::new(true) };
 }
 
 /// encodes an abi call (e.g. "f(uint) 1")

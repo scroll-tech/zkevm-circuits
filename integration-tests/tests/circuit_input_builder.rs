@@ -1,4 +1,3 @@
-#![feature(lazy_cell)]
 #![cfg(feature = "circuit_input_builder")]
 
 use bus_mapping::circuit_input_builder::{build_state_code_db, BuilderClient, CircuitsParams};
