@@ -5,7 +5,7 @@ use crate::{
     utils::gen_rng,
 };
 use anyhow::{anyhow, Result};
-use compression::CompressionCircuit;
+use compression::{utils::ce_snark_to_snark, CompressionCircuit};
 use rand::Rng;
 use snark_verifier_sdk::Snark;
 use std::env;
@@ -20,11 +20,11 @@ impl<'params> Prover<'params> {
         prev_snark: Snark,
     ) -> Result<Snark> {
         env::set_var("COMPRESSION_CONFIG", layer_config_path(id));
-
         let circuit =
             CompressionCircuit::new(self.params(degree), prev_snark, has_accumulator, &mut rng)
                 .map_err(|err| anyhow!("Failed to construct compression circuit: {err:?}"))?;
-        self.gen_snark(id, degree, &mut rng, circuit, "gen_comp_snark")
+        let ce_snark = self.gen_snark_ce(id, degree, &mut rng, circuit, "gen_comp_snark")?;
+        Ok(ce_snark_to_snark(ce_snark))
     }
 
     pub fn load_or_gen_comp_snark(

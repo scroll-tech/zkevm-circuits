@@ -5,10 +5,10 @@ use crate::{
     EvmProof,
 };
 use anyhow::{anyhow, Result};
+use ce_snark_verifier_sdk::{evm::gen_evm_proof_shplonk, CircuitExt as CeCircuitExt};
 use compression::CompressionCircuit;
 use halo2_proofs::halo2curves::bn256::Fr;
-use rand::Rng;
-use snark_verifier_sdk::{gen_evm_proof_shplonk, CircuitExt, Snark};
+use snark_verifier_sdk::Snark;
 use std::env;
 
 impl<'params> Prover<'params> {
@@ -36,7 +36,7 @@ impl<'params> Prover<'params> {
                 )
                 .map_err(|err| anyhow!("Failed to construct compression circuit: {err:?}"))?;
 
-                let result = self.gen_evm_proof(id, degree, &mut rng, circuit, output_dir);
+                let result = self.gen_evm_proof(id, degree, circuit, output_dir);
 
                 if let (Some(output_dir), Ok(proof)) = (output_dir, &result) {
                     proof.dump(output_dir, &name)?;
@@ -47,15 +47,14 @@ impl<'params> Prover<'params> {
         }
     }
 
-    fn gen_evm_proof<C: CircuitExt<Fr>>(
+    fn gen_evm_proof<C: CeCircuitExt<Fr>>(
         &mut self,
         id: &str,
         degree: u32,
-        rng: &mut (impl Rng + Send),
         circuit: C,
         output_dir: Option<&str>,
     ) -> Result<EvmProof> {
-        Self::assert_if_mock_prover(id, degree, &circuit);
+        // Self::assert_if_mock_prover(id, degree, &circuit);
 
         let (params, pk) = self.params_and_pk(id, degree, &circuit)?;
         log::info!(
@@ -64,7 +63,7 @@ impl<'params> Prover<'params> {
         );
         let instances = circuit.instances();
         let num_instance = circuit.num_instance();
-        let proof = gen_evm_proof_shplonk(params, pk, circuit, instances.clone(), rng);
+        let proof = gen_evm_proof_shplonk(params, pk, circuit, instances.clone());
         let evm_proof = EvmProof::new(proof, &instances, num_instance, Some(pk))?;
 
         if read_env_var("SCROLL_PROVER_DUMP_YUL", false) {

@@ -1,4 +1,6 @@
 use crate::io::deserialize_vk;
+use ce_snark_verifier_sdk::snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
+use ce_snark_verifier_sdk::{CircuitExt as CeCircuitExt, PlonkVerifier, SHPLONK};
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::VerifyingKey,
@@ -34,4 +36,10 @@ impl<'params, C: CircuitExt<Fr, Params = ()>> Verifier<'params, C> {
     pub fn verify_snark(&self, snark: Snark) -> bool {
         verify_snark_shplonk::<C>(self.params.verifier_params(), snark, &self.vk)
     }
+}
+
+pub struct Verifier2<C: CeCircuitExt<Fr>> {
+    svk: KzgSuccinctVerifyingKey<G1Affine>,
+    inner: PlonkVerifier<SHPLONK>,
+    phantom: PhantomData<C>,
 }
