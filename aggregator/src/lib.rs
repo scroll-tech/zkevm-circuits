@@ -1,4 +1,4 @@
-#![feature(lazy_cell)]
+#![allow(clippy::doc_lazy_continuation)]
 /// proof aggregation
 mod aggregation;
 /// This module implements `Batch` related data types.

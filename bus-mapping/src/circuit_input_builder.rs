@@ -147,10 +147,11 @@ impl Default for CircuitsParams {
 /// steps:
 ///
 /// 1. Take a [`eth_types::Block`] to build the circuit input associated with
-/// the block. 2. For each [`eth_types::Transaction`] in the block, take the
-/// [`eth_types::GethExecTrace`] to build the circuit input associated with
-/// each transaction, and the bus-mapping operations associated with each
-/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
+/// the block.
+/// 2. For each [`eth_types::Transaction`] in the block, take the [`eth_types::GethExecTrace`]
+/// to build the circuit input associated with each transaction,
+/// and the bus-mapping operations associated with each [`eth_types::GethExecStep`]
+/// in the [`eth_types::GethExecTrace`].
 ///
 /// The generated bus-mapping operations are:
 /// [`StackOp`](crate::operation::StackOp)s,

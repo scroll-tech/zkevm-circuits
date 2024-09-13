@@ -1004,7 +1004,6 @@ mod tests {
         type Config = SeqInstTable<Fr>;
         type FloorPlanner = SimpleFloorPlanner;
         type Params = ();
-
         fn without_witnesses(&self) -> Self {
             unimplemented!()
         }

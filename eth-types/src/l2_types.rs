@@ -459,13 +459,13 @@ pub struct StorageTrace {
     /// additional deletion proofs
     pub deletion_proofs: Vec<Bytes>,
     #[serde(rename = "flattenProofs", default)]
-    ///
+    /// all trie nodes with preimages
     pub flatten_proofs: HashMap<H256, Bytes>,
     #[serde(rename = "addressHashes", default)]
-    ///
+    /// hashes of addresses
     pub address_hashes: HashMap<Address, Hash>,
     #[serde(rename = "storeKeyHashes", default)]
-    ///
+    /// hashes of keys
     pub store_key_hashes: HashMap<H256, Hash>,
 }
 
