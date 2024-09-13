@@ -198,7 +198,6 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 	// fmt.Printf("geth-utils: ArchimedesBlock = %d\n", chainConfig.ArchimedesBlock)
 
 	txs := transferTxs(config.Transactions, chainConfig.ChainID)
-	fmt.Printf("geth-utils: transferTxs = %v\n", txs)
 
 	var txsGasLimit uint64
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
