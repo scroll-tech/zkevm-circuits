@@ -305,8 +305,8 @@ fn blob_circuit_completeness() {
         .chain(std::iter::once(vec![3, 100, 24, 30]))
         .collect::<Vec<_>>();
 
-    for blob in [
-        // segmented_full_blob_src,
+    for (idx, blob ) in [
+        segmented_full_blob_src,
         one_chunk,
         two_chunks,
         max_chunks,
@@ -317,19 +317,22 @@ fn blob_circuit_completeness() {
         all_empty_except_last,
     ]
     .into_iter()
+    .enumerate()
     {
         let batch_data = BatchData::from(&blob);
 
         // TODO: enable this once we have another deterministic case of batch -> blob (fully
         // packed).
         // First blob is purposely constructed to take full blob space
-        // if idx == 0 {
-        //     let blob_data_bytes_len = batch_data.get_blob_data_bytes().len();
-        //     assert_eq!(
-        //         blob_data_bytes_len, N_BLOB_BYTES,
-        //         "should be full blob: expected={N_BLOB_BYTES}, got={blob_data_bytes_len}",
-        //     );
-        // }
+        if idx == 0 {
+            let batch_data_bytes = batch_data.get_batch_data_bytes().len();
+            let blob_data_bytes = get_blob_bytes(&batch_data_bytes);
+            let blob_data_bytes_len = blob_data_bytes.len();
+            assert_eq!(
+                blob_data_bytes_len, N_BLOB_BYTES,
+                "should be full blob: expected={N_BLOB_BYTES}, got={blob_data_bytes_len}",
+            );
+        }
 
         assert_eq!(check_data(batch_data), Ok(()), "{:?}", blob);
     }
