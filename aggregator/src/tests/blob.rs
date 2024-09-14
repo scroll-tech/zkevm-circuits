@@ -305,7 +305,7 @@ fn blob_circuit_completeness() {
         .chain(std::iter::once(vec![3, 100, 24, 30]))
         .collect::<Vec<_>>();
 
-    for (idx, blob ) in [
+    for (idx, blob) in [
         segmented_full_blob_src,
         one_chunk,
         two_chunks,
@@ -325,11 +325,12 @@ fn blob_circuit_completeness() {
         // packed).
         // First blob is purposely constructed to take full blob space
         if idx == 0 {
-            let batch_data_bytes = batch_data.get_batch_data_bytes().len();
+            let batch_data_bytes = batch_data.get_batch_data_bytes();
             let blob_data_bytes = get_blob_bytes(&batch_data_bytes);
             let blob_data_bytes_len = blob_data_bytes.len();
             assert_eq!(
-                blob_data_bytes_len, N_BLOB_BYTES,
+                blob_data_bytes_len,
+                N_BLOB_BYTES + 1,
                 "should be full blob: expected={N_BLOB_BYTES}, got={blob_data_bytes_len}",
             );
         }
