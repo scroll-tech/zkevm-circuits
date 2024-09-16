@@ -201,7 +201,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
     > {
         let enable_encoding = blob_bytes[0].eq(&1);
 
-        assert!(blob_bytes.len() <= N_BLOB_BYTES + 1, "too many blob bytes");
+        assert!(blob_bytes.len() <= N_BLOB_BYTES, "too many blob bytes");
 
         // Assign fixed column and selector.
         region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(Fr::one()))?;
