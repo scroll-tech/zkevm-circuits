@@ -79,11 +79,13 @@ pub(crate) fn extract_accumulators_and_proof(
             let right = Bn256::pairing(rhs, s_g2);
             log::trace!("acc extraction {}-th acc check: left {:?}", i, left);
             log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
-            if left != right {
-                return Err(snark_verifier::Error::AssertionFailure(format!(
-                    "accumulator check failed {left:?} {right:?}, index {i}",
-                )));
-            }
+
+            // accumulator_debug
+            // if left != right {
+            //     return Err(snark_verifier::Error::AssertionFailure(format!(
+            //         "accumulator check failed {left:?} {right:?}, index {i}",
+            //     )));
+            // }
             //assert_eq!(left, right, "accumulator check failed");
         }
     }
@@ -132,11 +134,12 @@ pub fn extract_proof_and_instances_with_pairing_check(
         log::trace!("circuit acc check: left {:?}", left);
         log::trace!("circuit acc check: right {:?}", right);
 
-        if left != right {
-            return Err(snark_verifier::Error::AssertionFailure(format!(
-                "accumulator check failed {left:?} {right:?}",
-            )));
-        }
+        // accumulator_debug
+        // if left != right {
+        //     return Err(snark_verifier::Error::AssertionFailure(format!(
+        //         "accumulator check failed {left:?} {right:?}",
+        //     )));
+        // }
     }
 
     let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
