@@ -205,7 +205,7 @@ fn test_mock_compression() {
     let params_app = gen_srs(k0);
 
     let mut rng = test_rng();
-    let circuit = MockChunkCircuit::random(&mut rng, false, false);
+    let circuit = MockChunkCircuit::random(OsRng, false, false);
 
     let pk = gen_pk(&params_app, &circuit, None);
     let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<&str>);

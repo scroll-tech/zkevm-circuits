@@ -9,6 +9,7 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::SKIP_FIRST_PASS;
 use snark_verifier_sdk::CircuitExt;
 use std::iter;
 use zkevm_circuits::{table::KeccakTable, util::Challenges};
+use rand::RngCore;
 
 use crate::{
     constants::{ACC_LEN, DIGEST_LEN},
@@ -49,8 +50,8 @@ impl MockChunkCircuit {
 }
 
 impl MockChunkCircuit {
-    pub fn random<R: rand::RngCore>(r: &mut R, has_accumulator: bool, is_padding: bool) -> Self {
-        let chunk = ChunkInfo::mock_random_chunk_info_for_testing(r);
+    pub fn random<R: RngCore>(mut r: R, has_accumulator: bool, is_padding: bool) -> Self {
+        let chunk = ChunkInfo::mock_random_chunk_info_for_testing(&mut r);
         Self {
             has_accumulator,
             chunk: if is_padding {
