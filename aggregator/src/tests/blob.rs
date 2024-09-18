@@ -273,7 +273,7 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 
 #[test]
 fn blob_circuit_completeness() {
-    // TODO: enable this once we have another deterministic case of batch -> blob (fully packed).
+    // now batch274 is an deterministic case of batch -> blob (fully packed).
     // Full blob test case
     // batch274 contains batch bytes that will produce a full blob
     let full_blob = hex::decode(
@@ -282,8 +282,9 @@ fn blob_circuit_completeness() {
             .trim(),
     )
     .expect("should load full blob batch bytes");
-    // batch274 contains metadata
-    let mut segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
+
+    // batch274 contains metadatas
+    let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
 
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
@@ -321,16 +322,12 @@ fn blob_circuit_completeness() {
     {
         let batch_data = BatchData::from(&blob);
 
-        // TODO: enable this once we have another deterministic case of batch -> blob (fully
-        // packed).
-        // First blob is purposely constructed to take full blob space
+        // First blob(batch274's blob data) is purposely constructed to take full blob space
         if idx == 0 {
             let batch_data_bytes = batch_data.get_batch_data_bytes();
             let blob_data_bytes = get_blob_bytes(&batch_data_bytes);
             let blob_data_bytes_len = blob_data_bytes.len();
-            if blob_data_bytes_len == N_BLOB_BYTES {
-                println!("got it now")
-            }
+
             assert_eq!(
                 blob_data_bytes_len, N_BLOB_BYTES,
                 "should be full blob: expected={N_BLOB_BYTES}, got={blob_data_bytes_len}",
