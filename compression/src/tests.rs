@@ -23,8 +23,9 @@ use ce_snark_verifier::halo2_base::{
     },
     utils::fs::gen_srs,
 };
-
-use crate::params;
+use ark_std::test_rng;
+use halo2_proofs::dev::MockProver;
+use crate::{params, CompressionCircuit};
 
 #[derive(Clone, Copy)]
 pub struct StandardPlonkConfig {
@@ -157,54 +158,65 @@ fn test_standard_plonk_compression() {
     let params_app = gen_srs(8);
 
     let k = 21u32;
-    let lookup_bits = k as usize - 1;
+    // let lookup_bits = k as usize - 1;
     let params = gen_srs(k);
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
-    let mut agg_circuit = AggregationCircuit::new::<SHPLONK>(
-        CircuitBuilderStage::Keygen,
-        AggregationConfigParams { degree: k, lookup_bits, ..Default::default() },
-        &params,
-        snarks.clone(),
-        VerifierUniversality::Full,
-    );
-    let agg_config = agg_circuit.calculate_params(Some(10));
+    let rng = test_rng();
+    let has_accumulator = true;
+    let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), has_accumulator, rng).unwrap();
+    let num_instances = compression_circuit.num_instance();
+    let instances = compression_circuit.instances();
 
-    let pk = gen_pk(&params, &agg_circuit, None);
-    let break_points = agg_circuit.break_points();
-    drop(agg_circuit);
+    println!("num_instances {:?}", num_instances);
+    println!("instance length {:?}", instances.len());
 
-    let agg_circuit = AggregationCircuit::new::<SHPLONK>(
-        CircuitBuilderStage::Prover,
-        agg_config,
-        &params,
-        snarks.clone(),
-        VerifierUniversality::Full,
-    )
-    .use_break_points(break_points);
-    let num_instances = agg_circuit.num_instance();
-    let instances = agg_circuit.instances();
-    let _proof = gen_evm_proof_shplonk(&params, &pk, agg_circuit, instances.clone());
+    let mock_prover = MockProver::<Fr>::run(k, &compression_circuit, instances).unwrap();
 
-    let _deployment_code = gen_evm_verifier_shplonk::<AggregationCircuit>(
-        &params,
-        pk.get_vk(),
-        num_instances,
-        Some(Path::new("examples/StandardPlonkVerifier.sol")),
-    );
+    mock_prover.assert_satisfied_par();
+
+    // Example pattern
+    // let mut agg_circuit = AggregationCircuit::new::<SHPLONK>(
+    //     CircuitBuilderStage::Keygen,
+    //     AggregationConfigParams { degree: k, lookup_bits, ..Default::default() },
+    //     &params,
+    //     snarks.clone(),
+    //     VerifierUniversality::Full,
+    // );
+    // let agg_config = agg_circuit.calculate_params(Some(10));
+
+    // let pk = gen_pk(&params, &agg_circuit, None);
+    // let break_points = agg_circuit.break_points();
+    // drop(agg_circuit);
+
+    // let agg_circuit = AggregationCircuit::new::<SHPLONK>(
+    //     CircuitBuilderStage::Prover,
+    //     agg_config,
+    //     &params,
+    //     snarks.clone(),
+    //     VerifierUniversality::Full,
+    // )
+    // .use_break_points(break_points);
+    // let num_instances = agg_circuit.num_instance();
+    // let instances = agg_circuit.instances();
+    // let _proof = gen_evm_proof_shplonk(&params, &pk, agg_circuit, instances.clone());
+
+    // let _deployment_code = gen_evm_verifier_shplonk::<AggregationCircuit>(
+    //     &params,
+    //     pk.get_vk(),
+    //     num_instances,
+    //     Some(Path::new("examples/StandardPlonkVerifier.sol")),
+    // );
 }
 
 #[test]
 fn test_mock_compression() {
-    use halo2_proofs::dev::MockProver;
     use crate::CompressionCircuit;
-    use ark_std::test_rng;
     use aggregator::MockChunkCircuit;
 
     let k0 = 8u32;
     let params_app = gen_srs(k0);
 
-    let mut rng = test_rng();
     let circuit = MockChunkCircuit::random(OsRng, false, false);
 
     let pk = gen_pk(&params_app, &circuit, None);
@@ -213,6 +225,7 @@ fn test_mock_compression() {
     let k1 = 21u32;
     let params = gen_srs(k1);
 
+    let mut rng = test_rng();
     let compression_circuit =
         CompressionCircuit::new_from_ce_snark(k1, &params, snark, true, &mut rng).unwrap();
     let instance = compression_circuit.instances();
