@@ -83,21 +83,21 @@ impl RlcConfig {
         });
 
         // compression_debug
-        meta.lookup_any("rlc keccak lookup", |meta| {
-            let q = meta.query_selector(lookup_gate_selector);
-            let input_rlc = meta.query_advice(phase_2_column, Rotation::cur());
-            let output_rlc = meta.query_advice(phase_2_column, Rotation::next());
-            let data_len = meta.query_advice(phase_2_column, Rotation(2));
+        // meta.lookup_any("rlc keccak lookup", |meta| {
+        //     let q = meta.query_selector(lookup_gate_selector);
+        //     let input_rlc = meta.query_advice(phase_2_column, Rotation::cur());
+        //     let output_rlc = meta.query_advice(phase_2_column, Rotation::next());
+        //     let data_len = meta.query_advice(phase_2_column, Rotation(2));
 
-            let input_exprs = vec![1.expr(), 1.expr(), input_rlc, data_len, output_rlc];
-            let table_exprs = keccak_table.table_exprs(meta);
+        //     let input_exprs = vec![1.expr(), 1.expr(), input_rlc, data_len, output_rlc];
+        //     let table_exprs = keccak_table.table_exprs(meta);
 
-            input_exprs
-                .into_iter()
-                .zip_eq(table_exprs)
-                .map(|(input, table)| (q.clone() * input, table))
-                .collect::<Vec<_>>()
-        });
+        //     input_exprs
+        //         .into_iter()
+        //         .zip_eq(table_exprs)
+        //         .map(|(input, table)| (q.clone() * input, table))
+        //         .collect::<Vec<_>>()
+        // });
 
         Self {
             #[cfg(test)]
