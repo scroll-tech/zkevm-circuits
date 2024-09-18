@@ -149,6 +149,15 @@ impl CompressionCircuit {
         inner.expose_previous_instances(has_accumulator);
 
         Ok(Self(inner))
+
+        // let _proof = gen_evm_proof_shplonk(&params, &pk, agg_circuit, instances.clone());
+
+        // let _deployment_code = gen_evm_verifier_shplonk::<AggregationCircuit>(
+        //     &params,
+        //     pk.get_vk(),
+        //     num_instances,
+        //     Some(Path::new("examples/StandardPlonkVerifier.sol")),
+        // );
     }
 }
 

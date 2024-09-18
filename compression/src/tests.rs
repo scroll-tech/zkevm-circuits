@@ -158,7 +158,6 @@ fn test_standard_plonk_compression() {
     let params_app = gen_srs(8);
 
     let k = 21u32;
-    // let lookup_bits = k as usize - 1;
     let params = gen_srs(k);
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
@@ -174,39 +173,6 @@ fn test_standard_plonk_compression() {
     let mock_prover = MockProver::<Fr>::run(k, &compression_circuit, instances).unwrap();
 
     mock_prover.assert_satisfied_par();
-
-    // Example pattern
-    // let mut agg_circuit = AggregationCircuit::new::<SHPLONK>(
-    //     CircuitBuilderStage::Keygen,
-    //     AggregationConfigParams { degree: k, lookup_bits, ..Default::default() },
-    //     &params,
-    //     snarks.clone(),
-    //     VerifierUniversality::Full,
-    // );
-    // let agg_config = agg_circuit.calculate_params(Some(10));
-
-    // let pk = gen_pk(&params, &agg_circuit, None);
-    // let break_points = agg_circuit.break_points();
-    // drop(agg_circuit);
-
-    // let agg_circuit = AggregationCircuit::new::<SHPLONK>(
-    //     CircuitBuilderStage::Prover,
-    //     agg_config,
-    //     &params,
-    //     snarks.clone(),
-    //     VerifierUniversality::Full,
-    // )
-    // .use_break_points(break_points);
-    // let num_instances = agg_circuit.num_instance();
-    // let instances = agg_circuit.instances();
-    // let _proof = gen_evm_proof_shplonk(&params, &pk, agg_circuit, instances.clone());
-
-    // let _deployment_code = gen_evm_verifier_shplonk::<AggregationCircuit>(
-    //     &params,
-    //     pk.get_vk(),
-    //     num_instances,
-    //     Some(Path::new("examples/StandardPlonkVerifier.sol")),
-    // );
 }
 
 #[test]
