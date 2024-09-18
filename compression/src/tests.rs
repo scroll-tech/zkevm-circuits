@@ -7,6 +7,7 @@ use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr},
     poly::kzg::commitment::ParamsKZG,
 };
+use snark_verifier_sdk::gen_snark_shplonk as old_gen_snark_shplonk;
 use ce_snark_verifier_sdk::{
     evm::{gen_evm_proof_shplonk, gen_evm_verifier_shplonk},
     gen_pk,
@@ -26,6 +27,7 @@ use ce_snark_verifier::halo2_base::{
 use ark_std::test_rng;
 use halo2_proofs::dev::MockProver;
 use crate::{params, CompressionCircuit};
+use crate::circuit::to_ce_snark;
 
 #[derive(Clone, Copy)]
 pub struct StandardPlonkConfig {
@@ -186,14 +188,18 @@ fn test_mock_compression() {
     let circuit = MockChunkCircuit::random(OsRng, false, false);
 
     let pk = gen_pk(&params_app, &circuit, None);
-    let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<&str>);
+
+    let mut rng = test_rng();
+    // let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<&str>);
+    let old_snark = old_gen_snark_shplonk(&params_app, &pk, circuit, &mut rng, None::<String>).unwrap();
+
 
     let k1 = 21u32;
     let params = gen_srs(k1);
 
     let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(k1, &params, snark, true, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), true, &mut rng).unwrap();
     let instance = compression_circuit.instances();
     println!("instance length {:?}", instance.len());
 
@@ -201,7 +207,6 @@ fn test_mock_compression() {
 
     mock_prover.assert_satisfied_par()
 }
-
 
 // use crate::{circuit::to_ce_snark, CompressionCircuit};
 // use ce_snark_verifier::{
@@ -218,9 +223,6 @@ fn test_mock_compression() {
 // use halo2curves::bn256::{Bn256, Fr};
 // use std::{fs, path::Path, process};
 
-
-// // This test takes about 1 hour on CPU
-// #[ignore = "it takes too much time"]
 // #[test]
 // fn test_two_layer_proof_compression() {
 //     env_logger::init();
