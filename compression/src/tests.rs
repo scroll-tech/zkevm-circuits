@@ -8,7 +8,7 @@ use halo2_proofs::{
     poly::kzg::commitment::ParamsKZG,
 };
 use ce_snark_verifier_sdk::{
-    evm::{gen_evm_proof_shplonk, gen_evm_verifier_shplonk},
+    evm::{gen_evm_proof_shplonk, gen_evm_verifier_shplonk, evm_verify},
     gen_pk,
     halo2::{aggregation::{AggregationCircuit, AggregationConfigParams, VerifierUniversality}, gen_snark_shplonk},
     Snark,
@@ -212,8 +212,7 @@ fn test_standard_plonk_compression() {
         num_instances,
         Some(Path::new("examples/StandardPlonkVerifier.sol")),
     );
-    // #[cfg(feature = "revm")]
-    // evm_verify(_deployment_code, instances, _proof);
+    evm_verify(_deployment_code, instances, _proof);
 }
 
 
