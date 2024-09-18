@@ -163,7 +163,7 @@ fn test_standard_plonk_compression() {
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
     let rng = test_rng();
-    let has_accumulator = true;
+    let has_accumulator = false;
     let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), has_accumulator, rng).unwrap();
     let num_instances = compression_circuit.num_instance();
     let instances = compression_circuit.instances();
