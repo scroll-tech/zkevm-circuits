@@ -190,9 +190,7 @@ fn test_mock_compression() {
     let pk = gen_pk(&params_app, &circuit, None);
 
     let mut rng = test_rng();
-    // let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<&str>);
     let old_snark = old_gen_snark_shplonk(&params_app, &pk, circuit, &mut rng, None::<String>).unwrap();
-
 
     let k1 = 21u32;
     let params = gen_srs(k1);

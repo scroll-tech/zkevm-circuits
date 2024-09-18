@@ -82,7 +82,6 @@ impl RlcConfig {
             vec![cs1, cs2, cs3]
         });
 
-        // compression_debug
         meta.lookup_any("rlc keccak lookup", |meta| {
             let q = meta.query_selector(lookup_gate_selector);
             let input_rlc = meta.query_advice(phase_2_column, Rotation::cur());
