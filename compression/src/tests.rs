@@ -24,6 +24,8 @@ use ce_snark_verifier::halo2_base::{
     utils::fs::gen_srs,
 };
 
+use crate::params;
+
 #[derive(Clone, Copy)]
 pub struct StandardPlonkConfig {
     a: Column<Advice>,
@@ -192,10 +194,37 @@ fn test_standard_plonk_compression() {
     );
 }
 
+#[test]
+fn test_mock_compression() {
+    use halo2_proofs::dev::MockProver;
+    use crate::CompressionCircuit;
+    use ark_std::test_rng;
+    use aggregator::MockChunkCircuit;
+
+    let k0 = 8u32;
+    let params_app = gen_srs(k0);
+
+    let mut rng = test_rng();
+    let circuit = MockChunkCircuit::random(&mut rng, false, false);
+
+    let pk = gen_pk(&params_app, &circuit, None);
+    let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<&str>);
+
+    let k1 = 21u32;
+    let params = gen_srs(k1);
+
+    let compression_circuit =
+        CompressionCircuit::new_from_ce_snark(k1, &params, snark, true, &mut rng).unwrap();
+    let instance = compression_circuit.instances();
+    println!("instance length {:?}", instance.len());
+
+    let mock_prover = MockProver::<Fr>::run(k1, &compression_circuit, instance).unwrap();
+
+    mock_prover.assert_satisfied_par()
+}
+
 
 // use crate::{circuit::to_ce_snark, CompressionCircuit};
-// use aggregator::MockChunkCircuit;
-// use ark_std::{end_timer, start_timer, test_rng};
 // use ce_snark_verifier::{
 //     loader::halo2::halo2_ecc::halo2_base::{halo2_proofs, utils::fs::gen_srs},
 //     pcs::kzg::{Bdfg21, KzgAs},
@@ -210,50 +239,6 @@ fn test_standard_plonk_compression() {
 // use halo2curves::bn256::{Bn256, Fr};
 // use std::{fs, path::Path, process};
 
-// #[ignore = "it takes too much time"]
-// #[test]
-// fn test_mock_compression() {
-//     // env_logger::init();
-
-//     if std::path::Path::new("data").is_dir() {
-//         println!("data folder already exists\n");
-//     } else {
-//         println!("Generating data folder used for testing\n");
-//         std::fs::create_dir("data").unwrap();
-//     }
-
-//     let dir = format!("data/{}", process::id());
-//     let path = Path::new(dir.as_str());
-//     fs::create_dir(path).unwrap();
-
-//     let k0 = 8;
-//     let k1 = 22;
-
-//     let mut rng = test_rng();
-//     let params = gen_srs(k1);
-
-//     // Proof for test circuit
-//     let circuit = MockChunkCircuit::random(&mut rng, false, false);
-//     let layer_0_snark = layer_0(&circuit, params.clone(), k0, path);
-
-//     std::env::set_var("COMPRESSION_CONFIG", "./configs/compression_wide.config");
-//     // layer 1 proof compression
-//     {
-//         let param = {
-//             let mut param = params;
-//             param.downsize(k1);
-//             param
-//         };
-//         let compression_circuit =
-//             CompressionCircuit::new_from_ce_snark(&param, layer_0_snark, true, &mut rng).unwrap();
-//         let instance = compression_circuit.instances();
-//         println!("instance length {:?}", instance.len());
-
-//         let mock_prover = MockProver::<Fr>::run(k1, &compression_circuit, instance).unwrap();
-
-//         mock_prover.assert_satisfied_par()
-//     }
-// }
 
 // // This test takes about 1 hour on CPU
 // #[ignore = "it takes too much time"]
