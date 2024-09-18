@@ -283,7 +283,7 @@ fn blob_circuit_completeness() {
     )
     .expect("should load full blob batch bytes");
     // batch274 contains metadata
-    let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
+    let mut segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
 
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
@@ -305,7 +305,7 @@ fn blob_circuit_completeness() {
         .chain(std::iter::once(vec![3, 100, 24, 30]))
         .collect::<Vec<_>>();
 
-    for (idx, blob ) in [
+    for (idx, blob) in [
         segmented_full_blob_src,
         one_chunk,
         two_chunks,
@@ -328,6 +328,9 @@ fn blob_circuit_completeness() {
             let batch_data_bytes = batch_data.get_batch_data_bytes();
             let blob_data_bytes = get_blob_bytes(&batch_data_bytes);
             let blob_data_bytes_len = blob_data_bytes.len();
+            if blob_data_bytes_len == N_BLOB_BYTES {
+                println!("got it now")
+            }
             assert_eq!(
                 blob_data_bytes_len, N_BLOB_BYTES,
                 "should be full blob: expected={N_BLOB_BYTES}, got={blob_data_bytes_len}",

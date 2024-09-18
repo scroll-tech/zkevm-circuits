@@ -8,13 +8,12 @@ use crate::blob::{BLOB_WIDTH, KZG_TRUSTED_SETUP, N_BLOB_BYTES, N_BYTES_U256};
 pub(crate) fn get_coefficients(blob_bytes: &[u8]) -> [U256; BLOB_WIDTH] {
     let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
-    let blob_bytes_pure = &blob_bytes[1..];
     assert!(
-        blob_bytes_pure.len() <= N_BLOB_BYTES,
+        blob_bytes.len() <= N_BLOB_BYTES,
         "too many bytes in batch data"
     );
 
-    for (i, &byte) in blob_bytes_pure.iter().enumerate() {
+    for (i, &byte) in blob_bytes.iter().enumerate() {
         coefficients[i / 31][1 + (i % 31)] = byte;
     }
 
