@@ -110,54 +110,32 @@ impl Circuit<Fr> for StandardPlonk {
         layouter.assign_region(
             || "",
             |mut region| {
-                // #[cfg(feature = "halo2-pse")]
-                // {
-                    region.assign_advice(|| "", config.a, 0, || Value::known(self.0))?;
-                    region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::one()))?;
-                    region.assign_advice(
+                region.assign_advice(|| "", config.a, 0, || Value::known(self.0))?;
+                region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::one()))?;
+                region.assign_advice(
+                    || "",
+                    config.a,
+                    1,
+                    || Value::known(-Fr::from(5u64)),
+                )?;
+                for (idx, column) in (1..).zip([
+                    config.q_a,
+                    config.q_b,
+                    config.q_c,
+                    config.q_ab,
+                    config.constant,
+                ]) {
+                    region.assign_fixed(
                         || "",
-                        config.a,
+                        column,
                         1,
-                        || Value::known(-Fr::from(5u64)),
+                        || Value::known(Fr::from(idx as u64)),
                     )?;
-                    for (idx, column) in (1..).zip([
-                        config.q_a,
-                        config.q_b,
-                        config.q_c,
-                        config.q_ab,
-                        config.constant,
-                    ]) {
-                        region.assign_fixed(
-                            || "",
-                            column,
-                            1,
-                            || Value::known(Fr::from(idx as u64)),
-                        )?;
-                    }
-                    let a =
-                        region.assign_advice(|| "", config.a, 2, || Value::known(Fr::one()))?;
-                    a.copy_advice(|| "", &mut region, config.b, 3)?;
-                    a.copy_advice(|| "", &mut region, config.c, 4)?;
-                // }
-                // #[cfg(feature = "halo2-axiom")]
-                // {
-                //     region.assign_advice(config.a, 0, Value::known(self.0));
-                //     region.assign_fixed(config.q_a, 0, -Fr::one());
-                //     region.assign_advice(config.a, 1, Value::known(-Fr::from(5u64)));
-                //     for (idx, column) in (1..).zip([
-                //         config.q_a,
-                //         config.q_b,
-                //         config.q_c,
-                //         config.q_ab,
-                //         config.constant,
-                //     ]) {
-                //         region.assign_fixed(column, 1, Fr::from(idx as u64));
-                //     }
-
-                //     let a = region.assign_advice(config.a, 2, Value::known(Fr::one()));
-                //     a.copy_advice(&mut region, config.b, 3);
-                //     a.copy_advice(&mut region, config.c, 4);
-                // }
+                }
+                let a =
+                    region.assign_advice(|| "", config.a, 2, || Value::known(Fr::one()))?;
+                a.copy_advice(|| "", &mut region, config.b, 3)?;
+                a.copy_advice(|| "", &mut region, config.c, 4)?;
 
                 Ok(())
             },
