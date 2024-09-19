@@ -244,34 +244,18 @@ fn test_two_layer_compression() {
     );
 
 //     verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
-
 }
-
-// use crate::{circuit::to_ce_snark, CompressionCircuit};
-// use ce_snark_verifier::{
-//     loader::halo2::halo2_ecc::halo2_base::{halo2_proofs, utils::fs::gen_srs},
-//     pcs::kzg::{Bdfg21, KzgAs},
-// };
-// use ce_snark_verifier_sdk::{
-//     evm::{evm_verify, gen_evm_proof_shplonk, gen_evm_verifier},
-//     gen_pk,
-//     halo2::gen_snark_shplonk,
-//     CircuitExt, Snark,
-// };
-// use halo2_proofs::{dev::MockProver, poly::commitment::Params, poly::kzg::commitment::ParamsKZG};
-// use halo2curves::bn256::{Bn256, Fr};
-// use std::{fs, path::Path, process};
 
 #[test]
 fn test_to_ce_snark() {
-    let mut rng = test_rng();
-    let k0 = 8;
+    let k0 = 8u32;
+    let params_app = gen_srs(k0);
+    let circuit = MockChunkCircuit::random(OsRng, false, false);
 
-    let path = Path::new("unused");
+    let pk = gen_pk(&params_app, &circuit, None);
+    let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<String>);
 
-    let circuit = MockChunkCircuit::random(&mut rng, false, false);
-    let base_snark = layer_0(&circuit, gen_srs(8), k0, path);
-    assert_snark_roundtrip(&base_snark);
+    assert_snark_roundtrip(&snark);
 }
 fn from_ce_snark(snark: &Snark) -> snark_verifier_sdk::Snark {
     serde_json::from_str(&serde_json::to_string(snark).unwrap()).unwrap()
@@ -283,17 +267,13 @@ fn assert_snark_roundtrip(snark: &Snark) {
     );
 }
 
-// #[test]
-// fn test_read_inner_snark() {
-//     let inner_snark: snark_verifier_sdk::Snark =
-//         prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
-//     // test that we are able to deserialize the inner snark without hitting the recursion limit.
-//     to_ce_snark(&inner_snark);
-// }
-
-
-
-
+#[test]
+fn test_read_inner_snark() {
+    let inner_snark: snark_verifier_sdk::Snark =
+        prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
+    // test that we are able to deserialize the inner snark without hitting the recursion limit.
+    to_ce_snark(&inner_snark);
+}
 
 // fn verify_compression_layer_evm(
 //     previous_snark: Snark,
