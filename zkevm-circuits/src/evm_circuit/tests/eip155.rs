@@ -6,9 +6,8 @@ mod test {
     use ethers_signers::Signer;
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS, MOCK_WALLETS};
 
-    // test with empty access list.
     #[test]
-    fn test_eip2930_tx_for_empty_access_list() {
+    fn test_eip155() {
         let ctx = build_ctx(gwei(80_000)).unwrap();
     }
 
