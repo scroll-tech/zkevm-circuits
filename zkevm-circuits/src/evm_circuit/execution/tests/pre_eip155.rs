@@ -2,8 +2,7 @@
 mod tx_type_test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{
-        self, address, word, Error, Word,    };
+    use eth_types::{self, address, word, Error, Word};
     use mock::{gwei, MockTransaction, TestContext};
 
     // Note: all pre-eip155 txs here for testing have signature data. don't need to generate signature dynamically
