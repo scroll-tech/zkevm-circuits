@@ -21,7 +21,7 @@ impl<'params> Prover<'params> {
     ) -> Result<Snark> {
         env::set_var("COMPRESSION_CONFIG", layer_config_path(id));
         let circuit =
-            CompressionCircuit::new(self.params(degree), prev_snark, has_accumulator, &mut rng)
+            CompressionCircuit::new(degree, self.params(degree), prev_snark, has_accumulator, &mut rng)
                 .map_err(|err| anyhow!("Failed to construct compression circuit: {err:?}"))?;
         let ce_snark = self.gen_snark_ce(id, degree, &mut rng, circuit, "gen_comp_snark")?;
         Ok(ce_snark_to_snark(ce_snark))

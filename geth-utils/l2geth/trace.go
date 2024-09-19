@@ -90,8 +90,20 @@ func transferTxs(txs []Transaction, chainID *big.Int) types.Transactions {
 			}
 			t_txs = append(t_txs, types.NewTx(l1msgTx))
 		} else {
-
 			switch tx.Type {
+			case "PreEip155":
+				t := &types.LegacyTx{
+					Nonce:    uint64(tx.Nonce),
+					GasPrice: toBigInt(tx.GasPrice),
+					Gas:      uint64(tx.GasLimit),
+					To:       tx.To,
+					Value:    toBigInt(tx.Value),
+					Data:     tx.CallData,
+					V:        big.NewInt(tx.V),
+					R:        tx.R.ToInt(),
+					S:        tx.S.ToInt(),
+				}
+				t_txs = append(t_txs, types.NewTx(t))
 			case "Eip155":
 				t := &types.LegacyTx{
 					Nonce:    uint64(tx.Nonce),

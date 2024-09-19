@@ -345,6 +345,10 @@ impl MockTransaction {
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
+            // Note: even pre-eip155 type transaction doesn't have chain_id field, here having chain_id won't
+            // result in negative effects, because eventually geth_type::Transaction decide the tx type by TxType::get_tx_type(tx)
+            // then trace.go will treat it as correct pre-eip155 type transaction. the additional chain_id
+            // is not used finally.
             .chain_id(self.chain_id);
 
         let tx = if let Some(gas_price) = self.gas_price {
@@ -359,6 +363,9 @@ impl MockTransaction {
         };
 
         match (self.v, self.r, self.s) {
+            (Some(_), Some(_), Some(_)) => {
+                // already have entire signature data, won't do anything.
+            }
             (None, None, None) => {
                 // Compute sig params and set them in case we have a wallet as `from` attr.
                 if self.from.is_wallet() && self.hash.is_none() {
@@ -372,6 +379,7 @@ impl MockTransaction {
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
             }
+
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
 

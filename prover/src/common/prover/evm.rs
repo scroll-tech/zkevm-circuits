@@ -29,6 +29,7 @@ impl<'params> Prover<'params> {
 
                 let mut rng = gen_rng();
                 let circuit = CompressionCircuit::new(
+                    degree,
                     self.params(degree),
                     prev_snark,
                     has_accumulator,
