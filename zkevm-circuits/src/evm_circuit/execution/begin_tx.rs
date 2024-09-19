@@ -1254,10 +1254,9 @@ mod test {
     use std::{str::FromStr, vec};
 
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{
-        self, address, bytecode, evm_types::GasCost, word, Address, Bytecode, Error, Hash, Word,
-        U256,
+        self, address, bytecode, evm_types::GasCost, word, Address, Bytecode, Hash, Word, U256,
     };
     use ethers_core::{types::Bytes, utils::get_contract_address};
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
