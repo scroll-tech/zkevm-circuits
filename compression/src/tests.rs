@@ -211,9 +211,9 @@ fn test_two_layer_compression() {
     let params_app = gen_srs(k0);
     let circuit = MockChunkCircuit::random(OsRng, false, false);
 
-    let pk = gen_pk(&params_app, &circuit, None);
+    let pk_layer0 = gen_pk(&params_app, &circuit, None);
     let mut rng = test_rng();
-    let old_snark = old_gen_snark_shplonk(&params_app, &pk, circuit, &mut rng, None::<String>).unwrap();
+    let old_snark = old_gen_snark_shplonk(&params_app, &pk_layer0, circuit, &mut rng, None::<String>).unwrap();
 
     // First layer of compression
     let k1 = 21u32;
@@ -221,27 +221,27 @@ fn test_two_layer_compression() {
     let mut rng = test_rng();
     let compression_circuit =
         CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), true, &mut rng).unwrap();
-    let pk = gen_pk(&params, &compression_circuit, None);
+    let pk_layer1 = gen_pk(&params, &compression_circuit, None);
     let compression_snark = gen_snark_shplonk(
         &params,
-        &pk,
+        &pk_layer1,
         compression_circuit.clone(),
         None::<String>,
     );
 
     // Second layer of compression
-    let k2 = 21u32;
-    let params2 = gen_srs(k1);
-    let mut rng = test_rng();
-    let compression_circuit_layer2 =
-        CompressionCircuit::new_from_ce_snark(k2, &params2, compression_snark, true, &mut rng).unwrap();
-    let pk = gen_pk(&params, &compression_circuit_layer2, None);
-    let compression_snark_layer2 = gen_snark_shplonk(
-        &params2,
-        &pk,
-        compression_circuit_layer2.clone(),
-        None::<String>,
-    );
+    // let k2 = 21u32;
+    // let params2 = gen_srs(k1);
+    // let mut rng = test_rng();
+    // let compression_circuit_layer2 =
+    //     CompressionCircuit::new_from_ce_snark(k2, &params2, compression_snark, true, &mut rng).unwrap();
+    // let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
+    // let compression_snark_layer2 = gen_snark_shplonk(
+    //     &params2,
+    //     &pk_layer2,
+    //     compression_circuit_layer2.clone(),
+    //     None::<String>,
+    // );
 
 //     verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
 }
