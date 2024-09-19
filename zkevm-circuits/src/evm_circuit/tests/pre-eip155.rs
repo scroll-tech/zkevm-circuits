@@ -11,17 +11,6 @@ mod test {
     use ethers_core::{types::Bytes, utils::get_contract_address};
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
-    fn gas(call_data: &[u8]) -> Word {
-        Word::from(
-            GasCost::TX.as_u64()
-                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
-                + call_data
-                    .iter()
-                    .map(|&x| if x == 0 { 4 } else { 16 })
-                    .sum::<u64>(),
-        )
-    }
-
     // Note: all pre-eip155 txs here for testing have signature data. don't need to generate signature dynamically
     // because ethers-rs lib's helper `sign_transaction_sync` doesn't support pre-eip155 type.
     #[test]
