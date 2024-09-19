@@ -230,11 +230,11 @@ fn test_two_layer_compression() {
     );
 
     // Second layer of compression
-    // let k2 = 21u32;
-    // let params2 = gen_srs(k1);
-    // let mut rng = test_rng();
-    // let compression_circuit_layer2 =
-    //     CompressionCircuit::new_from_ce_snark(k2, &params2, compression_snark, true, &mut rng).unwrap();
+    let k2 = 21u32;
+    let params2 = gen_srs(k1);
+    let mut rng = test_rng();
+    let compression_circuit_layer2 =
+        CompressionCircuit::new_from_ce_snark(k2, &params2, compression_snark, true, &mut rng).unwrap();
     // let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
     // let compression_snark_layer2 = gen_snark_shplonk(
     //     &params2,
