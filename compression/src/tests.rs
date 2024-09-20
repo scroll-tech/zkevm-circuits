@@ -165,8 +165,7 @@ fn test_standard_plonk_compression() {
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
     let rng = test_rng();
-    let has_accumulator = false;
-    let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), has_accumulator, rng).unwrap();
+    let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), false, rng).unwrap();
     let num_instances = compression_circuit.num_instance();
     let instances = compression_circuit.instances();
 
@@ -195,7 +194,7 @@ fn test_mock_compression() {
 
     let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), true, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
     let instance = compression_circuit.instances();
     println!("instance length {:?}", instance.len());
 
@@ -220,7 +219,7 @@ fn test_two_layer_compression() {
     let params = gen_srs(k1);
     let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), true, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
     let compression_snark = gen_snark_shplonk(
         &params,
