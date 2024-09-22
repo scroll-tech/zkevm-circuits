@@ -193,9 +193,26 @@ fn test_standard_plonk_two_layer_compression() {
     println!("num_instances {:?}", num_instances);
     println!("instance length {:?}", instances.len());
 
-    let mock_prover = MockProver::<Fr>::run(k, &compression_circuit, instances).unwrap();
 
-    mock_prover.assert_satisfied_par();
+    let pk_layer1 = gen_pk(&params, &compression_circuit, None);
+    let compression_snark = gen_snark_shplonk(
+        &params,
+        &pk_layer1,
+        compression_circuit.clone(),
+        None::<String>,
+    );
+
+    // Second layer of compression
+    let mut rng = test_rng();
+    let compression_circuit_layer2 =
+        CompressionCircuit::new_from_ce_snark(k, &params, compression_snark, true, &mut rng).unwrap();
+
+
+
+
+    // let mock_prover = MockProver::<Fr>::run(k, &compression_circuit, instances).unwrap();
+
+    // mock_prover.assert_satisfied_par();
 }
 
 #[test]
