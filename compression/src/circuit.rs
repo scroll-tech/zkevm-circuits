@@ -113,6 +113,8 @@ impl CompressionCircuit {
         has_accumulator: bool,
         _rng: impl Rng + Send, // TODO: hook this up to the rng in AggregationCircuit? is that even needed?
     ) -> Result<Self, ce_snark_verifier::Error> {
+        println!("=> Constructing compression circuit");
+
         // compression_debug
         // let mut inner = AggregationCircuit::new::<SHPLONK>(
         //     CircuitBuilderStage::Mock,
@@ -132,8 +134,13 @@ impl CompressionCircuit {
             [snark.clone()],
             VerifierUniversality::Full,
         );
+        println!("=> After AggregationCircuit::new::<SHPLONK>");
+
         let agg_config = agg_circuit.calculate_params(Some(10));
-    
+
+        println!("=> After agg_config");
+        println!("=> agg_config: {:?}", agg_config);
+
         let _pk = gen_pk(&params, &agg_circuit, None);
         let break_points = agg_circuit.break_points();
         drop(agg_circuit);

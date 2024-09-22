@@ -181,7 +181,7 @@ fn test_standard_plonk_compression() {
 fn test_standard_plonk_two_layer_compression() {
     let params_app = gen_srs(8);
 
-    let k = 18u32;
+    let k = 20u32;
     let params = gen_srs(k);
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
@@ -192,7 +192,6 @@ fn test_standard_plonk_two_layer_compression() {
 
     println!("num_instances {:?}", num_instances);
     println!("instance length {:?}", instances.len());
-
 
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
     let compression_snark = gen_snark_shplonk(
