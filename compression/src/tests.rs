@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fmt::write, path::Path};
 use rand::{
     RngCore,
     rngs::OsRng
@@ -272,6 +272,35 @@ fn test_read_inner_snark() {
         prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
     // test that we are able to deserialize the inner snark without hitting the recursion limit.
     to_ce_snark(&inner_snark);
+}
+
+#[test]
+fn test_read_snark_compression() {
+    use std::io;
+    use std::io::Write;
+
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+
+    write!(handle, "Start testing!").unwrap();
+
+    let _k0 = 20u32;
+    let inner_snark: snark_verifier_sdk::Snark =
+        prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
+
+    // First layer of compression
+    let k1 = 20u32;
+    let params = gen_srs(k1);
+    let mut rng = test_rng();
+    let compression_circuit =
+        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&inner_snark), false, &mut rng).unwrap();
+    let pk_layer1 = gen_pk(&params, &compression_circuit, None);
+    let _compression_snark = gen_snark_shplonk(
+        &params,
+        &pk_layer1,
+        compression_circuit.clone(),
+        None::<String>,
+    );
 }
 
 // fn verify_compression_layer_evm(
