@@ -178,6 +178,27 @@ fn test_standard_plonk_compression() {
 }
 
 #[test]
+fn test_standard_plonk_two_layer_compression() {
+    let params_app = gen_srs(8);
+
+    let k = 21u32;
+    let params = gen_srs(k);
+    let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
+
+    let rng = test_rng();
+    let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), false, rng).unwrap();
+    let num_instances = compression_circuit.num_instance();
+    let instances = compression_circuit.instances();
+
+    println!("num_instances {:?}", num_instances);
+    println!("instance length {:?}", instances.len());
+
+    let mock_prover = MockProver::<Fr>::run(k, &compression_circuit, instances).unwrap();
+
+    mock_prover.assert_satisfied_par();
+}
+
+#[test]
 fn test_mock_compression() {
     let k0 = 8u32;
     let params_app = gen_srs(k0);
