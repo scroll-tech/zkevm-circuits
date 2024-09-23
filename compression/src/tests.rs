@@ -292,7 +292,7 @@ fn test_two_layer_compression() {
         num_advice: 1,
         num_lookup_advice: 1,
         num_fixed: 1,
-        lookup_bits: 24,
+        lookup_bits: 20,
     };
     let mut rng = test_rng();
     let _compression_circuit_layer2 =
