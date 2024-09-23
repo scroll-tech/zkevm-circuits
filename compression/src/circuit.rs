@@ -113,6 +113,9 @@ impl CompressionCircuit {
         has_accumulator: bool,
         _rng: impl Rng + Send, // TODO: hook this up to the rng in AggregationCircuit? is that even needed?
     ) -> Result<Self, ce_snark_verifier::Error> {
+        println!("");
+        println!("");
+        println!("");
         println!("=> Constructing compression circuit");
 
         // compression_debug
