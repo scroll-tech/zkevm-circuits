@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, env, iter::repeat};
 
-use aggregator::{BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
+use aggregator::{
+    eip4844::decode_blob, BatchData, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS,
+};
 use anyhow::{bail, Result};
 use eth_types::H256;
 use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
@@ -9,7 +11,7 @@ use snark_verifier_sdk::Snark;
 
 use crate::{
     common,
-    config::{LayerId, AGG_DEGREES},
+    config::LayerId,
     consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
     io::{force_to_read, try_to_read},
     proof::BundleProof,
@@ -27,10 +29,10 @@ pub struct Prover<'params> {
 }
 
 impl<'params> Prover<'params> {
-    pub fn degrees() -> Vec<u32> {
-        (*AGG_DEGREES).clone()
-    }
     pub fn from_params_and_assets(
+        params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
+        assets_dir: &str,
+    ) -> Self {
         params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
         assets_dir: &str,
     ) -> Self {
@@ -215,6 +217,16 @@ impl<'params> Prover<'params> {
         let batch_hash = batch_header.batch_hash();
         let batch_info: BatchHash<N_SNARKS> =
             BatchHash::construct(&chunk_hashes, batch_header, &batch.blob_bytes);
+        let batch_data: BatchData<N_SNARKS> = BatchData::from(&batch_info);
+
+        // sanity check:
+        // - conditionally decoded blob should match batch data.
+        let batch_bytes = batch_data.get_batch_data_bytes();
+        let decoded_blob_bytes = decode_blob(&batch.blob_bytes)?;
+        assert_eq!(
+            batch_bytes, decoded_blob_bytes,
+            "BatchProvingTask(sanity) mismatch batch bytes and decoded blob bytes",
+        );
 
         let layer3_snark = self.prover_impl.load_or_gen_agg_snark(
             name,
