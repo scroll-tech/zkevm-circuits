@@ -33,9 +33,6 @@ impl<'params> Prover<'params> {
         params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
         assets_dir: &str,
     ) -> Self {
-        params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
-        assets_dir: &str,
-    ) -> Self {
         log::debug!("set env KECCAK_ROWS={}", BATCH_KECCAK_ROW.to_string());
         env::set_var("KECCAK_ROWS", BATCH_KECCAK_ROW.to_string());
 
