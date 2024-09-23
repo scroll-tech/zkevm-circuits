@@ -8,7 +8,9 @@ use anyhow::{anyhow, Result};
 use compression::CompressionCircuit;
 use halo2_proofs::halo2curves::bn256::Fr;
 use rand::Rng;
+use serde::de::value;
 use snark_verifier_sdk::{gen_evm_proof_shplonk, CircuitExt, Snark};
+use ce_snark_verifier_sdk::halo2::aggregation::AggregationConfigParams;
 use std::env;
 
 impl<'params> Prover<'params> {
@@ -29,7 +31,7 @@ impl<'params> Prover<'params> {
 
                 let mut rng = gen_rng();
                 let circuit = CompressionCircuit::new(
-                    degree,
+                    AggregationConfigParams::from_path(layer_config_path(id)),
                     self.params(degree),
                     prev_snark,
                     has_accumulator,

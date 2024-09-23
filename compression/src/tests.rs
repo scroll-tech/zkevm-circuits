@@ -164,8 +164,16 @@ fn test_standard_plonk_compression() {
     let params = gen_srs(k);
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 24,
+        num_advice: 15,
+        num_lookup_advice: 2,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
+
     let rng = test_rng();
-    let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), false, rng).unwrap();
+    let compression_circuit = CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, snarks[0].clone(), false, rng).unwrap();
     let num_instances = compression_circuit.num_instance();
     let instances = compression_circuit.instances();
 
@@ -192,9 +200,17 @@ fn test_mock_compression() {
     let k1 = 21u32;
     let params = gen_srs(k1);
 
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 24,
+        num_advice: 15,
+        num_lookup_advice: 2,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
+
     let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
     let instance = compression_circuit.instances();
     println!("instance length {:?}", instance.len());
 
@@ -215,11 +231,18 @@ fn test_two_layer_compression() {
     let old_snark = old_gen_snark_shplonk(&params_app, &pk_layer0, circuit, &mut rng, None::<String>).unwrap();
 
     // First layer of compression
-    let k1 = 21u32;
+    let k1 = 24u32;
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 24,
+        num_advice: 15,
+        num_lookup_advice: 2,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
     let params = gen_srs(k1);
     let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
     let compression_snark = gen_snark_shplonk(
         &params,
@@ -229,11 +252,19 @@ fn test_two_layer_compression() {
     );
 
     // Second layer of compression
-    let k2 = 21u32;
-    let params2 = gen_srs(k1);
+    let k2 = 25;
+    let layer2_agg_params = AggregationConfigParams {
+        degree: 25,
+        num_advice: 1,
+        num_lookup_advice: 1,
+        num_fixed: 1,
+        lookup_bits: 24,
+    };
+    let params2 = gen_srs(k2);
     let mut rng = test_rng();
     let compression_circuit_layer2 =
-        CompressionCircuit::new_from_ce_snark(k2, &params2, compression_snark, true, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(layer2_agg_params, &params2, compression_snark, true, &mut rng).unwrap();
+
     // let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
     // let compression_snark_layer2 = gen_snark_shplonk(
     //     &params2,
@@ -289,11 +320,18 @@ fn test_read_snark_compression() {
         prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
 
     // First layer of compression
-    let k1 = 20u32;
+    let k1 = 24u32;
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 24,
+        num_advice: 15,
+        num_lookup_advice: 2,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
     let params = gen_srs(k1);
     let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&inner_snark), false, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&inner_snark), false, &mut rng).unwrap();
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
     let _compression_snark = gen_snark_shplonk(
         &params,
