@@ -165,7 +165,7 @@ fn test_standard_plonk_compression() {
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
     let layer1_agg_params = AggregationConfigParams {
-        degree: 24,
+        degree: 21,
         num_advice: 15,
         num_lookup_advice: 2,
         num_fixed: 1,
@@ -201,7 +201,7 @@ fn test_mock_compression() {
     let params = gen_srs(k1);
 
     let layer1_agg_params = AggregationConfigParams {
-        degree: 24,
+        degree: 21,
         num_advice: 15,
         num_lookup_advice: 2,
         num_fixed: 1,
@@ -233,7 +233,7 @@ fn test_two_layer_compression() {
     // First layer of compression
     let k1 = 24u32;
     let layer1_agg_params = AggregationConfigParams {
-        degree: 24,
+        degree: 21,
         num_advice: 15,
         num_lookup_advice: 2,
         num_fixed: 1,
@@ -254,7 +254,7 @@ fn test_two_layer_compression() {
     // Second layer of compression
     let k2 = 25;
     let layer2_agg_params = AggregationConfigParams {
-        degree: 25,
+        degree: 21,
         num_advice: 1,
         num_lookup_advice: 1,
         num_fixed: 1,
@@ -322,7 +322,7 @@ fn test_read_snark_compression() {
     // First layer of compression
     let k1 = 24u32;
     let layer1_agg_params = AggregationConfigParams {
-        degree: 24,
+        degree: 21,
         num_advice: 15,
         num_lookup_advice: 2,
         num_fixed: 1,
