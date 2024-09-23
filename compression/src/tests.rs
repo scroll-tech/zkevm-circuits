@@ -221,37 +221,6 @@ fn test_mock_compression() {
 
 #[test]
 fn test_two_layer_compression() {
-
-    
-    // let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), false, rng).unwrap();
-    // let num_instances = compression_circuit.num_instance();
-    // let instances = compression_circuit.instances();
-
-    // println!("num_instances {:?}", num_instances);
-    // println!("instance length {:?}", instances.len());
-
-    // let pk_layer1 = gen_pk(&params, &compression_circuit, None);
-    // let compression_snark = gen_snark_shplonk(
-    //     &params,
-    //     &pk_layer1,
-    //     compression_circuit.clone(),
-    //     None::<String>,
-    // );
-
-    // // Second layer of compression
-    // let mut rng = test_rng();
-    // let compression_circuit_layer2 =
-    //     CompressionCircuit::new_from_ce_snark(k, &params, compression_snark, true, &mut rng).unwrap();
-
-
-
-
-
-
-
-
-
-
     // Generate base layer snark
     // let k0 = 8u32;
     // let params_app = gen_srs(k0);
