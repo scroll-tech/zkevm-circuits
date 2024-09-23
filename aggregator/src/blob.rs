@@ -1,7 +1,7 @@
 use crate::{
     aggregation::{interpolate, BLS_MODULUS},
     eip4844::get_coefficients,
-    BatchHash, ChunkInfo,
+    BatchInfo, ChunkInfo,
 };
 
 use eth_types::{H256, U256};
@@ -133,12 +133,9 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> From<&BatchHash<N_SNARKS>> for BatchData<N_SNARKS> {
-    fn from(batch_hash: &BatchHash<N_SNARKS>) -> Self {
-        Self::new(
-            batch_hash.number_of_valid_chunks,
-            &batch_hash.chunks_with_padding,
-        )
+impl<const N_SNARKS: usize> From<&BatchInfo<N_SNARKS>> for BatchData<N_SNARKS> {
+    fn from(batch_hash: &BatchInfo<N_SNARKS>) -> Self {
+        Self::new(batch_hash.num_valid_chunks, &batch_hash.padded_chunks)
     }
 }
 

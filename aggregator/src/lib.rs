@@ -24,12 +24,15 @@ mod param;
 /// utilities
 mod util;
 
+mod circuit;
+mod config;
+
 #[cfg(test)]
 mod tests;
 
 pub use self::core::extract_proof_and_instances_with_pairing_check;
 pub use aggregation::*;
-pub use batch::{BatchHash, BatchHeader};
+pub use batch::{BatchHeader, BatchInfo};
 pub use blob::BatchData;
 pub use chunk::ChunkInfo;
 pub use compression::*;

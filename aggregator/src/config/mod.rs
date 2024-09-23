@@ -23,6 +23,13 @@ use crate::{
     RlcConfig,
 };
 
+// TODO(rohit): inline doc
+mod barycentric;
+mod batch_data;
+mod blob_data;
+mod decoder;
+mod plonk;
+
 /// The config values required to configure the [`BatchCircuit`]. The `BatchCircuit` is configured
 /// generic to the maximum number of SNARKs it can aggregate.
 #[derive(Debug, Clone)]

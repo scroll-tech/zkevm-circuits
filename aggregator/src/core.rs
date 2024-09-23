@@ -1,5 +1,3 @@
-use std::iter::repeat;
-
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{
@@ -15,7 +13,7 @@ use rand::Rng;
 use snark_verifier::{
     loader::native::NativeLoader,
     pcs::{
-        kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
+        kzg::{KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
     },
     util::arithmetic::fe_to_limbs,
@@ -23,9 +21,10 @@ use snark_verifier::{
     Error,
 };
 use snark_verifier_sdk::{
-    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
+    types::{KzgBDFG, PoseidonTranscript, Shplonk, POSEIDON_SPEC},
     Snark,
 };
+use std::iter::repeat;
 use zkevm_circuits::{
     keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuit, KeccakCircuitConfig},
     util::Challenges,
@@ -97,7 +96,7 @@ pub(crate) fn extract_accumulators_and_proof(
         // accumulated ec_pt = ec_pt_1 * 1 + ec_pt_2 * r + ... + ec_pt_n * r^{n-1}
         // ec_pt can be lhs and rhs
         // r is the challenge squeezed from proof
-        KzgAs::<Kzg<Bn256, Bdfg21>>::create_proof::<PoseidonTranscript<NativeLoader, Vec<u8>>, _>(
+        KzgAs::<KzgBDFG>::create_proof::<PoseidonTranscript<NativeLoader, Vec<u8>>, _>(
             &Default::default(),
             &accumulators,
             &mut transcript_write,
@@ -156,9 +155,6 @@ pub(crate) struct ExtractedHashCells<const N_SNARKS: usize> {
     num_valid_snarks: AssignedCell<Fr, Fr>,
     chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
 }
-
-// Computed cells to be constrained against public input. These cells are processed into hi/lo format from ExtractedHashCells.
-pub(crate) struct HashDerivedPublicInputCells(Vec<AssignedCell<Fr, Fr>>);
 
 impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
     /// Assign the cells for hash input/outputs and their RLCs.
@@ -322,8 +318,40 @@ impl<const N_SNARKS: usize> ExtractedHashCells<N_SNARKS> {
     }
 }
 
+// Computed cells to be constrained against public input. These cells are processed into hi/lo format from ExtractedHashCells.
+pub(crate) struct PublicInputCells {
+    parent_batch_hash_hi: AssignedCell<Fr, Fr>,
+    parent_batch_hash_lo: AssignedCell<Fr, Fr>,
+    batch_hash_hi: AssignedCell<Fr, Fr>,
+    batch_hash_lo: AssignedCell<Fr, Fr>,
+    prev_state_root_hi: AssignedCell<Fr, Fr>,
+    prev_state_root_lo: AssignedCell<Fr, Fr>,
+    state_root_hi: AssignedCell<Fr, Fr>,
+    state_root_lo: AssignedCell<Fr, Fr>,
+    withdraw_root_hi: AssignedCell<Fr, Fr>,
+    withdraw_root_lo: AssignedCell<Fr, Fr>,
+    chain_id: AssignedCell<Fr, Fr>,
+}
+
+impl PublicInputCells {
+    pub(crate) fn as_vec(&self) -> Vec<&AssignedCell<Fr, Fr>> {
+        vec![
+            &self.parent_batch_hash_hi,
+            &self.parent_batch_hash_lo,
+            &self.batch_hash_hi,
+            &self.batch_hash_lo,
+            &self.prev_state_root_hi,
+            &self.prev_state_root_lo,
+            &self.state_root_hi,
+            &self.state_root_lo,
+            &self.withdraw_root_hi,
+            &self.withdraw_root_lo,
+            &self.chain_id,
+        ]
+    }
+}
 #[derive(Default)]
-pub(crate) struct ExpectedBlobCells {
+pub(crate) struct ExtractedBlobCells {
     pub(crate) z: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) y: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) versioned_hash: Vec<AssignedCell<Fr, Fr>>,
@@ -332,10 +360,10 @@ pub(crate) struct ExpectedBlobCells {
 
 pub(crate) struct AssignedBatchHash {
     pub(crate) hash_output: Vec<Vec<AssignedCell<Fr, Fr>>>,
-    pub(crate) blob: ExpectedBlobCells,
+    pub(crate) blob: ExtractedBlobCells,
     pub(crate) num_valid_snarks: AssignedCell<Fr, Fr>,
     pub(crate) chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
-    pub(crate) hash_derived_public_input_cells: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) public_input_cells: PublicInputCells,
 }
 
 /// Input the hash input bytes,
@@ -377,18 +405,17 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
     // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
     // padded
     // 7. batch data hash is correct w.r.t. its RLCs
-    let (extracted_hash_cells, hash_derived_public_input_cells) =
-        conditional_constraints::<N_SNARKS>(
-            rlc_config,
-            layouter,
-            challenges,
-            chunks_are_valid,
-            num_valid_chunks,
-            preimages,
-        )?;
+    let (extracted_hash_cells, public_input_cells) = conditional_constraints::<N_SNARKS>(
+        rlc_config,
+        layouter,
+        challenges,
+        chunks_are_valid,
+        num_valid_chunks,
+        preimages,
+    )?;
 
     let batch_hash_input = &extracted_hash_cells.inputs[0]; //[0..INPUT_LEN_PER_ROUND * 2];
-    let expected_blob_cells = ExpectedBlobCells {
+    let expected_blob_cells = ExtractedBlobCells {
         z: batch_hash_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + DIGEST_LEN].to_vec(),
         y: batch_hash_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + DIGEST_LEN].to_vec(),
         versioned_hash: batch_hash_input
@@ -408,7 +435,7 @@ pub(crate) fn assign_batch_hashes<const N_SNARKS: usize>(
         blob: expected_blob_cells,
         num_valid_snarks: extracted_hash_cells.num_valid_snarks,
         chunks_are_padding: extracted_hash_cells.chunks_are_padding,
-        hash_derived_public_input_cells: hash_derived_public_input_cells.0,
+        public_input_cells,
     })
 }
 
@@ -482,12 +509,12 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
     chunks_are_valid: &[bool],
     num_valid_chunks: usize,
     preimages: &[Vec<u8>],
-) -> Result<(ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells), Error> {
+) -> Result<(ExtractedHashCells<N_SNARKS>, PublicInputCells), Error> {
     layouter
         .assign_region(
             || "rlc conditional constraints",
             |mut region| -> Result<
-                (ExtractedHashCells<N_SNARKS>, HashDerivedPublicInputCells),
+                (ExtractedHashCells<N_SNARKS>, PublicInputCells),
                 halo2_proofs::plonk::Error,
             > {
                 let mut offset = 0;
@@ -607,7 +634,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // ====================================================
                 // 1.a batch_parent_batch_hash is the same from public input
                 // ====================================================
-                let batch_parent_batch_hash_hi = rlc_config.rlc(
+                let parent_batch_hash_hi = rlc_config.rlc(
                     &mut region,
                     batch_hash_preimage
                         [BATCH_PARENT_BATCH_HASH..BATCH_PARENT_BATCH_HASH + DIGEST_LEN / 2]
@@ -615,7 +642,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &byte_accumulator,
                     &mut offset,
                 )?;
-                let batch_parent_batch_hash_lo = rlc_config.rlc(
+                let parent_batch_hash_lo = rlc_config.rlc(
                     &mut region,
                     batch_hash_preimage[BATCH_PARENT_BATCH_HASH + DIGEST_LEN / 2
                         ..BATCH_PARENT_BATCH_HASH + DIGEST_LEN]
@@ -822,7 +849,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 // - current withdraw root ..
 
                 // pi.parent_state_root = chunks[0].prev_state_root
-                let chunk_prev_state_hi = rlc_config.rlc(
+                let prev_state_root_hi = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[0]
                         [PREV_STATE_ROOT_INDEX..PREV_STATE_ROOT_INDEX + DIGEST_LEN / 2]
@@ -830,7 +857,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &byte_accumulator,
                     &mut offset,
                 )?;
-                let chunk_prev_state_lo = rlc_config.rlc(
+                let prev_state_root_lo = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[0][PREV_STATE_ROOT_INDEX + DIGEST_LEN / 2
                         ..PREV_STATE_ROOT_INDEX + DIGEST_LEN]
@@ -840,7 +867,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 )?;
 
                 // pi.current_state_root = chunks[N_SNARKS - 1].post_state_root
-                let chunk_current_state_hi = rlc_config.rlc(
+                let state_root_hi = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1]
                         [POST_STATE_ROOT_INDEX..POST_STATE_ROOT_INDEX + DIGEST_LEN / 2]
@@ -848,7 +875,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &byte_accumulator,
                     &mut offset,
                 )?;
-                let chunk_current_state_lo = rlc_config.rlc(
+                let state_root_lo = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1][POST_STATE_ROOT_INDEX + DIGEST_LEN / 2
                         ..POST_STATE_ROOT_INDEX + DIGEST_LEN]
@@ -858,7 +885,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                 )?;
 
                 // pi.current_withdraw_root = chunks[N_SNARKS - 1].withdraw_root
-                let chunk_current_withdraw_root_hi = rlc_config.rlc(
+                let withdraw_root_hi = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1]
                         [WITHDRAW_ROOT_INDEX..WITHDRAW_ROOT_INDEX + DIGEST_LEN / 2]
@@ -866,7 +893,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
                     &byte_accumulator,
                     &mut offset,
                 )?;
-                let chunk_current_withdraw_root_lo = rlc_config.rlc(
+                let withdraw_root_lo = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1]
                         [WITHDRAW_ROOT_INDEX + DIGEST_LEN / 2..WITHDRAW_ROOT_INDEX + DIGEST_LEN]
@@ -877,7 +904,7 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 // pi.chain_id = chunks[N_SNARKS - 1].chain_id
                 // Note: Chunk-chaining constraints in 4.b guarantee that previously assigned chain_id cells have the same values.
-                let chunk_chain_id = rlc_config.rlc(
+                let chain_id = rlc_config.rlc(
                     &mut region,
                     chunk_pi_hash_preimages[N_SNARKS - 1]
                         [CHUNK_CHAIN_ID_INDEX..CHUNK_CHAIN_ID_INDEX + CHAIN_ID_LEN]
@@ -890,19 +917,19 @@ pub(crate) fn conditional_constraints<const N_SNARKS: usize>(
 
                 Ok((
                     assigned_hash_cells,
-                    HashDerivedPublicInputCells(vec![
-                        batch_parent_batch_hash_hi,
-                        batch_parent_batch_hash_lo,
+                    PublicInputCells {
+                        parent_batch_hash_hi,
+                        parent_batch_hash_lo,
                         batch_hash_hi,
                         batch_hash_lo,
-                        chunk_prev_state_hi,
-                        chunk_prev_state_lo,
-                        chunk_current_state_hi,
-                        chunk_current_state_lo,
-                        chunk_current_withdraw_root_hi,
-                        chunk_current_withdraw_root_lo,
-                        chunk_chain_id,
-                    ]),
+                        prev_state_root_hi,
+                        prev_state_root_lo,
+                        state_root_hi,
+                        state_root_lo,
+                        withdraw_root_hi,
+                        withdraw_root_lo,
+                        chain_id,
+                    },
                 ))
             },
         )
