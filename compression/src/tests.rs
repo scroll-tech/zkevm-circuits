@@ -233,6 +233,7 @@ fn dump_snark(path: &str, path2: &str, snark: &Snark) {
 
 #[test]
 fn test_two_layer_compression() {
+    env_logger::init();
     // Generate base layer snark
     // let k0 = 8u32;
     // let params_app = gen_srs(k0);

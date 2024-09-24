@@ -4763,13 +4763,14 @@ dependencies = [
 [[package]]
 name = "snark-verifier"
 version = "0.1.8"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=fix/axiom-community-edition#d0ca79c776e778913cf4e18746c65afc37b8872a"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=fix/axiom-community-edition#d8f7269de37c1d93148d2dd5e615e33c31fcd43e"
 dependencies = [
  "halo2-base 0.4.1",
  "halo2-ecc 0.4.1",
  "hex",
  "itertools 0.11.0",
  "lazy_static",
+ "log",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -4807,7 +4808,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.1.8"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=fix/axiom-community-edition#d0ca79c776e778913cf4e18746c65afc37b8872a"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=fix/axiom-community-edition#d8f7269de37c1d93148d2dd5e615e33c31fcd43e"
 dependencies = [
  "bincode",
  "ethereum-types",
@@ -4816,6 +4817,7 @@ dependencies = [
  "hex",
  "itertools 0.11.0",
  "lazy_static",
+ "log",
  "num-bigint",
  "num-integer",
  "num-traits",
