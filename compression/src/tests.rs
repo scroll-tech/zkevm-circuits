@@ -24,7 +24,6 @@ use ce_snark_verifier::halo2_base::{
     },
     utils::fs::gen_srs,
 };
-use ark_std::test_rng;
 use halo2_proofs::dev::MockProver;
 use crate::{params, CompressionCircuit};
 use crate::circuit::to_ce_snark;
@@ -159,7 +158,8 @@ fn gen_application_snark(params: &ParamsKZG<Bn256>) -> Snark {
     let circuit = StandardPlonk::rand(gen_rng());
 
     let pk = gen_pk(params, &circuit, None);
-    gen_snark_shplonk(params, &pk, circuit, None::<&str>)
+    let mut rng = gen_rng();
+    gen_snark_shplonk(params, &pk, circuit, &mut rng, None::<&str>)
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn test_mock_compression() {
 
     let pk = gen_pk(&params_app, &circuit, None);
 
-    let mut rng = test_rng();
+    let mut rng = gen_rng();
     let old_snark = old_gen_snark_shplonk(&params_app, &pk, circuit, &mut rng, None::<String>).unwrap();
 
     let k1 = 21u32;
@@ -249,6 +249,7 @@ fn test_two_layer_compression() {
     dump_snark("./src/layer0.json", "./src/layer0_protocol.json", &inner_snark);
 
     // First layer of compression
+    let mut rng = gen_rng();
     let layer1_agg_params = AggregationConfigParams {
         degree: 21,
         num_advice: 15,
@@ -268,6 +269,7 @@ fn test_two_layer_compression() {
         &params,
         &pk_layer1,
         compression_circuit.clone(),
+        &mut rng,
         None::<String>,
     );
     dump_snark("./src/layer1.json", "./src/layer1_protocol.json", &compression_snark);
@@ -280,7 +282,6 @@ fn test_two_layer_compression() {
         num_fixed: 1,
         lookup_bits: 20,
     };
-    let mut rng = test_rng();
     let _compression_circuit_layer2 = CompressionCircuit::new_from_ce_snark(
         layer2_agg_params,
         &params,
@@ -294,10 +295,11 @@ fn test_two_layer_compression() {
     //     &params2,
     //     &pk_layer2,
     //     compression_circuit_layer2.clone(),
+    //     &mut rng,
     //     None::<String>,
     // );
 
-//     verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
+    // verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
 }
 
 #[test]
@@ -307,7 +309,8 @@ fn test_to_ce_snark() {
     let circuit = MockChunkCircuit::random(OsRng, false, false);
 
     let pk = gen_pk(&params_app, &circuit, None);
-    let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<String>);
+    let mut rng = gen_rng();
+    let snark = gen_snark_shplonk(&params_app, &pk, circuit, &mut rng, None::<String>);
 
     assert_snark_roundtrip(&snark);
 }
@@ -356,10 +359,12 @@ fn test_read_snark_compression() {
     let compression_circuit =
         CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&inner_snark), false).unwrap();
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
+    let mut rng = gen_rng();
     let _compression_snark = gen_snark_shplonk(
         &params,
         &pk_layer1,
         compression_circuit.clone(),
+        &mut rng,
         None::<String>,
     );
 }
