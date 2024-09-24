@@ -35,6 +35,7 @@ impl<'params> Prover<'params> {
                     self.params(degree),
                     prev_snark,
                     has_accumulator,
+                    &mut rng,
                 )
                 .map_err(|err| anyhow!("Failed to construct compression circuit: {err:?}"))?;
 
