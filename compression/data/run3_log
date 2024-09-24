@@ -1,0 +1,296 @@
+nohup: ignoring input
+warning: unused import: `rand::Rng`
+  --> compression/src/circuit.rs:20:5
+   |
+20 | use rand::Rng;
+   |     ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: variable does not need to be mutable
+   --> compression/src/circuit.rs:127:13
+    |
+127 |         let mut agg_circuit = AggregationCircuit::new::<SHPLONK>(
+    |             ----^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: function `verify_snark_accumulator_pairing` is never used
+   --> compression/src/circuit.rs:165:15
+    |
+165 | pub(crate) fn verify_snark_accumulator_pairing<'a>(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: `compression` (lib) generated 3 warnings (run `cargo fix --lib -p compression` to apply 2 suggestions)
+warning: unused import: `evm_types::OpcodeId`
+  --> bus-mapping/src/circuit_input_builder/transaction.rs:10:5
+   |
+10 |     evm_types::OpcodeId,
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `bus-mapping` (lib) generated 1 warning (run `cargo fix --lib -p bus-mapping` to apply 1 suggestion)
+warning: unused imports: `Circuit` and `SimpleFloorPlanner`
+  --> zkevm-circuits/src/poseidon_circuit.rs:9:25
+   |
+9  |     circuit::{Layouter, SimpleFloorPlanner, Value},
+   |                         ^^^^^^^^^^^^^^^^^^
+10 |     plonk::{Circuit, ConstraintSystem, Error},
+   |             ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused imports: `SubCircuit` and `witness::keccak::keccak_inputs`
+  --> zkevm-circuits/src/witness/block.rs:12:19
+   |
+12 |     util::{Field, SubCircuit},
+   |                   ^^^^^^^^^^
+13 |     witness::keccak::keccak_inputs,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `halo2curves::bn256::Fr`
+  --> zkevm-circuits/src/witness/block.rs:27:36
+   |
+27 | use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::tx_circuit::TX_LEN`
+   --> zkevm-circuits/src/witness/block.rs:356:5
+    |
+356 | use crate::tx_circuit::TX_LEN;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Signature`
+  --> zkevm-circuits/src/witness/tx.rs:25:33
+   |
+25 |     AccessList, Address, Error, Signature, ToBigEndian, ToLittleEndian, ToWord, Word, H256,
+   |                                 ^^^^^^^^^
+
+warning: unused import: `types::TransactionRequest`
+  --> zkevm-circuits/src/witness/tx.rs:28:5
+   |
+28 |     types::TransactionRequest,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `zkevm-circuits` (lib) generated 6 warnings (run `cargo fix --lib -p zkevm-circuits` to apply 6 suggestions)
+warning: unused import: `itertools::Itertools`
+ --> aggregator/src/aggregation/rlc/config.rs:9:5
+  |
+9 | use itertools::Itertools;
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `LookupTable`
+  --> aggregator/src/aggregation/rlc/config.rs:11:26
+   |
+11 |     table::{KeccakTable, LookupTable},
+   |                          ^^^^^^^^^^^
+
+warning: unused variable: `keccak_table`
+  --> aggregator/src/aggregation/rlc/config.rs:33:9
+   |
+33 |         keccak_table: &KeccakTable,
+   |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_keccak_table`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: `aggregator` (lib) generated 3 warnings (run `cargo fix --lib -p aggregator` to apply 2 suggestions)
+   Compiling prover v0.14.0 (/home/ubuntu/rohit/zkevm-circuits/prover)
+warning: unused import: `serde::de::value`
+  --> prover/src/common/prover/evm.rs:11:5
+   |
+11 | use serde::de::value;
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `prover` (lib) generated 1 warning (run `cargo fix --lib -p prover` to apply 1 suggestion)
+   Compiling compression v0.14.0 (/home/ubuntu/rohit/zkevm-circuits/compression)
+warning: unused imports: `PathBuf`, `Path`, and `fmt::write`
+ --> compression/src/tests.rs:1:11
+  |
+1 | use std::{fmt::write, path::{Path, PathBuf}};
+  |           ^^^^^^^^^^         ^^^^  ^^^^^^^
+
+warning: unused imports: `AggregationCircuit`, `SHPLONK`, `VerifierUniversality`, `gen_evm_proof_shplonk`, and `gen_evm_verifier_shplonk`
+  --> compression/src/tests.rs:12:11
+   |
+12 |     evm::{gen_evm_proof_shplonk, gen_evm_verifier_shplonk},
+   |           ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     gen_pk,
+14 |     halo2::{aggregation::{AggregationCircuit, AggregationConfigParams, VerifierUniversality}, gen_snark_shplonk},
+   |                           ^^^^^^^^^^^^^^^^^^                           ^^^^^^^^^^^^^^^^^^^^
+15 |     Snark,
+16 |     CircuitExt, SHPLONK
+   |                 ^^^^^^^
+
+warning: unused import: `gates::circuit::CircuitBuilderStage`
+  --> compression/src/tests.rs:19:5
+   |
+19 |     gates::circuit::CircuitBuilderStage,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `params`
+  --> compression/src/tests.rs:28:13
+   |
+28 | use crate::{params, CompressionCircuit};
+   |             ^^^^^^
+
+warning: `compression` (lib test) generated 7 warnings (3 duplicates) (run `cargo fix --lib -p compression --tests` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.20s
+     Running unittests src/lib.rs (target/debug/deps/compression-3f93b03528aa965b)
+
+running 1 test
+test tests::test_two_layer_compression has been running for over 60 seconds
+test tests::test_two_layer_compression ... FAILED
+
+successes:
+
+successes:
+
+failures:
+
+---- tests::test_two_layer_compression stdout ----
+thread 'tests::test_two_layer_compression' panicked at /home/ubuntu/.cargo/git/checkouts/snark-verifier-cd02c9c9f799657f/d0ca79c/snark-verifier-sdk/src/halo2/aggregation.rs:404:14:
+called `Result::unwrap()` on an `Err` value: Transcript(Other, "Invalid elliptic curve point encoding in proof")
+stack backtrace:
+   0:     0x5d4dc5492785 - std::backtrace_rs::backtrace::libunwind::trace::hca492ccc0a8ac1c7
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/../../backtrace/src/backtrace/libunwind.rs:116:5
+   1:     0x5d4dc5492785 - std::backtrace_rs::backtrace::trace_unsynchronized::h999b0d5022bb9476
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/../../backtrace/src/backtrace/mod.rs:66:5
+   2:     0x5d4dc5492785 - std::sys::backtrace::_print_fmt::h337faace7e89f20f
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/sys/backtrace.rs:68:5
+   3:     0x5d4dc5492785 - <std::sys::backtrace::_print::DisplayBacktrace as core::fmt::Display>::fmt::h8f61052e1147b5ff
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/sys/backtrace.rs:44:22
+   4:     0x5d4dc54ba6ab - core::fmt::rt::Argument::fmt::hb3f568d4bb663930
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/fmt/rt.rs:173:76
+   5:     0x5d4dc54ba6ab - core::fmt::write::h1b8f17451d7377e1
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/fmt/mod.rs:1182:21
+   6:     0x5d4dc548f85f - std::io::Write::write_fmt::hca4010b10edb83ae
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/io/mod.rs:1835:15
+   7:     0x5d4dc549255e - std::sys::backtrace::_print::he41bc96f81b66528
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/sys/backtrace.rs:47:5
+   8:     0x5d4dc549255e - std::sys::backtrace::print::h1152eb51917b724f
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/sys/backtrace.rs:34:9
+   9:     0x5d4dc5493ed9 - std::panicking::default_hook::{{closure}}::ha6bdacd5de8d59eb
+  10:     0x5d4dc5493b48 - std::panicking::default_hook::h4583628e444d61ea
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:289:9
+  11:     0x5d4dc51390da - <alloc::boxed::Box<F,A> as core::ops::function::Fn<Args>>::call::h9d6f96e4d8ae43e6
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/alloc/src/boxed.rs:2078:9
+  12:     0x5d4dc51390da - test::test_main::{{closure}}::hb6ff9bcb95bdd273
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/test/src/lib.rs:137:21
+  13:     0x5d4dc549473f - <alloc::boxed::Box<F,A> as core::ops::function::Fn<Args>>::call::h6f2232ec5d59aa96
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/alloc/src/boxed.rs:2078:9
+  14:     0x5d4dc549473f - std::panicking::rust_panic_with_hook::h33a68c34dc0a2db3
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:804:13
+  15:     0x5d4dc5494367 - std::panicking::begin_panic_handler::{{closure}}::h3bb784f281e80598
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:670:13
+  16:     0x5d4dc5492c49 - std::sys::backtrace::__rust_end_short_backtrace::h35cbe923cc3ff143
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/sys/backtrace.rs:171:18
+  17:     0x5d4dc5493ff4 - rust_begin_unwind
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:661:5
+  18:     0x5d4dc54b86e3 - core::panicking::panic_fmt::h7b0423324cb11cf8
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/panicking.rs:74:14
+  19:     0x5d4dc54b8c36 - core::result::unwrap_failed::he73a0a2f3851a8e0
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/result.rs:1679:5
+  20:     0x5d4dc4c28607 - core::result::Result<T,E>::unwrap::h912110c171fcd8c3
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/result.rs:1102:23
+  21:     0x5d4dc4c28607 - snark_verifier_sdk::halo2::aggregation::aggregate_snarks::{{closure}}::h3e8eb6a54314bd9b
+                               at /home/ubuntu/.cargo/git/checkouts/snark-verifier-cd02c9c9f799657f/d0ca79c/snark-verifier-sdk/src/halo2/aggregation.rs:398:25
+  22:     0x5d4dc4c2aa70 - core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &mut F>::call_once::h0930222d88fabe00
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/ops/function.rs:305:13
+  23:     0x5d4dc4a755f4 - core::option::Option<T>::map::h2023236fdc3f1872
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/option.rs:1103:29
+  24:     0x5d4dc4a755f4 - <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next::h1d1eec21a14954d2
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/iter/adapters/map.rs:108:26
+  25:     0x5d4dc4e41a63 - <core::iter::adapters::fuse::Fuse<I> as core::iter::adapters::fuse::FuseImpl<I>>::next::h01d58832dc50f7bd
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/iter/adapters/fuse.rs:359:9
+  26:     0x5d4dc4a40752 - <core::iter::adapters::fuse::Fuse<I> as core::iter::traits::iterator::Iterator>::next::hd241d47ed79c4640
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/iter/adapters/fuse.rs:50:9
+  27:     0x5d4dc4a40752 - <core::iter::adapters::flatten::FlattenCompat<I,U> as core::iter::traits::iterator::Iterator>::next::he8631cc0d136f2da
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/iter/adapters/flatten.rs:610:29
+  28:     0x5d4dc4a396a7 - <core::iter::adapters::flatten::FlatMap<I,U,F> as core::iter::traits::iterator::Iterator>::next::h9a04f17348edca80
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/iter/adapters/flatten.rs:66:9
+  29:     0x5d4dc4fd2030 - <alloc::vec::Vec<T> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<T,I>>::from_iter::h8cb300af6bdc6d06
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/alloc/src/vec/spec_from_iter_nested.rs:26:32
+  30:     0x5d4dc50431ae - <alloc::vec::Vec<T> as alloc::vec::spec_from_iter::SpecFromIter<T,I>>::from_iter::h92041252d401edae
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/alloc/src/vec/spec_from_iter.rs:33:9
+  31:     0x5d4dc503d6a9 - <alloc::vec::Vec<T> as core::iter::traits::collect::FromIterator<T>>::from_iter::h687862b0d700e9e0
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/alloc/src/vec/mod.rs:2971:9
+  32:     0x5d4dc4a6248e - core::iter::traits::iterator::Iterator::collect::h67f71f1c55570627
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/iter/traits/iterator.rs:2005:9
+  33:     0x5d4dc4a6c3de - itertools::Itertools::collect_vec::hccf776ba17ef3104
+                               at /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/itertools-0.11.0/src/lib.rs:2154:9
+  34:     0x5d4dc4c27246 - snark_verifier_sdk::halo2::aggregation::aggregate_snarks::hb9ba2bad3a1bc9c0
+                               at /home/ubuntu/.cargo/git/checkouts/snark-verifier-cd02c9c9f799657f/d0ca79c/snark-verifier-sdk/src/halo2/aggregation.rs:394:24
+  35:     0x5d4dc4c28cb4 - snark_verifier_sdk::halo2::aggregation::AggregationCircuit::new::h85d872904ab61342
+                               at /home/ubuntu/.cargo/git/checkouts/snark-verifier-cd02c9c9f799657f/d0ca79c/snark-verifier-sdk/src/halo2/aggregation.rs:507:13
+  36:     0x5d4dc4907375 - compression::circuit::CompressionCircuit::new_from_ce_snark::ha97ca4e5f744e811
+                               at /home/ubuntu/rohit/zkevm-circuits/compression/src/circuit.rs:127:31
+  37:     0x5d4dc4906341 - compression::tests::test_two_layer_compression::h1a758612d962552b
+                               at /home/ubuntu/rohit/zkevm-circuits/compression/src/tests.rs:287:39
+  38:     0x5d4dc48edbd7 - compression::tests::test_two_layer_compression::{{closure}}::hde9deb7d50ec7679
+                               at /home/ubuntu/rohit/zkevm-circuits/compression/src/tests.rs:235:32
+  39:     0x5d4dc480b566 - core::ops::function::FnOnce::call_once::h2c0bd8a1fd2f71ce
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/ops/function.rs:250:5
+  40:     0x5d4dc513d85b - core::ops::function::FnOnce::call_once::h79120f05d4b5b454
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/ops/function.rs:250:5
+  41:     0x5d4dc513d85b - test::__rust_begin_short_backtrace::h793283974a473d81
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/test/src/lib.rs:625:18
+  42:     0x5d4dc513d095 - test::run_test_in_process::{{closure}}::h316cdcdefe517fb4
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/test/src/lib.rs:648:60
+  43:     0x5d4dc513d095 - <core::panic::unwind_safe::AssertUnwindSafe<F> as core::ops::function::FnOnce<()>>::call_once::h601ef7526ff2ed47
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/panic/unwind_safe.rs:272:9
+  44:     0x5d4dc513d095 - std::panicking::try::do_call::h2c0068989ed2c92e
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:553:40
+  45:     0x5d4dc513d095 - std::panicking::try::h05ef75bc3b933082
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:517:19
+  46:     0x5d4dc513d095 - std::panic::catch_unwind::h7fcc2d9826f710cf
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panic.rs:350:14
+  47:     0x5d4dc513d095 - test::run_test_in_process::h1371fa9138182f0d
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/test/src/lib.rs:648:27
+  48:     0x5d4dc513d095 - test::run_test::{{closure}}::h4c162f3c00c278e4
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/test/src/lib.rs:569:43
+  49:     0x5d4dc5103c04 - test::run_test::{{closure}}::h1d5ff6816c42e16d
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/test/src/lib.rs:599:41
+  50:     0x5d4dc5103c04 - std::sys::backtrace::__rust_begin_short_backtrace::h6ed37ca11c005397
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/sys/backtrace.rs:155:18
+  51:     0x5d4dc5107412 - std::thread::Builder::spawn_unchecked_::{{closure}}::{{closure}}::h88a42093cf8303b3
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/thread/mod.rs:542:17
+  52:     0x5d4dc5107412 - <core::panic::unwind_safe::AssertUnwindSafe<F> as core::ops::function::FnOnce<()>>::call_once::h0a738eed9228dcb2
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/panic/unwind_safe.rs:272:9
+  53:     0x5d4dc5107412 - std::panicking::try::do_call::hf029633ebf711a88
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:553:40
+  54:     0x5d4dc5107412 - std::panicking::try::hd6b22ec81ed84fc1
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panicking.rs:517:19
+  55:     0x5d4dc5107412 - std::panic::catch_unwind::hc26edb887cd0f5a3
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/panic.rs:350:14
+  56:     0x5d4dc5107412 - std::thread::Builder::spawn_unchecked_::{{closure}}::h8ee12ab4a5749b19
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/thread/mod.rs:541:30
+  57:     0x5d4dc5107412 - core::ops::function::FnOnce::call_once{{vtable.shim}}::h60718c2e83a6b1f1
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/core/src/ops/function.rs:250:5
+  58:     0x5d4dc5498a6b - <alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once::h6951d17da67feb24
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/alloc/src/boxed.rs:2064:9
+  59:     0x5d4dc5498a6b - <alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once::he417e7ee10089c9d
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/alloc/src/boxed.rs:2064:9
+  60:     0x5d4dc5498a6b - std::sys::pal::unix::thread::Thread::new::thread_start::he7841f7a2b8c4bc9
+                               at /rustc/ed7e35f3494045fa1194be29085fa73e2d6dab40/library/std/src/sys/pal/unix/thread.rs:108:17
+  61:     0x71776d494ac3 - start_thread
+                               at ./nptl/pthread_create.c:442:8
+  62:     0x71776d526850 - __GI___clone3
+                               at ./misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:81
+  63:                0x0 - <unknown>
+
+
+failures:
+    tests::test_two_layer_compression
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 559.35s
+
+error: test failed, to rerun pass `-p compression --lib`
