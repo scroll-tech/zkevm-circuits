@@ -156,7 +156,7 @@ impl Circuit<Fr> for StandardPlonk {
 }
 
 fn gen_application_snark(params: &ParamsKZG<Bn256>) -> Snark {
-    let circuit = StandardPlonk::rand(OsRng);
+    let circuit = StandardPlonk::rand(gen_rng());
 
     let pk = gen_pk(params, &circuit, None);
     gen_snark_shplonk(params, &pk, circuit, None::<&str>)
@@ -178,8 +178,7 @@ fn test_standard_plonk_compression() {
         lookup_bits: 20,
     };
 
-    let rng = test_rng();
-    let compression_circuit = CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, snarks[0].clone(), false, rng).unwrap();
+    let compression_circuit = CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, snarks[0].clone(), false).unwrap();
     let num_instances = compression_circuit.num_instance();
     let instances = compression_circuit.instances();
 
@@ -214,9 +213,8 @@ fn test_mock_compression() {
         lookup_bits: 20,
     };
 
-    let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&old_snark), false).unwrap();
     let instance = compression_circuit.instances();
     println!("instance length {:?}", instance.len());
 
@@ -249,7 +247,6 @@ fn test_two_layer_compression() {
     let params = gen_srs(k);
     let inner_snark = gen_application_snark(&params_app);
     dump_snark("./src/layer0.json", "./src/layer0_protocol.json", &inner_snark);
-    let mut rng = gen_rng();
 
     // First layer of compression
     let layer1_agg_params = AggregationConfigParams {
@@ -264,7 +261,6 @@ fn test_two_layer_compression() {
         &params,
         inner_snark,
         false,
-        &mut rng,
     )
     .unwrap();
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
@@ -290,7 +286,6 @@ fn test_two_layer_compression() {
         &params,
         compression_snark,
         true,
-        &mut rng,
     )
     .unwrap();
 
@@ -358,9 +353,8 @@ fn test_read_snark_compression() {
         lookup_bits: 20,
     };
     let params = gen_srs(k1);
-    let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&inner_snark), false, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&inner_snark), false).unwrap();
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
     let _compression_snark = gen_snark_shplonk(
         &params,

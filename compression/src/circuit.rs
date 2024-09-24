@@ -98,12 +98,11 @@ impl CompressionCircuit {
         params: &ParamsKZG<Bn256>,
         snark: snark_verifier_sdk::Snark,
         has_accumulator: bool,
-        rng: impl Rng + Send,
     ) -> Result<Self, ce_snark_verifier::Error> {
         // compression_debug
         // verify_snark_accumulator_pairing(&snark, params)
         //     .expect("Compression circuit accumulator pre-check should not fail.");
-        Self::new_from_ce_snark(agg_params, params, to_ce_snark(&snark), has_accumulator, rng)
+        Self::new_from_ce_snark(agg_params, params, to_ce_snark(&snark), has_accumulator)
     }
 
     pub fn new_from_ce_snark(
@@ -111,7 +110,6 @@ impl CompressionCircuit {
         params: &ParamsKZG<Bn256>,
         snark: ce_snark_verifier_sdk::Snark,
         has_accumulator: bool,
-        _rng: impl Rng + Send, // TODO: hook this up to the rng in AggregationCircuit? is that even needed?
     ) -> Result<Self, ce_snark_verifier::Error> {
         // compression_debug
         // let mut inner = AggregationCircuit::new::<SHPLONK>(
