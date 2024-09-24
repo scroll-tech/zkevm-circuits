@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json = {workspace = true, features = ["unbounded_depth"] }
 serde_stacker.workspace = true
 rand.workspace = true
+rand_xorshift.workspace = true
 halo2_proofs.workspace = true
 halo2curves.workspace = true
 ce-snark-verifier.workspace = true

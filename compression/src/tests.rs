@@ -1,4 +1,4 @@
-use std::{fmt::write, path::Path};
+use std::{fmt::write, path::{Path, PathBuf}};
 use rand::{
     RngCore,
     rngs::OsRng
@@ -29,6 +29,12 @@ use halo2_proofs::dev::MockProver;
 use crate::{params, CompressionCircuit};
 use crate::circuit::to_ce_snark;
 use aggregator::MockChunkCircuit;
+
+fn gen_rng() -> impl rand::Rng + Send {
+    use rand::SeedableRng;
+    let seed = [0u8; 16];
+    rand_xorshift::XorShiftRng::from_seed(seed)
+}
 
 #[derive(Clone, Copy)]
 pub struct StandardPlonkConfig {
@@ -219,9 +225,11 @@ fn test_mock_compression() {
     mock_prover.assert_satisfied_par()
 }
 
-fn dump_snark(path: &str, snark: &Snark) {
+fn dump_snark(path: &str, path2: &str, snark: &Snark) {
     let mut fd = std::fs::File::create(path).expect("File::create: should be OK");
     serde_json::to_writer(&mut fd, snark).expect("serde_json::to_writer: should be OK");
+    let mut fd = std::fs::File::create(path2).expect("File::create: should be OK");
+    serde_json::to_writer(&mut fd, &snark.protocol).expect("serde_json::to_writer: should be OK");
 }
 
 #[test]
@@ -240,8 +248,8 @@ fn test_two_layer_compression() {
     let k = 21u32;
     let params = gen_srs(k);
     let inner_snark = gen_application_snark(&params_app);
-    dump_snark("data/two-layer-comp/layer0.json", &inner_snark);
-    let mut rng = test_rng();
+    dump_snark("./src/layer0.json", "./src/layer0_protocol.json", &inner_snark);
+    let mut rng = gen_rng();
 
     // First layer of compression
     let layer1_agg_params = AggregationConfigParams {
@@ -266,7 +274,7 @@ fn test_two_layer_compression() {
         compression_circuit.clone(),
         None::<String>,
     );
-    dump_snark("data/two-layer-comp/layer1.json", &compression_snark);
+    dump_snark("./src/layer1.json", "./src/layer1_protocol.json", &compression_snark);
 
     // Second layer of compression
     let layer2_agg_params = AggregationConfigParams {

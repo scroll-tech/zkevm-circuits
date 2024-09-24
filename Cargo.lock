@@ -1029,6 +1029,7 @@ dependencies = [
  "log",
  "prover",
  "rand",
+ "rand_xorshift",
  "serde",
  "serde_json",
  "serde_stacker",
