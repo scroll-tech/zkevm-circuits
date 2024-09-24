@@ -219,6 +219,11 @@ fn test_mock_compression() {
     mock_prover.assert_satisfied_par()
 }
 
+fn dump_snark(path: &str, snark: &Snark) {
+    let mut fd = std::fs::File::create(path).expect("File::create: should be OK");
+    serde_json::to_writer(&mut fd, snark).expect("serde_json::to_writer: should be OK");
+}
+
 #[test]
 fn test_two_layer_compression() {
     // Generate base layer snark
@@ -234,7 +239,8 @@ fn test_two_layer_compression() {
     let params_app = gen_srs(8);
     let k = 21u32;
     let params = gen_srs(k);
-    let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
+    let inner_snark = gen_application_snark(&params_app);
+    dump_snark("data/two-layer-comp/layer0.json", &inner_snark);
     let mut rng = test_rng();
 
     // First layer of compression
@@ -245,8 +251,14 @@ fn test_two_layer_compression() {
         num_fixed: 1,
         lookup_bits: 20,
     };
-    let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, snarks[0].clone(), false, &mut rng).unwrap();
+    let compression_circuit = CompressionCircuit::new_from_ce_snark(
+        layer1_agg_params,
+        &params,
+        inner_snark,
+        false,
+        &mut rng,
+    )
+    .unwrap();
     let pk_layer1 = gen_pk(&params, &compression_circuit, None);
     let compression_snark = gen_snark_shplonk(
         &params,
@@ -254,6 +266,7 @@ fn test_two_layer_compression() {
         compression_circuit.clone(),
         None::<String>,
     );
+    dump_snark("data/two-layer-comp/layer1.json", &compression_snark);
 
     // Second layer of compression
     let layer2_agg_params = AggregationConfigParams {
@@ -264,8 +277,14 @@ fn test_two_layer_compression() {
         lookup_bits: 20,
     };
     let mut rng = test_rng();
-    let _compression_circuit_layer2 =
-        CompressionCircuit::new_from_ce_snark(layer2_agg_params, &params, compression_snark, true, &mut rng).unwrap();
+    let _compression_circuit_layer2 = CompressionCircuit::new_from_ce_snark(
+        layer2_agg_params,
+        &params,
+        compression_snark,
+        true,
+        &mut rng,
+    )
+    .unwrap();
 
     // let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
     // let compression_snark_layer2 = gen_snark_shplonk(
