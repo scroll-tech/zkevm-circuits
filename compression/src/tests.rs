@@ -259,6 +259,7 @@ fn test_two_layer_compression() {
         num_fixed: 1,
         lookup_bits: 20,
     };
+    std::env::set_var("COMPRESSION_CONFIG", "configs/compression_wide.config");
     let compression_circuit = CompressionCircuit::new_from_ce_snark(
         layer1_agg_params,
         &params,
@@ -279,12 +280,13 @@ fn test_two_layer_compression() {
 
     // Second layer of compression
     let layer2_agg_params = AggregationConfigParams {
-        degree: 21,
+        degree: 22,
         num_advice: 1,
         num_lookup_advice: 1,
         num_fixed: 1,
         lookup_bits: 20,
     };
+    std::env::set_var("COMPRESSION_CONFIG", "configs/compression_thin.config");
     let _compression_circuit_layer2 = CompressionCircuit::new_from_ce_snark(
         layer2_agg_params,
         &params,
