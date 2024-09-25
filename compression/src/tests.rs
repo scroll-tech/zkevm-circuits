@@ -260,6 +260,7 @@ fn test_two_layer_compression() {
         lookup_bits: 20,
     };
     std::env::set_var("COMPRESSION_CONFIG", "configs/compression_wide.config");
+    log::debug!("will construct layer1 compression circuit");
     let compression_circuit = CompressionCircuit::new_from_ce_snark(
         layer1_agg_params,
         &params,
@@ -287,6 +288,7 @@ fn test_two_layer_compression() {
         lookup_bits: 20,
     };
     std::env::set_var("COMPRESSION_CONFIG", "configs/compression_thin.config");
+    log::debug!("will construct layer2 compression circuit");
     let _compression_circuit_layer2 = CompressionCircuit::new_from_ce_snark(
         layer2_agg_params,
         &params,

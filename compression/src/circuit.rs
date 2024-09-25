@@ -206,6 +206,7 @@ pub(crate) fn verify_snark_accumulator_pairing<'a>(
 fn load_params() -> AggregationConfigParams {
     let path = std::env::var("COMPRESSION_CONFIG")
         .unwrap_or_else(|_| "configs/compression_wide.config".to_owned());
+    log::debug!("found path = {:?}", path);
     let params: ConfigParams = serde_json::from_reader(
         File::open(path.as_str()).unwrap_or_else(|_| panic!("{path:?} does not exist")),
     )
