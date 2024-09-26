@@ -231,17 +231,19 @@ fn test_two_layer_compression() {
     // let old_snark = old_gen_snark_shplonk(&params_app, &pk_layer0, circuit, &mut rng, None::<String>).unwrap();
 
     // Generate base layer snark
+    dbg!(1);
     let params_app = gen_srs(8);
-    let k = 21u32;
+    let k = 25u32;
     let params = gen_srs(k);
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
     let mut rng = test_rng();
 
+    dbg!(2);
     // First layer of compression
     let layer1_agg_params = AggregationConfigParams {
         degree: 21,
-        num_advice: 15,
-        num_lookup_advice: 2,
+        num_advice: 2,
+        num_lookup_advice: 1,
         num_fixed: 1,
         lookup_bits: 20,
     };
@@ -255,9 +257,10 @@ fn test_two_layer_compression() {
         None::<String>,
     );
 
+    dbg!(3);
     // Second layer of compression
     let layer2_agg_params = AggregationConfigParams {
-        degree: 21,
+        degree: 25,
         num_advice: 1,
         num_lookup_advice: 1,
         num_fixed: 1,
