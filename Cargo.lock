@@ -4762,6 +4762,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier"
 version = "0.1.8"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=axiom-community-edition#67e7a5627037a09dae2c817abbf74f7e0e4eda65"
 dependencies = [
  "halo2-base 0.4.1",
  "halo2-ecc 0.4.1",
@@ -4805,6 +4806,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.1.8"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=axiom-community-edition#67e7a5627037a09dae2c817abbf74f7e0e4eda65"
 dependencies = [
  "bincode",
  "ethereum-types",
