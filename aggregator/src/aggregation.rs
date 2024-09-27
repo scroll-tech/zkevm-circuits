@@ -12,6 +12,7 @@ mod rlc;
 mod util;
 
 pub(crate) use batch_data::BatchDataConfig;
+pub use decoder::decode_bytes;
 pub(crate) use decoder::{witgen, DecoderConfig, DecoderConfigArgs};
 pub(crate) use rlc::{RlcConfig, POWS_OF_256};
 

@@ -1,8 +1,6 @@
 use std::{collections::BTreeMap, env, iter::repeat};
 
-use aggregator::{
-    data_availability::eip4844::decode_blob, BatchData, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS,
-};
+use aggregator::{decode_bytes, BatchData, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
 use anyhow::{bail, Result};
 use eth_types::H256;
 use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
@@ -208,7 +206,7 @@ impl<'params> Prover<'params> {
         // sanity check:
         // - conditionally decoded blob should match batch data.
         let batch_bytes = batch_data.get_batch_data_bytes();
-        let decoded_blob_bytes = decode_blob(&batch.blob_bytes)?;
+        let decoded_blob_bytes = decode_bytes(&batch.blob_bytes)?;
         assert_eq!(
             batch_bytes, decoded_blob_bytes,
             "BatchProvingTask(sanity) mismatch batch bytes and decoded blob bytes",

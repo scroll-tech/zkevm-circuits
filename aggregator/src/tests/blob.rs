@@ -28,9 +28,9 @@ use crate::{
         BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256,
     },
     data_availability::eip4844::{
-        blob_data::BlobDataConfig, decode_blob, get_blob_bytes, get_coefficients,
-        get_versioned_hash,
+        blob_data::BlobDataConfig, get_blob_bytes, get_coefficients, get_versioned_hash,
     },
+    decode_bytes,
     param::ConfigParams,
     BatchDataConfig, ChunkInfo, MAX_AGG_SNARKS,
 };
@@ -630,7 +630,7 @@ fn test_decode_blob() {
 
     // case 2: yes encode
     assert_eq!(
-        decode_blob(&conditional_encode(batch_bytes.as_slice(), true)).expect("should decode"),
+        decode_bytes(&conditional_encode(batch_bytes.as_slice(), true)).expect("should decode"),
         batch_bytes,
     );
 }
