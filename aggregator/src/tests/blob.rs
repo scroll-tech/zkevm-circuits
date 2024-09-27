@@ -21,14 +21,14 @@ use crate::{
         witgen::{process, MultiBlockProcessResult},
         RlcConfig,
     },
-    data_availability::eip4844::barycentric::{
-        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig,
-    },
     data_availability::eip4844::blob::{
         BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256,
     },
     data_availability::eip4844::{
         blob_data::BlobDataConfig, get_blob_bytes, get_coefficients, get_versioned_hash,
+    },
+    data_availability::eip4844::{
+        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig,
     },
     decode_bytes,
     param::ConfigParams,

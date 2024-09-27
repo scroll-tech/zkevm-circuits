@@ -1,5 +1,5 @@
 /// Config to evaluate blob polynomial at a random challenge.
-pub mod barycentric;
+mod barycentric;
 pub use barycentric::{
     interpolate, AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BLS_MODULUS,
 };
