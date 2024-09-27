@@ -23,6 +23,8 @@ pub mod eip4844;
 mod param;
 /// utilities
 mod util;
+/// Data availibility checks
+mod data_availability;
 
 #[cfg(test)]
 mod tests;
