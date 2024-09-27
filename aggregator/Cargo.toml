@@ -45,8 +45,8 @@ zstd-encoder = { package = "encoder", git = "https://github.com/scroll-tech/da-c
 csv = "1.1"
 
 [features]
-default = ["revm-precompile/c-kzg", "halo2_proofs/circuit-params", "da-4844"]
+default = ["revm-precompile/c-kzg", "halo2_proofs/circuit-params", "da-eip4844"]
 display = []
 print-trace = ["ark-std/print-trace"]
 da-avail = []
-da-4844 = []
+da-eip4844 = []

@@ -10,8 +10,8 @@ use itertools::Itertools;
 use zkevm_circuits::{table::U8Table, util::Challenges};
 
 use crate::{
-    aggregation::rlc::POWS_OF_256,
-    blob::{BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
+    aggregation::POWS_OF_256,
+    data_availability::eip4844::blob::{BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
     RlcConfig,
 };
 

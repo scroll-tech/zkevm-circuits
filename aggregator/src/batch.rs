@@ -7,9 +7,9 @@ use gadgets::{util::split_h256, Field};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    blob::{BatchData, PointEvaluationAssignments},
     chunk::ChunkInfo,
-    eip4844::{get_coefficients, get_versioned_hash},
+    data_availability::eip4844::blob::{BatchData, PointEvaluationAssignments},
+    data_availability::eip4844::{get_coefficients, get_versioned_hash},
 };
 
 /// Batch header provides additional fields from the context (within recursion)

@@ -25,14 +25,14 @@ use zkevm_circuits::util::Challenges;
 use crate::{
     aggregation::{decoder::WORKED_EXAMPLE, witgen::process, BatchCircuitConfig},
     batch::BatchHash,
-    blob::BatchData,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
+    data_availability::eip4844::barycentric::AssignedBarycentricEvaluationConfig,
+    data_availability::eip4844::blob::BatchData,
     util::parse_hash_digest_cells,
     witgen::{zstd_encode, MultiBlockProcessResult},
-    AssignedBarycentricEvaluationConfig, ConfigParams, LOG_DEGREE, PI_CHAIN_ID,
-    PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH,
-    PI_PARENT_STATE_ROOT,
+    ConfigParams, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
+    PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
 
 /// Batch circuit, the chunk aggregation routine below recursion circuit

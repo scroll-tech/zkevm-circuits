@@ -19,11 +19,18 @@ use zkevm_circuits::{
 use crate::{
     aggregation::{
         witgen::{process, MultiBlockProcessResult},
-        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig,
         RlcConfig,
     },
-    blob::{BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256},
-    eip4844::{decode_blob, get_blob_bytes, get_coefficients, get_versioned_hash},
+    data_availability::eip4844::barycentric::{
+        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig,
+    },
+    data_availability::eip4844::blob::{
+        BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256,
+    },
+    data_availability::eip4844::{
+        blob_data::BlobDataConfig, decode_blob, get_blob_bytes, get_coefficients,
+        get_versioned_hash,
+    },
     param::ConfigParams,
     BatchDataConfig, ChunkInfo, MAX_AGG_SNARKS,
 };

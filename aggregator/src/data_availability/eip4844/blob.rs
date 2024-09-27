@@ -1,8 +1,5 @@
-use crate::{
-    aggregation::{interpolate, BLS_MODULUS},
-    eip4844::get_coefficients,
-    BatchHash, ChunkInfo,
-};
+use super::{get_coefficients, interpolate, BLS_MODULUS};
+use crate::{BatchHash, ChunkInfo};
 
 use eth_types::{H256, U256};
 use ethers_core::utils::keccak256;
@@ -692,7 +689,7 @@ impl BatchDataRow<Fr> {
 mod tests {
     use super::*;
     use crate::{
-        eip4844::{get_blob_bytes, get_versioned_hash},
+        data_availability::eip4844::{get_blob_bytes, get_versioned_hash},
         MAX_AGG_SNARKS,
     };
 

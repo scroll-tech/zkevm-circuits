@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, env, iter::repeat};
 
 use aggregator::{
-    eip4844::decode_blob, BatchData, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS,
+    data_availability::eip4844::decode_blob, BatchData, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS,
 };
 use anyhow::{bail, Result};
 use eth_types::H256;

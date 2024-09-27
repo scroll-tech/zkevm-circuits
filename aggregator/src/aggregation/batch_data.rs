@@ -13,11 +13,9 @@ use zkevm_circuits::{
     util::{Challenges, Expr},
 };
 
-use crate::{
-    aggregation::rlc::POWS_OF_256,
-    blob::{BatchData, BLOB_WIDTH, N_BYTES_U256},
-    RlcConfig,
-};
+#[cfg(feature = "da-eip4844")]
+use crate::data_availability::eip4844::blob::{BLOB_WIDTH, N_BYTES_U256};
+use crate::{aggregation::rlc::POWS_OF_256, BatchData, RlcConfig};
 
 #[derive(Clone, Debug)]
 pub struct BatchDataConfig<const N_SNARKS: usize> {
