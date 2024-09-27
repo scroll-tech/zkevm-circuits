@@ -267,16 +267,15 @@ fn test_two_layer_compression() {
         lookup_bits: 20,
     };
     let mut rng = test_rng();
-    let _compression_circuit_layer2 =
+    let compression_circuit_layer2 =
         CompressionCircuit::new_from_ce_snark(layer2_agg_params, &params, compression_snark, true, &mut rng).unwrap();
-
-    // let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
-    // let compression_snark_layer2 = gen_snark_shplonk(
-    //     &params2,
-    //     &pk_layer2,
-    //     compression_circuit_layer2.clone(),
-    //     None::<String>,
-    // );
+    let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
+    let _compression_snark_layer2 = gen_snark_shplonk(
+        &params, 
+        &pk_layer2,
+        compression_circuit_layer2,
+        None::<String>,
+    );
 
 //     verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
 }
