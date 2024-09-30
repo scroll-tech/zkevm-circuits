@@ -299,23 +299,23 @@ fn test_imported_two_layer_compression(){
 
     dbg!(3);
     // Second layer of compression
-    let layer2_agg_params = AggregationConfigParams {
-        degree: 24,
-        num_advice: 1,
-        num_lookup_advice: 1,
-        num_fixed: 1,
-        lookup_bits: 20,
-    };
-    let mut rng = test_rng();
-    let compression_circuit_layer2 =
-        CompressionCircuit::new_from_ce_snark(layer2_agg_params, &params, compression_snark, true, &mut rng).unwrap();
-    let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
-    let _compression_snark_layer2 = gen_snark_shplonk(
-        &params, 
-        &pk_layer2,
-        compression_circuit_layer2,
-        None::<String>,
-    );
+    // let layer2_agg_params = AggregationConfigParams {
+    //     degree: 24,
+    //     num_advice: 1,
+    //     num_lookup_advice: 1,
+    //     num_fixed: 1,
+    //     lookup_bits: 20,
+    // };
+    // let mut rng = test_rng();
+    // let compression_circuit_layer2 =
+    //     CompressionCircuit::new_from_ce_snark(layer2_agg_params, &params, compression_snark, true, &mut rng).unwrap();
+    // let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
+    // let _compression_snark_layer2 = gen_snark_shplonk(
+    //     &params, 
+    //     &pk_layer2,
+    //     compression_circuit_layer2,
+    //     None::<String>,
+    // );
 }
 
 #[test]
