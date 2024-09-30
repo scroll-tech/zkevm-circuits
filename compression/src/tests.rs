@@ -166,8 +166,8 @@ fn test_standard_plonk_compression() {
 
     let layer1_agg_params = AggregationConfigParams {
         degree: 21,
-        num_advice: 15,
-        num_lookup_advice: 2,
+        num_advice: 2,
+        num_lookup_advice: 1,
         num_fixed: 1,
         lookup_bits: 20,
     };
@@ -282,8 +282,8 @@ fn test_imported_two_layer_compression(){
     // First layer of compression
     let layer1_agg_params = AggregationConfigParams {
         degree: 21,
-        num_advice: 2,
-        num_lookup_advice: 1,
+        num_advice: 15,
+        num_lookup_advice: 2,
         num_fixed: 1,
         lookup_bits: 20,
     };
