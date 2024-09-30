@@ -272,7 +272,7 @@ fn test_standard_two_layer_compression() {
 
 #[test]
 fn test_imported_two_layer_compression(){
-    let k = 25u32;
+    let k = 24u32;
     let params = gen_srs(k);
     let inner_snark: snark_verifier_sdk::Snark =
         prover::io::from_json_file("./src/inner_snark_inner_7156762.json").unwrap();
@@ -281,8 +281,8 @@ fn test_imported_two_layer_compression(){
     dbg!(2);
     // First layer of compression
     let layer1_agg_params = AggregationConfigParams {
-        degree: 25,
-        num_advice: 30,
+        degree: 24,
+        num_advice: 15,
         num_lookup_advice: 2,
         num_fixed: 1,
         lookup_bits: 20,
@@ -300,7 +300,7 @@ fn test_imported_two_layer_compression(){
     dbg!(3);
     // Second layer of compression
     let layer2_agg_params = AggregationConfigParams {
-        degree: 25,
+        degree: 24,
         num_advice: 1,
         num_lookup_advice: 1,
         num_fixed: 1,
