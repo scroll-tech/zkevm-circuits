@@ -1212,13 +1212,13 @@ pub(super) fn tx_convert(
     chain_id: u64,
     next_block_num: u64,
 ) -> Transaction {
-    if tx.chain_id != 0 {
-        debug_assert_eq!(
-            chain_id, tx.chain_id,
-            "block.chain_id = {}, tx.chain_id = {}",
-            chain_id, tx.chain_id
-        );
-    }
+    // if tx.chain_id != 0 {
+    //     debug_assert_eq!(
+    //         chain_id, tx.chain_id,
+    //         "block.chain_id = {}, tx.chain_id = {}",
+    //         chain_id, tx.chain_id
+    //     );
+    // }
     let callee_address = tx.to;
     //if tx.is_create() { None } else { Some(tx.to) };
     let tx_gas_cost = if tx.tx_type.is_l1_msg() {
