@@ -51,7 +51,7 @@ This repository contains several Rust packages that implement the zkevm. The hig
 
 - Integration tests for all circuits
 
-[`keccak256`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/keccak256)
+[`keccak`](https://github.com/scroll-tech/zkevm-circuits/blob/develop/zkevm-circuits/src/keccak_circuit.rs)
 
 - (Deprecated) Modules for Keccak hash circuit
 
