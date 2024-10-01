@@ -40,7 +40,7 @@ bitstream-io = "2.2.0"
 zstd-encoder = { package = "encoder", git = "https://github.com/scroll-tech/da-codec.git", tag = "v0.1.0" }
 
 [dev-dependencies]
-
+anyhow = "1.0"
 csv = "1.1"
 
 [features]

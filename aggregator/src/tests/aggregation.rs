@@ -1,4 +1,8 @@
-use std::{fs, path::Path, process};
+use std::{
+    fs,
+    path::Path,
+    process,
+};
 
 use ark_std::{end_timer, start_timer, test_rng};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, poly::commitment::Params};
@@ -15,6 +19,15 @@ use crate::{
     tests::mock_chunk::MockChunkCircuit,
     BatchData, ChunkInfo,
 };
+
+#[test]
+fn batch_circuit_experimental() -> anyhow::Result<()> {
+    let circuit: BatchCircuit<2> = build_batch_circuit_json_snark()?;
+    let instance = circuit.instances();
+    let mock_prover = MockProver::<Fr>::run(21, &circuit, instance)?;
+    mock_prover.assert_satisfied_par();
+    Ok(())
+}
 
 #[test]
 fn batch_circuit_raw() {
@@ -304,4 +317,49 @@ fn build_batch_circuit_skip_encoding<const N_SNARKS: usize>() -> BatchCircuit<N_
         batch_hash,
     )
     .unwrap()
+}
+
+/// Build a batch circuit by deserialising a SNARK from a JSON dump. The [`ChunkInfo`] itself is
+/// also fetched from a JSON dump.
+fn build_batch_circuit_json_snark<const N_SNARKS: usize>() -> anyhow::Result<BatchCircuit<N_SNARKS>>
+{
+    let chunk: ChunkInfo = {
+        let raw = std::fs::read_to_string("data/json-dump/trace.json")?;
+        let block_trace: eth_types::l2_types::BlockTrace = serde_json::from_str(&raw)?;
+        ChunkInfo::from_block_traces(&[block_trace])
+    };
+    let snark: snark_verifier_sdk::Snark = {
+        let raw = std::fs::read_to_string("data/json-dump/snark.json")?;
+        serde_json::from_str(&raw)?
+    };
+    let padding_chunk = {
+        let mut padding_chunk = chunk.clone();
+        padding_chunk.is_padding = true;
+        padding_chunk
+    };
+    let padded_chunks = std::iter::once(chunk)
+        .chain(std::iter::repeat(padding_chunk))
+        .take(N_SNARKS)
+        .collect_vec();
+    let batch_data = BatchData::<N_SNARKS>::new(1, &padded_chunks);
+    let batch_bytes = batch_data.get_batch_data_bytes();
+    let blob_bytes = get_blob_bytes(&batch_bytes);
+    let batch_header = BatchHeader::construct_from_chunks(
+        4,
+        1,
+        0,
+        0,
+        eth_types::H256::default(),
+        123,
+        &padded_chunks,
+        &blob_bytes,
+    );
+    let batch_info = BatchHash::construct(&padded_chunks, batch_header, &blob_bytes);
+    let snarks = std::iter::once(snark.clone())
+        .chain(std::iter::repeat(snark))
+        .take(N_SNARKS)
+        .collect_vec();
+    let params = gen_srs(8);
+    let rng = test_rng();
+    Ok(BatchCircuit::new(&params, &snarks, rng, batch_info).expect("should be OK"))
 }

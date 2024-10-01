@@ -42,6 +42,7 @@ dependencies = [
 name = "aggregator"
 version = "0.14.0"
 dependencies = [
+ "anyhow",
  "ark-std 0.3.0",
  "bitstream-io",
  "c-kzg",
