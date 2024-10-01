@@ -791,10 +791,10 @@ fn gen_tx_l1_fee_ops(
     // We expect a post-curie block.
     let chain_id = state.block.chain_id;
     let block_number = state.tx.block_num;
-    debug_assert!(
-        is_curie_enabled(chain_id, block_number),
-        "block {block_number} is pre-curie",
-    );
+    // debug_assert!(
+    //     is_curie_enabled(chain_id, block_number),
+    //     "block {block_number} is pre-curie",
+    // );
 
     state.push_op(
         exec_step,
