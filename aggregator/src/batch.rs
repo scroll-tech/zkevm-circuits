@@ -7,8 +7,9 @@ use gadgets::{util::split_h256, Field};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    aggregation::BatchData,
     chunk::ChunkInfo,
-    data_availability::eip4844::blob::{BatchData, PointEvaluationAssignments},
+    data_availability::eip4844::blob::PointEvaluationAssignments,
     data_availability::eip4844::{get_coefficients, get_versioned_hash},
 };
 

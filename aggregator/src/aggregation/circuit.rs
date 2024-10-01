@@ -23,11 +23,10 @@ use std::{env, fs::File, rc::Rc};
 use zkevm_circuits::util::Challenges;
 
 use crate::{
-    aggregation::{decoder::WORKED_EXAMPLE, witgen::process, BatchCircuitConfig},
+    aggregation::{decoder::WORKED_EXAMPLE, witgen::process, BatchCircuitConfig, BatchData},
     batch::BatchHash,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
-    data_availability::eip4844::blob::BatchData,
     data_availability::eip4844::AssignedBarycentricEvaluationConfig,
     util::parse_hash_digest_cells,
     witgen::{zstd_encode, MultiBlockProcessResult},

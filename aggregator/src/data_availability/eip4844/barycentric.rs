@@ -356,7 +356,8 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 mod tests {
     use super::*;
     use crate::{
-        data_availability::eip4844::blob::{BatchData, KZG_TRUSTED_SETUP},
+        aggregation::BatchData,
+        data_availability::eip4844::blob::KZG_TRUSTED_SETUP,
         data_availability::eip4844::{get_blob_bytes, get_coefficients},
         MAX_AGG_SNARKS,
     };

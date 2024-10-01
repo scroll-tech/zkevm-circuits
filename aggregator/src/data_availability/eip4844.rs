@@ -6,12 +6,13 @@ pub use barycentric::{
 
 /// blob struct and constants
 pub mod blob;
-use blob::{BLOB_WIDTH, KZG_TRUSTED_SETUP, N_BLOB_BYTES, N_BYTES_U256};
 
 /// Config to constrain blob data (encoded batch data)
 pub mod blob_data;
 pub use blob_data::BlobDataConfig;
 
+use crate::aggregation::batch_data::{N_BLOB_BYTES, N_BYTES_U256};
+use blob::{BLOB_WIDTH, KZG_TRUSTED_SETUP};
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;

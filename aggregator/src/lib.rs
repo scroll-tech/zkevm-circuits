@@ -32,6 +32,5 @@ pub use chunk::ChunkInfo;
 pub use compression::*;
 pub use constants::MAX_AGG_SNARKS;
 pub(crate) use constants::*;
-pub use data_availability::eip4844::blob::BatchData;
 pub use param::*;
 pub use recursion::*;

@@ -18,12 +18,11 @@ use zkevm_circuits::{
 
 use crate::{
     aggregation::{
+        batch_data::{N_BLOB_BYTES, N_BYTES_U256},
         witgen::{process, MultiBlockProcessResult},
-        RlcConfig,
+        BatchData, RlcConfig,
     },
-    data_availability::eip4844::blob::{
-        BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256,
-    },
+    data_availability::eip4844::blob::PointEvaluationAssignments,
     data_availability::eip4844::{
         blob_data::BlobDataConfig, get_blob_bytes, get_coefficients, get_versioned_hash,
     },
