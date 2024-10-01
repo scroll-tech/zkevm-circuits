@@ -140,7 +140,7 @@ impl Bytecode {
     pub fn get_pos(&self, marker: &str) -> usize {
         *self
             .markers
-            .get(&marker.to_string())
+            .get(marker)
             .unwrap_or_else(|| panic!("marker '{marker}' not found"))
     }
 
@@ -249,11 +249,11 @@ impl FromStr for OpcodeWithData {
     }
 }
 
-impl ToString for OpcodeWithData {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for OpcodeWithData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OpcodeWithData::Opcode(opcode) => format!("{opcode:?}"),
-            OpcodeWithData::PushWithData(n, word) => format!("PUSH{n}({word})"),
+            OpcodeWithData::Opcode(opcode) => write!(f, "{opcode:?}"),
+            OpcodeWithData::PushWithData(n, word) => write!(f, "PUSH{n}({word})"),
         }
     }
 }

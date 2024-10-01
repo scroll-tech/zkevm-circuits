@@ -28,7 +28,6 @@ mod dummy_circuit {
     impl<F: Field, C: CircuitExt<F>> Circuit<F> for CsProxy<F, C> {
         type Config = C::Config;
         type FloorPlanner = C::FloorPlanner;
-        #[cfg(feature = "circuit-params")]
         type Params = ();
 
         fn without_witnesses(&self) -> Self {

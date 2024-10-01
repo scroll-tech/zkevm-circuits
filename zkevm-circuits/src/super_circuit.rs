@@ -127,8 +127,13 @@ pub struct SuperCircuitConfig<F: Field> {
     sha256_circuit: SHA256CircuitConfig,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
+    #[cfg(all(feature = "dual-bytecode", not(feature = "poseidon-codehash")))]
+    bytecode_circuit1: BytecodeCircuitConfig<F>,
+
     #[cfg(feature = "poseidon-codehash")]
     bytecode_circuit: ToHashBlockCircuitConfig<F, HASHBLOCK_BYTES_IN_FIELD>,
+    #[cfg(all(feature = "dual-bytecode", feature = "poseidon-codehash"))]
+    bytecode_circuit1: ToHashBlockCircuitConfig<F, HASHBLOCK_BYTES_IN_FIELD>,
     copy_circuit: CopyCircuitConfig<F>,
     keccak_circuit: KeccakCircuitConfig<F>,
     poseidon_circuit: PoseidonCircuitConfig<F>,
@@ -184,6 +189,9 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "poseidon table");
 
         let bytecode_table = BytecodeTable::construct(meta);
+        #[cfg(feature = "dual-bytecode")]
+        let bytecode_table1 = BytecodeTable::construct(meta);
+
         log_circuit_info(meta, "bytecode table");
         let block_table = BlockTable::construct(meta);
         log_circuit_info(meta, "block table");
@@ -282,12 +290,35 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 challenges: challenges_expr.clone(),
             },
         );
+
+        #[cfg(all(feature = "dual-bytecode", not(feature = "poseidon-codehash")))]
+        let bytecode_circuit1 = BytecodeCircuitConfig::new(
+            meta,
+            BytecodeCircuitConfigArgs {
+                bytecode_table: bytecode_table1.clone(),
+                keccak_table: keccak_table.clone(),
+                challenges: challenges_expr.clone(),
+            },
+        );
         #[cfg(feature = "poseidon-codehash")]
         let bytecode_circuit = ToHashBlockCircuitConfig::new(
             meta,
             ToHashBlockBytecodeCircuitConfigArgs {
                 base_args: BytecodeCircuitConfigArgs {
                     bytecode_table: bytecode_table.clone(),
+                    keccak_table: keccak_table.clone(),
+                    challenges: challenges_expr.clone(),
+                },
+                poseidon_table,
+            },
+        );
+
+        #[cfg(all(feature = "dual-bytecode", feature = "poseidon-codehash"))]
+        let bytecode_circuit1 = ToHashBlockCircuitConfig::new(
+            meta,
+            ToHashBlockBytecodeCircuitConfigArgs {
+                base_args: BytecodeCircuitConfigArgs {
+                    bytecode_table: bytecode_table1.clone(),
                     keccak_table: keccak_table.clone(),
                     challenges: challenges_expr.clone(),
                 },
@@ -303,6 +334,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table: bytecode_table.clone(),
+                #[cfg(feature = "dual-bytecode")]
+                bytecode_table1: bytecode_table1.clone(),
                 copy_table,
                 q_enable: q_copy_table,
                 challenges: challenges_expr.clone(),
@@ -350,6 +383,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table,
+                #[cfg(feature = "dual-bytecode")]
+                bytecode_table1,
                 block_table: block_table.clone(),
                 copy_table,
                 keccak_table: keccak_table.clone(),
@@ -406,6 +441,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             ecc_circuit,
             sha256_circuit,
             bytecode_circuit,
+            #[cfg(feature = "dual-bytecode")]
+            bytecode_circuit1,
             copy_circuit,
             keccak_circuit,
             poseidon_circuit,
@@ -449,6 +486,9 @@ pub struct SuperCircuit<
     pub pi_circuit: PiCircuit<F>,
     /// Bytecode Circuit
     pub bytecode_circuit: BytecodeCircuit<F>,
+    #[cfg(feature = "dual-bytecode")]
+    /// second Bytecode Circuit
+    pub bytecode_circuit1: BytecodeCircuit<F>,
     /// Copy Circuit
     pub copy_circuit: CopyCircuit<F>,
     /// Exp Circuit
@@ -600,7 +640,16 @@ impl<
         let state_circuit = StateCircuit::new_from_block(block);
         let tx_circuit = TxCircuit::new_from_block(block);
         let pi_circuit = PiCircuit::new_from_block(block);
+
+        // Get each sub circuit's bytecodes and assign
+        #[cfg(feature = "dual-bytecode")]
+        let bytecode_circuit = BytecodeCircuit::new_from_block_for_dual_circuit(block, true);
+        #[cfg(feature = "dual-bytecode")]
+        let bytecode_circuit1 = BytecodeCircuit::new_from_block_for_dual_circuit(block, false);
+
+        #[cfg(not(feature = "dual-bytecode"))]
         let bytecode_circuit = BytecodeCircuit::new_from_block(block);
+
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
         let exp_circuit = ExpCircuit::new_from_block(block);
         let modexp_circuit = ModExpCircuit::new_from_block(block);
@@ -618,6 +667,8 @@ impl<
             tx_circuit,
             pi_circuit,
             bytecode_circuit,
+            #[cfg(feature = "dual-bytecode")]
+            bytecode_circuit1,
             copy_circuit,
             exp_circuit,
             keccak_circuit,
@@ -640,6 +691,8 @@ impl<
         instance.extend_from_slice(&self.pi_circuit.instance());
         instance.extend_from_slice(&self.tx_circuit.instance());
         instance.extend_from_slice(&self.bytecode_circuit.instance());
+        #[cfg(feature = "dual-bytecode")]
+        instance.extend_from_slice(&self.bytecode_circuit1.instance());
         instance.extend_from_slice(&self.copy_circuit.instance());
         instance.extend_from_slice(&self.state_circuit.instance());
         instance.extend_from_slice(&self.exp_circuit.instance());
@@ -693,6 +746,16 @@ impl<
         log::debug!("assigning bytecode_circuit");
         self.bytecode_circuit
             .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
+        #[cfg(feature = "dual-bytecode")]
+        {
+            log::debug!("assigning second bytecode_circuit1");
+            self.bytecode_circuit1.synthesize_sub(
+                &config.bytecode_circuit1,
+                challenges,
+                layouter,
+            )?;
+        }
+
         log::debug!("assigning tx_circuit");
         self.tx_circuit
             .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
@@ -752,7 +815,6 @@ impl<
 {
     type Config = (SuperCircuitConfig<Fr>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    #[cfg(feature = "circuit-params")]
     type Params = ();
 
     fn without_witnesses(&self) -> Self {

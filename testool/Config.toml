@@ -87,11 +87,6 @@ max_gas = 0
 max_steps = 100000
 ignore_tests = []
 
-[[set]]
-id = "sigkill"
-desc = "tests that sigkill"
-tests = []
-
 # skipped tests, do not need to be fixed  --------------------------------------------------
 
 # ignored paths -------------------------------------------------------------------------

@@ -1,6 +1,4 @@
 use eth_types::{
-    constants::SCROLL_COINBASE,
-    geth_types::{self, Account, BlockConstants},
     state_db::{self, CodeDB, StateDB},
     utils::hash_code_keccak,
     Address, EthBlock, GethExecTrace, ToWord, Word, H256, KECCAK_CODE_HASH_EMPTY,
@@ -11,7 +9,6 @@ use hex::decode_to_slice;
 use super::{AccessSet, Block, Blocks, CircuitInputBuilder, CircuitsParams};
 use crate::{error::Error, rpc::GethClient};
 
-use std::str::FromStr;
 use std::{collections::HashMap, iter};
 
 /// Struct that wraps a GethClient and contains methods to perform all the steps
@@ -461,6 +458,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         geth_traces: impl Iterator<Item = &GethExecTrace>,
         complete_prestate: bool,
     ) -> Result<external_tracer::TraceConfig, Error> {
+        use std::str::FromStr;
+
         let (proofs, codes) = self.get_pre_state(geth_traces)?;
         let proofs = if complete_prestate {
             self.complete_prestate(eth_block, proofs).await?
@@ -470,14 +469,14 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         // We will not need to regen pk each time if we use same coinbase.
         //let coinbase =  eth_block.author.unwrap();
-        let coinbase = Address::from_str(SCROLL_COINBASE).unwrap();
+        let coinbase = Address::from_str(eth_types::constants::SCROLL_COINBASE).unwrap();
         //let difficulty = eth_block.difficulty;
         let difficulty = Word::zero();
 
         Ok(external_tracer::TraceConfig {
             chain_id: self.chain_id,
             history_hashes: vec![eth_block.parent_hash.to_word()],
-            block_constants: BlockConstants {
+            block_constants: eth_types::geth_types::BlockConstants {
                 coinbase,
                 timestamp: eth_block.timestamp,
                 number: eth_block.number.unwrap(),
@@ -488,7 +487,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             accounts: proofs
                 .into_iter()
                 .map(|proof| {
-                    let acc = Account {
+                    let acc = eth_types::geth_types::Account {
                         address: proof.address,
                         nonce: proof.nonce,
                         balance: proof.balance,
@@ -509,7 +508,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             transactions: eth_block
                 .transactions
                 .iter()
-                .map(geth_types::Transaction::from)
+                .map(eth_types::geth_types::Transaction::from)
                 .collect(),
             logger_config: Default::default(),
             chain_config: None,

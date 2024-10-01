@@ -54,6 +54,12 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             OpcodeId::STOP.expr(),
         );
 
+        cb.require_equal(
+            "code_len_gadget and opcode_gadget have the same is_first_bytecode_table",
+            opcode_gadget.is_first_bytecode_table.expr(),
+            code_len_gadget.is_first_bytecode_table.expr(),
+        );
+
         // Call ends with STOP must be successful
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 1.expr());
 

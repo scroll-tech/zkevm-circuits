@@ -502,7 +502,6 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
-            #[cfg(feature = "circuit-params")]
             type Params = ();
 
             fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {

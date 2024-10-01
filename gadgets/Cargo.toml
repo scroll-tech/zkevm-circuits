@@ -14,3 +14,6 @@ poseidon-base.workspace = true
 [dev-dependencies]
 rand_xorshift.workspace = true
 rand.workspace = true
+
+[features]
+default = ["halo2_proofs/circuit-params"]
