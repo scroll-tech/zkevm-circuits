@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fmt::write, path::Path};
 use rand::{
     RngCore,
     rngs::OsRng
@@ -28,6 +28,7 @@ use ark_std::test_rng;
 use halo2_proofs::dev::MockProver;
 use crate::{params, CompressionCircuit};
 use crate::circuit::to_ce_snark;
+use aggregator::MockChunkCircuit;
 
 #[derive(Clone, Copy)]
 pub struct StandardPlonkConfig {
@@ -163,209 +164,188 @@ fn test_standard_plonk_compression() {
     let params = gen_srs(k);
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
 
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 21,
+        num_advice: 2,
+        num_lookup_advice: 1,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
     let rng = test_rng();
-    let has_accumulator = false;
-    let compression_circuit = CompressionCircuit::new_from_ce_snark(k, &params, snarks[0].clone(), has_accumulator, rng).unwrap();
-    let num_instances = compression_circuit.num_instance();
+    let compression_circuit = CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, snarks[0].clone(), false, rng).unwrap();
     let instances = compression_circuit.instances();
-
-    println!("num_instances {:?}", num_instances);
-    println!("instance length {:?}", instances.len());
-
     let mock_prover = MockProver::<Fr>::run(k, &compression_circuit, instances).unwrap();
-
     mock_prover.assert_satisfied_par();
 }
 
 #[test]
 fn test_mock_compression() {
-    use crate::CompressionCircuit;
-    use aggregator::MockChunkCircuit;
-
     let k0 = 8u32;
     let params_app = gen_srs(k0);
 
     let circuit = MockChunkCircuit::random(OsRng, false, false);
-
     let pk = gen_pk(&params_app, &circuit, None);
-
     let mut rng = test_rng();
     let old_snark = old_gen_snark_shplonk(&params_app, &pk, circuit, &mut rng, None::<String>).unwrap();
 
     let k1 = 21u32;
     let params = gen_srs(k1);
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 21,
+        num_advice: 15,
+        num_lookup_advice: 2,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
 
     let mut rng = test_rng();
     let compression_circuit =
-        CompressionCircuit::new_from_ce_snark(k1, &params, to_ce_snark(&old_snark), true, &mut rng).unwrap();
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&old_snark), false, &mut rng).unwrap();
     let instance = compression_circuit.instances();
-    println!("instance length {:?}", instance.len());
-
     let mock_prover = MockProver::<Fr>::run(k1, &compression_circuit, instance).unwrap();
-
     mock_prover.assert_satisfied_par()
 }
 
-// use crate::{circuit::to_ce_snark, CompressionCircuit};
-// use ce_snark_verifier::{
-//     loader::halo2::halo2_ecc::halo2_base::{halo2_proofs, utils::fs::gen_srs},
-//     pcs::kzg::{Bdfg21, KzgAs},
-// };
-// use ce_snark_verifier_sdk::{
-//     evm::{evm_verify, gen_evm_proof_shplonk, gen_evm_verifier},
-//     gen_pk,
-//     halo2::gen_snark_shplonk,
-//     CircuitExt, Snark,
-// };
-// use halo2_proofs::{dev::MockProver, poly::commitment::Params, poly::kzg::commitment::ParamsKZG};
-// use halo2curves::bn256::{Bn256, Fr};
-// use std::{fs, path::Path, process};
+#[test]
+fn test_standard_two_layer_compression() {
+    // Generate base layer snark
+    // let k0 = 8u32;
+    // let params_app = gen_srs(k0);
+    // let circuit = MockChunkCircuit::random(OsRng, false, false);
+
+    // let pk_layer0 = gen_pk(&params_app, &circuit, None);
+    // let mut rng = test_rng();
+    // let old_snark = old_gen_snark_shplonk(&params_app, &pk_layer0, circuit, &mut rng, None::<String>).unwrap();
+
+    // Generate base layer snark
+    dbg!(1);
+    let params_app = gen_srs(8);
+    let k = 25u32;
+    let params = gen_srs(k);
+    let snarks = [(); 1].map(|_| gen_application_snark(&params_app));
+    let mut rng = test_rng();
+
+    dbg!(2);
+    // First layer of compression
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 21,
+        num_advice: 2,
+        num_lookup_advice: 1,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
+    let compression_circuit =
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, snarks[0].clone(), false, &mut rng).unwrap();
+    let pk_layer1 = gen_pk(&params, &compression_circuit, None);
+    let compression_snark = gen_snark_shplonk(
+        &params,
+        &pk_layer1,
+        compression_circuit.clone(),
+        None::<String>,
+    );
+
+    dbg!(3);
+    // Second layer of compression
+    let layer2_agg_params = AggregationConfigParams {
+        degree: 25,
+        num_advice: 1,
+        num_lookup_advice: 1,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
+    let mut rng = test_rng();
+    let compression_circuit_layer2 =
+        CompressionCircuit::new_from_ce_snark(layer2_agg_params, &params, compression_snark, true, &mut rng).unwrap();
+    let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
+    let _compression_snark_layer2 = gen_snark_shplonk(
+        &params, 
+        &pk_layer2,
+        compression_circuit_layer2,
+        None::<String>,
+    );
+}
 
 // #[test]
-// fn test_two_layer_proof_compression() {
-//     env_logger::init();
+// fn test_mock_circuit_two_layer_compression() {
 
-//     if std::path::Path::new("data").is_dir() {
-//         println!("data folder already exists\n");
-//     } else {
-//         println!("Generating data folder used for testing\n");
-//         std::fs::create_dir("data").unwrap();
-//     }
-
-//     let dir = format!("data/{}", process::id());
-//     let path = Path::new(dir.as_str());
-//     fs::create_dir(path).unwrap();
-
-//     let k0 = 19;
-//     let k1 = 25;
-//     let k2 = 25;
-
-//     let mut rng = test_rng();
-//     let layer_2_params = gen_srs(k2);
-
-//     let circuit = MockChunkCircuit::random(&mut rng, false, false);
-//     let layer_0_snark = layer_0(&circuit, layer_2_params.clone(), k0, path);
-
-//     std::env::set_var("COMPRESSION_CONFIG", "./configs/compression_wide.config");
-//     let layer_1_snark = compression_layer_snark(layer_0_snark, layer_2_params.clone(), k1, 1);
-
-//     std::env::set_var("COMPRESSION_CONFIG", "./configs/compression_thin.config");
-//     verify_compression_layer_evm(layer_1_snark, layer_2_params, k2, path, 2);
 // }
 
-// #[test]
-// fn test_to_ce_snark() {
-//     let mut rng = test_rng();
-//     let k0 = 8;
+#[test]
+fn test_imported_two_layer_compression(){
+    let k = 24u32;
+    let params = gen_srs(k);
+    let inner_snark: snark_verifier_sdk::Snark =
+        prover::io::from_json_file("./src/inner_snark_inner_7156762.json").unwrap();
+    let mut rng = test_rng();
 
-//     let path = Path::new("unused");
+    dbg!(2);
+    // First layer of compression
+    let layer1_agg_params = AggregationConfigParams {
+        degree: 24,
+        num_advice: 15,
+        num_lookup_advice: 2,
+        num_fixed: 1,
+        lookup_bits: 20,
+    };
+    let compression_circuit =
+        CompressionCircuit::new_from_ce_snark(layer1_agg_params, &params, to_ce_snark(&inner_snark), false, &mut rng).unwrap();
+    let pk_layer1 = gen_pk(&params, &compression_circuit, None);
+    let compression_snark = gen_snark_shplonk(
+        &params,
+        &pk_layer1,
+        compression_circuit.clone(),
+        None::<String>,
+    );
 
-//     let circuit = MockChunkCircuit::random(&mut rng, false, false);
-//     let base_snark = layer_0(&circuit, gen_srs(8), k0, path);
-//     assert_snark_roundtrip(&base_snark);
-// }
+    dbg!(3);
+    // Second layer of compression
+    // let layer2_agg_params = AggregationConfigParams {
+    //     degree: 24,
+    //     num_advice: 1,
+    //     num_lookup_advice: 1,
+    //     num_fixed: 1,
+    //     lookup_bits: 20,
+    // };
+    // let mut rng = test_rng();
+    // let compression_circuit_layer2 =
+    //     CompressionCircuit::new_from_ce_snark(layer2_agg_params, &params, compression_snark, true, &mut rng).unwrap();
+    // let pk_layer2 = gen_pk(&params, &compression_circuit_layer2, None);
+    // let _compression_snark_layer2 = gen_snark_shplonk(
+    //     &params, 
+    //     &pk_layer2,
+    //     compression_circuit_layer2,
+    //     None::<String>,
+    // );
+}
 
-// #[test]
-// fn test_read_inner_snark() {
-//     let inner_snark: snark_verifier_sdk::Snark =
-//         prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
-//     // test that we are able to deserialize the inner snark without hitting the recursion limit.
-//     to_ce_snark(&inner_snark);
-// }
+#[test]
+fn test_to_ce_snark() {
+    let k0 = 8u32;
+    let params_app = gen_srs(k0);
+    let circuit = MockChunkCircuit::random(OsRng, false, false);
 
-// fn from_ce_snark(snark: &Snark) -> snark_verifier_sdk::Snark {
-//     serde_json::from_str(&serde_json::to_string(snark).unwrap()).unwrap()
-// }
+    let pk = gen_pk(&params_app, &circuit, None);
+    let snark = gen_snark_shplonk(&params_app, &pk, circuit, None::<String>);
 
-// fn assert_snark_roundtrip(snark: &Snark) {
-//     assert_eq!(
-//         serde_json::to_string(snark).unwrap(),
-//         serde_json::to_string(&to_ce_snark(&from_ce_snark(snark))).unwrap()
-//     );
-// }
+    assert_snark_roundtrip(&snark);
+}
+fn from_ce_snark(snark: &Snark) -> snark_verifier_sdk::Snark {
+    serde_json::from_str(&serde_json::to_string(snark).unwrap()).unwrap()
+}
+fn assert_snark_roundtrip(snark: &Snark) {
+    assert_eq!(
+        serde_json::to_string(snark).unwrap(),
+        serde_json::to_string(&to_ce_snark(&from_ce_snark(snark))).unwrap()
+    );
+}
 
-// fn layer_0(
-//     circuit: &MockChunkCircuit,
-//     param: ParamsKZG<Bn256>,
-//     degree: u32,
-//     _path: &Path,
-// ) -> Snark {
-//     let timer = start_timer!(|| "gen layer 0 snark");
-
-//     let param = {
-//         let mut param = param;
-//         param.downsize(degree);
-//         param
-//     };
-
-//     let pk = gen_pk(&param, circuit, None);
-//     log::trace!("finished layer 0 pk generation for circuit");
-
-//     let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), None::<String>);
-//     log::trace!("finished layer 0 snark generation for circuit");
-
-//     // assert!(verify_snark_shplonk(&param, snark.clone(), pk.get_vk()));
-
-//     log::trace!("finished layer 0 snark verification");
-//     log::trace!("proof size: {}", snark.proof.len());
-//     log::trace!(
-//         "pi size: {}",
-//         snark.instances.iter().map(|x| x.len()).sum::<usize>()
-//     );
-
-//     log::trace!("layer 0 circuit instances");
-//     for (i, e) in circuit.instances()[0].iter().enumerate() {
-//         log::trace!("{}-th public input: {:?}", i, e);
-//     }
-//     end_timer!(timer);
-//     snark
-// }
-
-// fn compression_layer_snark(
-//     previous_snark: Snark,
-//     param: ParamsKZG<Bn256>,
-//     degree: u32,
-//     layer_index: usize,
-// ) -> Snark {
-//     let timer = start_timer!(|| format!("gen layer {} snark", layer_index));
-
-//     let param = {
-//         let mut param = param.clone();
-//         param.downsize(degree);
-//         param
-//     };
-
-//     let compression_circuit = CompressionCircuit::new_from_ce_snark(
-//         &param,
-//         previous_snark.clone(),
-//         layer_index == 1,
-//         test_rng(),
-//     )
-//     .unwrap();
-
-//     let pk = gen_pk(&param, &compression_circuit, None);
-//     // build the snark for next layer
-//     let snark = gen_snark_shplonk(
-//         &param,
-//         &pk,
-//         compression_circuit.clone(),
-//         // &mut rng,
-//         None::<String>, // Some(&$path.join(Path::new("layer_1.snark"))),
-//     );
-//     log::trace!(
-//         "finished layer {} snark generation for circuit",
-//         layer_index
-//     );
-
-//     // assert!(verify_snark_shplonk::<CompressionCircuit>(
-//     //     &param,
-//     //     snark.clone(),
-//     //     pk.get_vk()
-//     // ));
-
-//     end_timer!(timer);
-//     snark
-// }
+#[test]
+fn test_read_inner_snark() {
+    let inner_snark: snark_verifier_sdk::Snark =
+        prover::io::from_json_file("./src/inner_snark_inner_4176564.json").unwrap();
+    // test that we are able to deserialize the inner snark without hitting the recursion limit.
+    to_ce_snark(&inner_snark);
+}
 
 // fn verify_compression_layer_evm(
 //     previous_snark: Snark,

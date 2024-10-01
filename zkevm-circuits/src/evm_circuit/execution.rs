@@ -55,6 +55,9 @@ use strum::{EnumCount, IntoEnumIterator};
 pub(crate) static CHECK_RW_LOOKUP: LazyLock<bool> =
     LazyLock::new(|| read_env_var("CHECK_RW_LOOKUP", false));
 
+#[cfg(any(feature = "test", test))]
+mod tests;
+
 mod add_sub;
 mod addmod;
 mod address;

@@ -94,7 +94,7 @@ impl CeCircuitExt<Fr> for CompressionCircuit {
 impl CompressionCircuit {
     /// Build a new circuit from a snark, with a flag whether this snark has been compressed before
     pub fn new(
-        degree: u32,
+        agg_params: AggregationConfigParams,
         params: &ParamsKZG<Bn256>,
         snark: snark_verifier_sdk::Snark,
         has_accumulator: bool,
@@ -103,11 +103,11 @@ impl CompressionCircuit {
         // compression_debug
         // verify_snark_accumulator_pairing(&snark, params)
         //     .expect("Compression circuit accumulator pre-check should not fail.");
-        Self::new_from_ce_snark(degree, params, to_ce_snark(&snark), has_accumulator, rng)
+        Self::new_from_ce_snark(agg_params, params, to_ce_snark(&snark), has_accumulator, rng)
     }
 
     pub fn new_from_ce_snark(
-        degree: u32,
+        agg_params: AggregationConfigParams,
         params: &ParamsKZG<Bn256>,
         snark: ce_snark_verifier_sdk::Snark,
         has_accumulator: bool,
@@ -124,15 +124,14 @@ impl CompressionCircuit {
         // inner.expose_previous_instances(has_accumulator);
         // Ok(Self(inner))
 
-        let lookup_bits = degree as usize - 1;
         let mut agg_circuit = AggregationCircuit::new::<SHPLONK>(
             CircuitBuilderStage::Keygen,
-            AggregationConfigParams { degree, lookup_bits, ..Default::default() },
+            agg_params,
             &params,
             [snark.clone()],
             VerifierUniversality::Full,
         );
-        let agg_config = agg_circuit.calculate_params(Some(10));
+        // let agg_config = agg_circuit.calculate_params(Some(10));
     
         let _pk = gen_pk(&params, &agg_circuit, None);
         let break_points = agg_circuit.break_points();
@@ -140,7 +139,7 @@ impl CompressionCircuit {
     
         let mut inner = AggregationCircuit::new::<SHPLONK>(
             CircuitBuilderStage::Prover,
-            agg_config,
+            agg_params,
             &params,
             [snark],
             VerifierUniversality::Full,

@@ -8,6 +8,7 @@ use anyhow::{anyhow, Result};
 use compression::{utils::ce_snark_to_snark, CompressionCircuit};
 use rand::Rng;
 use snark_verifier_sdk::Snark;
+use ce_snark_verifier_sdk::halo2::aggregation::AggregationConfigParams;
 use std::env;
 
 impl<'params> Prover<'params> {
@@ -21,7 +22,7 @@ impl<'params> Prover<'params> {
     ) -> Result<Snark> {
         env::set_var("COMPRESSION_CONFIG", layer_config_path(id));
         let circuit =
-            CompressionCircuit::new(degree, self.params(degree), prev_snark, has_accumulator, &mut rng)
+            CompressionCircuit::new(AggregationConfigParams::from_path(layer_config_path(id)), self.params(degree), prev_snark, has_accumulator, &mut rng)
                 .map_err(|err| anyhow!("Failed to construct compression circuit: {err:?}"))?;
         let ce_snark = self.gen_snark_ce(id, degree, &mut rng, circuit, "gen_comp_snark")?;
         Ok(ce_snark_to_snark(ce_snark))
