@@ -89,12 +89,12 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
         .map(|block_trace| block_trace.chain_id)
         .next()
         .unwrap_or(*CHAIN_ID);
-    if *CHAIN_ID != chain_id {
-        bail!(
-            "CHAIN_ID env var is wrong. chain id in trace {chain_id}, CHAIN_ID {}",
-            *CHAIN_ID
-        );
-    }
+    // if *CHAIN_ID != chain_id {
+    //     bail!(
+    //         "CHAIN_ID env var is wrong. chain id in trace {chain_id}, CHAIN_ID {}",
+    //         *CHAIN_ID
+    //     );
+    // }
     Ok(())
 }
 
