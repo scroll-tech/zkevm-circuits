@@ -81,7 +81,7 @@ Finally `pi_hash` is the Keccak256 hash of `pi_bytes`.
 
 ## The Purpose of Public Input Circuit
 
-The above `pi_bytes` is assigned to the PI Circuit byte-by-byte. The PI Circuit aims to check the correctness of `pi_bytes` by looking up to the Keccak table for `pi_hash` and compare the `pi_hash` with a given instance of the `pi_hash`. 
+The above `pi_bytes` is assigned to the PI Circuit byte-by-byte. The PI Circuit aims to check the correctness of `pi_bytes` by looking up to the Keccak table for `pi_hash` and comparing the `pi_hash` with a given instance of the `pi_hash`. 
 
 Since the [Keccak table](https://github.com/scroll-tech/zkevm-circuits/blob/925f6fc423af6b733a36b544289b4514fc9faecb/zkevm-circuits/src/table.rs#L1289) only records input RLC and output RLC, to perform the lookup, PI Circuit must record the RLC accumulation of input bytes and (hash) output bytes. This induces further checks about the correctness of these RLC accumulations. These accumulation columns are also re-used to store Keccak input rlc and output rlcs, so they induce many copy constraints. Furthermore, some of the public input data fields such as block context, tx hashes, chain_id, coinbase, difficulty are having connection with the block table and tx table, so copy constraints with them are also established.
 

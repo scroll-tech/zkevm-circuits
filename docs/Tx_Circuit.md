@@ -39,7 +39,7 @@ A transaction can be a contract creation or a message call. For contract creatio
 
 ### Types of Transactions
 
-Besides legacy transaction, there are also other types of transactions such as [EIP155], [EIP2930] ([EIP2718] type `0x01`) and [EIP1559] ([EIP2718] type `0x02`). They differ by their details in tx information and their signing process. 
+Besides legacy transactions, there are also other types of transactions such as [EIP155], [EIP2930] ([EIP2718] type `0x01`) and [EIP1559] ([EIP2718] type `0x02`). They differ by their details in tx information and their signing process. 
 
 For example, in the above legacy transaction the ECDSA signature `(r,s)` is obtained by signing with message `RLP([nonce, gasprice, startgas, to, value, data])` and the private key of the EOA account that initiates this tx. In this case `v` is 27 or 28; instead, in EIP155 the sign message becomes `RLP([nonce, gasprice, startgas, to, value, data, chainid, 0, 0])` and `v` is `ChainID*2+35` or `ChainID*2+36`. 
 
@@ -74,7 +74,7 @@ According to the [EllipticCurveDigitalSignatureAlgorithm] (ECDSA), the signature
 
 The recovery id `v` is then computed from the parity of the `y` component of the EC point corresponding to `x` component being `r`. The `public_key` can be recovered from `(v,r,s)` and `msg_hash` using `ecrecover`, which further determines the caller address as `caller_address=keccak(public_key)[-20:]` (because this is the way account address is created, which is derived from its public key). Notice that only EOA address can initiate a tx and contract address cannot, because contract address is not calculated from public key but from nonce and EOA address. Also notice that EOA account's private key are elliptic-curve pre-images of public key and are thus hidden, while the public key can be calculated from the private key.
 
-In the Tx Circuit, validation of correct signature is made through lookup to the sig table; validation of correct RLP is made through lookup to the RLP table; and validation of correct has is made through lookup to the Keccak table.
+In the Tx Circuit, validation of the correct signature is made through lookup to the sig table; validation of correct RLP is made through lookup to the RLP table; and validation of correct has is made through lookup to the Keccak table.
 
 
 ## The Purpose of Tx Circuit
@@ -155,7 +155,7 @@ Assign an empty row first, then followed by each tx's data fields except calldat
     - `is_none` is boolean;
     - `tx_type` among `PreEip155`, `Eip155` and `L1Msg`;
     - `rlp_tag` is corresponding to tx_tag in a correct way (for some tx_tag the corresponding `rlp_tag` is none, for some other tx_tag this correspondence is just identical with possible name changes);
-    - If CalleeAddress has value none, then IsCreate (next row) will be also none;
+    - If CalleeAddress has value none, then IsCreate (next row) will also be none;
     - if `is_none` is true at current row, then value ==0;
     - if CallData is none, then both CallDataLength and CallDataGasCost must be none value; otherwise, CallDataLength must have non-zero value;
     - for L1Msg type tx, tx gas cost is 0.

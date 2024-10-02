@@ -144,7 +144,7 @@ Circuit uses 2-rows for one custom-gate constraint, with layout as follows:
 
 Note that the above table is a demonstration of how a custom-gate is layouted. The None terms simply stands for the fact that the custom-gate does not touch these cells. It does not mean that the circuit is layouted without these cells being filled with valid values. One can think of the actual circuit layout as the above shaped custom-gate (throwing away the None cells) falling down as in a tetris game. 
 
-Here `l0`, `l1`, `l2`, `l3`, `d` are advice columns (5 advice columns) and rest are fixed columns (12 fixed columns). The context of each cell is explained as follows:
+Here `l0`, `l1`, `l2`, `l3`, `d` are advice columns (5 advice columns) and the rest are fixed columns (12 fixed columns). The context of each cell is explained as follows:
 
 - `l0`-`l3` stand for the 4 limbs in decomposing a U256 `Number`; 
 - `d` is a limb term;
