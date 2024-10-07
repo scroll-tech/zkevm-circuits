@@ -282,8 +282,8 @@ fn test_imported_two_layer_compression(){
     // First layer of compression
     let layer1_agg_params = AggregationConfigParams {
         degree: 24,
-        num_advice: 30,
-        num_lookup_advice: 2,
+        num_advice: 45,
+        num_lookup_advice: 6,
         num_fixed: 1,
         lookup_bits: 20,
     };
