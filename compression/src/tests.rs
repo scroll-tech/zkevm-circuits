@@ -277,7 +277,7 @@ fn test_imported_two_layer_compression(){
     let inner_snark: snark_verifier_sdk::Snark =
         prover::io::from_json_file("./src/inner_snark_inner_7156762.json").unwrap();
     let mut rng = test_rng();
-    println!("=> imported snark: {:?}", inner_snark);
+    println!("=> imported snark: {:?}", to_ce_snark(&inner_snark));
 
     // compare with standard plonk snark
     let params_app = gen_srs(8);
