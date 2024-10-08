@@ -357,7 +357,7 @@ mod tests {
     use super::*;
     use crate::{
         aggregation::BatchData,
-        data_availability::eip4844::blob::KZG_TRUSTED_SETUP,
+        data_availability::eip4844::KZG_TRUSTED_SETUP,
         data_availability::eip4844::{get_blob_bytes, get_coefficients},
         MAX_AGG_SNARKS,
     };

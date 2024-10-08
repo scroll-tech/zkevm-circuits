@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     aggregation::BatchData,
     chunk::ChunkInfo,
-    data_availability::eip4844::blob::PointEvaluationAssignments,
-    data_availability::eip4844::{get_coefficients, get_versioned_hash},
+    data_availability::{get_coefficients, get_versioned_hash, PointEvaluationAssignments},
 };
 
 /// Batch header provides additional fields from the context (within recursion)
@@ -31,6 +30,8 @@ pub struct BatchHeader<const N_SNARKS: usize> {
     pub last_block_timestamp: u64,
     /// The data hash of the batch
     pub data_hash: H256,
+    // /// information needed to check that the blobs in the circuit match the blob the data availibility provided.
+    // pub blob_consistency_witness: BlobConsistencyWitness,
     /// The versioned hash of the blob with this batch's data
     pub blob_versioned_hash: H256,
     /// The blob data proof: z (32), y (32)
@@ -84,7 +85,7 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
         let blob_versioned_hash = get_versioned_hash(&coeffs);
         let point_evaluation_assignments =
             PointEvaluationAssignments::new(&batch_data, blob_bytes, blob_versioned_hash);
-
+        //
         Self {
             version,
             batch_index,

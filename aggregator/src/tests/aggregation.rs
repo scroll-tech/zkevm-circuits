@@ -10,7 +10,7 @@ use crate::{
     aggregation::BatchCircuit,
     batch::{BatchHash, BatchHeader},
     constants::MAX_AGG_SNARKS,
-    data_availability::eip4844::get_blob_bytes,
+    data_availability::get_blob_bytes,
     layer_0,
     tests::mock_chunk::MockChunkCircuit,
     BatchData, ChunkInfo,

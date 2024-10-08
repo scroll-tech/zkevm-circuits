@@ -8,27 +8,12 @@ use halo2_proofs::{
     halo2curves::{bls12_381::Scalar, bn256::Fr},
 };
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-use std::{
-    iter::{once, repeat},
-    sync::Arc,
-};
+use std::iter::{once, repeat};
 use zkevm_circuits::util::Challenges;
 
 /// The number of coefficients (BLS12-381 scalars) to represent the blob polynomial in evaluation
 /// form.
 pub const BLOB_WIDTH: usize = 4096;
-
-/// KZG trusted setup
-pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
-    Arc::new(
-        c_kzg::KzgSettings::load_trusted_setup(
-            &revm_primitives::kzg::G1_POINTS.0,
-            &revm_primitives::kzg::G2_POINTS.0,
-        )
-        .expect("failed to load trusted setup"),
-    )
-});
 
 #[derive(Clone, Debug)]
 pub struct PointEvaluationAssignments {

@@ -18,7 +18,7 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{BITS, LIMBS},
-    data_availability::eip4844::{blob_data::BlobDataConfig, BarycentricEvaluationConfig},
+    data_availability::{BarycentricEvaluationConfig, BlobDataConfig},
     param::ConfigParams,
     BatchDataConfig, DecoderConfig, DecoderConfigArgs, RlcConfig,
 };

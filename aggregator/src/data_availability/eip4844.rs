@@ -5,20 +5,30 @@ pub use barycentric::{
 };
 
 /// blob struct and constants
-pub mod blob;
+mod blob;
+pub use blob::PointEvaluationAssignments;
 
 /// Config to constrain blob data (encoded batch data)
 pub mod blob_data;
 pub use blob_data::BlobDataConfig;
 
-use crate::aggregation::batch_data::{N_BLOB_BYTES, N_BYTES_U256};
-use blob::{BLOB_WIDTH, KZG_TRUSTED_SETUP};
+#[cfg(test)]
+mod tests;
+
+use crate::constants::N_BYTES_U256;
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
+use once_cell::sync::Lazy;
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;
+use std::sync::Arc;
+
+pub const BLOB_WIDTH: usize = 4096;
+/// The number data bytes we pack each BLS12-381 scalar into. The most-significant byte is 0.
+pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
+pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 
 /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
-pub(crate) fn get_coefficients(blob_bytes: &[u8]) -> [U256; BLOB_WIDTH] {
+pub fn get_coefficients(blob_bytes: &[u8]) -> [U256; BLOB_WIDTH] {
     let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
     assert!(
@@ -33,8 +43,19 @@ pub(crate) fn get_coefficients(blob_bytes: &[u8]) -> [U256; BLOB_WIDTH] {
     coefficients.map(|coeff| U256::from_big_endian(&coeff))
 }
 
+/// KZG trusted setup
+static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
+    Arc::new(
+        c_kzg::KzgSettings::load_trusted_setup(
+            &revm_primitives::kzg::G1_POINTS.0,
+            &revm_primitives::kzg::G2_POINTS.0,
+        )
+        .expect("failed to load trusted setup"),
+    )
+});
+
 /// Get the versioned hash as per EIP-4844.
-pub(crate) fn get_versioned_hash(coefficients: &[U256; BLOB_WIDTH]) -> H256 {
+pub fn get_versioned_hash(coefficients: &[U256; BLOB_WIDTH]) -> H256 {
     let blob = c_kzg::Blob::from_bytes(
         &coefficients
             .iter()

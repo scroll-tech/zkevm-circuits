@@ -27,7 +27,6 @@ use crate::{
     batch::BatchHash,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
-    data_availability::eip4844::AssignedBarycentricEvaluationConfig,
     util::parse_hash_digest_cells,
     witgen::{zstd_encode, MultiBlockProcessResult},
     ConfigParams, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
@@ -188,11 +187,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 |region| {
                     if first_pass {
                         first_pass = false;
-                        return Ok((
-                            vec![],
-                            vec![],
-                            AssignedBarycentricEvaluationConfig::default(),
-                        ));
+                        return Ok(Default::default());
                     }
 
                     // stores accumulators for all snarks, including the padded ones

@@ -1,3 +1,7 @@
+use crate::{
+    aggregation::rlc::POWS_OF_256, constants::N_BYTES_U256, data_availability::BLOB_WIDTH,
+    BatchHash, ChunkInfo, RlcConfig,
+};
 use eth_types::{H256, U256};
 use ethers_core::utils::keccak256;
 use halo2_ecc::bigint::CRTInteger;
@@ -13,13 +17,6 @@ use zkevm_circuits::{
     table::{KeccakTable, LookupTable, RangeTable, U8Table},
     util::{Challenges, Expr},
 };
-
-#[cfg(feature = "da-eip4844")]
-use crate::data_availability::eip4844::blob::BLOB_WIDTH;
-use crate::{aggregation::rlc::POWS_OF_256, BatchHash, ChunkInfo, RlcConfig};
-
-/// The number of bytes to represent an unsigned 256 bit number.
-pub const N_BYTES_U256: usize = 32;
 
 /// The number data bytes we pack each BLS12-381 scalar into. The most-significant byte is 0.
 pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
