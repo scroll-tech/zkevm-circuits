@@ -74,11 +74,6 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
         let batch_data_hash = keccak256(batch_data_hash_preimage);
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, &chunks_with_padding);
-        // let coeffs = get_coefficients(blob_bytes);
-        // let blob_versioned_hash = get_versioned_hash(&coeffs);
-        // let point_evaluation_assignments =
-        //     PointEvaluationAssignments::new(&batch_data, blob_bytes, blob_versioned_hash);
-        // //
         let blob_consistency_witness = BlobConsistencyWitness::new(blob_bytes, &batch_data);
         Self {
             version,
@@ -290,40 +285,17 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         );
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
-        // let coeffs = get_coefficients(blob_bytes);
-        // let versioned_hash = get_versioned_hash(&coeffs);
-
-        // TODO: moved these checks down.
-        // let point_evaluation_assignments =
-        //     PointEvaluationAssignments::new(&batch_data, blob_bytes, versioned_hash);
-
-        // assert_eq!(
-        //     batch_header.blob_consistency_witness.challenge,
-        //     H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
-        //     "Expect provided BatchHeader's blob_data_proof field 0 to be correct"
-        // );
-        // assert_eq!(
-        //     batch_header.blob_consistency_witness.evaluation,
-        //     H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
-        //     "Expect provided BatchHeader's blob_data_proof field 1 to be correct"
-        // );
-
-        // assert_eq!(
-        //     batch_header.blob_consistency_witness.id, versioned_hash,
-        //     "Expect provided BatchHeader's blob_versioned_hash field to be correct"
-        // );
-
         let current_batch_hash = batch_header.batch_hash();
-
-        // log::info!(
-        //     "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
-        //     current_batch_hash,
-        //     hex::encode(batch_data_hash),
-        //     hex::encode(point_evaluation_assignments.challenge.to_be_bytes()),
-        //     hex::encode(point_evaluation_assignments.evaluation.to_be_bytes()),
-        //     versioned_hash,
-        // );
         let blob_consistency_witness = BlobConsistencyWitness::new(&blob_bytes, &batch_data);
+
+        log::info!(
+            "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
+            current_batch_hash,
+            hex::encode(batch_data_hash),
+            hex::encode(blob_consistency_witness.challenge.to_fixed_bytes()),
+            hex::encode(blob_consistency_witness.evaluation.to_fixed_bytes()),
+            blob_consistency_witness.id,
+        );
 
         Self {
             chain_id: chunks_with_padding[0].chain_id,
@@ -339,11 +311,6 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             blob_consistency_witness,
         }
     }
-
-    // /// Return the blob polynomial and its evaluation at challenge
-    // pub fn point_evaluation_assignments(&self) -> PointEvaluationAssignments {
-    //     self.point_evaluation_assignments.clone()
-    // }
 
     /// Extract all the hash inputs that will ever be used.
     /// There are N_SNARKS + 2 hashes.
