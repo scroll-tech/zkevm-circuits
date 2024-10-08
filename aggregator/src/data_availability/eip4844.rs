@@ -16,11 +16,24 @@ pub use blob_data::BlobDataConfig;
 mod tests;
 
 use crate::constants::N_BYTES_U256;
+use crate::BatchData;
+use crate::RlcConfig;
+use blob_data::AssignedBlobDataExport;
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
+use halo2_base::gates::range::RangeConfig;
+use halo2_base::Context;
+use halo2_ecc::bigint::CRTInteger;
+use halo2_proofs::circuit::Layouter;
+use halo2_proofs::circuit::Value;
+use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::plonk::{ConstraintSystem, Error, Expression};
 use once_cell::sync::Lazy;
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use zkevm_circuits::table::U8Table;
+use zkevm_circuits::util::Challenges;
 
 pub const BLOB_WIDTH: usize = 4096;
 /// The number data bytes we pack each BLS12-381 scalar into. The most-significant byte is 0.
@@ -87,4 +100,74 @@ pub fn get_blob_bytes(batch_bytes: &[u8]) -> Vec<u8> {
     blob_bytes.insert(0, enable_encoding as u8);
 
     blob_bytes
+}
+
+#[derive(Debug, Clone)]
+pub struct BlobConsistencyConfig<const N_SNARKS: usize> {
+    data: BlobDataConfig<N_SNARKS>,
+    barycentric_evaluation: BarycentricEvaluationConfig,
+}
+
+impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
+    pub fn construct(
+        meta: &mut ConstraintSystem<Fr>,
+        challenges: &Challenges<Expression<Fr>>,
+        u8_table: U8Table,
+        range: RangeConfig<Fr>,
+    ) -> Self {
+        Self {
+            data: BlobDataConfig::configure(meta, challenges, u8_table),
+            barycentric_evaluation: BarycentricEvaluationConfig::construct(range),
+        }
+    }
+
+    pub fn assign_barycentric(
+        &self,
+        ctx: &mut Context<Fr>,
+        blob: &[U256; BLOB_WIDTH],
+        challenge: U256,
+        evaluation: U256,
+    ) -> AssignedBarycentricEvaluationConfig {
+        self.barycentric_evaluation
+            .assign(ctx, blob, challenge, evaluation)
+    }
+
+    pub fn assign_blob_data(
+        &self,
+        layouter: &mut impl Layouter<Fr>,
+        challenge_value: Challenges<Value<Fr>>,
+        rlc_config: &RlcConfig,
+        blob_bytes: &[u8],
+        barycentric_assignments: &[CRTInteger<Fr>],
+    ) -> Result<AssignedBlobDataExport, Error> {
+        self.data.assign(
+            layouter,
+            challenge_value,
+            rlc_config,
+            blob_bytes,
+            barycentric_assignments,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct BlobConsistencyWitness {
+    pub id: H256,
+    pub challenge: H256,
+    pub evaluation: H256,
+}
+
+impl BlobConsistencyWitness {
+    pub fn new<const N_SNARKS: usize>(bytes: &[u8], batch_data: &BatchData<N_SNARKS>) -> Self {
+        let coeffs = get_coefficients(bytes);
+        let versioned_hash = get_versioned_hash(&coeffs);
+        let point_evaluation_assignments =
+            PointEvaluationAssignments::new(&batch_data, bytes, versioned_hash);
+
+        Self {
+            id: versioned_hash,
+            challenge: H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
+            evaluation: H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
+        }
+    }
 }

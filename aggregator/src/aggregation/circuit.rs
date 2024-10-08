@@ -27,10 +27,17 @@ use crate::{
     batch::BatchHash,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
+    data_availability::get_coefficients, // TODO: fix this
     util::parse_hash_digest_cells,
     witgen::{zstd_encode, MultiBlockProcessResult},
-    ConfigParams, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
-    PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
+    ConfigParams,
+    LOG_DEGREE,
+    PI_CHAIN_ID,
+    PI_CURRENT_BATCH_HASH,
+    PI_CURRENT_STATE_ROOT,
+    PI_CURRENT_WITHDRAW_ROOT,
+    PI_PARENT_BATCH_HASH,
+    PI_PARENT_STATE_ROOT,
 };
 
 /// Batch circuit, the chunk aggregation routine below recursion circuit
@@ -244,12 +251,13 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     log::debug!("batching: assigning barycentric");
-                    let barycentric = config.barycentric.assign(
+                    let coefficients = get_coefficients(&self.batch_hash.blob_bytes);
+                    let barycentric = config.blob_consistency_config.assign_barycentric(
                         &mut ctx,
-                        &self.batch_hash.point_evaluation_assignments.coefficients,
-                        self.batch_hash
-                            .point_evaluation_assignments
-                            .challenge_digest,
+                        &coefficients,
+                        // todo: check that the byte order is correct!!!!
+                        self.batch_hash.blob_consistency_witness.challenge.0.into(),
+                        self.batch_hash.blob_consistency_witness.evaluation.0.into(),
                     );
 
                     ctx.print_stats(&["barycentric"]);
@@ -401,7 +409,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
             let batch_data = BatchData::from(&self.batch_hash);
 
-            let blob_data_exports = config.blob_data_config.assign(
+            let blob_data_exports = config.blob_consistency_config.assign_blob_data(
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
@@ -415,7 +423,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 &config.rlc_config,
                 &assigned_batch_hash.chunks_are_padding,
                 &batch_data,
-                self.batch_hash.versioned_hash,
+                self.batch_hash.blob_consistency_witness.id,
                 barycentric_assignments,
             )?;
 

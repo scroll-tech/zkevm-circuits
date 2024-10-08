@@ -183,19 +183,25 @@ impl<'params> Prover<'params> {
             batch.batch_header.data_hash, batch_header.data_hash
         );
         assert_eq!(
-            batch_header.blob_data_proof[0], batch.batch_header.blob_data_proof[0],
+            batch_header.blob_consistency_witness.challenge,
+            batch.batch_header.blob_consistency_witness.challenge,
             "BatchHeader(sanity) mismatch blob data proof (z) expected={}, got={}",
-            batch.batch_header.blob_data_proof[0], batch_header.blob_data_proof[0],
+            batch_header.blob_consistency_witness.challenge,
+            batch.batch_header.blob_consistency_witness.challenge,
         );
         assert_eq!(
-            batch_header.blob_data_proof[1], batch.batch_header.blob_data_proof[1],
+            batch_header.blob_consistency_witness.evaluation,
+            batch.batch_header.blob_consistency_witness.evaluation,
             "BatchHeader(sanity) mismatch blob data proof (y) expected={}, got={}",
-            batch.batch_header.blob_data_proof[1], batch_header.blob_data_proof[1],
+            batch_header.blob_consistency_witness.evaluation,
+            batch.batch_header.blob_consistency_witness.evaluation,
         );
         assert_eq!(
-            batch_header.blob_versioned_hash, batch.batch_header.blob_versioned_hash,
+            batch_header.blob_consistency_witness.id,
+            batch.batch_header.blob_consistency_witness.id,
             "BatchHeader(sanity) mismatch blob versioned hash expected={}, got={}",
-            batch.batch_header.blob_versioned_hash, batch_header.blob_versioned_hash,
+            batch_header.blob_consistency_witness.id,
+            batch.batch_header.blob_consistency_witness.id,
         );
 
         let batch_hash = batch_header.batch_hash();
