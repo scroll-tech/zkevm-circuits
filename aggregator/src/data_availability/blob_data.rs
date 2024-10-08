@@ -11,7 +11,7 @@ use zkevm_circuits::{table::U8Table, util::Challenges};
 
 use crate::{
     aggregation::{batch_data::N_BLOB_BYTES, POWS_OF_256},
-    data_availability::eip4844::{blob::BLOB_WIDTH, N_DATA_BYTES_PER_COEFFICIENT},
+    data_availability::{eip4844::N_DATA_BYTES_PER_COEFFICIENT, BLOB_WIDTH},
     RlcConfig,
 };
 

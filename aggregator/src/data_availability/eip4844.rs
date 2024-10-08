@@ -1,24 +1,20 @@
 /// Config to evaluate blob polynomial at a random challenge.
 mod barycentric;
-pub use barycentric::{
+use barycentric::{
     interpolate, AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BLS_MODULUS,
 };
 
 /// blob struct and constants
 mod blob;
-pub use blob::PointEvaluationAssignments;
-
-/// Config to constrain blob data (encoded batch data)
-pub mod blob_data;
-pub use blob_data::BlobDataConfig;
+use blob::PointEvaluationAssignments;
 
 #[cfg(test)]
 mod tests;
 
+use super::{AssignedBlobDataExport, BlobDataConfig};
 use crate::constants::N_BYTES_U256;
 use crate::BatchData;
 use crate::RlcConfig;
-use blob_data::AssignedBlobDataExport;
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
 use halo2_base::gates::range::RangeConfig;
