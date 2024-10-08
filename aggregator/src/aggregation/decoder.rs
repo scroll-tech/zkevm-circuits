@@ -5827,3 +5827,17 @@ pub fn decode_bytes(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
 
     Ok(decoded_bytes)
 }
+
+/// The inverse of decode_bytes.
+pub fn encode_bytes(batch_bytes: &[u8]) -> Vec<u8> {
+    let mut blob_bytes = crate::witgen::zstd_encode(batch_bytes);
+
+    // Whether we encode batch -> blob or not.
+    let enable_encoding = blob_bytes.len() < batch_bytes.len();
+    if !enable_encoding {
+        blob_bytes = batch_bytes.to_vec();
+    }
+    blob_bytes.insert(0, enable_encoding as u8);
+
+    blob_bytes
+}

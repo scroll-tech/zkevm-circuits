@@ -13,7 +13,7 @@ mod util;
 
 pub use batch_data::BatchData;
 pub(crate) use batch_data::BatchDataConfig;
-pub use decoder::decode_bytes;
+pub use decoder::{decode_bytes, encode_bytes};
 pub(crate) use decoder::{witgen, DecoderConfig, DecoderConfigArgs};
 pub(crate) use rlc::{RlcConfig, POWS_OF_256};
 
