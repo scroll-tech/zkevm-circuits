@@ -27,7 +27,7 @@ pub struct BatchHeader<const N_SNARKS: usize> {
     /// The data hash of the batch
     pub data_hash: H256,
     // /// information needed to check that the blobs in the circuit match the blob the data availibility provided.
-    // TODO: #[serde(flatten)] etc. for backwards compatibility?
+    #[serde(flatten)]
     pub blob_consistency_witness: BlobConsistencyWitness,
 }
 
@@ -113,15 +113,15 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
             self.l1_message_popped.to_be_bytes().as_ref(),
             self.total_l1_message_popped.to_be_bytes().as_ref(),
             self.data_hash.as_bytes(),
-            self.blob_consistency_witness.id.as_bytes(),
+            self.blob_consistency_witness.id().as_bytes(),
             self.parent_batch_hash.as_bytes(),
             self.last_block_timestamp.to_be_bytes().as_ref(),
             self.blob_consistency_witness
-                .challenge
+                .challenge()
                 .to_fixed_bytes()
                 .as_ref(),
             self.blob_consistency_witness
-                .evaluation
+                .evaluation()
                 .to_fixed_bytes()
                 .as_ref(),
         ]
@@ -292,9 +292,9 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
             current_batch_hash,
             hex::encode(batch_data_hash),
-            hex::encode(blob_consistency_witness.challenge.to_fixed_bytes()),
-            hex::encode(blob_consistency_witness.evaluation.to_fixed_bytes()),
-            blob_consistency_witness.id,
+            hex::encode(blob_consistency_witness.challenge().to_fixed_bytes()),
+            hex::encode(blob_consistency_witness.evaluation().to_fixed_bytes()),
+            blob_consistency_witness.id(),
         );
 
         Self {
@@ -347,7 +347,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
                 .to_be_bytes()
                 .as_ref(),
             self.data_hash.as_bytes(),
-            self.batch_header.blob_consistency_witness.id.as_bytes(),
+            self.batch_header.blob_consistency_witness.id().as_bytes(),
             self.batch_header.parent_batch_hash.as_bytes(),
             self.batch_header
                 .last_block_timestamp
@@ -355,12 +355,12 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
                 .as_ref(),
             self.batch_header
                 .blob_consistency_witness
-                .challenge
+                .challenge()
                 .to_fixed_bytes()
                 .as_ref(),
             self.batch_header
                 .blob_consistency_witness
-                .evaluation
+                .evaluation()
                 .to_fixed_bytes()
                 .as_ref(),
         ]
@@ -399,7 +399,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         // - preimage for each chunk's flattened L2 signed tx data
         // - preimage for the challenge digest
         let batch_data = BatchData::from(self);
-        let dynamic_preimages = batch_data.preimages(self.batch_header.blob_consistency_witness.id);
+        let dynamic_preimages = batch_data.preimages(self.batch_header.blob_consistency_witness.id());
         for dynamic_preimage in dynamic_preimages {
             res.push(dynamic_preimage);
         }

@@ -256,8 +256,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         &mut ctx,
                         &coefficients,
                         // todo: check that the byte order is correct!!!!
-                        self.batch_hash.blob_consistency_witness.challenge.0.into(),
-                        self.batch_hash.blob_consistency_witness.evaluation.0.into(),
+                        self.batch_hash.blob_consistency_witness.challenge().0.into(),
+                        self.batch_hash.blob_consistency_witness.evaluation().0.into(),
                     );
 
                     ctx.print_stats(&["barycentric"]);
@@ -423,7 +423,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 &config.rlc_config,
                 &assigned_batch_hash.chunks_are_padding,
                 &batch_data,
-                self.batch_hash.blob_consistency_witness.id,
+                self.batch_hash.blob_consistency_witness.id(),
                 barycentric_assignments,
             )?;
 

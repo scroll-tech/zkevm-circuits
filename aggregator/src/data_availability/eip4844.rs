@@ -148,9 +148,9 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct BlobConsistencyWitness {
-    pub id: H256,
-    pub challenge: H256,
-    pub evaluation: H256,
+    #[serde(rename = "blob_versioned_hash")] 
+    id: H256,
+    blob_data_proof: [H256; 2]
 }
 
 impl BlobConsistencyWitness {
@@ -159,11 +159,23 @@ impl BlobConsistencyWitness {
         let versioned_hash = get_versioned_hash(&coeffs);
         let point_evaluation_assignments =
             PointEvaluationAssignments::new(&batch_data, bytes, versioned_hash);
+        let blob_data_proof = [point_evaluation_assignments.challenge, point_evaluation_assignments.evaluation].map(|x| H256::from_slice(&x.to_be_bytes()));
 
         Self {
             id: versioned_hash,
-            challenge: H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
-            evaluation: H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
+            blob_data_proof,
         }
+    }
+
+    pub fn id(&self) -> H256 {
+        self.id
+    }
+
+    pub fn challenge(&self) -> H256 {
+        self.blob_data_proof[0]
+    }
+
+    pub fn evaluation(&self) -> H256 {
+        self.blob_data_proof[1]
     }
 }
