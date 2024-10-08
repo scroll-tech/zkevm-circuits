@@ -19,12 +19,12 @@ cfg_if! {
 mod avail;
 #[cfg(feature = "da-avail")]
 pub use eip4844::{
-    get_coefficients, get_versioned_hash, BlobConsistencyConfig, BlobConsistencyWitness, BLOB_WIDTH,
+    get_coefficients, BlobConsistencyConfig, BlobConsistencyWitness, BLOB_WIDTH,
 };
 
 #[cfg(feature = "da-eip4844")]
 mod eip4844;
 #[cfg(feature = "da-eip4844")]
 pub use eip4844::{
-    get_coefficients, get_versioned_hash, BlobConsistencyConfig, BlobConsistencyWitness, BLOB_WIDTH,
+    get_coefficients, BlobConsistencyConfig, BlobConsistencyWitness, BLOB_WIDTH,
 };
