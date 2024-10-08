@@ -75,11 +75,13 @@ impl Proof {
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {
+        log::debug!("try to collect instances (for EVM proof): len(instances)={:?}, instances={:?}", self.instances.len(), self.instances);
         let instance: Vec<Fr> = self
             .instances
             .chunks(32)
             .map(|bytes| deserialize_fr(bytes.iter().rev().cloned().collect()))
             .collect();
+        log::debug!("got instances as Vec<Fr>");
 
         vec![instance]
     }
