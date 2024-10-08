@@ -271,6 +271,7 @@ impl<'params> Prover<'params> {
             layer5_snark,
             output_dir,
         )?;
+        log::debug!("layer6 EVM Proof OK");
 
         self.check_bundle_vk();
 

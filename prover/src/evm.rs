@@ -21,6 +21,7 @@ pub fn gen_evm_verifier<C: CircuitExt<Fr>>(
         path.push("evm_verifier.yul");
         path
     });
+    log::debug!("file path for YUL = {:?}", yul_file_path);
 
     // Generate deployment code and dump YUL file.
     let deployment_code = snark_verifier_sdk::gen_evm_verifier::<C, Kzg<Bn256, Bdfg21>>(
@@ -29,13 +30,16 @@ pub fn gen_evm_verifier<C: CircuitExt<Fr>>(
         evm_proof.num_instance.clone(),
         yul_file_path.as_deref(),
     );
+    log::debug!("deployment code OK");
 
     if let Some(dir) = output_dir {
         // Dump bytecode.
         let mut dir = PathBuf::from_str(dir).unwrap();
         write_file(&mut dir, "evm_verifier.bin", &deployment_code);
+        log::debug!("dumped evm_verifier.bin");
     }
 
     let success = evm_proof.proof.evm_verify(deployment_code);
+    log::debug!("EVM verification success? {:?}", success);
     assert!(success);
 }

@@ -40,6 +40,7 @@ impl<'params> Prover<'params> {
 
                 if let (Some(output_dir), Ok(proof)) = (output_dir, &result) {
                     proof.dump(output_dir, &name)?;
+                    log::debug!("dumped EVM proof OK");
                 }
 
                 result
@@ -68,8 +69,11 @@ impl<'params> Prover<'params> {
         let evm_proof = EvmProof::new(proof, &instances, num_instance, Some(pk))?;
 
         if read_env_var("SCROLL_PROVER_DUMP_YUL", false) {
+            log::debug!("will generate EVM verifier contract at {:?}", output_dir);
             crate::evm::gen_evm_verifier::<C>(params, pk.get_vk(), &evm_proof, output_dir);
         }
+
+        log::debug!("EVM proof OK, returning");
 
         Ok(evm_proof)
     }
