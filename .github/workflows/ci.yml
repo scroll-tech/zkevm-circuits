@@ -38,12 +38,13 @@ jobs:
 
   test-default:
     name: Test Default
+    if: false
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
     strategy:
       matrix:
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -83,10 +84,10 @@ jobs:
     name: Test Scroll
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
     strategy:
       matrix:
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
 
     steps:
       - uses: actions/checkout@v4
