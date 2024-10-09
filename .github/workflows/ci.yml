@@ -52,12 +52,12 @@ jobs:
           echo "HOME=/home/CI" >> $GITHUB_ENV
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
           cache: false
-          go-version: ~1.21
+          go-version: ~1.22
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -95,12 +95,12 @@ jobs:
           echo "HOME=/home/CI" >> $GITHUB_ENV
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
           cache: false
-          go-version: ~1.21
+          go-version: ~1.22
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -146,7 +146,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       - name: Add target
         run: rustup target add ${{ matrix.target }}
       # Go cache for building geth-utils
@@ -183,7 +183,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -216,7 +216,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -253,7 +253,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
           components: rustfmt
       # Go cache for building geth-utils
       - name: Go cache
