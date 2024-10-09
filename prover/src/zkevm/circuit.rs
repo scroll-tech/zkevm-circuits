@@ -6,7 +6,7 @@ use zkevm_circuits::{super_circuit::params::ScrollSuperCircuit, util::SubCircuit
 mod builder;
 pub use self::builder::{
     block_traces_to_witness_block, calculate_row_usage_of_witness_block, finalize_builder,
-    print_chunk_stats, validite_block_traces,
+    print_chunk_stats,
 };
 
 pub use zkevm_circuits::super_circuit::params::{MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_TXS};
