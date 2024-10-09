@@ -15,7 +15,7 @@ pub use zkevm_circuits::super_circuit::params::{MAX_CALLDATA, MAX_INNER_BLOCKS, 
 /// circuits from traces.
 pub trait TargetCircuit {
     /// The actual inner circuit that implements Circuit trait.
-    type Inner: CircuitExt<Fr> + SubCircuit<Fr>;
+    type Inner: CircuitExt<Fr, Params = ()> + SubCircuit<Fr>;
 
     /// Generate a dummy circuit with an empty trace.
     /// This is useful for generating vk and pk.

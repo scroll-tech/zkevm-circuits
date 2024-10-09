@@ -280,7 +280,7 @@ fn p256_sign_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1,  vec![], signatures);
+        run::<Fr>(k, 1, vec![], signatures);
 
         log::debug!("end of testing for msg_hash = 1");
     }
@@ -316,7 +316,6 @@ fn p256_sign_verify() {
 
         log::debug!("end of testing for {} signatures", max_sig);
     }
-
 }
 
 // test for both secp256k1 and secp256r1 signatures

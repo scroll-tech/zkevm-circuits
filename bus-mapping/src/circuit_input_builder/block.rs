@@ -257,7 +257,7 @@ impl Blocks {
 
 impl Blocks {
     /// Push a copy event to the block.
-    pub fn add_copy_event(&mut self, event: CopyEvent) {
+    pub fn add_copy_event(&mut self, event: CopyEvent) -> Result<(), Error> {
         self.copy_counter += event.full_length() as usize;
         self.copy_events.push(event);
         // Each byte needs 2 rows
@@ -265,8 +265,9 @@ impl Blocks {
 
         if self.copy_counter > 500_000 && cfg!(feature = "strict-ccc") {
             log::error!("copy event len overflow {}", self.copy_counter);
-            panic!("copy event len overflow");
+            return Err(Error::InvalidGethExecTrace("copy event len overflow"));
         }
+        Ok(())
     }
     fn copy_event_total_len(&self) -> usize {
         self.copy_events

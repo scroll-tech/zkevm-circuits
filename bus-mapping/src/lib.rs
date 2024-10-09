@@ -208,6 +208,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
+#![allow(clippy::doc_lazy_continuation)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
 // Catch documentation errors caused by code changes.
@@ -218,7 +219,6 @@
 #![allow(clippy::result_large_err)] // it's large, but what can we do?
 #![allow(clippy::collapsible_else_if)]
 #![allow(incomplete_features)]
-#![feature(lazy_cell)]
 #![feature(adt_const_params)]
 
 extern crate alloc;

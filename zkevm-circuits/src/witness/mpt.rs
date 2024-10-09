@@ -173,7 +173,7 @@ impl MptUpdates {
         self.pretty_print();
     }
 
-    pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
+    pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) -> WitnessGenerator {
         let root_pair = (self.old_root, self.new_root);
         self.old_root = init_trie.root().into();
         log::trace!("fill_state_roots init {:?}", self.old_root);
@@ -183,13 +183,14 @@ impl MptUpdates {
 
         let root_pair2 = (self.old_root, self.new_root);
         if root_pair2 != root_pair {
-            log::error!(
+            log::warn!(
                 "roots non consistent ({:#x},{:#x}) vs ({:#x},{:#x})",
                 root_pair.0,
                 root_pair.1,
                 root_pair2.0,
                 root_pair2.1
             );
+            #[cfg(debug_assertions)]
             wit_gen.dump(
                 self.updates
                     .iter()
@@ -223,6 +224,7 @@ impl MptUpdates {
         }
         log::debug!("fill_state_roots done");
         self.pretty_print();
+        wit_gen
     }
 
     fn fill_state_roots_from_generator(

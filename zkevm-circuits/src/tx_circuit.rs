@@ -4042,8 +4042,7 @@ impl<F: Field> TxCircuit<F> {
             .txs
             .iter()
             .chain(iter::once(&padding_tx))
-            .enumerate()
-            .map(|(_, tx)| {
+            .map(|tx| {
                 if tx.tx_type.is_l1_msg() {
                     Ok(SignData::default())
                 } else {

@@ -324,6 +324,7 @@ pub mod helpers {
     /// [`static@MOCK_ACCOUNTS`]:
     /// - 0x000000000000000000000000000000000cafe111
     /// - 0x000000000000000000000000000000000cafe222
+    ///
     /// And injects the provided bytecode into the first one.
     pub fn account_0_code_account_1_no_code(code: Bytecode) -> impl FnOnce([&mut MockAccount; 2]) {
         |accs| {
@@ -339,8 +340,10 @@ pub mod helpers {
     /// the receiver is from
     /// [`static@MOCK_ACCOUNTS`]:
     /// - 0x000000000000000000000000000000000cafe111
+    ///
     /// and sender is a random wallet account from the first of
     /// [`static@MOCK_WALLETS`];
+    ///
     /// And injects the provided bytecode into the first one.
     pub fn account_0_code_wallet_0_no_code(code: Bytecode) -> impl FnOnce([&mut MockAccount; 2]) {
         |accs| {

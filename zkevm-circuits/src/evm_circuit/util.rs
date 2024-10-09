@@ -778,3 +778,197 @@ impl<F: Field> Inverter<F> {
         }
     }
 }
+
+/// The function of this algorithm：Split a vec into two subsets such that
+/// the sums of the two subsets are as close as possible。
+pub(crate) fn find_two_closest_subset(vec: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    let total_sum: usize = vec.iter().sum();
+    let n = vec.len();
+
+    // dp[i][j]：indicates whether it is possible to achieve a sum of j using the first i elements.
+    let mut dp = vec![vec![false; total_sum / 2 + 1]; n + 1];
+
+    // initialization: first sum zero can be always reached.
+    // for i in 0..=n {
+    //     dp[i][0] = true;
+    // }
+    for dp_inner in dp.iter_mut().take(n + 1) {
+        dp_inner[0] = true;
+    }
+
+    // fill dp table
+    for i in 1..=n {
+        for j in 1..=(total_sum / 2) {
+            if j >= vec[i - 1] {
+                dp[i][j] = dp[i - 1][j] || dp[i - 1][j - vec[i - 1]];
+            } else {
+                dp[i][j] = dp[i - 1][j];
+            }
+        }
+    }
+
+    // find closest sum
+    let mut sum1 = 0;
+    for j in (0..=(total_sum / 2)).rev() {
+        if dp[n][j] {
+            sum1 = j;
+            break;
+        }
+    }
+
+    // construct two sub set
+    let mut subset1 = Vec::new();
+    let mut subset2 = Vec::new();
+    let mut current_sum = sum1;
+    for i in (1..=n).rev() {
+        if current_sum >= vec[i - 1] && dp[i - 1][current_sum - vec[i - 1]] {
+            subset1.push(vec[i - 1]);
+            current_sum -= vec[i - 1];
+        } else {
+            subset2.push(vec[i - 1]);
+        }
+    }
+
+    (subset1, subset2)
+}
+
+// tests for algorithm of `find_two_closest_subset`
+#[test]
+fn test_find_two_closest_subset() {
+    let mut nums = vec![80, 100, 10, 20];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 100, set2's sum: 110, diff = 10
+    assert_eq!(set1, [20, 80]);
+    assert_eq!(set2, [10, 100]);
+
+    nums = vec![80, 20, 50, 110, 32];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 142, set2's sum: 150, diff = 8
+    assert_eq!(set1, [32, 110]);
+    assert_eq!(set2, [50, 20, 80]);
+
+    nums = vec![1, 5, 11, 5, 10];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 16, set2's sum: 16, diff = 0
+    assert_eq!(set1, [10, 5, 1]);
+    assert_eq!(set2, [11, 5]);
+
+    nums = vec![1, 5, 11, 5, 10, 20, 4];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 27, set2's sum: 29, diff = 2
+    assert_eq!(set1, [10, 5, 11, 1]);
+    assert_eq!(set2, [4, 20, 5]);
+
+    nums = vec![100, 105, 110, 50, 100, 40, 200];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 350, set2's sum: 355, diff = 5
+    assert_eq!(set1, [200, 40, 110]);
+    assert_eq!(set2, [100, 50, 105, 100]);
+
+    // only one number in set
+    nums = vec![100];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 0, set2's sum: 100, diff = 100
+    let empty_vec: [usize; 0] = [];
+    assert_eq!(set1, empty_vec);
+    assert_eq!(set2, [100]);
+
+    // only two numbers in set
+    nums = vec![10, 11];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 10, set2's sum: 11, diff = 1
+    assert_eq!(set1, [10]);
+    assert_eq!(set2, [11]);
+
+    // empty set
+    nums = vec![];
+    let (set1, set2) = find_two_closest_subset(&nums);
+    // set1's sum: 0, set2's sum: 0, diff = 0
+    assert_eq!(set1, empty_vec);
+    assert_eq!(set2, empty_vec);
+}
+
+pub(crate) struct PartitionData<T> {
+    pub(crate) first_part: Vec<(T, usize)>,
+    pub(crate) second_part: Vec<(T, usize)>,
+}
+
+/// The function of this algorithm： Split a vec into two subsets such that
+/// the sums of the two subsets are close, but not necessarily return the most optimal result.
+/// Note: if stable result is required, make use you pass the stable parameter vec.
+pub(crate) fn greedy_simple_partition<T>(nums: Vec<(T, usize)>) -> PartitionData<T> {
+    let mut nums = nums;
+    // sorted in descending order
+    // sort_by helper is stable, see doc at https://doc.rust-lang.org/std/vec/struct.Vec.html#method.sort_by
+    nums.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut sum1 = 0;
+    let mut sum2 = 0;
+
+    // construct two sub sets
+    let mut subset1 = Vec::new();
+    let mut subset2 = Vec::new();
+
+    for num in nums {
+        if sum1 <= sum2 + num.1 {
+            sum1 += num.1;
+            subset1.push(num);
+        } else {
+            sum2 += num.1;
+            subset2.push(num);
+        }
+    }
+
+    PartitionData {
+        first_part: subset1,
+        second_part: subset2,
+    }
+}
+
+// tests for algorithm of `greedy_simple_partition`
+#[test]
+fn test_greedy_partition() {
+    let mut nums = vec![("key1", 1), ("key2", 5), ("key3", 11), ("key4", 5)];
+    let mut partition_data = greedy_simple_partition(nums);
+
+    // the most optimal set: set1: [11], set2 [1, 5, 5]
+    assert_eq!(partition_data.first_part, [("key3", 11), ("key1", 1)]);
+    assert_eq!(partition_data.second_part, [("key2", 5), ("key4", 5)]);
+
+    nums = vec![("key1", 80), ("key2", 100), ("key3", 10), ("key4", 20)];
+    partition_data = greedy_simple_partition(nums);
+    // close to the most optimal set: set1: [20, 80], set2 [10, 100]
+    assert_eq!(partition_data.first_part, [("key2", 100), ("key4", 20)]);
+    assert_eq!(partition_data.second_part, [("key1", 80), ("key3", 10)]);
+
+    nums = vec![
+        ("key1", 80),
+        ("key2", 20),
+        ("key3", 50),
+        ("key4", 110),
+        ("key5", 32),
+    ];
+    partition_data = greedy_simple_partition(nums);
+    // close to the most optimal set: set1 [32, 110], set2 [50, 20, 80]
+
+    assert_eq!(partition_data.first_part, [("key4", 110), ("key3", 50)]);
+    assert_eq!(
+        partition_data.second_part,
+        [("key1", 80), ("key5", 32), ("key2", 20)]
+    );
+
+    nums = vec![
+        ("key1", 1),
+        ("key2", 5),
+        ("key3", 11),
+        ("key4", 5),
+        ("key5", 10),
+    ];
+    partition_data = greedy_simple_partition(nums);
+
+    // close to the most optimal sets: set1 [10, 5, 1], set2 [11, 5]
+    assert_eq!(
+        partition_data.first_part,
+        [("key3", 11), ("key2", 5), ("key1", 1)]
+    );
+    assert_eq!(partition_data.second_part, [("key5", 10), ("key4", 5)]);
+}

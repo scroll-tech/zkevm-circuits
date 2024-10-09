@@ -48,7 +48,6 @@ impl Cache {
             let entry = format!("{}={}\n", hex::encode(code_hash), hex::encode(&bytecode));
             std::fs::OpenOptions::new()
                 .read(true)
-                .write(true)
                 .create(true)
                 .append(true)
                 .open(&self.path)?

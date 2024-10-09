@@ -44,21 +44,10 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
         let should_jump = 1.expr() - is_condition_zero.expr();
 
-        // Lookup opcode at destination when should_jump
-        cb.condition(should_jump.clone(), |cb| {
-            cb.require_equal(
-                "JUMPI destination must be within range if condition is non-zero",
-                dest.not_overflow(),
-                1.expr(),
-            );
-
-            cb.opcode_lookup_at(dest.valid_value(), OpcodeId::JUMPDEST.expr(), 1.expr());
-        });
-
         // Transit program_counter to destination when should_jump, otherwise by
         // delta 1.
         let next_program_counter = select::expr(
-            should_jump,
+            should_jump.expr(),
             dest.valid_value(),
             cb.curr.state.program_counter.expr() + 1.expr(),
         );
@@ -74,6 +63,21 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
+        // Lookup opcode at destination when should_jump
+        cb.condition(should_jump.expr(), |cb| {
+            cb.require_equal(
+                "JUMPI destination must be within range if condition is non-zero",
+                dest.not_overflow(),
+                1.expr(),
+            );
+
+            cb.opcode_lookup_at(
+                dest.valid_value(),
+                OpcodeId::JUMPDEST.expr(),
+                same_context.is_first_bytecode_table(),
+            );
+        });
+
         Self {
             same_context,
             dest,
@@ -88,10 +92,11 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [destination, condition] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());

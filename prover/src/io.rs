@@ -100,8 +100,8 @@ pub fn serialize_vk(vk: &VerifyingKey<G1Affine>) -> Vec<u8> {
     result
 }
 
-pub fn deserialize_vk<C: Circuit<Fr>>(raw_vk: &[u8]) -> VerifyingKey<G1Affine> {
-    VerifyingKey::<G1Affine>::read::<_, C>(&mut Cursor::new(raw_vk), SerdeFormat::Processed)
+pub fn deserialize_vk<C: Circuit<Fr, Params = ()>>(raw_vk: &[u8]) -> VerifyingKey<G1Affine> {
+    VerifyingKey::<G1Affine>::read::<_, C>(&mut Cursor::new(raw_vk), SerdeFormat::Processed, ())
         .unwrap()
 }
 

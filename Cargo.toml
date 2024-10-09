@@ -17,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.11.0"
+version = "0.14.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
@@ -25,6 +25,7 @@ license = "MIT OR Apache-2.0"
 anyhow = "1.0"
 ark-std = "0.3"
 base64 = "0.13.0"
+bincode = "1"
 ctor = "0.1"
 env_logger = "0.10"
 ethers = { version = "=2.0.7", features = ["ethers-solc"] }
@@ -63,8 +64,8 @@ strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
-revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v36", default-features = false, features = ["std"] } # v36
-revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v36", default-features = false, features = ["std"] } # v36
+revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v40", default-features = false, features = ["std"] } # v40
+revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "scroll-evm-executor/v40", default-features = false, features = ["std"] } # v40
 c-kzg = "1.0.2"
 
 [patch.crates-io]

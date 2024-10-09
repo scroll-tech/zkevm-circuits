@@ -5,6 +5,7 @@ use crate::{
     util::Field,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
+use eth_types::forks::HardforkId;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
@@ -142,16 +143,22 @@ impl FixedTableTag {
                     F::from(precompile.base_gas_cost().0),
                 ]
             })),
-            Self::ChainFork => Box::new(eth_types::forks::hardfork_heights().into_iter().map(
-                move |(fork, chain_id, height)| {
-                    [
-                        tag,
-                        F::from(fork as u64),
-                        F::from(chain_id),
-                        F::from(height),
-                    ]
-                },
-            )),
+            Self::ChainFork => Box::new(
+                eth_types::forks::hardfork_heights()
+                    .into_iter()
+                    .filter(move |(f, _, _)| {
+                        // other fork info is not needed in circuit now.
+                        *f == HardforkId::Curie
+                    })
+                    .map(move |(fork, chain_id, height)| {
+                        [
+                            tag,
+                            F::from(fork as u64),
+                            F::from(chain_id),
+                            F::from(height),
+                        ]
+                    }),
+            ),
         }
     }
 }
@@ -162,6 +169,8 @@ pub(crate) enum Table {
     Tx,
     Rw,
     Bytecode,
+    #[cfg(feature = "dual-bytecode")]
+    Bytecode1,
     Block,
     Copy,
     Keccak,
@@ -249,6 +258,27 @@ pub(crate) enum Lookup<F> {
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.
     Bytecode {
+        /// Hash to specify which code to read.
+        hash: Expression<F>,
+        /// Tag to specify whether its the bytecode length or byte value in the
+        /// bytecode.
+        tag: Expression<F>,
+        /// Index to specify which byte of bytecode.
+        index: Expression<F>,
+        /// A boolean value to specify if the value is executable opcode or the
+        /// data portion of PUSH* operations.
+        is_code: Expression<F>,
+        /// Value corresponding to the tag.
+        value: Expression<F>,
+        /// The RLC of the PUSH data (LE order), or 0.
+        /// Warning: If the bytecode is truncated, this is the actual data, without zero-padding.
+        push_rlc: Expression<F>,
+    },
+
+    #[cfg(feature = "dual-bytecode")]
+    /// Lookup to second bytecode table, which contains all used creation code and
+    /// contract code.
+    Bytecode1 {
         /// Hash to specify which code to read.
         hash: Expression<F>,
         /// Tag to specify whether its the bytecode length or byte value in the
@@ -375,6 +405,8 @@ impl<F: Field> Lookup<F> {
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
+            #[cfg(feature = "dual-bytecode")]
+            Self::Bytecode1 { .. } => Table::Bytecode1,
             Self::Block { .. } => Table::Block,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
@@ -425,6 +457,25 @@ impl<F: Field> Lookup<F> {
                 ]
             }
             Self::Bytecode {
+                hash,
+                tag,
+                index,
+                is_code,
+                value,
+                push_rlc,
+            } => {
+                vec![
+                    1.expr(), // q_enable
+                    hash.clone(),
+                    tag.clone(),
+                    index.clone(),
+                    is_code.clone(),
+                    value.clone(),
+                    push_rlc.clone(),
+                ]
+            }
+            #[cfg(feature = "dual-bytecode")]
+            Self::Bytecode1 {
                 hash,
                 tag,
                 index,

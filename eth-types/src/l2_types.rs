@@ -3,7 +3,7 @@
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     EthBlock, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
-    ToBigEndian, Transaction, H256,
+    ToBigEndian, Transaction, H256, H64,
 };
 use ethers_core::types::{
     transaction::eip2930::{AccessList, AccessListItem},
@@ -25,7 +25,7 @@ use crate::evm_types::Stack;
 use crate::evm_types::Storage;
 
 /// l2 block full trace
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct BlockTraceV2 {
     /// chain id
     #[serde(rename = "chainID", default)]
@@ -33,7 +33,7 @@ pub struct BlockTraceV2 {
     /// coinbase's status AFTER execution
     pub coinbase: AccountTrace,
     /// block
-    pub header: EthBlock,
+    pub header: BlockHeader,
     /// txs
     pub transactions: Vec<TransactionTrace>,
     /// Accessed bytecodes with hashes
@@ -44,11 +44,47 @@ pub struct BlockTraceV2 {
     /// l1 tx queue
     #[serde(rename = "startL1QueueIndex", default)]
     pub start_l1_queue_index: u64,
+    /// Withdraw root
+    pub withdraw_trie_root: H256,
+}
+
+/// Block header used by l2 block
+#[derive(Deserialize, Serialize, Default, Debug, Clone, Eq, PartialEq)]
+pub struct BlockHeader {
+    /// Hash of the block
+    pub hash: H256,
+    /// Miner/author's address.
+    #[serde(rename = "miner")]
+    pub author: Address,
+    /// State root hash
+    #[serde(rename = "stateRoot")]
+    pub state_root: H256,
+    /// Block number
+    pub number: U64,
+    /// Gas Used
+    #[serde(rename = "gasUsed")]
+    pub gas_used: U256,
+    /// Gas Limit
+    #[serde(rename = "gasLimit")]
+    pub gas_limit: U256,
+    /// Timestamp
+    pub timestamp: U256,
+    /// Difficulty
+    #[serde(default)]
+    pub difficulty: U256,
+    /// Mix Hash
+    #[serde(default, rename = "mixHash")]
+    pub mix_hash: Option<H256>,
+    /// Nonce
+    pub nonce: H64,
+    /// Base fee per unit of gas (if past London)
+    #[serde(rename = "baseFeePerGas")]
+    pub base_fee_per_gas: Option<U256>,
 }
 
 impl From<BlockTrace> for BlockTraceV2 {
     fn from(b: BlockTrace) -> Self {
-        let codes = collect_codes(&b, None)
+        let codes = collect_codes(&b)
             .expect("collect codes should not fail")
             .into_iter()
             .map(|(hash, code)| BytecodeTrace {
@@ -60,16 +96,34 @@ impl From<BlockTrace> for BlockTraceV2 {
             codes,
             chain_id: b.chain_id,
             coinbase: b.coinbase,
-            header: b.header,
+            header: b.header.into(),
             transactions: b.transactions,
             storage_trace: b.storage_trace,
             start_l1_queue_index: b.start_l1_queue_index,
+            withdraw_trie_root: b.withdraw_trie_root,
         }
     }
 }
 
+impl From<EthBlock> for BlockHeader {
+    fn from(b: EthBlock) -> Self {
+        BlockHeader {
+            hash: b.hash.expect("incomplete block"),
+            author: b.author.expect("incomplete block"),
+            state_root: b.state_root,
+            number: b.number.expect("incomplete block"),
+            gas_used: b.gas_used,
+            gas_limit: b.gas_limit,
+            timestamp: b.timestamp,
+            difficulty: b.difficulty,
+            mix_hash: b.mix_hash,
+            nonce: b.nonce.expect("incomplete block"),
+            base_fee_per_gas: b.base_fee_per_gas,
+        }
+    }
+}
 /// Bytecode
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, Eq, PartialEq)]
 pub struct BytecodeTrace {
     /// poseidon code hash
     pub hash: H256,
@@ -198,7 +252,7 @@ impl From<&BlockTrace> for EthBlock {
 impl From<&BlockTraceV2> for revm_primitives::BlockEnv {
     fn from(block: &BlockTraceV2) -> Self {
         revm_primitives::BlockEnv {
-            number: revm_primitives::U256::from(block.header.number.unwrap().as_u64()),
+            number: revm_primitives::U256::from(block.header.number.as_u64()),
             coinbase: block.coinbase.address.0.into(),
             timestamp: revm_primitives::U256::from_be_bytes(block.header.timestamp.to_be_bytes()),
             gas_limit: revm_primitives::U256::from_be_bytes(block.header.gas_limit.to_be_bytes()),
@@ -244,7 +298,7 @@ impl From<&BlockTrace> for revm_primitives::BlockEnv {
 }
 
 /// l2 tx trace
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct TransactionTrace {
     // FIXME after traces upgraded
     /// tx hash
@@ -334,7 +388,11 @@ impl TransactionTrace {
             access_list: self.access_list.as_ref().map(|al| AccessList(al.clone())),
             max_priority_fee_per_gas: self.gas_tip_cap,
             max_fee_per_gas: self.gas_fee_cap,
-            chain_id: Some(self.chain_id),
+            chain_id: if self.type_ != 0 || self.v.as_u64() >= 35 {
+                Some(self.chain_id)
+            } else {
+                None
+            },
             other: Default::default(),
         }
     }
@@ -359,16 +417,13 @@ impl From<&TransactionTrace> for revm_primitives::TxEnv {
                 .as_ref()
                 .map(|v| {
                     v.iter()
-                        .map(|e| {
-                            (
-                                e.address.0.into(),
-                                e.storage_keys
-                                    .iter()
-                                    .map(|s| {
-                                        revm_primitives::U256::from_be_bytes(s.to_fixed_bytes())
-                                    })
-                                    .collect(),
-                            )
+                        .map(|e| revm_primitives::AccessListItem {
+                            address: e.address.0.into(),
+                            storage_keys: e
+                                .storage_keys
+                                .iter()
+                                .map(|s| s.to_fixed_bytes().into())
+                                .collect(),
                         })
                         .collect()
                 })
@@ -387,7 +442,7 @@ pub type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
 pub type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 /// storage trace
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, Eq, PartialEq)]
 pub struct StorageTrace {
     /// root before
     #[serde(rename = "rootBefore")]
@@ -403,6 +458,15 @@ pub struct StorageTrace {
     #[serde(rename = "deletionProofs", default)]
     /// additional deletion proofs
     pub deletion_proofs: Vec<Bytes>,
+    #[serde(rename = "flattenProofs", default)]
+    /// all trie nodes with preimages
+    pub flatten_proofs: HashMap<H256, Bytes>,
+    #[serde(rename = "addressHashes", default)]
+    /// hashes of addresses
+    pub address_hashes: HashMap<Address, Hash>,
+    #[serde(rename = "storeKeyHashes", default)]
+    /// hashes of keys
+    pub store_key_hashes: HashMap<H256, Hash>,
 }
 
 /// extension of `GethExecTrace`, with compatible serialize form
@@ -483,8 +547,6 @@ pub struct ExecStep {
     pub memory: Option<Vec<crate::Word>>,
     #[cfg(feature = "enable-storage")]
     pub storage: Option<HashMap<crate::Word, crate::Word>>,
-    #[serde(rename = "extraData")]
-    pub extra_data: Option<ExtraData>,
 }
 
 impl From<ExecStep> for GethExecStep {
@@ -508,20 +570,6 @@ impl From<ExecStep> for GethExecStep {
     }
 }
 
-/// extra data for some steps
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[doc(hidden)]
-pub struct ExtraData {
-    #[serde(rename = "codeList")]
-    pub code_list: Option<Vec<Bytes>>,
-}
-
-impl ExtraData {
-    pub fn get_code_at(&self, i: usize) -> Option<Bytes> {
-        self.code_list.as_ref().and_then(|c| c.get(i)).cloned()
-    }
-}
-
 /// account wrapper for account status
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
 #[doc(hidden)]
@@ -535,4 +583,33 @@ pub struct AccountTrace {
     pub poseidon_code_hash: H256,
     #[serde(rename = "codeSize")]
     pub code_size: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::LazyLock;
+
+    #[derive(serde::Deserialize, Default, Debug, Clone)]
+    struct BlockTraceJsonRpcResult {
+        result: BlockTrace,
+    }
+
+    static L2_TRACE: LazyLock<BlockTrace> = LazyLock::new(|| {
+        const TRACE_STR: &str = include_str!("data/traces/5224657.json");
+        serde_json::from_str(TRACE_STR).unwrap_or_else(|_| {
+            serde_json::from_str::<BlockTraceJsonRpcResult>(TRACE_STR)
+                .unwrap()
+                .result
+        })
+    });
+
+    #[test]
+    fn test_bincode_trace_v2() {
+        let trace = BlockTraceV2::from(L2_TRACE.clone());
+        let encoded = bincode::serialize(&trace).unwrap();
+        let decoded: BlockTraceV2 = bincode::deserialize(&encoded).unwrap();
+
+        assert_eq!(trace, decoded);
+    }
 }

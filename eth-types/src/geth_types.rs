@@ -290,7 +290,8 @@ pub struct Transaction {
 
     /// RLP bytes
     pub rlp_bytes: Vec<u8>,
-    /// RLP unsigned bytes
+    /// RLP unsigned bytes, only used for PreEip155 tx without chain_id
+    /// for other tx types: rlp == rlp_unsigned.
     pub rlp_unsigned_bytes: Vec<u8>,
     // TODO: add rlp_signed_bytes as well ?
     /// Transaction hash

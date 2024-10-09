@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, STACK_CAPACITY},
         step::ExecutionState,
         util::{
-            common_gadget::{get_copy_bytes, RestoreContextGadget},
+            common_gadget::{get_copy_bytes, BytecodeLookupGadget, RestoreContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -31,7 +31,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     // check if it is REVERT opcode
     is_revert: IsEqualGadget<F>,
 
@@ -66,15 +66,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURN_REVERT;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
+        let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        cb.opcode_lookup(opcode.expr(), 1.expr());
-        let is_revert = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::REVERT.expr());
+        let is_revert =
+            IsEqualGadget::construct(cb, opcode_gadget.opcode.expr(), OpcodeId::REVERT.expr());
 
         // constrain op codes
         cb.require_in_set(
             "RETURN_REVERT state is for RETURN or REVERT",
-            opcode.expr(),
+            opcode_gadget.opcode.expr(),
             vec![OpcodeId::RETURN.expr(), OpcodeId::REVERT.expr()],
         );
 
@@ -326,7 +326,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         });
 
         Self {
-            opcode,
+            opcode_gadget,
             is_revert,
             range,
             deployed_bytecode_rlc,
@@ -359,7 +359,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = F::from(step.opcode.unwrap().as_u64());
-        self.opcode.assign(region, offset, Value::known(opcode))?;
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
 
         self.is_revert
             .assign(region, offset, opcode, F::from(OpcodeId::REVERT.as_u64()))?;

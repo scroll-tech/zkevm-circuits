@@ -158,7 +158,6 @@ mod tests {
     impl<F: Field, const RHS: u64> Circuit<F> for TestCircuit<F, RHS> {
         type Config = TestCircuitConfig<F, RHS>;
         type FloorPlanner = SimpleFloorPlanner;
-        #[cfg(feature = "circuit-params")]
         type Params = ();
 
         fn without_witnesses(&self) -> Self {

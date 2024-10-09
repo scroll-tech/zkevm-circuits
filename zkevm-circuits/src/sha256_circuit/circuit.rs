@@ -1134,6 +1134,7 @@ mod tests {
     impl Circuit<Fr> for MyCircuit {
         type Config = CircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             unimplemented!()
@@ -1322,8 +1323,10 @@ mod tests {
         assert_eq!(prover.verify(), Ok(()));
     }
 
+    /*
+    #[ignore]
     #[test]
-    #[cfg(feature = "dev-graph")]
+    // Draw a circuit graph
     fn print_sha256_circuit() {
         use plotters::prelude::*;
 
@@ -1351,4 +1354,5 @@ mod tests {
         };
         assert_eq!(prover.verify(), Ok(()));
     }
+    */
 }

@@ -1,7 +1,7 @@
 //! precompile helpers
 
 use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
-use revm_precompile::{Precompile, PrecompileError, Precompiles};
+use revm_precompile::{Precompile, PrecompileError, PrecompileErrors, Precompiles};
 use strum_macros::EnumIter;
 
 use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
@@ -27,15 +27,15 @@ pub(crate) fn execute_precompiled(
         hex::encode(input)
     );
     let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(&input.to_vec().into(), gas) {
-        Ok((gas_cost, return_value)) => (return_value.to_vec(), gas_cost, false, true),
-        Err(err) => match err {
-            PrecompileError::OutOfGas => (vec![], gas, true, false),
-            PrecompileError::NotImplemented => (vec![], gas, false, false),
-            _ => {
-                log::warn!("unknown precompile err {err:?}");
-                (vec![], gas, false, false)
-            }
-        },
+        Ok(output) => (output.bytes.to_vec(), output.gas_used, false, true),
+        Err(PrecompileErrors::Error(PrecompileError::OutOfGas)) => (vec![], gas, true, false),
+        Err(PrecompileErrors::Error(PrecompileError::NotImplemented)) => {
+            (vec![], gas, false, false)
+        }
+        Err(err) => {
+            log::warn!("unknown precompile err {err:?}");
+            (vec![], gas, false, false)
+        }
     };
     log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}, return_data {}", return_data.len(), hex::encode(&return_data));
     (return_data, gas_cost, is_oog)

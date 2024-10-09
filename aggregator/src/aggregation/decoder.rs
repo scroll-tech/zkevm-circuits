@@ -40,6 +40,9 @@ use super::util::BooleanAdvice;
 
 use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
 
+/// The raw text from < https://nigeltao.github.io/blog/2022/romeo.txt >
+pub static WORKED_EXAMPLE: &str = std::include_str!("../../data/worked-example");
+
 #[derive(Clone, Debug)]
 pub struct DecoderConfig<const L: usize, const R: usize> {
     /// constant column required by SeqExecConfig.
@@ -5453,6 +5456,8 @@ mod tests {
         util::Challenges,
     };
 
+    use super::WORKED_EXAMPLE;
+
     #[derive(Clone, Debug, Default)]
     struct DecoderConfigTester<const L: usize, const R: usize> {
         raw: Vec<u8>,
@@ -5463,6 +5468,7 @@ mod tests {
     impl<const L: usize, const R: usize> Circuit<Fr> for DecoderConfigTester<L, R> {
         type Config = (DecoderConfig<L, R>, U8Table, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             unimplemented!()
@@ -5586,7 +5592,7 @@ mod tests {
 
     #[test]
     fn test_decoder_config_working_example() {
-        let raw: Vec<u8> = String::from("Romeo and Juliet@Excerpt from Act 2, Scene 2@@JULIET@O Romeo, Romeo! wherefore art thou Romeo?@Deny thy father and refuse thy name;@Or, if thou wilt not, be but sworn my love,@And I'll no longer be a Capulet.@@ROMEO@[Aside] Shall I hear more, or shall I speak at this?@@JULIET@'Tis but thy name that is my enemy;@Thou art thyself, though not a Montague.@What's Montague? it is nor hand, nor foot,@Nor arm, nor face, nor any other part@Belonging to a man. O, be some other name!@What's in a name? that which we call a rose@By any other name would smell as sweet;@So Romeo would, were he not Romeo call'd,@Retain that dear perfection which he owes@Without that title. Romeo, doff thy name,@And for that name which is no part of thee@Take all myself.@@ROMEO@I take thee at thy word:@Call me but love, and I'll be new baptized;@Henceforth I never will be Romeo.@@JULIET@What man art thou that thus bescreen'd in night@So stumblest on my counsel?").as_bytes().to_vec();
+        let raw: Vec<u8> = WORKED_EXAMPLE.as_bytes().to_vec();
 
         let compressed = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
