@@ -22,7 +22,7 @@ use bus_mapping::{
 use eth_types::{
     sign_types::SignData,
     state_db::{CodeDB, StateDB},
-    Address, Address, ToLittleEndian, ToLittleEndian, Word, Word, H256, H256, U256, U256,
+    Address, ToLittleEndian, Word, H256, U256,
 };
 use halo2_proofs::halo2curves::{
     secp256k1::{self, Secp256k1Affine},

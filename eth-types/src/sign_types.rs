@@ -18,7 +18,7 @@ use halo2curves::{
     ff::FromUniformBytes,
     //group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
     group::{
-        ff::{prime::PrimeCurveAffine, Curve, Field as GroupField, PrimeField},
+        ff::{Field as GroupField, PrimeField},
         prime::PrimeCurveAffine,
         Curve, GroupEncoding,
     },
