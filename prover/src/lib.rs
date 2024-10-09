@@ -31,3 +31,4 @@ pub use proof::{BatchProof, BundleProof, ChunkProof, EvmProof, Proof};
 pub use snark_verifier_sdk::{CircuitExt, Snark};
 pub use types::{BatchProvingTask, BundleProvingTask, ChunkProvingTask, WitnessBlock};
 pub use zkevm_circuits;
+pub use evm::deploy_and_call;
