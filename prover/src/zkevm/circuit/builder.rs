@@ -17,7 +17,7 @@ pub fn calculate_row_usage_of_witness_block(
 
     // Check whether we need to "estimate" poseidon sub circuit row usage
     if witness_block.mpt_updates.smt_traces.is_empty() {
-        bail!("ligth mode no longer supported");
+        bail!("light mode no longer supported");
     }
 
     let first_block_num = witness_block.first_block_number();
