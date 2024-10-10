@@ -18,7 +18,7 @@ use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
-    blob::BLOB_WIDTH,
+    blob::{BLOB_WIDTH, N_BYTES_U256},
     constants::{BITS, LIMBS},
 };
 
@@ -103,7 +103,7 @@ impl BarycentricEvaluationConfig {
         ctx: &mut Context<Fr>,
         blob: &[U256; BLOB_WIDTH],
         challenge_digest: U256,
-        evaluation: U256,
+        _: U256,
     ) -> AssignedBarycentricEvaluationConfig {
         // some constants for later use.
         let one = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::one()));
@@ -178,57 +178,6 @@ impl BarycentricEvaluationConfig {
             ctx,
             QuantumCell::Existing(challenge_limb3),
             QuantumCell::Existing(challenge_crt.truncation.limbs[2]),
-        );
-
-        ////////////////////////////////////////////////////////////////////////////////////////
-        ////////////////////////////////// PRECHECKS y /////////////////////////////////////////
-        ////////////////////////////////////////////////////////////////////////////////////////
-        let evaluation_le = self.scalar.range().gate.assign_witnesses(
-            ctx,
-            evaluation
-                .to_le_bytes()
-                .iter()
-                .map(|&x| Value::known(Fr::from(x as u64))),
-        );
-        let evaluation_scalar = Scalar::from_raw(evaluation.0);
-        let evaluation_crt = self
-            .scalar
-            .load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
-        let evaluation_limb1 = self.scalar.range().gate.inner_product(
-            ctx,
-            evaluation_le[0..11]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
-        );
-        let evaluation_limb2 = self.scalar.range().gate.inner_product(
-            ctx,
-            evaluation_le[11..22]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
-        );
-        let evaluation_limb3 = self.scalar.range().gate.inner_product(
-            ctx,
-            evaluation_le[22..32]
-                .iter()
-                .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[0..11].to_vec(),
-        );
-        self.scalar.range().gate.assert_equal(
-            ctx,
-            QuantumCell::Existing(evaluation_limb1),
-            QuantumCell::Existing(evaluation_crt.truncation.limbs[0]),
-        );
-        self.scalar.range().gate.assert_equal(
-            ctx,
-            QuantumCell::Existing(evaluation_limb2),
-            QuantumCell::Existing(evaluation_crt.truncation.limbs[1]),
-        );
-        self.scalar.range().gate.assert_equal(
-            ctx,
-            QuantumCell::Existing(evaluation_limb3),
-            QuantumCell::Existing(evaluation_crt.truncation.limbs[2]),
         );
 
         ////////////////////////////////////////////////////////////////////////////////////////
@@ -317,9 +266,65 @@ impl BarycentricEvaluationConfig {
         evaluation_computed = self.scalar.mul(ctx, &evaluation_computed, &factor);
         evaluation_computed = self.scalar.carry_mod(ctx, &evaluation_computed);
 
-        // computed evaluation matches the expected evaluation.
-        self.scalar
-            .assert_equal(ctx, &evaluation_computed, &evaluation_crt);
+        ////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// PRECHECKS y /////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////
+        let evaluation_le_bytes = evaluation_computed
+            .value
+            .map(|x| {
+                x.to_bytes_le()
+                    .1
+                    .into_iter()
+                    .chain(std::iter::repeat(0u8))
+                    .map(u64::from)
+                    .map(Fr::from)
+                    .take(N_BYTES_U256)
+                    .collect_vec()
+            })
+            .transpose_vec(N_BYTES_U256);
+
+        let evaluation_le = self
+            .scalar
+            .range()
+            .gate
+            .assign_witnesses(ctx, evaluation_le_bytes);
+
+        let evaluation_limb1 = self.scalar.range().gate.inner_product(
+            ctx,
+            evaluation_le[0..11]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
+            powers_of_256[0..11].to_vec(),
+        );
+        let evaluation_limb2 = self.scalar.range().gate.inner_product(
+            ctx,
+            evaluation_le[11..22]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
+            powers_of_256[0..11].to_vec(),
+        );
+        let evaluation_limb3 = self.scalar.range().gate.inner_product(
+            ctx,
+            evaluation_le[22..32]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
+            powers_of_256[0..11].to_vec(),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(evaluation_limb1),
+            QuantumCell::Existing(evaluation_computed.truncation.limbs[0]),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(evaluation_limb2),
+            QuantumCell::Existing(evaluation_computed.truncation.limbs[1]),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(evaluation_limb3),
+            QuantumCell::Existing(evaluation_computed.truncation.limbs[2]),
+        );
 
         ////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////////// EXPORT //////////////////////////////////////////
