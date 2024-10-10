@@ -181,6 +181,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // in the ecdsa_chip.
         let q_keccak = meta.complex_selector();
 
+        // TODO: confirm: r1 signature don't always need keccak lookup ?
+        // k1 tx signature is deterministic msg hash by keccak, r1 signature is not mandatory using
+        // keccak msg hash, can be any hash algorithm.
         meta.lookup_any("keccak lookup table", |meta| {
             // When address is 0, we disable the signature verification by using a dummy pk,
             // msg_hash and signature which is not constrained to match msg_hash_rlc nor
@@ -280,6 +283,8 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     ) -> Result<(), Error> {
         config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         config.ecdsa_r1_config.range.load_lookup_table(layouter)?;
+
+        // assign both k1 and r1 signatures
         self.assign(
             config,
             layouter,
@@ -287,7 +292,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             &self.signatures_r1,
             challenges,
         )?;
-        // TODO: assign signatures_r1？
+
         Ok(())
     }
 
@@ -305,7 +310,9 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             .iter()
             .filter(|tx| !tx.tx_type.is_l1_msg())
             .count()
-            + block.precompile_events.get_ecrecover_events().len();
+            + block.precompile_events.get_ecrecover_events().len()
+            + block.precompile_events.get_p256_verify_events().len();
+
         // Reserve one ecdsa verification for padding tx such that the bad case in which some tx
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
         // circuit won't have more space for the padding tx's ECDSA verification. Then the

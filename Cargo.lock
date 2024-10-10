@@ -2104,7 +2104,7 @@ dependencies = [
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -2119,7 +2119,7 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
 dependencies = [
  "ff",
  "group",

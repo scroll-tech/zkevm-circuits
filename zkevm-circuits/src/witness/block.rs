@@ -179,6 +179,7 @@ impl Block {
         &self,
         padding: bool,
     ) -> Vec<SignData<secp256r1::Fq, Secp256r1Affine>> {
+        // TODO: handle padding ?
         self.precompile_events.get_p256_verify_events()
     }
 
