@@ -43,7 +43,7 @@ use halo2_ecc::{
         FieldChip,
     },
 };
-use halo2_proofs::{arithmetic::CurveAffine, halo2curves::bls12_381::Fp};
+use halo2_proofs::arithmetic::CurveAffine;
 
 mod ecdsa;
 mod utils;
@@ -52,7 +52,6 @@ pub(crate) use utils::*;
 
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    halo2curves::group::GroupEncoding,
     // secp256k1 curve
     halo2curves::secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
     // p256 curve
@@ -61,7 +60,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use ethers_core::{k256::elliptic_curve::AffinePoint, utils::keccak256};
+use ethers_core::utils::keccak256;
 use itertools::Itertools;
 use log::error;
 use std::{iter, marker::PhantomData};
@@ -539,8 +538,7 @@ impl<F: Field> SigCircuit<F> {
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
         // build Fq chip from Fp chip
-        // TODO: check if need to add new fq_chip_r
-        let fq_chip = FqChipK1::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq_K1>());
+        let fq_chip = FpConfig::<F, Fq>::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq_K1>());
         let integer_r =
             fq_chip.load_private(ctx, FpConfig::<F, Fq>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
@@ -617,6 +615,7 @@ impl<F: Field> SigCircuit<F> {
         ecc_chip
             .field_chip
             .range
+            // TODO: check 87 is appropriate for p256
             .range_check(ctx, &assigned_y_tmp, 87);
 
         let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
@@ -699,8 +698,6 @@ impl<F: Field> SigCircuit<F> {
         ctx: &mut Context<F>,
         ecdsa_chip: &FpChipK1<F>,
         sign_data: &SignData<Fq_K1, Secp256k1Affine>,
-        //TODO: refactor this method to sign_data_decomposition<Fq, Affine>
-        // or just add new parameter `sign_data_r1`
         assigned_data: &AssignedECDSA<F, FpChipK1<F>>,
     ) -> Result<SignDataDecomposed<F>, Error> {
         // build ecc chip from Fp chip
@@ -999,7 +996,6 @@ impl<F: Field> SigCircuit<F> {
         ctx: &mut Context<F>,
         rlc_chip: &RangeConfig<F>,
         sign_data: &SignData<Fq_K1, Secp256k1Affine>,
-        // TODO: add sign_data_r1
         sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
         assigned_ecdsa: &AssignedECDSA<F, FpChipK1<F>>,
@@ -1289,6 +1285,7 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 3: compute RLC of keys and messages
                 // ================================================
+                // TODO: make assigned_sig_values include r1 signature. 
                 let (assigned_keccak_values, assigned_sig_values): (
                     Vec<[AssignedValue<F>; 3]>,
                     Vec<AssignedSignatureVerify<F>>,
