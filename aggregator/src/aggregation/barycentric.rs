@@ -103,7 +103,6 @@ impl BarycentricEvaluationConfig {
         ctx: &mut Context<Fr>,
         blob: &[U256; BLOB_WIDTH],
         challenge_digest: U256,
-        _: U256,
     ) -> AssignedBarycentricEvaluationConfig {
         // some constants for later use.
         let one = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::one()));
