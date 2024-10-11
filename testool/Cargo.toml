@@ -48,7 +48,6 @@ yaml-rust = "0.4.5"
 zkevm-circuits = { path="../zkevm-circuits", features=["test"] }
 rand_chacha.workspace = true
 rand.workspace = true
-spinners = "4.1"
 halo2_proofs.workspace = true
 urlencoding = "2.1.2"
 ctor.workspace = true
