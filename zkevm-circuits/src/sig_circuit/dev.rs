@@ -56,9 +56,13 @@ impl<F: Field> Circuit<F> for SigCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = config.challenges.values(&layouter);
         self.synthesize_sub(&config.sign_verify, &challenges, &mut layouter)?;
+        let mut keccak_inputs_sign = keccak_inputs_sign_verify(&self.signatures_k1);
+        let keccak_inputs_r1 = keccak_inputs_sign_verify(&self.signatures_r1);
+        keccak_inputs_sign.extend(keccak_inputs_r1);
+
         config.sign_verify.keccak_table.dev_load(
             &mut layouter,
-            &keccak_inputs_sign_verify(&self.signatures_k1),
+            &keccak_inputs_sign,
             &challenges,
         )?;
         /*

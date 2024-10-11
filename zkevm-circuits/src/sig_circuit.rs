@@ -280,7 +280,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             &self.signatures_r1,
             challenges,
         )?;
-        
+
         println!("end_assign");
         Ok(())
     }
@@ -848,7 +848,6 @@ impl<F: Field> SigCircuit<F> {
         sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
         assigned_ecdsa: &AssignedECDSA<F, FpConfig<F, Fp>>,
-        //assigned_ecdsa: &AssignedECDSA<F, FpChipK1<F>>,
     ) -> Result<([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Error> {
         // ================================================
         // step 0. powers of aux parameters
@@ -984,11 +983,11 @@ impl<F: Field> SigCircuit<F> {
                     .iter()
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_r1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipR1<F>>>, Error>>()?;
-           
+
                 // ================================================
                 // step 2: decompose the keys and messages
                 // ================================================
-                
+
                 let sign_data_k1_decomposed = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
@@ -1030,7 +1029,6 @@ impl<F: Field> SigCircuit<F> {
                     ctx.next_phase();
                 }
 
-                println!("after to finalize phase");
                 // ================================================
                 // step 3: compute RLC of keys and messages
                 // ================================================
@@ -1084,14 +1082,24 @@ impl<F: Field> SigCircuit<F> {
                     >>()?
                     .into_iter()
                     .unzip();
-                
+
                 // append keccak & sig values of r1
-                 assigned_keccak_values.extend(assigned_keccak_values_r1);
-                 assigned_sig_values.extend(assigned_sig_values_r1);
+                println!(
+                    "before assigned_keccak_values size {} {:?}",
+                    assigned_keccak_values.len(),
+                    assigned_keccak_values
+                );
+                assigned_keccak_values.extend(assigned_keccak_values_r1);
+                assigned_sig_values.extend(assigned_sig_values_r1);
 
                 // ================================================
                 // step 4: deferred keccak checks
                 // ================================================
+                println!(
+                    "assigned_keccak_values size {} {:?}",
+                    assigned_keccak_values.len(),
+                    assigned_keccak_values
+                );
                 for (i, [is_address_zero, pk_rlc, pk_hash_rlc]) in
                     assigned_keccak_values.iter().enumerate()
                 {
