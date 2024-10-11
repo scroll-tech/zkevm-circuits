@@ -77,6 +77,7 @@ pub struct SignData<Fq: PrimeField, Affine: CurveAffine> {
     ///
     pub pk: Affine,
     /// Message being hashed before signing.
+    /// for Secp256r1(p256)verify precompile, msg bytes is unknown, only with msg_hash.
     pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: Fq,
