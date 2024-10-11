@@ -216,8 +216,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
 impl<F: Field> SigCircuitConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.ecdsa_k1_config.range.load_lookup_table(layouter)?;
-        self.ecdsa_r1_config.range.load_lookup_table(layouter)
+        // two chips use one `range` config, just load once
+        self.ecdsa_k1_config.range.load_lookup_table(layouter)
+        //self.ecdsa_r1_config.range.load_lookup_table(layouter)
     }
 }
 
@@ -229,7 +230,7 @@ pub struct SigCircuit<F: Field> {
     pub max_verif: usize,
     /// Without padding Secp256k1 signatures
     pub signatures_k1: Vec<SignData<Fq_K1, Secp256k1Affine>>,
-    /// Without padding Secp256k1 signatures
+    /// Without padding Secp256r1 signatures
     pub signatures_r1: Vec<SignData<Fq_R1, Secp256r1Affine>>,
     /// Marker
     pub _marker: PhantomData<F>,
@@ -279,6 +280,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             &self.signatures_r1,
             challenges,
         )?;
+        
         println!("end_assign");
         Ok(())
     }
@@ -527,7 +529,7 @@ impl<F: Field> SigCircuit<F> {
 
         // build Fq chip from Fp chip
         let fq_chip =
-            FpConfig::<F, Fq>::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq_K1>());
+            FpConfig::<F, Fq>::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq>());
         let integer_r =
             fq_chip.load_private(ctx, FpConfig::<F, Fq>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
@@ -964,7 +966,7 @@ impl<F: Field> SigCircuit<F> {
                     return Ok(vec![]);
                 }
 
-                // no need `new_context` for ecdsa_r1_chip.
+                // no need `new_context` for ecdsa_r1_chip ?.
                 let mut ctx = ecdsa_k1_chip.new_context(region);
 
                 // ================================================
@@ -982,10 +984,11 @@ impl<F: Field> SigCircuit<F> {
                     .iter()
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_r1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipR1<F>>>, Error>>()?;
-
+           
                 // ================================================
                 // step 2: decompose the keys and messages
                 // ================================================
+                
                 let sign_data_k1_decomposed = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
@@ -1032,7 +1035,7 @@ impl<F: Field> SigCircuit<F> {
                 // step 3: compute RLC of keys and messages
                 // ================================================
                 // TODO: make assigned_sig_values include r1 signature.
-                let (assigned_keccak_values, assigned_sig_values): (
+                let (mut assigned_keccak_values, mut assigned_sig_values): (
                     Vec<[AssignedValue<F>; 3]>,
                     Vec<AssignedSignatureVerify<F>>,
                 ) = signatures_k1
@@ -1057,7 +1060,34 @@ impl<F: Field> SigCircuit<F> {
                     >>()?
                     .into_iter()
                     .unzip();
-                println!("come to assigned_keccak_values");
+
+                let (assigned_keccak_values_r1, assigned_sig_values_r1): (
+                    Vec<[AssignedValue<F>; 3]>,
+                    Vec<AssignedSignatureVerify<F>>,
+                ) = signatures_r1
+                    .iter()
+                    .zip_eq(assigned_ecdsas_r1.iter())
+                    .zip_eq(sign_data_r1_decomposed.iter())
+                    .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
+                        self.assign_sig_verify_generic(
+                            &mut ctx,
+                            &ecdsa_r1_chip.range,
+                            sign_data,
+                            sign_data_decomp,
+                            challenges,
+                            assigned_ecdsa,
+                        )
+                    })
+                    .collect::<Result<
+                        Vec<([AssignedValue<F>; 3], AssignedSignatureVerify<F>)>,
+                        Error,
+                    >>()?
+                    .into_iter()
+                    .unzip();
+                
+                // append keccak & sig values of r1
+                 assigned_keccak_values.extend(assigned_keccak_values_r1);
+                 assigned_sig_values.extend(assigned_sig_values_r1);
 
                 // ================================================
                 // step 4: deferred keccak checks
