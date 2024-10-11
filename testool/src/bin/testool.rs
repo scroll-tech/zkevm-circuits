@@ -1,20 +1,9 @@
 #![feature(lazy_cell)]
-/// Execute the bytecode from an empty state and run the EVM and State circuits
-mod abi;
-mod compiler;
-mod config;
-mod statetest;
-mod utils;
+//! Execute the bytecode from an empty state and run the EVM and State circuits
 
-use crate::{config::TestSuite, statetest::ResultLevel};
 use anyhow::{bail, Result};
 use clap::Parser;
-use compiler::Compiler;
-use config::Config;
 use log::info;
-use statetest::{
-    load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results, StateTest,
-};
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -24,13 +13,17 @@ use std::{
     time::SystemTime,
 };
 use strum_macros::EnumString;
-
-const REPORT_FOLDER: &str = "report";
-const CODEHASH_FILE: &str = "./codehash.txt";
-const TEST_IDS_FILE: &str = "./test_ids.txt";
-
-#[macro_use]
-extern crate prettytable;
+use testool::{
+    compiler::Compiler,
+    config::Config,
+    config::TestSuite,
+    load_tests, read_test_ids,
+    statetest::{
+        load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, ResultLevel,
+        Results, StateTest,
+    },
+    utils, write_test_ids, CODEHASH_FILE, REPORT_FOLDER, TEST_IDS_FILE,
+};
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, Parser, EnumString, Debug, Clone, Copy)]
@@ -81,53 +74,15 @@ struct Args {
 
     /// Specify a file including test IDs to run these tests
     #[clap(long)]
-    test_ids: Option<String>,
+    test_ids: Option<PathBuf>,
 
     /// Specify a file excluding test IDs to run these tests
     #[clap(long)]
-    exclude_test_ids: Option<String>,
+    exclude_test_ids: Option<PathBuf>,
 
     /// Verbose
     #[clap(short, long)]
     v: bool,
-}
-
-fn read_test_ids(file_path: &str) -> Result<Vec<String>> {
-    let worker_index = env::var("WORKER_INDEX")
-        .ok()
-        .and_then(|val| val.parse::<usize>().ok())
-        .expect("WORKER_INDEX not set");
-    let total_workers = env::var("TOTAL_WORKERS")
-        .ok()
-        .and_then(|val| val.parse::<usize>().ok())
-        .expect("TOTAL_WORKERS not set");
-    info!("total workers: {total_workers}, worker index: {worker_index}");
-
-    info!("read_test_ids from {}", file_path);
-    let mut total_jobs = 0;
-    let test_ids = BufReader::new(File::open(file_path)?)
-        .lines()
-        .map(|r| r.map(|line| line.trim().to_string()))
-        .inspect(|_| total_jobs += 1)
-        .enumerate()
-        .filter_map(|(idx, line)| {
-            if idx % total_workers == worker_index {
-                Some(line)
-            } else {
-                None
-            }
-        })
-        .collect::<Result<Vec<String>, std::io::Error>>()?;
-
-    info!("read_test_ids {} of {total_jobs}", test_ids.len());
-    Ok(test_ids)
-}
-
-fn write_test_ids(test_ids: &[String]) -> Result<()> {
-    let mut fd = File::create(TEST_IDS_FILE)?;
-    fd.write_all(test_ids.join("\n").as_bytes())?;
-
-    Ok(())
 }
 
 fn run_single_test(
@@ -212,31 +167,7 @@ fn go() -> Result<()> {
     // It is better to sue deterministic testing order.
     // If there is a list, follow list.
     // If not, order by test id.
-    if let Some(test_ids_path) = args.test_ids {
-        if args.exclude_test_ids.is_some() {
-            log::warn!("--exclude-test-ids is ignored");
-        }
-        let test_ids = read_test_ids(&test_ids_path)?;
-        let id_to_test: HashMap<_, _> = state_tests
-            .iter()
-            .map(|t| (t.id.clone(), t.clone()))
-            .collect();
-        state_tests.clear();
-        state_tests.extend(
-            test_ids
-                .into_iter()
-                .filter_map(|test_id| id_to_test.get(&test_id).cloned()),
-        );
-    } else {
-        // sorting with reversed id string to prevent similar tests go together, so that
-        // computing heavy tests will not trigger OOM.
-        if let Some(exclude_test_ids_path) = args.exclude_test_ids {
-            let buf = std::fs::read_to_string(exclude_test_ids_path)?;
-            let set = buf.lines().map(|s| s.trim()).collect::<HashSet<_>>();
-            state_tests.retain(|t| !set.contains(t.id.as_str()));
-        }
-        state_tests.sort_by_key(|t| t.id.chars().rev().collect::<String>());
-    }
+    load_tests(&mut state_tests, args.test_ids, args.exclude_test_ids)?;
 
     if args.report {
         let git_hash = utils::current_git_commit()?;
