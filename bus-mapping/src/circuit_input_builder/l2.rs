@@ -113,7 +113,6 @@ impl CircuitInputBuilder {
     pub fn new_from_l2_trace(
         circuits_params: CircuitsParams,
         l2_trace: BlockTrace,
-        light_mode: bool,
     ) -> Result<Self, Error> {
         let chain_id = l2_trace.chain_id;
 
@@ -152,7 +151,7 @@ impl CircuitInputBuilder {
             );
 
             Some(state)
-        } else if !light_mode {
+        } else {
             let mpt_init_state = ZktrieState::from_trace_with_additional(
                 old_root,
                 Self::collect_account_proofs(&l2_trace.storage_trace),
@@ -171,8 +170,6 @@ impl CircuitInputBuilder {
             );
 
             Some(mpt_init_state)
-        } else {
-            None
         };
 
         let mut sdb = StateDB::new();
