@@ -2,14 +2,15 @@
 extern crate log;
 
 use clap::Parser;
-use console::{style, Emoji, Term};
+use console::{style, Emoji};
 use eth_types::l2_types::BlockTraceV2;
 use eth_types::{ToBigEndian, U256};
-use indicatif::{HumanDuration, ProgressBar, ProgressStyle, TermLike};
+use indicatif::{HumanDuration, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
-use spinners::{Spinner, Spinners};
 use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use testool::statetest::StateTest;
 use testool::{
@@ -88,15 +89,21 @@ fn main() -> anyhow::Result<()> {
 
     let out_dir = args.out_dir;
     std::fs::create_dir_all(&out_dir)?;
-
+    let error_report = Arc::new(Mutex::new(File::create(out_dir.join("errors.log"))?));
     let pb = ProgressBar::new(state_tests.len() as u64);
     pb.enable_steady_tick(Duration::from_millis(80));
     pb.set_style(spinner_style.clone());
     pb.set_prefix(format!("[4/4] {}", SPARKLE));
     pb.set_message("Generating traces...");
-    state_tests.into_par_iter().take(1).for_each(|st| {
+    state_tests.into_par_iter().for_each(|st| {
+        let error_report = error_report.clone();
+        let id = st.id.clone();
         pb.set_message(st.id.clone());
-        build_trace(st, &out_dir).unwrap();
+        if let Err(e) = build_trace(st, &out_dir) {
+            let mut error_report = error_report.lock().unwrap();
+            writeln!(error_report, "{}: {}", id, e).unwrap();
+            pb.set_message(format!("ERROR in {}: {}", id, e));
+        }
     });
     pb.finish_and_clear();
     println!(
