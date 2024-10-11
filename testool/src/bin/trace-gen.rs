@@ -1,6 +1,4 @@
-#[macro_use]
-extern crate log;
-
+use anyhow::bail;
 use clap::Parser;
 use console::{style, Emoji};
 use eth_types::l2_types::BlockTraceV2;
@@ -124,7 +122,12 @@ fn build_trace(st: StateTest, out_dir: &Path) -> anyhow::Result<()> {
         }
     }
 
-    let block_trace = external_tracer::l2trace(&trace_config)?;
+    let block_trace = match (external_tracer::l2trace(&trace_config), st.exception) {
+        (Ok(res), false) => res,
+        (Ok(_), true) => bail!("expected exception"),
+        (Err(e), false) => Err(e)?,
+        (Err(_), true) => return Ok(()),
+    };
     let block_trace = BlockTraceV2::from(block_trace);
 
     let mut block_trace = serde_json::to_value(&block_trace)?;

@@ -4,25 +4,18 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use log::info;
-use std::{
-    collections::{HashMap, HashSet},
-    env,
-    fs::File,
-    io::{BufRead, BufReader, Write},
-    path::PathBuf,
-    time::SystemTime,
-};
+use std::{collections::HashSet, path::PathBuf, time::SystemTime};
 use strum_macros::EnumString;
 use testool::{
     compiler::Compiler,
     config::Config,
     config::TestSuite,
-    load_tests, read_test_ids,
+    load_tests,
     statetest::{
         load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, ResultLevel,
         Results, StateTest,
     },
-    utils, write_test_ids, CODEHASH_FILE, REPORT_FOLDER, TEST_IDS_FILE,
+    utils, write_test_ids, CODEHASH_FILE, REPORT_FOLDER,
 };
 
 #[allow(non_camel_case_types)]
