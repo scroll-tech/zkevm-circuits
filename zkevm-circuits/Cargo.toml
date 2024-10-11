@@ -11,13 +11,13 @@ halo2_proofs.workspace = true
 num.workspace = true
 sha3.workspace = true
 array-init = "2.0.0"
-bus-mapping = { path = "../bus-mapping" }
+bus-mapping = { path = "../bus-mapping", default-features=false }
 either = "1.9"
 eth-types = { path = "../eth-types" }
 ff.workspace = true
 gadgets = { path = "../gadgets" }
 ethers-core.workspace = true
-ethers-signers = { workspace = true, optional = true }
+ethers-signers = { workspace = true }
 halo2-base.workspace = true
 halo2-ecc.workspace = true
 mock = { path = "../mock", optional = true }
@@ -54,10 +54,10 @@ cli-table = "0.4"
 paste = "1.0"
 
 [features]
-default = ["test", "test-circuits", "debug-annotations", "parallel_syn"]
-test = ["ethers-signers", "mock", "bus-mapping/test"]
+default = ["test", "test-circuits", "debug-annotations", "parallel_syn", "halo2_proofs/circuit-params"]
+test = ["mock", "bus-mapping/test"]
 
-scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock?/scroll", "zktrie", "poseidon-codehash"]
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock?/scroll", "zktrie", "poseidon-codehash", "dual-bytecode"]
 
 strict-ccc = ["bus-mapping/strict-ccc"]
 test-circuits = []
@@ -71,3 +71,5 @@ debug-annotations = []
 enable-stack = ["bus-mapping/enable-stack"]
 enable-memory = ["bus-mapping/enable-memory"]
 enable-storage = ["bus-mapping/enable-storage"]
+dual-bytecode = []
+

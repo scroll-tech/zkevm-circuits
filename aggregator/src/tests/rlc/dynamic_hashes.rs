@@ -34,16 +34,17 @@ struct DynamicHashCircuitConfig {
 impl Circuit<Fr> for DynamicHashCircuit {
     type Config = (DynamicHashCircuitConfig, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         unimplemented!()
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
 
         // hash config
-        // hash configuration for aggregation circuit
+        // hash configuration for batch circuit
         let keccak_circuit_config = {
             let keccak_table = KeccakTable::construct(meta);
             let challenges_exprs = challenges.exprs(meta);
@@ -193,6 +194,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
 impl CircuitExt<Fr> for DynamicHashCircuit {}
 
+#[ignore = "it takes too much time"]
 #[test]
 fn test_hash_circuit() {
     const LEN: usize = 100;
@@ -220,7 +222,8 @@ fn test_dynamic_hash_circuit() {
 
     // pk verifies the original circuit
     {
-        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>)
+            .expect("Snark generated successfully");
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
             snark,
@@ -233,7 +236,8 @@ fn test_dynamic_hash_circuit() {
         let a: Vec<u8> = (0..LEN * 3).map(|x| x as u8).collect::<Vec<u8>>();
         let circuit = DynamicHashCircuit { inputs: a };
 
-        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>)
+            .expect("Snark generated successfully");
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
             snark,

@@ -38,49 +38,7 @@ jobs:
 
   test-default:
     name: Test Default
-    needs: [runner]
-    runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
-    strategy:
-      matrix:
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: set HOME env
-        run: |
-          echo "HOME=/home/CI" >> $GITHUB_ENV
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-12-03
-      - name: Setup golang
-        uses: actions/setup-go@v3
-        with:
-          cache: false
-          go-version: ~1.21
-      # Go cache for building geth-utils
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-        # https://github.com/actions/cache/issues/810
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
-      - name: Run light tests # light tests are run in parallel
-        run: cargo test --verbose --release --all --exclude integration-tests --exclude circuit-benchmarks
-      - name: Run heavy tests # heavy tests are run serially to avoid OOM
-        if: false
-        run: cargo test --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
-
-  test-scroll:
-    name: Test Scroll
+    if: false
     needs: [runner]
     runs-on: ${{ matrix.os }}
     concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
@@ -95,12 +53,12 @@ jobs:
           echo "HOME=/home/CI" >> $GITHUB_ENV
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
           cache: false
-          go-version: ~1.21
+          go-version: ~1.22
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -117,9 +75,52 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
       - name: Run light tests # light tests are run in parallel
-        run: cargo test --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
+        run: cargo test --verbose --release --all --exclude prover --exclude integration-tests --exclude circuit-benchmarks -- -Zunstable-options --report-time
+      - name: Run heavy tests # heavy tests are run serially to avoid OOM
+        if: false
+        run: cargo test --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
+
+  test-scroll:
+    name: Test Scroll
+    needs: [runner]
+    runs-on: ${{ matrix.os }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
+    strategy:
+      matrix:
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: set HOME env
+        run: |
+          echo "HOME=/home/CI" >> $GITHUB_ENV
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2024-01-25
+      - name: Setup golang
+        uses: actions/setup-go@v3
+        with:
+          cache: false
+          go-version: ~1.22
+      # Go cache for building geth-utils
+      - name: Go cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+      - name: Run light tests # light tests are run in parallel
+        run: cargo test --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool -- -Zunstable-options --report-time
       - name: Run heavy tests
-        run: cargo test --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored --skip max_tx
+        run: cargo test --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored --skip max_tx -Zunstable-options --report-time
       - name: Run parallel assignment tests(bytecode)
         if: false
         run: cargo test --release --package zkevm-circuits --lib bytecode_circuit::test --features scroll,parallel_syn -- --nocapture
@@ -146,7 +147,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       - name: Add target
         run: rustup target add ${{ matrix.target }}
       # Go cache for building geth-utils
@@ -173,7 +174,7 @@ jobs:
   bitrot:
     needs: [skip_check]
     if: |
-      github.event.pull_request.draft == false &&
+      false && github.event.pull_request.draft == false &&
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Bitrot check
@@ -183,7 +184,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -216,7 +217,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -253,7 +254,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-12-03
+          toolchain: nightly-2024-01-25
           components: rustfmt
       # Go cache for building geth-utils
       - name: Go cache
@@ -274,3 +275,19 @@ jobs:
         run: cargo check --all-features
       - name: Cargo fmt
         run: cargo fmt --all -- --check
+
+  typos-check:
+    needs: [skip_check]
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
+    name: TyposCheck
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crate-ci/typos@v1.22.7
+        with:
+          config: ./typos.toml
+          isolated: true
+

@@ -100,7 +100,7 @@ An API layer `constraint_builder` is developed on top of the backend proof syste
 - rw_lookup
 - ...
 ### split_expression (used to split high degree expression to deg 2)
-### store_expression (store those splitted expressions)
+### store_expression (store those split expressions)
 ### build
 - constraints
     - curr step constraints
@@ -189,11 +189,11 @@ An example of the evm-circuit fills in the following witnesses:
 |`q_usable`|`q_step_first`|`q_step_last`|`q_step`|`constants`|`num_rows_until_next_step`|`num_rows_inv`|Gadget Specific Witnesses (128 columns maximum)|
 |-|-|-|-|-|-|-|-|
 |1|1|0|1|...|5|1/5|...|
-|1|1|0|0|...|4|1/4|...|
-|1|1|0|0|...|3|1/3|...|
-|1|1|0|0|...|2|1/2|...|
-|1|1|0|0|...|1|1|...|
-|1|1|0|0|...|0|$\infty$|...|
+|1|0|0|0|...|4|1/4|...|
+|1|0|0|0|...|3|1/3|...|
+|1|0|0|0|...|2|1/2|...|
+|1|0|0|0|...|1|1|...|
+|1|0|0|0|...|0|$\infty$|...|
 |1|0|0|1|...|6|1/6|...|
 |1|0|0|0|...|5|1/5|...|
 |1|0|0|0|...|4|1/4|...|
@@ -201,9 +201,9 @@ An example of the evm-circuit fills in the following witnesses:
 |1|0|0|0|...|2|1/2|...|
 |1|0|0|0|...|1|1|...|
 |1|0|0|0|...|0|$\infty$|...|...|...|...|...|...|...|...|...|
-|1|0|1|1|...|3|1/3|...|
-|1|0|1|0|...|2|1/2|...|
-|1|0|1|0|...|1|1|...|
+|1|0|0|1|...|3|1/3|...|
+|1|0|0|0|...|2|1/2|...|
+|1|0|0|0|...|1|1|...|
 |1|0|1|0|...|0|$\infty$|...|
 |0|0|0|0|padding|padding|padding|padding|
 

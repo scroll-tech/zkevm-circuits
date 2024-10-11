@@ -8,8 +8,9 @@ use crate::{
     util::{Challenges, Expr, Field, SubCircuitConfig},
 };
 use bus_mapping::util::POSEIDON_CODE_HASH_EMPTY;
-use eth_types::{ToScalar, ToWord};
+use eth_types::ToWord;
 use gadgets::is_zero::IsZeroChip;
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -29,7 +30,7 @@ use super::{
 /// basically the BytecodeCircuit include two parts:
 /// a) marking and proving bytcodetable for bytecodes
 /// b) mapping the bytes to keccaktable
-/// and we re-useing the a) part and put additional
+/// and we re-using the a) part and put additional
 /// controlling cols to enable lookup from poseidon table
 pub struct ToHashBlockCircuitConfig<F, const BYTES_IN_FIELD: usize> {
     base_conf: BytecodeCircuitConfig<F>,
@@ -55,7 +56,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         let base_conf_cl = base_conf.clone();
         let bytecode_table = base_conf.bytecode_table;
 
-        let q_enable = base_conf.q_enable; // from 0 to last avaliable row
+        let q_enable = base_conf.q_enable; // from 0 to last available row
 
         let control_length = meta.advice_column();
         let field_input = meta.advice_column();
@@ -310,7 +311,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 ]
             };
 
-            // we use a special selection exp for only 2 indexs
+            // we use a special selection exp for only 2 indexes
             let field_selector = |meta: &mut VirtualCells<F>| {
                 let field_index = meta.query_advice(field_index, Rotation::cur()) - 1.expr();
                 [1.expr() - field_index.clone(), field_index]
@@ -541,7 +542,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         Ok(())
     }
 
-    /// Assign a row, all of the value is determinded by current bytes progress
+    /// Assign a row, all of the value is determined by current bytes progress
     /// and the hash width
     fn assign_extended_row(
         &self,

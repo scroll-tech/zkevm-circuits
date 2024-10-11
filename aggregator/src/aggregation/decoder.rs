@@ -40,6 +40,9 @@ use super::util::BooleanAdvice;
 
 use seq_exec::{LiteralTable, SeqExecConfig as SequenceExecutionConfig, SequenceConfig};
 
+/// The raw text from < https://nigeltao.github.io/blog/2022/romeo.txt >
+pub static WORKED_EXAMPLE: &str = std::include_str!("../../data/worked-example");
+
 #[derive(Clone, Debug)]
 pub struct DecoderConfig<const L: usize, const R: usize> {
     /// constant column required by SeqExecConfig.
@@ -1218,6 +1221,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 
         meta.enable_equality(config.decoded_len);
         meta.enable_equality(config.encoded_rlc);
+        meta.enable_equality(config.byte_idx);
 
         macro_rules! is_tag {
             ($var:ident, $tag_variant:ident) => {
@@ -1522,6 +1526,24 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                         meta.query_advice(config.byte, Rotation::prev()),
                     );
                 });
+
+                // byte_idx increments for all the following tags.
+                cb.condition(
+                    sum::expr([
+                        meta.query_advice(config.tag_config.is_frame_content_size, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_block_header, Rotation::cur()),
+                        meta.query_advice(config.tag_config.is_literals_header, Rotation::cur()),
+                        is_zb_raw_block(meta),
+                        meta.query_advice(config.tag_config.is_sequence_header, Rotation::cur()),
+                    ]),
+                    |cb| {
+                        cb.require_equal(
+                            "for these tags: byte_idx increments",
+                            byte_idx_delta.expr(),
+                            1.expr(),
+                        );
+                    },
+                );
 
                 // If the previous tag was done processing, verify that the is_change boolean was
                 // set.
@@ -2145,24 +2167,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                 expected_tag_len,
             );
 
-            // The regenerated size is in fact the tag length of the ZstdBlockLiteralsRawBytes
-            // tag. But depending on how many bytes are in the literals header, we select the
-            // appropriate offset to read the tag_len from.
-            let regen_size = select::expr(
-                size_format_bit0.expr() * not::expr(size_format_bit1.expr()),
-                meta.query_advice(config.tag_config.tag_len, Rotation(2)),
-                select::expr(
-                    size_format_bit0.expr() * size_format_bit1.expr(),
-                    meta.query_advice(config.tag_config.tag_len, Rotation(3)),
-                    meta.query_advice(config.tag_config.tag_len, Rotation(1)),
-                ),
-            );
-            cb.require_equal(
-                "regen size check",
-                regen_size,
-                meta.query_advice(config.block_config.regen_size, Rotation::cur()),
-            );
-
             cb.gate(condition)
         });
 
@@ -2222,14 +2226,15 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
             let condition = and::expr([
                 meta.query_fixed(config.q_enable, Rotation::cur()),
                 is_zb_raw_block(meta),
+                config.tag_config.is_change.expr_at(meta, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "byte_idx::cur == byte_idx::prev + 1",
-                meta.query_advice(config.byte_idx, Rotation::cur()),
-                meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
+                "block's regen size is raw literals' tag length",
+                meta.query_advice(config.tag_config.tag_len, Rotation::cur()),
+                meta.query_advice(config.block_config.regen_size, Rotation::cur()),
             );
 
             cb.gate(condition)
@@ -2781,6 +2786,13 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                             .bitstream_decoder
                             .aligned_three_bytes(meta, Rotation(-3)),
                     ]),
+                );
+
+                // The FSE table kind remains the same.
+                cb.require_equal(
+                    "table_kind remains the same for trailing bits in tag=FseCode",
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::cur()),
+                    meta.query_advice(config.fse_decoder.table_kind, Rotation::prev()),
                 );
 
                 cb.gate(condition)
@@ -4572,7 +4584,6 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
         _compressed_bytes: &[u8],
         witness_rows: Vec<ZstdWitnessRow<Fr>>,
         literal_datas: Vec<Vec<u64>>,
-        _aux_data: Vec<u64>,
         fse_aux_tables: Vec<FseAuxiliaryTableData>,
         block_info_arr: Vec<BlockInfo>,
         sequence_info_arr: Vec<SequenceInfo>,
@@ -5405,7 +5416,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
                     )?;
                 }
 
-                // dbg: decoded length from SeqExecConfig and decoder config must match.
+                // decoded length from SeqExecConfig and decoder config must match.
                 region.constrain_equal(exported_len.cell(), decoded_len_cell.unwrap().cell())?;
 
                 Ok(AssignedDecoderConfigExports {
@@ -5430,7 +5441,7 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        witgen::{init_zstd_encoder, process},
+        witgen::{init_zstd_encoder, process, MultiBlockProcessResult},
         DecoderConfig, DecoderConfigArgs,
     };
     use halo2_proofs::{
@@ -5445,6 +5456,8 @@ mod tests {
         util::Challenges,
     };
 
+    use super::WORKED_EXAMPLE;
+
     #[derive(Clone, Debug, Default)]
     struct DecoderConfigTester<const L: usize, const R: usize> {
         raw: Vec<u8>,
@@ -5455,13 +5468,14 @@ mod tests {
     impl<const L: usize, const R: usize> Circuit<Fr> for DecoderConfigTester<L, R> {
         type Config = (DecoderConfig<L, R>, U8Table, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             unimplemented!()
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let challenges = Challenges::construct(meta);
+            let challenges = Challenges::construct_p1(meta);
             let challenges_expr = challenges.exprs(meta);
 
             let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
@@ -5499,18 +5513,17 @@ mod tests {
             let (config, u8_table, challenge) = config;
             let challenges = challenge.values(&layouter);
 
-            let (
+            let MultiBlockProcessResult {
                 witness_rows,
-                decoded_literals,
-                aux_data,
+                literal_bytes: decoded_literals,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
-                address_table_arr,
-                sequence_exec_result,
-            ) = process(&self.compressed, challenges.keccak_input());
+                address_table_rows: address_table_arr,
+                sequence_exec_results,
+            } = process(&self.compressed, challenges.keccak_input());
 
-            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
                 (Vec::new(), Vec::new()),
                 |(mut out_byte, mut out_exec), res| {
                     out_byte.extend(res.recovered_bytes);
@@ -5531,7 +5544,6 @@ mod tests {
                 &self.compressed,
                 witness_rows,
                 decoded_literals,
-                aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
@@ -5580,7 +5592,7 @@ mod tests {
 
     #[test]
     fn test_decoder_config_working_example() {
-        let raw: Vec<u8> = String::from("Romeo and Juliet@Excerpt from Act 2, Scene 2@@JULIET@O Romeo, Romeo! wherefore art thou Romeo?@Deny thy father and refuse thy name;@Or, if thou wilt not, be but sworn my love,@And I'll no longer be a Capulet.@@ROMEO@[Aside] Shall I hear more, or shall I speak at this?@@JULIET@'Tis but thy name that is my enemy;@Thou art thyself, though not a Montague.@What's Montague? it is nor hand, nor foot,@Nor arm, nor face, nor any other part@Belonging to a man. O, be some other name!@What's in a name? that which we call a rose@By any other name would smell as sweet;@So Romeo would, were he not Romeo call'd,@Retain that dear perfection which he owes@Without that title. Romeo, doff thy name,@And for that name which is no part of thee@Take all myself.@@ROMEO@I take thee at thy word:@Call me but love, and I'll be new baptized;@Henceforth I never will be Romeo.@@JULIET@What man art thou that thus bescreen'd in night@So stumblest on my counsel?").as_bytes().to_vec();
+        let raw: Vec<u8> = WORKED_EXAMPLE.as_bytes().to_vec();
 
         let compressed = {
             // compression level = 0 defaults to using level=3, which is zstd's default.
@@ -5591,7 +5603,7 @@ mod tests {
                 .set_pledged_src_size(Some(raw.len() as u64))
                 .expect("Encoder src_size: raw.len()");
 
-            encoder.write_all(&raw).expect("Encoder wirte_all");
+            encoder.write_all(&raw).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5627,7 +5639,7 @@ mod tests {
                 .expect("Encoder src_size: raw.len()");
             // include the content size to know at decode time the expected size of decoded data.
 
-            encoder.write_all(&raw).expect("Encoder wirte_all");
+            encoder.write_all(&raw).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5673,7 +5685,7 @@ mod tests {
                 .set_pledged_src_size(Some(batch_data.len() as u64))
                 .expect("Encoder src_size: raw.len()");
 
-            encoder.write_all(&batch_data).expect("Encoder wirte_all");
+            encoder.write_all(&batch_data).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5717,7 +5729,7 @@ mod tests {
                 .set_pledged_src_size(Some(raw.len() as u64))
                 .expect("Encoder src_size: raw.len()");
 
-            encoder.write_all(&raw).expect("Encoder wirte_all");
+            encoder.write_all(&raw).expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 
@@ -5760,7 +5772,7 @@ mod tests {
 
             encoder
                 .write_all(&multi_batch_data)
-                .expect("Encoder wirte_all");
+                .expect("Encoder write_all");
             encoder.finish().expect("Encoder success")
         };
 

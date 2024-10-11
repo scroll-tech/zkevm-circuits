@@ -22,8 +22,9 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use core::iter::once;
-use eth_types::{sign_types::SignData, ToLittleEndian, ToScalar, ToWord, Word, H256, U256};
+use eth_types::{sign_types::SignData, ToLittleEndian, ToWord, Word, H256, U256};
 use ethers_core::utils::keccak256;
+use gadgets::ToScalar;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{and, not, pow_of_two, split_u256, split_u256_limb64, Expr},
@@ -47,6 +48,7 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
 use std::array;
+use std::collections::BTreeMap;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used to define lookup tables
@@ -1758,6 +1760,10 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+#[cfg(feature = "dual-bytecode")]
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
+
+#[cfg(not(feature = "dual-bytecode"))]
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
 
 /// CopyThread is the state used while generating rows of the copy table.
@@ -1796,6 +1802,7 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
+        bytecode_map: Option<&BTreeMap<Word, bool>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
         assert!(
@@ -1979,6 +1986,24 @@ impl CopyTable {
                 (rw_counter, rwc_inc_left)
             };
 
+            #[cfg(feature = "dual-bytecode")]
+            // For codecopy & extcodecopy copy bytecodes, src_type == Bytecode.
+            // For return in creating/deploy contract case, dst_type == Bytecode.
+            let is_first_bytecode_table = if copy_event.src_type == CopyDataType::Bytecode {
+                let code_hash = Word::from_big_endian(copy_event.src_id.get_hash().as_bytes());
+                // bytecode_map includes all the code_hash, for normal cases, unwrap would be safe.
+                // but for extcodecopy, the external_address can be non existed code hash, hence use `unwrap_or`.
+                *bytecode_map.unwrap().get(&code_hash).unwrap_or(&true)
+            } else if copy_event.dst_type == CopyDataType::Bytecode {
+                let code_hash = Word::from_big_endian(copy_event.dst_id.get_hash().as_bytes());
+
+                *bytecode_map.unwrap().get(&code_hash).unwrap()
+            } else {
+                // if not code related copy case, default value is true, even it is true, copy circuit will not do lookup if current row is
+                // not bytecode type.
+                true
+            };
+
             assignments.push((
                 thread.tag,
                 [
@@ -2005,6 +2030,12 @@ impl CopyTable {
                     (Value::known(F::from(copy_step.mask)), "mask"),
                     (Value::known(F::from(thread.front_mask)), "front_mask"),
                     (Value::known(F::from(word_index)), "word_index"),
+                    #[cfg(feature = "dual-bytecode")]
+                    (
+                        // set value from block get bytecode circuit.
+                        Value::known(F::from(is_first_bytecode_table)),
+                        "is_first_bytecode_table",
+                    ),
                 ],
             ));
 
@@ -2063,7 +2094,10 @@ impl CopyTable {
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row, _) in Self::assignments(copy_event, *challenges) {
+                    let copy_rows =
+                        Self::assignments(copy_event, *challenges, block.bytecode_map.as_ref());
+
+                    for (tag, row, _) in copy_rows {
                         region.assign_fixed(
                             || format!("q_enable at row: {offset}"),
                             self.q_enable,
@@ -2882,7 +2916,7 @@ impl ModExpTable {
         ret
     }
 
-    /// helper for devide a U256 into 3 108bit limbs
+    /// helper for divide a U256 into 3 108bit limbs
     pub fn split_u256_108bit_limbs(word: &Word) -> [u128; 3] {
         let bit108 = 1u128 << 108;
         let (next, limb0) = word.div_mod(U256::from(bit108));
@@ -3134,6 +3168,8 @@ impl PowOfRandTable {
                         || pow_of_rand,
                     )?;
                 }
+
+                log::debug!("assign pow of rand with rows {} done", max_rows);
 
                 Ok(())
             },

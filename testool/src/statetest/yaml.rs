@@ -2,7 +2,7 @@ use super::{
     parse,
     spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
-use crate::{abi, utils::MainnetFork, Compiler};
+use crate::{abi, compiler::Compiler, utils::MainnetFork};
 use anyhow::{anyhow, bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
@@ -50,7 +50,7 @@ impl<'a> YamlStateTestBuilder<'a> {
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
     pub fn load_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
-        // Shoule be false for stEIP1153-transientStorage,
+        // Should be false for stEIP1153-transientStorage,
         // due to this bug https://github.com/ethereum/tests/issues/1369
         if path.contains("stEIP1153-transientStorage") {
             abi::ENABLE_NORMALIZE.with_borrow_mut(|b| *b = false)
@@ -587,6 +587,7 @@ mod test {
         statetest::{run_test, CircuitsConfig, StateTestError},
     };
     use eth_types::{address, AccessList, AccessListItem};
+    use std::fmt::{Display, Formatter};
 
     const TEMPLATE: &str = r#"
 arith:
@@ -700,23 +701,27 @@ arith:
             }
         }
     }
-    impl ToString for Template {
-        fn to_string(&self) -> String {
-            TEMPLATE
-                .replace("{{ gas_limit }}", &self.gas_limit)
-                .replace("{{ pre_code }}", &self.pre_code)
-                .replace("{{ res_storage }}", &self.res_storage)
-                .replace("{{ res_balance }}", &self.res_balance)
-                .replace("{{ res_code }}", &self.res_code)
-                .replace("{{ res_nonce }}", &self.res_nonce)
-                .replace(
-                    "{{ expect_exception_network }}",
-                    if self.res_exception {
-                        ">=Istanbul"
-                    } else {
-                        "Istanbul"
-                    },
-                )
+    impl Display for Template {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "{}",
+                TEMPLATE
+                    .replace("{{ gas_limit }}", &self.gas_limit)
+                    .replace("{{ pre_code }}", &self.pre_code)
+                    .replace("{{ res_storage }}", &self.res_storage)
+                    .replace("{{ res_balance }}", &self.res_balance)
+                    .replace("{{ res_code }}", &self.res_code)
+                    .replace("{{ res_nonce }}", &self.res_nonce)
+                    .replace(
+                        "{{ expect_exception_network }}",
+                        if self.res_exception {
+                            ">=Istanbul"
+                        } else {
+                            "Istanbul"
+                        },
+                    )
+            )
         }
     }
 
@@ -980,7 +985,6 @@ arith:
         Ok(())
     }
 
-    #[cfg(feature = "warn-unimplemented")]
     #[test]
     fn fail_bad_code() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(

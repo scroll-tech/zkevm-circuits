@@ -38,7 +38,7 @@ impl Instrument {
         self.states.push((execution_state, sizes));
     }
 
-    /// Dissasembles the instrumentation data and returns a collection of
+    /// Disassembles the instrumentation data and returns a collection of
     /// `ExecStateReport`s. One for each EVM `ExecutionState`.
     pub(crate) fn analyze(&self) -> Vec<ExecStateReport> {
         let mut report_collection = vec![];
@@ -93,6 +93,10 @@ impl Instrument {
                     CellType::Lookup(Table::Bytecode) => {
                         report.bytecode_table = data_entry;
                     }
+                    #[cfg(feature = "dual-bytecode")]
+                    CellType::Lookup(Table::Bytecode1) => {
+                        report.bytecode_table1 = data_entry;
+                    }
                     CellType::Lookup(Table::Block) => {
                         report.block_table = data_entry;
                     }
@@ -142,6 +146,8 @@ pub(crate) struct ExecStateReport {
     pub(crate) tx_table: StateReportRow,
     pub(crate) rw_table: StateReportRow,
     pub(crate) bytecode_table: StateReportRow,
+    #[cfg(feature = "dual-bytecode")]
+    pub(crate) bytecode_table1: StateReportRow,
     pub(crate) block_table: StateReportRow,
     pub(crate) copy_table: StateReportRow,
     pub(crate) keccak_table: StateReportRow,

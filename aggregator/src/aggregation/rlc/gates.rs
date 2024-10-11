@@ -1,6 +1,5 @@
 use ethers_core::utils::keccak256;
 use halo2_proofs::{
-    arithmetic::Field,
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
     halo2curves::bn256::Fr,
     plonk::Error,
@@ -117,6 +116,15 @@ impl RlcConfig {
         Cell {
             region_index,
             row_offset: 1,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn four_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 4,
             column: self.fixed.into(),
         }
     }

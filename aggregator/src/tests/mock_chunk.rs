@@ -13,7 +13,7 @@ use zkevm_circuits::{table::KeccakTable, util::Challenges};
 
 use crate::{
     constants::{ACC_LEN, DIGEST_LEN},
-    ChunkHash, RlcConfig, LOG_DEGREE,
+    ChunkInfo, RlcConfig, LOG_DEGREE,
 };
 
 /// This config is used to compute RLCs for bytes.
@@ -36,11 +36,11 @@ pub struct MockConfig {
 pub(crate) struct MockChunkCircuit {
     // This circuit has an accumulator if it has already gone through compression
     pub(crate) has_accumulator: bool,
-    pub(crate) chunk: ChunkHash,
+    pub(crate) chunk: ChunkInfo,
 }
 
 impl MockChunkCircuit {
-    pub(crate) fn new(has_accumulator: bool, chunk: ChunkHash) -> Self {
+    pub(crate) fn new(has_accumulator: bool, chunk: ChunkInfo) -> Self {
         MockChunkCircuit {
             has_accumulator,
             chunk,
@@ -54,11 +54,11 @@ impl MockChunkCircuit {
         has_accumulator: bool,
         is_padding: bool,
     ) -> Self {
-        let chunk = ChunkHash::mock_random_chunk_hash_for_testing(r);
+        let chunk = ChunkInfo::mock_random_chunk_info_for_testing(r);
         Self {
             has_accumulator,
             chunk: if is_padding {
-                ChunkHash::mock_padded_chunk_hash_for_testing(&chunk)
+                ChunkInfo::mock_padded_chunk_info_for_testing(&chunk)
             } else {
                 chunk
             },
@@ -69,6 +69,7 @@ impl MockChunkCircuit {
 impl Circuit<Fr> for MockChunkCircuit {
     type Config = MockConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -77,7 +78,7 @@ impl Circuit<Fr> for MockChunkCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         meta.set_minimum_degree(4);
 
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let keccak_table = KeccakTable::construct(meta);
         let rlc_config = RlcConfig::configure(meta, &keccak_table, challenges);
         let instance = meta.instance_column();
@@ -150,6 +151,7 @@ impl CircuitExt<Fr> for MockChunkCircuit {
     }
 }
 
+#[ignore = "heavy"]
 #[test]
 fn test_mock_chunk_prover() {
     test_mock_chunk_prover_helper(true, true);

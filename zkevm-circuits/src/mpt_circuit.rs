@@ -86,7 +86,6 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
 impl SubCircuit<Fr> for MptCircuit<Fr> {
     type Config = MptCircuitConfig<Fr>;
 
@@ -167,7 +166,6 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
 impl Circuit<Fr> for MptCircuit<Fr> {
     type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    #[cfg(feature = "circuit-params")]
     type Params = ();
 
     fn without_witnesses(&self) -> Self {

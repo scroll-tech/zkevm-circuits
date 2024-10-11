@@ -1,6 +1,4 @@
-use crate::blob::BatchData;
 use ark_std::{end_timer, start_timer};
-use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -9,43 +7,49 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use std::rc::Rc;
-use std::{env, fs::File};
-
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
-use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
-#[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
-    loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader},
-    pcs::kzg::{Bdfg21, Kzg},
+    loader::halo2::{
+        halo2_ecc::{
+            ecc::EccChip,
+            fields::fp::FpConfig,
+            halo2_base::{AssignedValue, Context, ContextParams},
+        },
+        Halo2Loader,
+    },
+    pcs::kzg::{Bdfg21, Kzg, KzgSuccinctVerifyingKey},
 };
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier_sdk::{aggregate, flatten_accumulator};
-use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
+use snark_verifier_sdk::{aggregate, flatten_accumulator, CircuitExt, Snark, SnarkWitness};
+use std::{env, fs::File, rc::Rc};
 use zkevm_circuits::util::Challenges;
 
 use crate::{
+    aggregation::{decoder::WORKED_EXAMPLE, witgen::process, BatchCircuitConfig},
     batch::BatchHash,
+    blob::BatchData,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
-    AssignedBarycentricEvaluationConfig, ConfigParams,
+    witgen::{zstd_encode, MultiBlockProcessResult},
+    AssignedBarycentricEvaluationConfig, ConfigParams, LOG_DEGREE, PI_CHAIN_ID,
+    PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH,
+    PI_PARENT_STATE_ROOT,
 };
 
-use super::AggregationConfig;
-
-/// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
+/// Batch circuit, the chunk aggregation routine below recursion circuit
 #[derive(Clone)]
-pub struct AggregationCircuit<const N_SNARKS: usize> {
+pub struct BatchCircuit<const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
     pub snarks_with_padding: Vec<SnarkWitness>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
-    // - the batch's public_input_hash (32 elements)
+    // - parent_state_root (2 elements, split hi_lo)
+    // - parent_batch_hash (2 elements)
+    // - current_state_root (2 elements)
+    // - current_batch_hash (2 elements)
+    // - chain id (1 element)
+    // - current_withdraw_root (2 elements)
     pub flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
     pub as_proof: Value<Vec<u8>>,
@@ -54,7 +58,7 @@ pub struct AggregationCircuit<const N_SNARKS: usize> {
     pub batch_hash: BatchHash<N_SNARKS>,
 }
 
-impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
     pub fn new(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
@@ -94,14 +98,21 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
         let (as_proof, acc_instances) =
             extract_proof_and_instances_with_pairing_check(params, snarks_with_padding, rng)?;
 
-        // extract batch's public input hash
-        let public_input_hash = &batch_hash.instances_exclude_acc()[0];
-
         // the public instance for this circuit consists of
         // - an accumulator (12 elements)
-        // - the batch's public_input_hash (32 elements)
-        let flattened_instances: Vec<Fr> =
-            [acc_instances.as_slice(), public_input_hash.as_slice()].concat();
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - chain id (1 element)
+        // - current_withdraw_root (2 elements)
+        let flattened_instances: Vec<Fr> = [
+            acc_instances.as_slice(),
+            batch_hash.instances_exclude_acc::<Fr>()[0]
+                .clone()
+                .as_slice(),
+        ]
+        .concat();
 
         end_timer!(timer);
         Ok(Self {
@@ -118,9 +129,11 @@ impl<const N_SNARKS: usize> AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
-    type Config = (AggregationConfig<N_SNARKS>, Challenges);
+impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
+    type Config = (BatchCircuitConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
+
     fn without_witnesses(&self) -> Self {
         unimplemented!()
     }
@@ -136,8 +149,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             },
         );
 
-        let challenges = Challenges::construct(meta);
-        let config = AggregationConfig::configure(meta, &params, challenges);
+        let challenges = Challenges::construct_p1(meta);
+        let config = BatchCircuitConfig::configure(meta, &params, challenges);
         log::info!(
             "aggregation circuit configured with k = {} and {:?} advice columns",
             params.degree,
@@ -163,48 +176,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             .range()
             .load_lookup_table(&mut layouter)
             .expect("load range lookup table");
+
         // ==============================================
         // Step 1: snark aggregation circuit
         // ==============================================
-        #[cfg(feature = "disable_proof_aggregation")]
-        let barycentric = {
-            let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-            layouter.assign_region(
-                || "barycentric evaluation",
-                |region| {
-                    if first_pass {
-                        first_pass = false;
-                        return Ok(AssignedBarycentricEvaluationConfig::default());
-                    }
-
-                    let mut ctx = Context::new(
-                        region,
-                        ContextParams {
-                            max_rows: config.flex_gate().max_rows,
-                            num_context_ids: 1,
-                            fixed_columns: config.flex_gate().constants.clone(),
-                        },
-                    );
-
-                    let barycentric = config.barycentric.assign(
-                        &mut ctx,
-                        &self.batch_hash.point_evaluation_assignments.coefficients,
-                        self.batch_hash
-                            .point_evaluation_assignments
-                            .challenge_digest,
-                        self.batch_hash.point_evaluation_assignments.evaluation,
-                    );
-
-                    config.barycentric.scalar.range.finalize(&mut ctx);
-                    ctx.print_stats(&["barycentric evaluation"]);
-
-                    Ok(barycentric)
-                },
-            )?
-        };
-
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         let (accumulator_instances, snark_inputs, barycentric) = {
+            use halo2_proofs::halo2curves::bn256::Fq;
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
             let (accumulator_instances, snark_inputs, barycentric) = layouter.assign_region(
@@ -223,6 +200,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
                     // stores public inputs for all snarks, including the padded ones
                     let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
+
                     let ctx = Context::new(
                         region,
                         ContextParams {
@@ -233,21 +211,22 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     );
 
                     let ecc_chip = config.ecc_chip();
-                    let loader = Halo2Loader::new(ecc_chip, ctx);
+                    let loader: Rc<Halo2Loader<G1Affine, EccChip<Fr, FpConfig<Fr, Fq>>>> =
+                        Halo2Loader::new(ecc_chip, ctx);
 
                     //
                     // extract the assigned values for
                     // - instances which are the public inputs of each chunk (prefixed with 12
                     //   instances from previous accumulators)
-                    // - new accumulator to be verified on chain
+                    // - new accumulator
                     //
+                    log::debug!("aggregation: chunk aggregation");
                     let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
                         &self.svk,
                         &loader,
                         &self.snarks_with_padding,
                         self.as_proof(),
                     );
-                    log::trace!("aggregation circuit during assigning");
                     for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
                         log::trace!("{}-th instance: {:?}", i, e.value)
                     }
@@ -265,9 +244,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                             .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                     );
 
-                    loader.ctx_mut().print_stats(&["snark aggregation"]);
+                    loader
+                        .ctx_mut()
+                        .print_stats(&["snark aggregation [chunks -> batch]"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
+                    log::debug!("batching: assigning barycentric");
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
                         &self.batch_hash.point_evaluation_assignments.coefficients,
@@ -285,12 +267,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 },
             )?;
 
-            assert_eq!(snark_inputs.len(), N_SNARKS * DIGEST_LEN);
             (accumulator_instances, snark_inputs, barycentric)
         };
         end_timer!(timer);
+
         // ==============================================
-        // step 2: public input aggregation circuit
+        // step 2: public input batch circuit
         // ==============================================
         // extract all the hashes and load them to the hash table
         let challenges = challenge.values(&layouter);
@@ -305,7 +287,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
 
             let timer = start_timer!(|| "extract hash");
             // orders:
-            // - batch_public_input_hash
+            // - batch_hash
             // - chunk\[i\].piHash for i in \[0, N_SNARKS)
             // - batch_data_hash_preimage
             // - preimage for blob metadata
@@ -335,32 +317,26 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 self.batch_hash.number_of_valid_chunks,
                 &preimages,
             )
-            .map_err(|_e| Error::ConstraintSystemFailure)?;
+            .map_err(|e| {
+                log::error!("assign_batch_hashes err {:#?}", e);
+                Error::ConstraintSystemFailure
+            })?;
 
             end_timer!(timer);
 
             assigned_batch_hash
         };
-        // digests
-        let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
+
+        // Extract digests
+        let (_batch_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells::<N_SNARKS>(&assigned_batch_hash.hash_output);
 
-        // ==============================================
-        // step 3: assert public inputs to the snarks are correct
-        // ==============================================
-        for (i, chunk) in chunk_pi_hash_digests.iter().enumerate() {
-            let hash = self.batch_hash.chunks_with_padding[i].public_input_hash();
-            for j in 0..DIGEST_LEN {
-                log::trace!("pi {:02x} {:?}", hash[j], chunk[j].value());
-            }
-        }
-
-        #[cfg(not(feature = "disable_proof_aggregation"))]
+        // ========================================================================
+        // step 2.a: check accumulator including public inputs to the snarks
+        // ========================================================================
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         layouter.assign_region(
-            || "pi checks",
+            || "BatchCircuit: Chunk PI",
             |mut region| -> Result<(), Error> {
                 if first_pass {
                     // this region only use copy constraints and do not affect the shape of the
@@ -393,11 +369,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             },
         )?;
 
-        // ==============================================
-        // step 4: assert public inputs to the aggregator circuit are correct
-        // ==============================================
-        // accumulator
-        #[cfg(not(feature = "disable_proof_aggregation"))]
         {
             assert!(accumulator_instances.len() == ACC_LEN);
             for (i, v) in accumulator_instances.iter().enumerate() {
@@ -405,19 +376,28 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
             }
         }
 
-        // public input hash
-        for (index, batch_pi_hash_digest_cell) in batch_pi_hash_digest.iter().enumerate() {
-            log::trace!(
-                "pi (circuit vs real): {:?} {:?}",
-                batch_pi_hash_digest_cell.value(),
-                self.instances()[0][index + ACC_LEN]
-            );
-
-            layouter.constrain_instance(
-                batch_pi_hash_digest_cell.cell(),
-                config.instance,
-                index + ACC_LEN,
-            )?;
+        // ========================================================================
+        // step 2.b: constrain extracted public input cells against actual instance
+        // ========================================================================
+        let hash_derived_public_input_cells = assigned_batch_hash.hash_derived_public_input_cells;
+        let instance_offsets: Vec<usize> = vec![
+            PI_PARENT_BATCH_HASH,
+            PI_PARENT_BATCH_HASH + 1,
+            PI_CURRENT_BATCH_HASH,
+            PI_CURRENT_BATCH_HASH + 1,
+            PI_PARENT_STATE_ROOT,
+            PI_PARENT_STATE_ROOT + 1,
+            PI_CURRENT_STATE_ROOT,
+            PI_CURRENT_STATE_ROOT + 1,
+            PI_CURRENT_WITHDRAW_ROOT,
+            PI_CURRENT_WITHDRAW_ROOT + 1,
+            PI_CHAIN_ID,
+        ];
+        for (c, inst_offset) in hash_derived_public_input_cells
+            .into_iter()
+            .zip(instance_offsets.into_iter())
+        {
+            layouter.constrain_instance(c.cell(), config.instance, inst_offset)?;
         }
 
         // blob data config
@@ -432,7 +412,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
-                &batch_data,
+                &self.batch_hash.blob_bytes,
                 barycentric_assignments,
             )?;
 
@@ -442,27 +422,30 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                 &config.rlc_config,
                 &assigned_batch_hash.chunks_are_padding,
                 &batch_data,
+                self.batch_hash.versioned_hash,
                 barycentric_assignments,
             )?;
 
-            let batch_bytes = batch_data.get_batch_data_bytes();
-            let encoded_batch_bytes = batch_data.get_encoded_batch_data_bytes();
-            let (
+            // conditionally encode those bytes. By default we use a worked example.
+            let raw_bytes = if blob_data_exports.enable_encoding_bool {
+                batch_data.get_batch_data_bytes()
+            } else {
+                WORKED_EXAMPLE.as_bytes().to_vec()
+            };
+            let encoded_bytes = zstd_encode(&raw_bytes);
+
+            let MultiBlockProcessResult {
                 witness_rows,
-                decoded_literals,
-                aux_data,
+                literal_bytes: decoded_literals,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
-                address_table_arr,
-                sequence_exec_result,
-            ) = crate::aggregation::decoder::witgen::process(
-                &encoded_batch_bytes,
-                challenges.keccak_input(),
-            );
+                address_table_rows: address_table_arr,
+                sequence_exec_results,
+            } = process(&encoded_bytes, challenges.keccak_input());
 
-            // sanity check:
-            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_result.into_iter().fold(
+            // sanity check
+            let (recovered_bytes, sequence_exec_info_arr) = sequence_exec_results.into_iter().fold(
                 (Vec::new(), Vec::new()),
                 |(mut out_byte, mut out_exec), res| {
                     out_byte.extend(res.recovered_bytes);
@@ -470,30 +453,35 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                     (out_byte, out_exec)
                 },
             );
-            assert_eq!(
-                batch_bytes, recovered_bytes,
-                "original and recovered bytes mismatch"
-            );
+            if blob_data_exports.enable_encoding_bool {
+                assert_eq!(
+                    raw_bytes, recovered_bytes,
+                    "original and recovered bytes mismatch"
+                );
+            }
 
             let decoder_exports = config.decoder_config.assign(
                 &mut layouter,
-                &batch_bytes,
-                &encoded_batch_bytes,
+                &raw_bytes,
+                &encoded_bytes,
                 witness_rows,
                 decoded_literals,
-                aux_data,
                 fse_aux_tables,
                 block_info_arr,
                 sequence_info_arr,
                 address_table_arr,
                 sequence_exec_info_arr,
                 &challenges,
-                20, // TODO: configure k for aggregation circuit instead of hard-coded here.
+                LOG_DEGREE, // TODO: configure k for batch circuit instead of hard-coded here.
             )?;
 
             layouter.assign_region(
-                || "batch checks",
+                || "consistency checks",
                 |mut region| -> Result<(), Error> {
+                    // Initialise the RLC config for basic arithmetic/conditional checks.
+                    config.rlc_config.init(&mut region)?;
+                    let mut rlc_config_offset = 0;
+
                     region.constrain_equal(
                         assigned_batch_hash.num_valid_snarks.cell(),
                         batch_data_exports.num_valid_chunks.cell(),
@@ -538,15 +526,132 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
-                    // equate rlc (from blob data) with decoder's encoded_rlc
-                    region.constrain_equal(
-                        blob_data_exports.bytes_rlc.cell(),
-                        decoder_exports.encoded_rlc.cell(),
+                    // do we encode batch data to blob? or not.
+                    let enable_encoding = blob_data_exports.enable_encoding.clone();
+                    let disable_encoding = config.rlc_config.not(
+                        &mut region,
+                        &enable_encoding,
+                        &mut rlc_config_offset,
                     )?;
-                    // equate rlc (from batch data) with decoder's decoded_rlc
+
+                    // equate rlc (from blob data) with decoder's encoded_rlc
+                    let (conditional_blob_rlc, conditional_encoded_rlc) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.bytes_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.encoded_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
                     region.constrain_equal(
-                        batch_data_exports.bytes_rlc.cell(),
-                        decoder_exports.decoded_rlc.cell(),
+                        conditional_blob_rlc.cell(),
+                        conditional_encoded_rlc.cell(),
+                    )?;
+
+                    // equate len(blob_bytes) with decoder's encoded_len
+                    let (conditional_blob_len, conditional_encoded_len) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.cooked_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.encoded_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
+                    region.constrain_equal(
+                        conditional_blob_len.cell(),
+                        conditional_encoded_len.cell(),
+                    )?;
+
+                    // equate rlc (from batch data) with decoder's decoded_rlc
+                    let (conditional_batch_rlc, conditional_decoded_rlc) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.bytes_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.decoded_rlc,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
+                    region.constrain_equal(
+                        conditional_batch_rlc.cell(),
+                        conditional_decoded_rlc.cell(),
+                    )?;
+
+                    // equate len(batch_data) with decoder's decoded_len
+                    let (conditional_batch_len, conditional_decoded_len) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.batch_data_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &decoder_exports.decoded_len,
+                            &enable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
+                    region.constrain_equal(
+                        conditional_batch_len.cell(),
+                        conditional_decoded_len.cell(),
+                    )?;
+
+                    // if we do not enable encoding, then blob == batch (rlc).
+                    let (conditional_blob_rlc, conditional_batch_rlc) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.bytes_rlc,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.bytes_rlc,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
+                    region.constrain_equal(
+                        conditional_blob_rlc.cell(),
+                        conditional_batch_rlc.cell(),
+                    )?;
+
+                    // if we do not enable encoding, then blob == batch (len).
+                    let (conditional_blob_len, conditional_batch_len) = (
+                        config.rlc_config.mul(
+                            &mut region,
+                            &blob_data_exports.bytes_len,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                        config.rlc_config.mul(
+                            &mut region,
+                            &batch_data_exports.batch_data_len,
+                            &disable_encoding,
+                            &mut rlc_config_offset,
+                        )?,
+                    );
+                    region.constrain_equal(
+                        conditional_blob_len.cell(),
+                        conditional_batch_len.cell(),
                     )?;
 
                     Ok(())
@@ -560,15 +665,18 @@ impl<const N_SNARKS: usize> Circuit<Fr> for AggregationCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> CircuitExt<Fr> for AggregationCircuit<N_SNARKS> {
+impl<const N_SNARKS: usize> CircuitExt<Fr> for BatchCircuit<N_SNARKS> {
     fn num_instance(&self) -> Vec<usize> {
-        // 12 elements from accumulator
-        // 32 elements from batch's public_input_hash
-        vec![ACC_LEN + DIGEST_LEN]
+        // - 12 elements from accumulator
+        // - parent_state_root (2 elements, split hi_lo)
+        // - parent_batch_hash (2 elements)
+        // - current_state_root (2 elements)
+        // - current_batch_hash (2 elements)
+        // - chain id (1 element)
+        // - current_withdraw_root (2 elements)
+        vec![ACC_LEN + 11]
     }
 
-    // 12 elements from accumulator
-    // 32 elements from batch's public_input_hash
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
     }

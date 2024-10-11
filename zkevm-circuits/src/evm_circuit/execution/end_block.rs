@@ -1,3 +1,11 @@
+use bus_mapping::l2_predeployed::message_queue::{
+    ADDRESS as MESSAGE_QUEUE, WITHDRAW_TRIE_ROOT_SLOT,
+};
+use gadgets::ToScalar;
+use halo2_proofs::{
+    circuit::{Cell as AssignedCell, Value},
+    plonk::{Error, Expression},
+};
 use std::sync::Mutex;
 
 use crate::{
@@ -13,20 +21,13 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, TxContextFieldTag},
+    table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{Expr, Field},
-};
-use bus_mapping::l2_predeployed::message_queue::{
-    ADDRESS as MESSAGE_QUEUE, WITHDRAW_TRIE_ROOT_SLOT,
-};
-use eth_types::ToScalar;
-use halo2_proofs::{
-    circuit::{Cell as AssignedCell, Value},
-    plonk::{Error, Expression},
 };
 
 #[derive(Debug)]
 pub(crate) struct EndBlockGadget<F> {
+    chain_id: Cell<F>,
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
     is_empty_block: IsZeroGadget<F>,
@@ -34,7 +35,6 @@ pub(crate) struct EndBlockGadget<F> {
     max_txs: Cell<F>,
     phase2_withdraw_root: Cell<F>,
     phase2_withdraw_root_prev: Cell<F>,
-    is_curie_fork_block: Cell<F>,
     pub withdraw_root_assigned: Mutex<Option<AssignedCell>>,
 }
 
@@ -44,6 +44,7 @@ impl<F: Clone> Clone for EndBlockGadget<F> {
             *self.withdraw_root_assigned.lock().unwrap();
         Self {
             withdraw_root_assigned: Mutex::new(withdraw_root_assigned),
+            chain_id: self.chain_id.clone(),
             total_txs: self.total_txs.clone(),
             total_txs_is_max_txs: self.total_txs_is_max_txs.clone(),
             is_empty_block: self.is_empty_block.clone(),
@@ -51,32 +52,28 @@ impl<F: Clone> Clone for EndBlockGadget<F> {
             max_txs: self.max_txs.clone(),
             phase2_withdraw_root: self.phase2_withdraw_root.clone(),
             phase2_withdraw_root_prev: self.phase2_withdraw_root_prev.clone(),
-            is_curie_fork_block: self.is_curie_fork_block.clone(),
         }
     }
 }
 
-const EMPTY_BLOCK_N_RWS: u64 = 0;
-
-/*
-The goal of EndBlockGadget is to:
-    0. expose withdraw root. Then it can be copied into pi circuit.
-    1. constrain rws of evm circuit is same to rws of state circuit.
-        We use 2 StartOp rw lookup to do this.
-    2. constrain all txs inside tx circuit are processed inside evm circuit.
-        (We don't need to constrain txs in evm circuit are not in tx circuit,
-        since there are tx lookups)
-To achieve the above goal:
-    We need to pass "rwc" and "call_id" all the way to EndBlock.
-    Then "rwc" can be used for goal1.
-    For goal2 this gadget can read tx_id from CallContext using call_id.
- */
+/// The goal of EndBlockGadget is to:
+///     0. expose withdraw root. Then it can be copied into pi circuit.
+///     1. constrain rws of evm circuit is same to rws of state circuit.
+///         We use 2 StartOp rw lookup to do this.
+///     2. constrain all txs inside tx circuit are processed inside evm circuit.
+///         (We don't need to constrain txs in evm circuit are not in tx circuit,
+///         since there are tx lookups)
+/// To achieve the above goal:
+///     We need to pass "rwc" and "call_id" all the way to EndBlock.
+///     Then "rwc" can be used for goal1.
+///     For goal2 this gadget can read tx_id from CallContext using call_id.
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const NAME: &'static str = "EndBlock";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndBlock;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let chain_id = cb.query_cell();
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
@@ -84,8 +81,12 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let phase2_withdraw_root = cb.query_copy_cell_phase2();
         let phase2_withdraw_root_prev = cb.query_cell_phase2();
 
-        // TODO: add constraints for this
-        let is_curie_fork_block = cb.query_cell();
+        // Lookup block table with chain_id
+        cb.block_lookup(
+            BlockContextFieldTag::ChainId.expr(),
+            cb.curr.state.block_number.expr(),
+            chain_id.expr(),
+        );
 
         // Note that rw_counter starts at 1
         let is_empty_block =
@@ -95,11 +96,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // and add 1 withdraw_root lookup
         let total_rws = not::expr(is_empty_block.expr())
             * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr())
-            + 1.expr()
-            + is_curie_fork_block.expr() * 7.expr();
-
-        // TODO: implement the 7 rws
-        // The values should be constants
+            + 1.expr();
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -167,6 +164,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         });
 
         Self {
+            chain_id,
             max_txs,
             max_rws,
             phase2_withdraw_root,
@@ -174,7 +172,6 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             total_txs,
             total_txs_is_max_txs,
             is_empty_block,
-            is_curie_fork_block,
             withdraw_root_assigned: Default::default(),
         }
     }
@@ -188,6 +185,8 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        self.chain_id
+            .assign(region, offset, Value::known(F::from(block.chain_id)))?;
         self.is_empty_block
             .assign(region, offset, F::from(step.rw_counter as u64 - 1))?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);
@@ -200,19 +199,6 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         self.total_txs_is_max_txs
             .assign(region, offset, total_txs, max_txs)?;
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
-
-        let last_block_number = block
-            .context
-            .ctxs
-            .last_key_value()
-            .map(|(_, b)| b.number)
-            .unwrap_or_default();
-        let is_curie = bus_mapping::circuit_input_builder::curie::is_curie_fork(
-            block.chain_id,
-            last_block_number.as_u64(),
-        );
-        self.is_curie_fork_block
-            .assign(region, offset, Value::known(F::from(is_curie as u64)))?;
 
         let withdraw_root = self.phase2_withdraw_root.assign(
             region,

@@ -18,7 +18,8 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
+use gadgets::ToScalar;
 // use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -58,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
         let memory_dest_address =
             MemoryAddressGadget::construct(cb, dest_offset.clone(), length.clone());
 
-        // if no acutal copy happens, memory_word_size doesn't change. MemoryExpansionGadget handle
+        // if no actual copy happens, memory_word_size doesn't change. MemoryExpansionGadget handle
         // memory_word_size with MemoryAddressGadget.
         // more detailed:
         // when copy length is zero ( `length` == 0), MemoryAddressGadget set address offset to
@@ -142,10 +143,11 @@ impl<F: Field> ExecutionGadget<F> for MCopyGadget<F> {
         offset: usize,
         block: &Block,
         _transaction: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [dest_offset, src_offset, length] =
             [0, 1, 2].map(|idx| block.rws[step.rw_indices[idx]].stack_value());

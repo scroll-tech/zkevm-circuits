@@ -296,7 +296,7 @@ fn handle_copy(
             copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(dst_data_prev)),
             access_list: vec![],
         },
-    );
+    )?;
 
     Ok(())
 }
@@ -363,7 +363,7 @@ fn handle_create(
             copy_bytes: CopyBytes::new(copy_steps, None, None),
             access_list: vec![],
         },
-    );
+    )?;
 
     Ok(AccountCodeInfo {
         keccak_hash,

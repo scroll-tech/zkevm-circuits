@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn test_abs_unexpected_is_neg_for_negitive() {
+    fn test_abs_unexpected_is_neg_for_negative() {
         try_test!(AbsWordGadgetContainer<Fr, false>, [Word::MAX, Word::from(1)], false);
     }
 }

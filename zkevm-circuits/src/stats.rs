@@ -135,7 +135,7 @@ pub(crate) fn print_circuit_stats_by_states(
     // Function that calculates the circuit height used by an opcode.  This function takes the
     // circuit input builder Block, the current execution state, and the step index in circuit
     // input builder tx.
-    fn_height: impl Fn(&circuit_input_builder::Block, ExecutionState, usize) -> usize,
+    fn_height: impl Fn(&circuit_input_builder::Blocks, ExecutionState, usize) -> usize,
 ) {
     let mut implemented_states = Vec::new();
     for state in ExecutionState::iter() {
@@ -241,7 +241,7 @@ pub(crate) fn print_circuit_stats_by_states(
             assert_eq!(ExecState::Op(opcode), step.exec_state);
             let height = fn_height(&builder.block, state, step_index);
 
-            // Substract 1 to step_index to remove the `BeginTx` step, which doesn't appear
+            // Subtract 1 to step_index to remove the `BeginTx` step, which doesn't appear
             // in the geth trace.
             let geth_step = &block.geth_traces[0].struct_logs[step_index - 1];
             assert_eq!(opcode, geth_step.op);

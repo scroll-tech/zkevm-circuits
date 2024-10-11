@@ -16,14 +16,15 @@ pub struct ConfigParams {
 }
 
 impl ConfigParams {
+    /// Same with scroll-prover/integration/configs/layer3.config
     pub(crate) fn aggregation_param() -> Self {
         Self {
             strategy: FpStrategy::Simple,
-            degree: 20,
-            num_advice: vec![100],
-            num_lookup_advice: vec![13],
+            degree: 21,
+            num_advice: vec![67],
+            num_lookup_advice: vec![8],
             num_fixed: 2,
-            lookup_bits: 18,
+            lookup_bits: 20,
             limb_bits: BITS,
             num_limbs: LIMBS,
         }

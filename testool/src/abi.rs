@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 thread_local! {
     /// dirty hack to enable normalization
-    pub static ENABLE_NORMALIZE: RefCell<bool> = RefCell::new(true);
+    pub static ENABLE_NORMALIZE: RefCell<bool> = const {  RefCell::new(true) };
 }
 
 /// encodes an abi call (e.g. "f(uint) 1")
@@ -28,7 +28,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     } else {
         func_name_params[1..func_name_params.len()].to_vec()
     };
-    // transform func_params and args into the appropiate types
+    // transform func_params and args into the appropriate types
 
     let map_type = |t| match t {
         "uint" => ParamType::Uint(256),

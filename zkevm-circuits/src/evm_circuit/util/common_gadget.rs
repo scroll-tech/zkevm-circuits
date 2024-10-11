@@ -24,20 +24,21 @@ use crate::{
     witness::{Block, Call, ExecStep},
 };
 use either::Either;
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToLittleEndian, U256};
 use gadgets::util::{select, sum};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
 
-mod tx_access_list;
 mod tx_eip1559;
+mod tx_eip2930;
 mod tx_l1_fee;
 mod tx_l1_msg;
 
-pub(crate) use tx_access_list::TxAccessListGadget;
 pub(crate) use tx_eip1559::TxEip1559Gadget;
+pub(crate) use tx_eip2930::TxAccessListGadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
@@ -47,6 +48,9 @@ pub(crate) use tx_l1_msg::TxL1MsgGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct SameContextGadget<F> {
     opcode: Cell<F>,
+    // indicates current op code belongs to first or second bytecode table.
+    // should be bool type.
+    is_first_bytecode_table: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
@@ -65,7 +69,10 @@ impl<F: Field> SameContextGadget<F> {
         step_state_transition: StepStateTransition<F>,
         push_rlc: Expression<F>,
     ) -> Self {
-        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
+        let is_first_bytecode_table = cb.query_bool();
+
+        cb.lookup_opcode_with_push_rlc(opcode.expr(), push_rlc, is_first_bytecode_table.expr());
+
         cb.add_lookup(
             "Responsible opcode lookup",
             Lookup::Fixed {
@@ -86,22 +93,141 @@ impl<F: Field> SameContextGadget<F> {
 
         Self {
             opcode,
+            is_first_bytecode_table,
             sufficient_gas_left,
         }
+    }
+
+    // Check if current bytecode is belong to first bytecode table.
+    // Note: always return true when feature 'dual-bytecode' is disabled.
+    pub(crate) fn is_first_bytecode_table(&self) -> Expression<F> {
+        self.is_first_bytecode_table.expr()
     }
 
     pub(crate) fn assign_exec_step(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
+        block: &Block,
+        call: &Call,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        let opcode = step.opcode.unwrap();
+        let is_first_bytecode_table = block.is_first_bytecode_circuit(&call.code_hash);
+
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(is_first_bytecode_table as u64)),
+        )?;
+
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BytecodeLengthGadget<F> {
+    pub(crate) code_length: Cell<F>,
+    // indicates current op code belongs to first or second bytecode table.
+    // should be bool type.
+    pub(crate) is_first_bytecode_table: Cell<F>,
+}
+
+impl<F: Field> BytecodeLengthGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, code_hash: Cell<F>) -> Self {
+        // Fetch the bytecode length from the bytecode table.
+        let code_length = cb.query_cell();
+        let is_first_bytecode_table = cb.query_bool();
+
+        cb.condition(is_first_bytecode_table.clone().expr(), |cb| {
+            cb.bytecode_length(code_hash.expr(), code_length.expr());
+        });
+
+        #[cfg(feature = "dual-bytecode")]
+        cb.condition(not::expr(is_first_bytecode_table.clone().expr()), |cb| {
+            cb.bytecode1_length(code_hash.expr(), code_length.expr());
+        });
+
+        Self {
+            code_length,
+            is_first_bytecode_table,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block,
+        code_hash: &U256,
+    ) -> Result<u64, Error> {
+        let code_length = if code_hash.is_zero() {
+            0
+        } else {
+            block
+                .bytecodes
+                .get(code_hash)
+                .expect("could not find bytecode")
+                .bytes
+                .len() as u64
+        };
+
+        self.code_length
+            .assign(region, offset, Value::known(F::from(code_length)))?;
+
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(block.is_first_bytecode_circuit(code_hash))),
+        )?;
+        Ok(code_length)
+    }
+}
+
+// this helper does opcode lookup for some opcodes(callop, create, return_revert etc.),
+// which don't use SameContextGadget.
+#[derive(Clone, Debug)]
+pub(crate) struct BytecodeLookupGadget<F> {
+    pub(crate) opcode: Cell<F>,
+    pub(crate) is_first_bytecode_table: Cell<F>,
+}
+
+impl<F: Field> BytecodeLookupGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let opcode = cb.query_cell();
+        let is_first_bytecode_table = cb.query_bool();
+        cb.lookup_opcode(opcode.expr(), is_first_bytecode_table.expr());
+
+        Self {
+            opcode,
+            is_first_bytecode_table,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.sufficient_gas_left
-            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
+        let is_first_bytecode_table = block.is_first_bytecode_circuit(&call.code_hash);
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(is_first_bytecode_table)),
+        )?;
 
         Ok(())
     }
@@ -175,7 +301,7 @@ impl<F: Field> RestoreContextGadget<F> {
         // Update caller's last callee information
         // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         // There is only one case where RETURNDATASIZE != 0:
-        //      opcode is REVERT, and no stack/oog error occured.
+        //      opcode is REVERT, and no stack/oog error occurred.
         // In other words, for RETURN opcode, RETURNDATASIZE is 0 for both successful
         // and fail case.
         let discard_return_data = cb.curr.state.is_create.expr()
@@ -841,6 +967,7 @@ impl<F: Field> TransferToGadget<F> {
         } else {
             (0.into(), 0.into())
         };
+
         debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
         self.receiver.assign(
             region,
@@ -1102,7 +1229,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         let rd_address = MemAddrGadget::construct_self(cb);
 
         // Lookup values from stack
-        // `callee_address` is poped from stack and used to check if it exists in
+        // `callee_address` is popped from stack and used to check if it exists in
         // access list and get code hash.
         // For CALLCODE, both caller and callee addresses are `current_callee_address`.
         // For DELEGATECALL, caller address is `current_caller_address` and
@@ -1442,6 +1569,9 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
 pub(crate) struct CommonErrorGadget<F> {
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
+    // indicates current op code belongs to first or second bytecode table.
+    // should be bool type.
+    pub(crate) is_first_bytecode_table: Cell<F>,
 }
 
 impl<F: Field> CommonErrorGadget<F> {
@@ -1487,7 +1617,16 @@ impl<F: Field> CommonErrorGadget<F> {
         return_data_length: Expression<F>,
         push_rlc: Expression<F>,
     ) -> Self {
-        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
+        let is_first_bytecode_table = cb.query_bool();
+
+        cb.condition(is_first_bytecode_table.expr(), |cb| {
+            cb.opcode_lookup_rlc(opcode.expr(), push_rlc.clone());
+        });
+
+        #[cfg(feature = "dual-bytecode")]
+        cb.condition(not::expr(is_first_bytecode_table.expr()), |cb| {
+            cb.opcode_lookup_rlc2(opcode.expr(), push_rlc);
+        });
 
         let rw_counter_end_of_reversion = cb.query_cell();
 
@@ -1546,6 +1685,7 @@ impl<F: Field> CommonErrorGadget<F> {
         Self {
             rw_counter_end_of_reversion,
             restore_context,
+            is_first_bytecode_table,
         }
     }
 
@@ -1566,6 +1706,13 @@ impl<F: Field> CommonErrorGadget<F> {
         )?;
         self.restore_context
             .assign(region, offset, block, call, step, rw_offset)?;
+
+        let is_first_bytecode_table = block.is_first_bytecode_circuit(&call.code_hash);
+        self.is_first_bytecode_table.assign(
+            region,
+            offset,
+            Value::known(F::from(is_first_bytecode_table)),
+        )?;
 
         // NOTE: return value not use for now.
         Ok(1u64)
@@ -1755,7 +1902,7 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
             from_bytes::expr(&remainder_end.cells[..N_BYTES_U64]),
         );
 
-        // enusre it is expected overflow condition.
+        // ensure it is expected overflow condition.
         cb.require_equal(
             "check if [data_offset > u64::MAX, data_offset + size > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
             or::expr([

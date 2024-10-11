@@ -5,7 +5,7 @@
 //!   otherwise
 //! - is_zero: 1 if all `values` are `0`, `0` otherwise
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Phase, VirtualCells},
@@ -158,7 +158,6 @@ mod test {
     impl<F: Field, const N: usize> Circuit<F> for TestCircuit<F, N> {
         type Config = TestCircuitConfig<N>;
         type FloorPlanner = SimpleFloorPlanner;
-        #[cfg(feature = "circuit-params")]
         type Params = ();
 
         fn without_witnesses(&self) -> Self {

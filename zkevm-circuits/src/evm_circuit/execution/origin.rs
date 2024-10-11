@@ -69,12 +69,12 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         offset: usize,
         block: &Block,
         tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let origin = block.rws[step.rw_indices[1]].stack_value();
 
-        // Assing TxId.
+        // Assign TxId.
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
@@ -90,7 +90,8 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         )?;
 
         // Assign SameContextGadget witnesses.
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
         Ok(())
     }
 }

@@ -19,9 +19,10 @@ use crate::{
     table::CallContextFieldTag,
     util::Expr,
 };
+use gadgets::ToScalar;
 
 use crate::util::Field;
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -171,7 +172,8 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;

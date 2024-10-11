@@ -1,11 +1,4 @@
-use crate::{
-    aggregation::{
-        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
-    },
-    blob::{BatchData, PointEvaluationAssignments, N_BYTES_U256},
-    param::ConfigParams,
-    BatchDataConfig, MAX_AGG_SNARKS,
-};
+use ark_std::test_rng;
 use halo2_base::{
     gates::range::{RangeConfig, RangeStrategy},
     Context, ContextParams,
@@ -16,9 +9,23 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use rand::Rng;
+use std::fs;
 use zkevm_circuits::{
     table::{KeccakTable, RangeTable, U8Table},
     util::Challenges,
+};
+
+use crate::{
+    aggregation::{
+        witgen::{process, MultiBlockProcessResult},
+        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig,
+        RlcConfig,
+    },
+    blob::{BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256},
+    eip4844::{decode_blob, get_blob_bytes, get_coefficients, get_versioned_hash},
+    param::ConfigParams,
+    BatchDataConfig, ChunkInfo, MAX_AGG_SNARKS,
 };
 
 #[derive(Default)]
@@ -51,6 +58,7 @@ struct BlobConfig {
 impl Circuit<Fr> for BlobCircuit {
     type Config = BlobConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
     fn without_witnesses(&self) -> Self {
         unimplemented!()
     }
@@ -58,7 +66,7 @@ impl Circuit<Fr> for BlobCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let u8_table = U8Table::construct(meta);
         let range_table = RangeTable::construct(meta);
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let keccak_table = KeccakTable::construct(meta);
 
         let rlc = RlcConfig::configure(meta, &keccak_table, challenges);
@@ -105,9 +113,16 @@ impl Circuit<Fr> for BlobCircuit {
     ) -> Result<(), Error> {
         let challenge_values = config.challenges.values(&layouter);
 
-        config
-            .keccak_table
-            .dev_load(&mut layouter, &self.data.preimages(), &challenge_values)?;
+        let batch_bytes = self.data.get_batch_data_bytes();
+        let blob_bytes = get_blob_bytes(&batch_bytes);
+        let coeffs = get_coefficients(&blob_bytes);
+        let versioned_hash = get_versioned_hash(&coeffs);
+
+        config.keccak_table.dev_load(
+            &mut layouter,
+            &self.data.preimages(versioned_hash),
+            &challenge_values,
+        )?;
 
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         let barycentric_assignments = layouter.assign_region(
@@ -128,7 +143,8 @@ impl Circuit<Fr> for BlobCircuit {
                     },
                 );
 
-                let point_eval = PointEvaluationAssignments::from(&self.data);
+                let point_eval =
+                    PointEvaluationAssignments::new(&self.data, &blob_bytes, versioned_hash);
                 Ok(config.barycentric.assign(
                     &mut ctx,
                     &point_eval.coefficients,
@@ -165,7 +181,7 @@ impl Circuit<Fr> for BlobCircuit {
             &mut layouter,
             challenge_values,
             &config.rlc,
-            &self.data,
+            &blob_bytes,
             &barycentric_assignments.barycentric_assignments,
         )?;
 
@@ -176,6 +192,7 @@ impl Circuit<Fr> for BlobCircuit {
                     &mut region,
                     challenge_values,
                     &self.data,
+                    versioned_hash,
                 )?;
                 let assigned_batch_data_export = config.batch_data_config.assign_internal_checks(
                     &mut region,
@@ -256,8 +273,19 @@ fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
 
 #[test]
 fn blob_circuit_completeness() {
-    // single chunk in batch, but the chunk has a size of N_ROWS_DATA
-    let full_blob = vec![vec![123; BatchData::<MAX_AGG_SNARKS>::n_rows_data()]];
+    // now batch274 is an deterministic case of batch -> blob (fully packed).
+    // Full blob test case
+    // batch274 contains batch bytes that will produce a full blob
+    let full_blob = hex::decode(
+        fs::read_to_string("./data/test_batches/batch274.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load full blob batch bytes");
+
+    // batch274 contains metadatas
+    let segmented_full_blob_src = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(full_blob);
+
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
     let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
@@ -278,8 +306,8 @@ fn blob_circuit_completeness() {
         .chain(std::iter::once(vec![3, 100, 24, 30]))
         .collect::<Vec<_>>();
 
-    for blob in [
-        full_blob,
+    for (idx, blob) in [
+        segmented_full_blob_src,
         one_chunk,
         two_chunks,
         max_chunks,
@@ -288,9 +316,118 @@ fn blob_circuit_completeness() {
         nonempty_chunk_followed_by_empty_chunk,
         empty_and_nonempty_chunks,
         all_empty_except_last,
-    ] {
-        assert_eq!(check_data(BatchData::from(&blob)), Ok(()), "{:?}", blob);
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let batch_data = BatchData::from(&blob);
+
+        // First blob(batch274's blob data) is purposely constructed to take full blob space
+        if idx == 0 {
+            let batch_data_bytes = batch_data.get_batch_data_bytes();
+            let blob_data_bytes = get_blob_bytes(&batch_data_bytes);
+            let blob_data_bytes_len = blob_data_bytes.len();
+
+            assert_eq!(
+                blob_data_bytes_len, N_BLOB_BYTES,
+                "should be full blob: expected={N_BLOB_BYTES}, got={blob_data_bytes_len}",
+            );
+        }
+
+        assert_eq!(check_data(batch_data), Ok(()), "{:?}", blob);
     }
+}
+
+#[test]
+#[ignore = "needs new test setup"]
+fn zstd_encoding_consistency() {
+    // Load test blob bytes
+    let blob_bytes = hex::decode(
+        fs::read_to_string("./data/test_blobs/blob005.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load blob bytes");
+
+    // Leave out most significant byte for compressed data
+    let mut compressed: Vec<u8> = vec![];
+    for i in 0..blob_bytes.len() / 32 {
+        for j in 1..32usize {
+            compressed.push(blob_bytes[i * 32 + j]);
+        }
+    }
+
+    // Decode into original batch bytes
+    let MultiBlockProcessResult {
+        witness_rows: _w,
+        literal_bytes: _l,
+        fse_aux_tables: _f,
+        block_info_arr: _b,
+        sequence_info_arr: _s,
+        address_table_rows: _a,
+        sequence_exec_results,
+    } = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+
+    // The decoded batch data consists of:
+    // - [0..182] bytes of metadata
+    // - [182..] remaining bytes of chunk data
+    let recovered_bytes = sequence_exec_results
+        .into_iter()
+        .flat_map(|r| r.recovered_bytes)
+        .collect::<Vec<u8>>();
+    let segmented_batch_data = BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(recovered_bytes);
+
+    // Re-encode into blob bytes
+    let re_encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_data);
+    let batch_bytes = re_encoded_batch_data.get_batch_data_bytes();
+    let blob_bytes = get_blob_bytes(&batch_bytes);
+
+    assert_eq!(compressed, blob_bytes, "Blob bytes must match");
+}
+
+#[test]
+#[ignore = "needs new test setup"]
+fn zstd_encoding_consistency_from_batch() {
+    // Load test batch bytes
+    // batch274 contains batch bytes that will produce a full blob
+    let batch_bytes = hex::decode(
+        fs::read_to_string("./data/test_batches/batch274.hex")
+            .expect("file path exists")
+            .trim(),
+    )
+    .expect("should load batch bytes");
+    let segmented_batch_bytes =
+        BatchData::<MAX_AGG_SNARKS>::segment_with_metadata(batch_bytes.clone());
+
+    // Re-encode into blob bytes
+    let encoded_batch_data: BatchData<MAX_AGG_SNARKS> = BatchData::from(&segmented_batch_bytes);
+    let batch_bytes = encoded_batch_data.get_batch_data_bytes();
+    let blob_bytes = get_blob_bytes(&batch_bytes);
+
+    // full blob len sanity check
+    assert_eq!(
+        blob_bytes.len(),
+        N_BLOB_BYTES,
+        "full blob is the correct len"
+    );
+
+    // Decode into original batch bytes
+    let MultiBlockProcessResult {
+        witness_rows: _w,
+        literal_bytes: _l,
+        fse_aux_tables: _f,
+        block_info_arr: _b,
+        sequence_info_arr: _s,
+        address_table_rows: _a,
+        sequence_exec_results,
+    } = process::<Fr>(&blob_bytes, Value::known(Fr::from(123456789)));
+
+    let decoded_batch_bytes = sequence_exec_results
+        .into_iter()
+        .flat_map(|r| r.recovered_bytes)
+        .collect::<Vec<u8>>();
+
+    assert_eq!(batch_bytes, decoded_batch_bytes, "batch bytes must match");
 }
 
 fn generic_batch_data() -> BatchData<MAX_AGG_SNARKS> {
@@ -451,4 +588,43 @@ fn overwrite_is_padding() {
         };
         assert!(check_circuit(&circuit).is_err())
     }
+}
+
+#[test]
+fn test_decode_blob() {
+    let mut rng = test_rng();
+
+    let num_chunks = rng.gen_range(0..MAX_AGG_SNARKS);
+    let mut chunks = (0..num_chunks)
+        .map(|_| ChunkInfo::mock_random_chunk_info_for_testing(&mut rng))
+        .collect::<Vec<_>>();
+    for i in 0..num_chunks - 1 {
+        chunks[i + 1].prev_state_root = chunks[i].post_state_root;
+    }
+    let padded_chunk = ChunkInfo::mock_padded_chunk_info_for_testing(&chunks[num_chunks - 1]);
+    let padded_chunks = [chunks, vec![padded_chunk; MAX_AGG_SNARKS - num_chunks]].concat();
+
+    let batch_data = BatchData::<MAX_AGG_SNARKS>::new(num_chunks, &padded_chunks);
+    let batch_bytes = batch_data.get_batch_data_bytes();
+
+    let conditional_encode = |bytes: &[u8], encode: bool| -> Vec<u8> {
+        let mut encoded_bytes = crate::witgen::zstd_encode(bytes);
+        if !encode {
+            encoded_bytes = batch_bytes.to_vec();
+        }
+        encoded_bytes.insert(0, encode as u8);
+        encoded_bytes
+    };
+
+    // case 1: no encode
+    assert_eq!(
+        conditional_encode(batch_bytes.as_slice(), false)[1..],
+        batch_bytes,
+    );
+
+    // case 2: yes encode
+    assert_eq!(
+        decode_blob(&conditional_encode(batch_bytes.as_slice(), true)).expect("should decode"),
+        batch_bytes,
+    );
 }

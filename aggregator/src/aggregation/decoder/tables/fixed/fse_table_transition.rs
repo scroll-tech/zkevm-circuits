@@ -2,16 +2,7 @@ use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 
 use super::{FixedLookupTag, FixedLookupValues};
 
-pub struct RomFseTableTransition {
-    /// The block index on the previous FSE table.
-    pub block_idx_prev: u64,
-    /// The block index on the current FSE table.
-    pub block_idx_curr: u64,
-    /// The FSE table previously decoded.
-    pub table_kind_prev: u64,
-    /// The FSE table currently decoded.
-    pub table_kind_curr: u64,
-}
+pub struct RomFseTableTransition;
 
 impl FixedLookupValues for RomFseTableTransition {
     fn values() -> Vec<[Value<Fr>; 7]> {

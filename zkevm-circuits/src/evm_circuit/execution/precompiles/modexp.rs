@@ -2,8 +2,9 @@ use crate::util::Field;
 use bus_mapping::precompile::{
     PrecompileAuxData, PrecompileCalls, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT,
 };
-use eth_types::{evm_types::GasCost, ToBigEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, ToBigEndian, U256};
 use gadgets::util::{self, not, select, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -49,7 +50,7 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
             .expect("same length")
     }
 
-    /// refere to a binary represent of exponent (like BinaryNumberGadget), can
+    /// refer to a binary represent of exponent (like BinaryNumberGadget), can
     /// link another expression so the expr is linked_val * r ** exponent
     pub fn configure(
         cb: &mut EVMConstraintBuilder<F>,
@@ -62,7 +63,7 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
         cb.pow_of_rand_lookup(bits.value(), pow_lookup.expr());
 
         let pow = linked_val.unwrap_or_else(|| 1.expr()) * pow_lookup.expr();
-        // we would cache the pow expression in case degree is too larget
+        // we would cache the pow expression in case degree is too largest
         let cache_for_degree = if pow.degree() > Self::BIT_EXP_MAX_DEGREE {
             let cached_cell = cb.query_cell_phase2();
             cb.require_equal(
@@ -1608,10 +1609,10 @@ mod test {
         }
     }
 
-    // notice, "invalid" test would not actuall work until bus-mapping put calling fail case being
+    // notice, "invalid" test would not actually work until bus-mapping put calling fail case being
     // handle in normal CallOp, i.e. return None in
     // bus_mapping::circuit_input_builder::input_state_ref::CircuitInputStateRef::get_step_err
-    // for unsuccess (call.is_success is false) call
+    // for unsuccessful (call.is_success is false) call
     // current it is handled by the dummy "precompile error" gadget
     #[cfg(feature = "scroll")]
     #[test]

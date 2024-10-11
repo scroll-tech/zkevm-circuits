@@ -12,7 +12,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
                 MemoryExpansionGadget,
             },
-            or, select, CachedRegion, Cell, Word,
+            not, or, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -23,7 +23,10 @@ use eth_types::{
     evm_types::{GasCost, OpcodeId},
     ToLittleEndian, U256,
 };
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 /// Gadget to implement the corresponding out of gas errors for
 /// [`OpcodeId::CALLDATACOPY`], [`OpcodeId::CODECOPY`],
@@ -36,14 +39,16 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     tx_id: Cell<F>,
     /// Extra stack pop for `EXTCODECOPY`
     external_address: Word<F>,
-    /// Source offset and size to copy
-    src_memory_addr: MemoryExpandedAddressGadget<F>,
-    /// Destination offset and size to copy
-    dst_memory_addr: MemoryExpandedAddressGadget<F>,
-    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+
+    addr_expansion_gadget: MemoryAddrExpandGadget<F>,
+    // mcopy expansion
+    memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+    // other kind(CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY) expansion
+    memory_expansion_normal: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     is_extcodecopy: IsZeroGadget<F>,
+    is_mcopy: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -72,6 +77,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let is_extcodecopy =
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::EXTCODECOPY.expr());
+        let is_mcopy = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::MCOPY.expr());
 
         cb.condition(is_extcodecopy.expr(), |cb| {
             cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, tx_id.expr());
@@ -87,19 +93,33 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             cb.stack_pop(external_address.expr());
         });
 
-        let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
-        // src can also be possible to overflow for mcopy.
-        let src_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
+        let addr_expansion_gadget = MemoryAddrExpandGadget::construct(cb);
 
-        cb.stack_pop(dst_memory_addr.offset_rlc());
-        cb.stack_pop(src_memory_addr.offset_rlc());
-        cb.stack_pop(dst_memory_addr.length_rlc());
+        cb.stack_pop(addr_expansion_gadget.dst_memory_addr.offset_rlc());
+        cb.stack_pop(addr_expansion_gadget.src_memory_addr.offset_rlc());
+        cb.stack_pop(addr_expansion_gadget.dst_memory_addr.length_rlc());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
+        // for mcopy
+        let memory_expansion_mcopy =
+            addr_expansion_gadget.build_memory_expansion_mcopy(cb, is_mcopy.expr());
+
+        // for others (CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY)
+        let memory_expansion_normal = cb.condition(not::expr(is_mcopy.expr()), |cb| {
+            MemoryExpansionGadget::construct(
+                cb,
+                [addr_expansion_gadget.dst_memory_addr.end_offset()],
+            )
+        });
+
+        let memory_expansion_cost = select::expr(
+            is_mcopy.expr(),
+            memory_expansion_mcopy.gas_cost(),
+            memory_expansion_normal.gas_cost(),
+        );
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
-            dst_memory_addr.length(),
-            memory_expansion.gas_cost(),
+            addr_expansion_gadget.dst_memory_addr.length(),
+            memory_expansion_cost,
         );
 
         let constant_gas_cost = select::expr(
@@ -111,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
                 GasCost::WARM_ACCESS.expr(),
                 GasCost::COLD_ACCOUNT_ACCESS.expr(),
             ),
-            // Constant gas cost is same for CALLDATACOPY, CODECOPY and RETURNDATACOPY.
+            // Constant gas cost is same for CALLDATACOPY, CODECOPY，RETURNDATACOPY and mcopy.
             OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
         );
 
@@ -125,8 +145,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             // for mcopy, both dst_memory_addr and dst_memory_addr likely overflow.
             "Memory address is overflow or gas left is less than cost",
             or::expr([
-                dst_memory_addr.overflow(),
-                src_memory_addr.overflow(),
+                addr_expansion_gadget.dst_memory_addr.overflow(),
+                addr_expansion_gadget.src_memory_addr.overflow(),
                 insufficient_gas.expr(),
             ]),
             1.expr(),
@@ -145,12 +165,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             is_warm,
             tx_id,
             external_address,
-            src_memory_addr,
-            dst_memory_addr,
-            memory_expansion,
+            addr_expansion_gadget,
+            memory_expansion_mcopy,
+            memory_expansion_normal,
             memory_copier_gas,
             insufficient_gas,
             is_extcodecopy,
+            is_mcopy,
             common_error_gadget,
         }
     }
@@ -166,6 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_extcodecopy = opcode == OpcodeId::EXTCODECOPY;
+        let is_mcopy = opcode == OpcodeId::MCOPY;
 
         log::debug!(
             "ErrorOutOfGasMemoryCopy: opcode = {}, gas_left = {}, gas_cost = {}",
@@ -195,21 +217,39 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
         self.external_address
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
-        // self.src_offset
-        //     .assign(region, offset, Some(src_offset.to_le_bytes()))?;
-        self.src_memory_addr
+
+        let src_memory_addr = self
+            .addr_expansion_gadget
+            .src_memory_addr
             .assign(region, offset, src_offset, copy_size)?;
-        let memory_addr = self
+        let dst_memory_addr = self
+            .addr_expansion_gadget
             .dst_memory_addr
             .assign(region, offset, dst_offset, copy_size)?;
-        let (_, memory_expansion_cost) =
-            self.memory_expansion
-                .assign(region, offset, step.memory_word_size(), [memory_addr])?;
+        let (_, memory_expansion_cost) = self.memory_expansion_normal.assign(
+            region,
+            offset,
+            step.memory_word_size(),
+            [dst_memory_addr],
+        )?;
+
+        // assign memory_expansion_mcopy
+        let (_, memory_expansion_cost_mcopy) = self.memory_expansion_mcopy.assign(
+            region,
+            offset,
+            step.memory_word_size(),
+            [src_memory_addr, dst_memory_addr],
+        )?;
+
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
             offset,
             MemoryExpandedAddressGadget::<F>::length_value(dst_offset, copy_size),
-            memory_expansion_cost,
+            if is_mcopy {
+                memory_expansion_cost_mcopy
+            } else {
+                memory_expansion_cost
+            },
         )?;
         let constant_gas_cost = if is_extcodecopy {
             if is_warm {
@@ -231,6 +271,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             offset,
             F::from(opcode.as_u64()) - F::from(OpcodeId::EXTCODECOPY.as_u64()),
         )?;
+        self.is_mcopy.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::MCOPY.as_u64()),
+        )?;
         self.common_error_gadget.assign(
             region,
             offset,
@@ -246,17 +291,63 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryAddrExpandGadget<F> {
+    /// Source offset and size to copy
+    src_memory_addr: MemoryExpandedAddressGadget<F>,
+    /// Destination offset and size to copy
+    dst_memory_addr: MemoryExpandedAddressGadget<F>,
+}
+
+// construct src_memory_addr, dst_memory_addr and memory_expansion_mcopy.
+impl<F: Field> MemoryAddrExpandGadget<F> {
+    fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
+        // src can also be possible to overflow for mcopy.
+        let src_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
+        Self {
+            src_memory_addr,
+            dst_memory_addr,
+        }
+    }
+    fn build_memory_expansion_mcopy(
+        &self,
+        cb: &mut EVMConstraintBuilder<F>,
+        is_mcopy: Expression<F>,
+    ) -> MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE> {
+        cb.condition(is_mcopy.expr(), |cb| {
+            cb.require_equal(
+                "mcopy src_address length == dst_address length",
+                self.src_memory_addr.length_rlc(),
+                self.dst_memory_addr.length_rlc(),
+            );
+            MemoryExpansionGadget::construct(
+                cb,
+                [
+                    self.src_memory_addr.end_offset(),
+                    self.dst_memory_addr.end_offset(),
+                ],
+            )
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         evm_circuit::test::{rand_bytes, rand_word},
+        evm_circuit::util::math_gadget::test_util::{
+            assert_error_matches, MathGadgetContainer, UnitTestMathGadgetBaseCircuit,
+        },
         test_util::CircuitTestBuilder,
     };
+
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256,
     };
+    use halo2_proofs::{circuit::Value, dev::MockProver, halo2curves::bn256::Fr};
     use itertools::Itertools;
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -313,7 +404,6 @@ mod tests {
         for (src_offset, dest_offset, copy_size) in TESTING_MCOPY_PARIS {
             let testing_data =
                 TestingData::new_for_mcopy(*src_offset, *dest_offset, *copy_size, None);
-
             test_root(&testing_data);
             test_internal(&testing_data);
         }
@@ -324,6 +414,69 @@ mod tests {
         // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
         // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
         test_for_edge_memory_size(0xffffffff1, 0xffffffff0);
+    }
+
+    // add expand address to max case.
+    #[test]
+    fn test_oog_mcopy_max_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        let copy_size = 0xffffffff0;
+
+        for is_src_max_expand in [false, true] {
+            // src_offset (or dest_offset) + copy_size > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+            let (src_offset, dest_offset) = if is_src_max_expand {
+                (0xffffffff1, 0x20e0)
+            } else {
+                (0x20e0, 0xffffffff1)
+            };
+
+            let testing_data = TestingData::new_for_mcopy(
+                src_offset,
+                dest_offset,
+                copy_size,
+                Some(MOCK_BLOCK_GAS_LIMIT),
+            );
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        }
+    }
+
+    // this test added by auditing fix memory expansion case https://github.com/scroll-tech/zkevm-circuits/pull/1321
+    #[test]
+    fn test_oog_mcopy_src_larger_dst_addr() {
+        let copy_size = 0xff;
+        let src_offset = 0x20e0;
+        let dest_offset = 0x20;
+        let testing_data = TestingData::new_for_mcopy(src_offset, dest_offset, copy_size, None);
+
+        test_root(&testing_data);
+        test_internal(&testing_data);
+    }
+
+    // test src_offset or dest_offset is u64::MAX
+    #[test]
+    fn test_oog_mcopy_max_u64_address() {
+        let copy_size = 0xff;
+        for is_src_u64_max in [false, true] {
+            // assign src_offset or dest_offset to u64::MAX
+            let (src_offset, dest_offset) = if is_src_u64_max {
+                (u64::MAX, 0x20e0)
+            } else {
+                (0x20e0, u64::MAX)
+            };
+
+            let testing_data = TestingData::new_for_mcopy(
+                src_offset,
+                dest_offset,
+                copy_size,
+                Some(MOCK_BLOCK_GAS_LIMIT),
+            );
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        }
     }
 
     #[test]
@@ -352,7 +505,6 @@ mod tests {
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
                 let memory_word_size = (dst_offset + copy_size + 31) / 32;
-
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
                     + opcode.constant_gas_cost().0
                     + memory_copier_gas_cost(0, memory_word_size, copy_size, GasCost::COPY.as_u64())
@@ -431,13 +583,20 @@ mod tests {
             };
 
             let gas_cost = gas_cost.unwrap_or_else(|| {
-                let cur_memory_word_size = (src_offset + 31) / 32;
-                let memory_word_size = (dst_offset + copy_size + 31) / 32;
+                // no memory operation before mcopy
+                let cur_memory_word_size = 0;
+                let next_memory_word_size = if copy_size == 0 {
+                    cur_memory_word_size
+                } else {
+                    let max_addr = std::cmp::max(src_offset, dst_offset);
+                    (max_addr + copy_size + 31) / 32
+                };
 
                 OpcodeId::PUSH32.constant_gas_cost().0 * 3
+                    + OpcodeId::MCOPY.constant_gas_cost().0
                     + memory_copier_gas_cost(
                         cur_memory_word_size,
-                        memory_word_size,
+                        next_memory_word_size,
                         copy_size,
                         GasCost::COPY.as_u64(),
                     )
@@ -552,5 +711,96 @@ mod tests {
             test_root(&testing_data);
             test_internal(&testing_data);
         });
+    }
+
+    // negative test zone: construct wrong witness(src_addr length) in assign stage, thus cause
+    // expected constraint error.
+    #[derive(Clone)]
+    struct ErrOOGMemoryCopyGadgetTestContainer<F> {
+        gadget: MemoryAddrExpandGadget<F>,
+        memory_expansion_mcopy: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+        is_mcopy: Cell<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for ErrOOGMemoryCopyGadgetTestContainer<F> {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
+            let is_mcopy = cb.query_cell();
+            cb.require_boolean("is_mcopy is bool", is_mcopy.expr());
+            let gadget = MemoryAddrExpandGadget::<F>::construct(cb);
+            let memory_expansion_mcopy = gadget.build_memory_expansion_mcopy(cb, is_mcopy.expr());
+            ErrOOGMemoryCopyGadgetTestContainer {
+                gadget,
+                memory_expansion_mcopy,
+                is_mcopy,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            witnesses: &[U256],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let [is_mcopy, src_offset, dst_offset, copy_size] =
+                [0, 1, 2, 3].map(|i| witnesses[i].as_u64());
+            self.is_mcopy
+                .assign(region, 0, Value::known(F::from(is_mcopy)))?;
+
+            let src_memory_addr = self.gadget.src_memory_addr.assign(
+                region,
+                0,
+                src_offset.into(),
+                // set length = copy_size + 1 which cause constraint not be satisfied.
+                (copy_size + 1).into(),
+            )?;
+            let dst_memory_addr = self.gadget.dst_memory_addr.assign(
+                region,
+                0,
+                dst_offset.into(),
+                copy_size.into(),
+            )?;
+            // assign memory_expansion_mcopy
+            self.memory_expansion_mcopy
+                .assign(region, 0, 0, [src_memory_addr, dst_memory_addr])?;
+            Ok(())
+        }
+    }
+
+    // test for mcopy case, do constrain: src_address length == dst_address length
+    // so expect specified error.
+    #[test]
+    fn test_invalid_src_offset_length() {
+        // test is_mcopy = true
+        let witnesses = [0x1, 0x20, 0x30, 0x10].map(U256::from);
+
+        const K: usize = 12;
+        let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(
+            K,
+            witnesses.into(),
+        );
+
+        let prover = MockProver::<Fr>::run(K as u32, &circuit, vec![]).unwrap();
+        let result = prover.verify();
+
+        // when mcopy, should encounter constraint error.
+        assert_error_matches(result, "mcopy src_address length == dst_address length");
+    }
+
+    // test for non mcopy case, do not constrain: src_address length == dst_address length
+    // so expect test pass.
+    #[test]
+    fn test_invalid_src_offset_length_nonmcopy() {
+        // test is_mcopy = false
+        let witnesses = [0x0, 0x20, 0x30, 0x10].map(U256::from);
+
+        const K: usize = 12;
+        let circuit = UnitTestMathGadgetBaseCircuit::<ErrOOGMemoryCopyGadgetTestContainer<Fr>>::new(
+            K,
+            witnesses.into(),
+        );
+
+        let prover = MockProver::<Fr>::run(K as u32, &circuit, vec![]).unwrap();
+        let result = prover.verify();
+        // when not mcopy, should pass.
+        assert!(result.is_ok());
     }
 }

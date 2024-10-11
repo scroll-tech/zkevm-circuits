@@ -9,9 +9,9 @@ use mpt_circuits::{
 };
 use mpt_zktrie::{
     extend_address_to_h256, state::StorageData, AccountData, BytesArray, CanRead, TrieProof,
-    ZkTrie, ZkTrieNode, ZktrieState, SECURE_HASH_DOMAIN,
+    ZkMemoryDb, ZkTrie, ZkTrieNode, ZktrieState, SECURE_HASH_DOMAIN,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use num_bigint::BigUint;
 use std::{
@@ -40,18 +40,25 @@ fn to_smt_account(acc: AccountData) -> SMTAccount {
 pub struct WitnessGenerator {
     trie: ZkTrie,
     storages_cache: HashMap<Address, ZkTrie>,
+    ref_db: Rc<ZkMemoryDb>,
 }
 
 impl From<&ZktrieState> for WitnessGenerator {
     fn from(state: &ZktrieState) -> Self {
         Self {
-            trie: state.zk_db.borrow_mut().new_trie(&state.trie_root).unwrap(),
+            trie: state.zk_db.new_trie(&state.trie_root).unwrap(),
             storages_cache: HashMap::new(),
+            ref_db: state.zk_db.clone(),
         }
     }
 }
 
 impl WitnessGenerator {
+    /// output all updated ZkTrie
+    pub fn into_updated_trie(self) -> impl Iterator<Item = ZkTrie> {
+        std::iter::once(self.trie).chain(self.storages_cache.into_values())
+    }
+
     /// dump inner data for debugging
     pub fn dump<'a>(&self, addrs: impl Iterator<Item = &'a Address>) {
         for addr in addrs {
@@ -74,17 +81,18 @@ impl WitnessGenerator {
             HexBytes(word_buf)
         };
 
-        self.storages_cache
-            .get(&address)
-            .map(Clone::clone)
-            .or_else(|| {
-                self.trie
-                    .get_account(address.as_bytes())
-                    .map(AccountData::from)
-                    .and_then(|account| self.trie.get_db().new_trie(&account.storage_root.0))
-            })
-            .and_then(|trie| trie.prove(key.as_ref()).ok())
-            .unwrap_or_default()
+        if let Some(trie) = self.storages_cache.get(&address) {
+            // trie is under updating
+            trie.prove(key.as_ref()).ok()
+        } else {
+            // create a temporary trie and prove it
+            self.trie
+                .get_account(address.as_bytes())
+                .map(AccountData::from)
+                .and_then(|account| self.ref_db.new_trie(&account.storage_root.0))
+                .and_then(|trie| trie.prove(key.as_ref()).ok())
+        }
+        .unwrap_or_default()
     }
     fn fetch_storage_cache(&mut self, address: Address) -> Option<&mut ZkTrie> {
         let cache_entry = self.storages_cache.entry(address);
@@ -95,8 +103,7 @@ impl WitnessGenerator {
                     .map(AccountData::from)
                     .and_then(|acc_data| {
                         // all trie share the same underlay db, so we can create new trie here
-                        let zk_db = self.trie.get_db();
-                        zk_db.new_trie(&acc_data.storage_root.0)
+                        self.ref_db.new_trie(&acc_data.storage_root.0)
                     })
                     .map(|trie| entry.insert(trie))
             }
@@ -148,8 +155,8 @@ impl WitnessGenerator {
             let old_value_in_trie = storage_before
                 .as_ref()
                 .ok()
-                .and_then(|(_, nd)| nd.as_ref())
-                .and_then(|nd| nd.as_storage())
+                .and_then(|(_, node)| node.as_ref())
+                .and_then(|node| node.as_storage())
                 .unwrap_or_default();
             assert_eq!(hex::encode(word_buf), hex::encode(old_value_in_trie),
                 "for (address {address:?} key {key:?}): old value in proof != old value in partial trie",
@@ -230,7 +237,7 @@ impl WitnessGenerator {
         let (account_path_before, account_data_before) =
             decode_proof_for_mpt_path(address_key, proofs).expect("unless the db is totally empty");
         let account_data_before = account_data_before
-            .and_then(|nd| nd.as_account())
+            .and_then(|node| node.as_account())
             .map(AccountData::from);
 
         let account_data_after = update_account_data(account_data_before.as_ref());
@@ -505,10 +512,10 @@ use eth_types::Bytes;
 use serde::Deserialize;
 
 type AccountTrieProofs = HashMap<Address, Vec<Bytes>>;
-type StorageTrieProofs = HashMap<Address, HashMap<Word, Vec<Bytes>>>;
+type StorageTrieProofs = HashMap<Address, HashMap<H256, Vec<Bytes>>>;
 
 type AccountDatas = HashMap<Address, AccountData>;
-type StorageDatas = HashMap<(Address, Word), StorageData>;
+type StorageDatas = HashMap<(Address, H256), StorageData>;
 
 #[derive(Deserialize, Default, Debug, Clone)]
 struct StorageTrace {
@@ -598,7 +605,7 @@ fn witgen_update_one() {
     assert_eq!(
         Some(U256::from(10u32)),
         storages
-            .get(&(target_addr, U256::zero()))
+            .get(&(target_addr, H256::zero()))
             .map(AsRef::as_ref)
             .copied()
     );

@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn test_muladd512_unexpect() {
+    fn test_muladd512_unexpected() {
         // 10 * 1 + 0 != 1 * 2**256 + 3
         try_test!(
             MulAddWords512GadgetContainer<Fr>,

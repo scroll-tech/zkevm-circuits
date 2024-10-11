@@ -1,5 +1,5 @@
-use eth_types::Field;
 use gadgets::impl_expr;
+use gadgets::Field;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     halo2curves::bn256::Fr,

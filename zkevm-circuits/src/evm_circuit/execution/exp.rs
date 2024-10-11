@@ -1,7 +1,8 @@
 use crate::util::Field;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, ToLittleEndian};
 use gadgets::util::{and, not, split_u256, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
@@ -186,10 +187,11 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         offset: usize,
         block: &Block,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let [base, exponent, exponentiation] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]

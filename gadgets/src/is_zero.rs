@@ -1,10 +1,9 @@
 //! IsZero gadget works as follows:
 //!
 //! Given a `value` to be checked if it is zero:
-//!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
-//!  `1/x` otherwise
+//!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and `1/x` otherwise
 
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -61,7 +60,7 @@ impl<F: Field> IsZeroConfig<F> {
     }
 }
 
-/// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
+/// Wrapper around [`IsZeroConfig`] for which [`Chip`] is implemented.
 #[derive(Clone, Debug)]
 pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
@@ -157,7 +156,7 @@ impl<F: Field> Chip<F> for IsZeroChip<F> {
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 
-    use eth_types::Field;
+    use crate::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
@@ -222,7 +221,6 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
-            #[cfg(feature = "circuit-params")]
             type Params = ();
 
             fn without_witnesses(&self) -> Self {
@@ -351,7 +349,6 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
-            #[cfg(feature = "circuit-params")]
             type Params = ();
 
             fn without_witnesses(&self) -> Self {

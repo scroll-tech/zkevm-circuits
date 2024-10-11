@@ -63,7 +63,7 @@ impl Opcode for Calldatacopy {
         };
 
         let copy_event = gen_copy_event(state, memory_offset, data_offset, length, &mut exec_step)?;
-        state.push_copy(&mut exec_step, copy_event);
+        state.push_copy(&mut exec_step, copy_event)?;
         Ok(vec![exec_step])
     }
 }

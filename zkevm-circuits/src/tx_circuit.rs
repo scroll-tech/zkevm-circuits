@@ -51,9 +51,10 @@ use eth_types::{
         TxType::{Eip155, Eip1559, Eip2930, L1Msg, PreEip155},
     },
     sign_types::SignData,
-    AccessList, Address, ToAddress, ToBigEndian, ToScalar,
+    AccessList, Address, ToAddress, ToBigEndian,
 };
 use ethers_core::utils::keccak256;
+use gadgets::ToScalar;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -103,7 +104,7 @@ pub const HASH_RLC_OFFSET: usize = 20;
 // CHUNK_TXBYTES_BLOB_LIMIT =
 //      (BLOB_WIDTH * N_BYTES_31) - (N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES)
 // N_ROWS_CHUNK_SIZES = MAX_AGG_SNARKS * 4
-const CHUNK_TXBYTES_BLOB_LIMIT: usize = (4096 * 31) - (2 + 15 * 4);
+const CHUNK_TXBYTES_BLOB_LIMIT: usize = (4096 * 31) - (2 + 45 * 4);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -560,7 +561,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_access_list = meta.advice_column();
         let is_access_list_address = meta.advice_column();
         let is_access_list_storage_key = meta.advice_column();
-        let field_rlc = meta.advice_column();
+        let field_rlc = meta.advice_column_in(SecondPhase);
 
         // Chunk bytes accumulator
         let is_chunk_bytes = meta.advice_column();
@@ -920,17 +921,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         meta.query_advice(tx_table.value, Rotation(2)),
                         0.expr(),
                     );
-                },
-            );
-
-            // AccessListAddressLen != 0 must force AccessListRLC != 0
-            cb.condition(
-                and::expr([
-                    is_access_list_addresses_len(meta),
-                    not::expr(meta.query_advice(is_none, Rotation::cur())),
-                ]),
-                |cb| {
-                    cb.require_zero("AccessListRLC != 0", value_is_zero.expr(Rotation(2))(meta));
                 },
             );
 
@@ -1829,7 +1819,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "al_idx starts with 1",
-                meta.query_advice(al_idx, Rotation::next()),
+                meta.query_advice(al_idx, Rotation::cur()),
                 1.expr(),
             );
             cb.require_zero(
@@ -4046,8 +4036,7 @@ impl<F: Field> TxCircuit<F> {
             .txs
             .iter()
             .chain(iter::once(&padding_tx))
-            .enumerate()
-            .map(|(_, tx)| {
+            .map(|tx| {
                 if tx.tx_type.is_l1_msg() {
                     Ok(SignData::default())
                 } else {
@@ -4323,7 +4312,7 @@ impl<F: Field> TxCircuit<F> {
                         .txs
                         .iter()
                         .skip(i + 1)
-                        .find(|tx| !tx.call_data.is_empty());
+                        .find(|tx| !tx.call_data.is_empty() || (tx.access_list.as_ref().map_or(false, |al| !al.0.is_empty())));
                     config.assign_calldata_rows(
                         &mut region,
                         &mut offset,

@@ -7,7 +7,7 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            common_gadget::{get_copy_bytes, TransferGadget},
+            common_gadget::{get_copy_bytes, BytecodeLookupGadget, TransferGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -29,10 +29,11 @@ use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{
     evm_types::{GasCost, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE},
     state_db::CodeDB,
-    ToBigEndian, ToLittleEndian, ToScalar, ToWord, H256, KECCAK_CODE_HASH_EMPTY, U256,
+    ToBigEndian, ToLittleEndian, ToWord, H256, KECCAK_CODE_HASH_EMPTY, U256,
 };
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::iter::once;
@@ -40,7 +41,7 @@ use std::iter::once;
 /// Gadget for CREATE and CREATE2 opcodes
 #[derive(Clone, Debug)]
 pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionState> {
-    opcode: Cell<F>,
+    opcode_gadget: BytecodeLookupGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     depth: Cell<F>,
@@ -88,13 +89,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     const EXECUTION_STATE: ExecutionState = S;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
         let copy_rw_increase = cb.query_cell();
+        let opcode_gadget = BytecodeLookupGadget::construct(cb);
 
-        cb.opcode_lookup(opcode.expr(), 1.expr());
         cb.require_equal(
             "Opcode is CREATE or CREATE2",
-            opcode.expr(),
+            opcode_gadget.opcode.expr(),
             if IS_CREATE2 {
                 OpcodeId::CREATE2
             } else {
@@ -534,7 +534,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
 
         Self {
-            opcode,
+            opcode_gadget,
             tx_id,
             reversion_info,
             depth,
@@ -577,9 +577,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_create2 = opcode == OpcodeId::CREATE2;
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
+        self.opcode_gadget
+            .assign(region, offset, block, call, step)?;
         self.tx_id
             .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
         self.depth.assign(
@@ -856,7 +856,7 @@ mod test {
     }
 
     // RETURN or REVERT with data of [0x60; 5]
-    fn initialization_bytecode(is_success: bool) -> Bytecode {
+    fn get_initcode(is_success: bool) -> Bytecode {
         let memory_bytes = [0x60; 10];
         let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
@@ -877,14 +877,14 @@ mod test {
     }
 
     fn creator_bytecode(
-        initialization_bytecode: Bytecode,
+        initcode: Bytecode,
         value: Word,
         is_create2: bool,
         is_persistent: bool,
     ) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
+        let initcode_bytes = initcode.code();
         let mut code = bytecode! {
-            PUSH32(Word::from_big_endian(&initialization_bytes))
+            PUSH32(Word::from_big_endian(&initcode_bytes))
             PUSH1(0)
             MSTORE
         };
@@ -892,8 +892,8 @@ mod test {
             code.append(&bytecode! {PUSH1(45)}); // salt;
         }
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // length
-            PUSH1(32 - initialization_bytes.len()) // offset
+            PUSH1(initcode_bytes.len()) // length
+            PUSH1(32 - initcode_bytes.len()) // offset
             PUSH2(value) // value
         });
         code.write_op(if is_create2 {
@@ -922,18 +922,18 @@ mod test {
         code
     }
 
-    fn creater_bytecode_address_collision(initialization_bytecode: Bytecode) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
+    fn creator_bytecode_address_collision(initcode: Bytecode) -> Bytecode {
+        let initcode_bytes = initcode.code();
         let mut code = bytecode! {
-            PUSH32(Word::from_big_endian(&initialization_bytes))
+            PUSH32(Word::from_big_endian(&initcode_bytes))
             PUSH1(0)
             MSTORE
         };
 
         code.append(&bytecode! {PUSH1(45)}); // salt;
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH1(initcode_bytes.len()) // size
+            PUSH1(32 - initcode_bytes.len()) // length
             PUSH2(23414) // value
         });
         code.write_op(OpcodeId::CREATE2);
@@ -942,8 +942,8 @@ mod test {
         code.append(&bytecode! {PUSH1(45)}); // salt;
 
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH1(initcode_bytes.len()) // size
+            PUSH1(32 - initcode_bytes.len()) // length
             PUSH2(23414) // value
         });
         code.write_op(OpcodeId::CREATE2);
@@ -983,8 +983,8 @@ mod test {
             .cartesian_product(&[true, false])
             .cartesian_product(&[true, false])
         {
-            let init_code = initialization_bytecode(*is_success);
-            let root_code = creator_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
+            let initcode = get_initcode(*is_success);
+            let root_code = creator_bytecode(initcode, 23414.into(), *is_create2, *is_persistent);
 
             let caller = Account {
                 address: *CALLER_ADDRESS,
@@ -1002,8 +1002,7 @@ mod test {
         for nonce in [0, 1, 127, 128, 255, 256, 0x10000, u64::MAX - 1] {
             let caller = Account {
                 address: *CALLER_ADDRESS,
-                code: creator_bytecode(initialization_bytecode(true), 23414.into(), false, true)
-                    .into(),
+                code: creator_bytecode(get_initcode(true), 23414.into(), false, true).into(),
                 nonce: nonce.into(),
                 balance: eth(10),
                 ..Default::default()
@@ -1052,8 +1051,8 @@ mod test {
 
     #[test]
     fn test_create_address_collision_error() {
-        let initialization_code = initialization_bytecode(false);
-        let root_code = creater_bytecode_address_collision(initialization_code);
+        let initcode = get_initcode(false);
+        let root_code = creator_bytecode_address_collision(initcode);
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),
@@ -1181,8 +1180,7 @@ mod test {
             let caller = Account {
                 address: mock::MOCK_ACCOUNTS[0],
                 nonce: 1.into(),
-                code: creator_bytecode(initialization_bytecode(false), value, is_create2, true)
-                    .into(),
+                code: creator_bytecode(get_initcode(false), value, is_create2, true).into(),
                 balance: value - 1,
                 ..Default::default()
             };
@@ -1237,8 +1235,8 @@ mod test {
 
     #[test]
     fn test_create2_deploy_to_non_zero_balance_address() {
-        let initialization_code = initialization_bytecode(true);
-        let root_code = creator_bytecode(initialization_code, 0.into(), true, true);
+        let initcode = get_initcode(true);
+        let root_code = creator_bytecode(initcode, 0.into(), true, true);
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),

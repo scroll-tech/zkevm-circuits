@@ -1,6 +1,7 @@
 use crate::util::Field;
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, ToScalar};
+use eth_types::evm_types::GasCost;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordByteCapGadget},
+            common_gadget::{BytecodeLengthGadget, SameContextGadget, WordByteCapGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
@@ -45,6 +46,8 @@ pub(crate) struct CodeCopyGadget<F> {
     /// RW inverse counter from the copy table at the start of related copy
     /// steps.
     copy_rwc_inc: Cell<F>,
+    /// Wraps the bytecode length and lookup.
+    code_len_gadget: BytecodeLengthGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
@@ -66,14 +69,11 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         cb.stack_pop(code_offset.original_word());
         cb.stack_pop(size.expr());
 
-        // Construct memory address in the destionation (memory) to which we copy code.
+        // Construct memory address in the destination (memory) to which we copy code.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_memory_offset, size);
 
         // Fetch the hash of bytecode running in current environment.
         let code_hash = cb.curr.state.code_hash.clone();
-
-        // Fetch the bytecode length from the bytecode table.
-        cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
-            // Set source start to the minimun value of code offset and code size.
+            // Set source start to the minimum value of code offset and code size.
             let src_addr = select::expr(
                 code_offset.lt_cap(),
                 code_offset.valid_value(),
@@ -127,6 +127,19 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
+        // Fetch the bytecode length from the bytecode table.
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
+        cb.require_equal(
+            "code_size == code_len_gadget::code_length",
+            code_size.expr(),
+            code_len_gadget.code_length.expr(),
+        );
+        cb.require_equal(
+            "code_len_gadget and same_context have the same is_first_bytecode_table",
+            code_len_gadget.is_first_bytecode_table.expr(),
+            same_context.is_first_bytecode_table().expr(),
+        );
+
         Self {
             same_context,
             code_offset,
@@ -135,6 +148,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             memory_expansion,
             memory_copier_gas,
             copy_rwc_inc,
+            code_len_gadget,
         }
     }
 
@@ -147,7 +161,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         // 1. `dest_offset` is the bytes offset in the memory where we start to
         // write.
@@ -158,12 +173,10 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let [dest_offset, code_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i]].stack_value());
 
-        let bytecode = block
-            .bytecodes
-            .get(&call.code_hash)
-            .expect("could not find current environment's bytecode");
+        let code_size = self
+            .code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
-        let code_size = bytecode.bytes.len() as u64;
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
 

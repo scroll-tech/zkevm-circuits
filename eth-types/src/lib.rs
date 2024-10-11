@@ -6,7 +6,6 @@
 #![allow(incomplete_features)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
-#![allow(incomplete_features)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
 // GasCost is used as type parameter
@@ -24,8 +23,12 @@ pub mod macros;
 pub mod error;
 #[macro_use]
 pub mod bytecode;
+pub mod constants;
 pub mod evm_types;
+pub mod forks;
 pub mod geth_types;
+/// L2 system contracts
+pub mod l2_predeployed;
 pub mod l2_types;
 pub mod sign_types;
 pub mod state_db;
@@ -45,7 +48,6 @@ pub use ethers_core::{
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
-use halo2curves::{bn256::Fr, group::ff::PrimeField};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -86,41 +88,6 @@ pub mod base64 {
         let s = String::deserialize(d)?;
         decode(s.as_bytes()).map_err(serde::de::Error::custom)
     }
-}
-
-/// Trait used to reduce verbosity with the declaration of the [`Field`]
-/// trait and its repr.
-pub trait Field:
-    PrimeField<Repr = [u8; 32]> + poseidon_base::hash::Hashable + std::convert::From<Fr>
-{
-    /// Re-expose zero element as a function
-    fn zero() -> Self {
-        Self::ZERO
-    }
-
-    /// Re-expose one element as a function
-    fn one() -> Self {
-        Self::ONE
-    }
-
-    /// Expose the lower 128 bits
-    fn get_lower_128(&self) -> u128 {
-        u128::from_le_bytes(self.to_repr().as_ref()[..16].try_into().unwrap())
-    }
-}
-
-// Impl custom `Field` trait for BN256 Fr to be used and consistent with the
-// rest of the workspace.
-impl Field for Fr {}
-
-// Impl custom `Field` trait for BN256 Fq to be used and consistent with the
-// rest of the workspace.
-// impl Field for Fq {}
-
-/// Trait used to define types that can be converted to a 256 bit scalar value.
-pub trait ToScalar<F> {
-    /// Convert the type to a scalar value.
-    fn to_scalar(&self) -> Option<F>;
 }
 
 /// Trait used to convert a type to a [`Word`].
@@ -172,14 +139,6 @@ impl<'de> Deserialize<'de> for DebugU256 {
     {
         let s = String::deserialize(deserializer)?;
         DebugU256::from_str(&s).map_err(de::Error::custom)
-    }
-}
-
-impl<F: Field> ToScalar<F> for DebugU256 {
-    fn to_scalar(&self) -> Option<F> {
-        let mut bytes = [0u8; 32];
-        self.to_little_endian(&mut bytes);
-        F::from_repr(bytes).into()
     }
 }
 
@@ -236,14 +195,6 @@ impl ToU16LittleEndian for U256 {
             u16_array[idx * 4 + 3] = ((u64_cell >> 48) & 0xffff) as u16;
         }
         u16_array
-    }
-}
-
-impl<F: Field> ToScalar<F> for U256 {
-    fn to_scalar(&self) -> Option<F> {
-        let mut bytes = [0u8; 32];
-        self.to_little_endian(&mut bytes);
-        F::from_repr(bytes).into()
     }
 }
 
@@ -314,33 +265,6 @@ impl ToWord for i32 {
 impl ToWord for Word {
     fn to_word(&self) -> Word {
         *self
-    }
-}
-
-impl<F: Field> ToScalar<F> for Address {
-    fn to_scalar(&self) -> Option<F> {
-        let mut bytes = [0u8; 32];
-        bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
-        bytes.reverse();
-        F::from_repr(bytes).into()
-    }
-}
-
-impl<F: Field> ToScalar<F> for bool {
-    fn to_scalar(&self) -> Option<F> {
-        self.to_word().to_scalar()
-    }
-}
-
-impl<F: Field> ToScalar<F> for u64 {
-    fn to_scalar(&self) -> Option<F> {
-        Some(F::from(*self))
-    }
-}
-
-impl<F: Field> ToScalar<F> for usize {
-    fn to_scalar(&self) -> Option<F> {
-        u64::try_from(*self).ok().map(F::from)
     }
 }
 
@@ -752,7 +676,7 @@ pub struct GethExecTrace {
     )]
     /// List of accounts' (coinbase etc) status AFTER execution
     /// Only viable for scroll mode
-    pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
+    pub account_after: Vec<crate::l2_types::AccountTrace>,
     /// prestate trace
     pub prestate: HashMap<Address, GethPrestateTrace>,
     /// call trace
@@ -760,7 +684,7 @@ pub struct GethExecTrace {
     pub call_trace: GethCallTrace,
 }
 
-fn parse_account_after<'de, D>(d: D) -> Result<Vec<crate::l2_types::AccountProofWrapper>, D::Error>
+fn parse_account_after<'de, D>(d: D) -> Result<Vec<crate::l2_types::AccountTrace>, D::Error>
 where
     D: Deserializer<'de>,
 {

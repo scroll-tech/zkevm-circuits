@@ -62,6 +62,7 @@ mod tests {
         util::Field,
     };
     use eth_types::*;
+    use gadgets::ToScalar;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]

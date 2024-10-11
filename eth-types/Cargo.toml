@@ -27,6 +27,9 @@ base64.workspace = true
 revm-precompile.workspace = true
 revm-primitives.workspace = true
 
+[dev-dependencies]
+bincode.workspace = true
+
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []

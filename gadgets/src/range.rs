@@ -7,7 +7,7 @@
 //! u16 check can use U16Table directly
 
 use crate::util::Expr;
-use eth_types::Field;
+use crate::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},

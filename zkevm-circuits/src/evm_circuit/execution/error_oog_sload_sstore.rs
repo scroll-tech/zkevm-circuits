@@ -20,8 +20,9 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    ToScalar, U256,
+    U256,
 };
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget to implement the corresponding out of gas errors for

@@ -1,21 +1,22 @@
 //! This module implements `Chunk` related data types.
 //! A chunk is a list of blocks.
-use eth_types::{base64, ToBigEndian, H256};
+use eth_types::{base64, l2_types::BlockTrace, ToBigEndian, H256};
 use ethers_core::utils::keccak256;
 use serde::{Deserialize, Serialize};
 use std::iter;
 use zkevm_circuits::witness::Block;
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 /// A chunk is a set of continuous blocks.
-/// A ChunkHash consists of 5 hashes, representing the changes incurred by this chunk of blocks:
+/// ChunkInfo is metadata of chunk, with following fields:
 /// - state root before this chunk
 /// - state root after this chunk
 /// - the withdraw root after this chunk
 /// - the data hash of this chunk
 /// - the tx data hash of this chunk
+/// - flattened L2 tx bytes
 /// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
-pub struct ChunkHash {
+pub struct ChunkInfo {
     /// Chain identifier
     pub chain_id: u64,
     /// state root before this chunk
@@ -33,7 +34,70 @@ pub struct ChunkHash {
     pub is_padding: bool,
 }
 
-impl ChunkHash {
+impl ChunkInfo {
+    /// Construct by block traces
+    pub fn from_block_traces(traces: &[BlockTrace]) -> Self {
+        let data_bytes = iter::empty()
+            .chain(
+                // header part
+                traces.iter().flat_map(|b| b.da_encode_header()),
+            )
+            .chain(
+                // l1 msg hashes
+                traces.iter().flat_map(|b| {
+                    b.transactions
+                        .iter()
+                        .filter(|tx| tx.is_l1_tx())
+                        .flat_map(|tx| tx.tx_hash.to_fixed_bytes())
+                }),
+            )
+            .collect::<Vec<u8>>();
+
+        let data_hash = H256(keccak256(data_bytes));
+        log::debug!(
+            "chunk-hash: data hash = {}",
+            hex::encode(data_hash.to_fixed_bytes())
+        );
+
+        let tx_bytes = traces
+            .iter()
+            .flat_map(|b| {
+                b.transactions
+                    .iter()
+                    .enumerate()
+                    .filter(|(_idx, tx)| !tx.is_l1_tx())
+                    .flat_map(|(idx, tx)| {
+                        tx.to_eth_tx(
+                            b.header.hash,
+                            b.header.number,
+                            Some((idx as u64).into()),
+                            b.header.base_fee_per_gas,
+                        )
+                        .rlp()
+                        .to_vec()
+                    })
+            })
+            .collect::<Vec<u8>>();
+
+        let post_state_root = traces
+            .last()
+            .expect("at least 1 block needed")
+            .header
+            .state_root;
+        let withdraw_root = traces.last().unwrap().withdraw_trie_root;
+        let chain_id = traces.first().unwrap().chain_id;
+        let prev_state_root = traces.first().unwrap().storage_trace.root_before;
+
+        Self {
+            chain_id,
+            prev_state_root,
+            post_state_root,
+            withdraw_root,
+            data_hash,
+            tx_bytes,
+            is_padding: false,
+        }
+    }
     /// Construct by a witness block.
     pub fn from_witness_block(block: &Block, is_padding: bool) -> Self {
         // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>
@@ -41,7 +105,6 @@ impl ChunkHash {
         let mut total_l1_popped = block.start_l1_queue_index;
         log::debug!("chunk-hash: start_l1_queue_index = {}", total_l1_popped);
         let data_bytes = iter::empty()
-            // .chain(block_headers.iter().flat_map(|(&block_num, block)| {
             .chain(block.context.ctxs.iter().flat_map(|(b_num, b_ctx)| {
                 let num_l2_txs = block
                     .txs
@@ -68,6 +131,7 @@ impl ChunkHash {
                     num_txs,
                 );
 
+                // https://github.com/scroll-tech/da-codec/blob/b842a0f961ad9180e16b50121ef667e15e071a26/encoding/codecv2/codecv2.go#L97
                 iter::empty()
                     // Block Values
                     .chain(b_ctx.number.as_u64().to_be_bytes())
@@ -101,12 +165,12 @@ impl ChunkHash {
             .context
             .ctxs
             .last_key_value()
-            .map(|(_, b_ctx)| b_ctx.eth_block.state_root)
-            .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
+            .map(|(_, b_ctx)| b_ctx.state_root)
+            .unwrap_or(block.prev_state_root);
 
         Self {
             chain_id: block.chain_id,
-            prev_state_root: H256(block.prev_state_root.to_be_bytes()),
+            prev_state_root: block.prev_state_root,
             post_state_root,
             withdraw_root: H256(block.withdraw_root.to_be_bytes()),
             data_hash,
@@ -121,9 +185,52 @@ impl ChunkHash {
         H256(keccak256(&self.tx_bytes))
     }
 
-    /// Sample a chunk hash from random (for testing)
     #[cfg(test)]
-    pub(crate) fn mock_random_chunk_hash_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
+    pub(crate) fn mock_chunk_infos(txs_data: &[Vec<u8>]) -> Vec<Self> {
+        use crate::MAX_AGG_SNARKS;
+
+        assert!(txs_data.len() <= MAX_AGG_SNARKS);
+        let state_roots: [H256; MAX_AGG_SNARKS + 1] = (0..=MAX_AGG_SNARKS)
+            .map(|i| {
+                let i = i as u8;
+                let mut state_root = [0u8; 32];
+                state_root[31] = i;
+                state_root.into()
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("should not fail");
+
+        txs_data
+            .iter()
+            .enumerate()
+            .map(|(i, tx_data)| {
+                let withdraw_root = {
+                    let mut root = [0u8; 32];
+                    root[31] = 255 - (i as u8);
+                    root.into()
+                };
+                let data_hash = {
+                    let mut root = [0u8; 32];
+                    root[0] = 255 - (i as u8);
+                    root.into()
+                };
+                ChunkInfo {
+                    chain_id: 123456,
+                    prev_state_root: state_roots[i],
+                    post_state_root: state_roots[i + 1],
+                    withdraw_root,
+                    data_hash,
+                    tx_bytes: tx_data.to_vec(),
+                    is_padding: false,
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
+    /// Sample a chunk info from random (for testing)
+    #[cfg(test)]
+    pub(crate) fn mock_random_chunk_info_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
         use eth_types::Address;
         use ethers_core::types::TransactionRequest;
         use rand::{
@@ -193,8 +300,7 @@ impl ChunkHash {
     }
 
     /// Build a padded chunk from previous one
-    #[cfg(test)]
-    pub(crate) fn mock_padded_chunk_hash_for_testing(previous_chunk: &Self) -> Self {
+    pub fn mock_padded_chunk_info_for_testing(previous_chunk: &Self) -> Self {
         assert!(
             !previous_chunk.is_padding,
             "previous chunk is padded already"

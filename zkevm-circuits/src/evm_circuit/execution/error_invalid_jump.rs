@@ -4,7 +4,7 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            common_gadget::{CommonErrorGadget, WordByteCapGadget},
+            common_gadget::{BytecodeLengthGadget, CommonErrorGadget, WordByteCapGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsEqualGadget, IsZeroGadget},
             CachedRegion, Cell,
@@ -15,13 +15,13 @@ use crate::{
 };
 use eth_types::{evm_types::OpcodeId, U256};
 
+use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidJumpGadget<F> {
     opcode: Cell<F>,
     dest: WordByteCapGadget<F, N_BYTES_PROGRAM_COUNTER>,
-    code_len: Cell<F>,
     value: Cell<F>,
     is_code: Cell<F>,
     push_rlc: Cell<F>,
@@ -30,6 +30,7 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     phase2_condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
+    code_len_gadget: BytecodeLengthGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
@@ -38,8 +39,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let code_len = cb.query_cell();
-        let dest = WordByteCapGadget::construct(cb, code_len.expr());
+        // Look up bytecode length
+        let code_len_gadget = BytecodeLengthGadget::construct(cb, cb.curr.state.code_hash.clone());
+        let dest = WordByteCapGadget::construct(cb, code_len_gadget.code_length.expr());
 
         let opcode = cb.query_cell();
         let value = cb.query_cell();
@@ -48,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let phase2_condition = cb.query_cell_phase2();
 
         cb.require_in_set(
-            "ErrorInvalidJump only happend in JUMP or JUMPI",
+            "ErrorInvalidJump only happened in JUMP or JUMPI",
             opcode.expr(),
             vec![OpcodeId::JUMP.expr(), OpcodeId::JUMPI.expr()],
         );
@@ -71,31 +73,49 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
-        // Look up bytecode length
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_len.expr());
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), 3.expr() + is_jumpi.expr());
 
         // If destination is in valid range, lookup for the value.
         cb.condition(dest.lt_cap(), |cb| {
-            cb.bytecode_lookup(
-                cb.curr.state.code_hash.expr(),
-                dest.valid_value(),
-                is_code.expr(),
-                value.expr(),
-                push_rlc.expr(),
+            cb.condition(code_len_gadget.is_first_bytecode_table.expr(), |cb| {
+                cb.bytecode_lookup(
+                    cb.curr.state.code_hash.expr(),
+                    dest.valid_value(),
+                    is_code.expr(),
+                    value.expr(),
+                    push_rlc.expr(),
+                );
+            });
+
+            #[cfg(feature = "dual-bytecode")]
+            cb.condition(
+                not::expr(code_len_gadget.is_first_bytecode_table.expr()),
+                |cb| {
+                    cb.bytecode_lookup1(
+                        cb.curr.state.code_hash.expr(),
+                        dest.valid_value(),
+                        is_code.expr(),
+                        value.expr(),
+                        push_rlc.expr(),
+                    );
+                },
             );
+
             cb.require_zero(
                 "is_code is false or not JUMPDEST",
                 is_code.expr() * is_jump_dest.expr(),
             );
         });
-
-        let common_error_gadget =
-            CommonErrorGadget::construct(cb, opcode.expr(), 3.expr() + is_jumpi.expr());
+        cb.require_equal(
+            "code_len_gadget and common_error_gadget have the same is_first_bytecode_table",
+            code_len_gadget.is_first_bytecode_table.expr(),
+            common_error_gadget.is_first_bytecode_table.expr(),
+        );
 
         Self {
             opcode,
             dest,
-            code_len,
             value,
             is_code,
             push_rlc,
@@ -104,6 +124,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             phase2_condition,
             is_condition_zero,
             common_error_gadget,
+            code_len_gadget,
         }
     }
 
@@ -132,9 +153,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .bytecodes
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        let code_len = code.bytes.len() as u64;
-        self.code_len
-            .assign(region, offset, Value::known(F::from(code_len)))?;
+        let code_len = self
+            .code_len_gadget
+            .assign(region, offset, block, &call.code_hash)?;
 
         let dest = block.rws[step.rw_indices[0]].stack_value();
         self.dest.assign(region, offset, dest, F::from(code_len))?;

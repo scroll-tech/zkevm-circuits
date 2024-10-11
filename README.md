@@ -1,35 +1,22 @@
 # Circuits for zkEVM
 
-[![CI checks](https://github.com/privacy-scaling-explorations/zkevm-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/privacy-scaling-explorations/zkevm-circuits/actions/workflows/ci.yml)
+This is the zkEVM circuits used in Scroll Mainnet. It was forked from PSE zkevm-circuits and added a lot of new features later:
 
-Check out the work in progress [specification](https://github.com/privacy-scaling-explorations/zkevm-specs) to learn how it works.
+1. SHA256 / MODEXP / EC precompiles
+2. RLP circuit / MPT circuit / Poseidon circuit
+3. multi block chunking
+4. proof aggregation
+5. [>99.5% compatibility](https://circuit-release.s3.us-west-2.amazonaws.com/testool/nightly.1695216104.47e2015.html) with [official EVM test vector](https://github.com/ethereum/tests)
+6. Many optimizations like read/write memory in word instead of byte
 
+## Docs
+
+High level design: <https://docs.scroll.io/en/technology/zkevm/zkevm-overview/>   
+Detailed circuit docs: <https://github.com/scroll-tech/zkevm-circuits/tree/develop/docs>
 
 ## Getting started
 
-To run the same tests as the CI, please use: `make test-all`.
-
-## Running benchmarks
-
-There are currently several benchmarks to run in the workspace in regards to the circuits.
-All use the `DEGREE` env var to specify the degree of the `K` parameter that you want 
-to use for your circuit in the bench process.
--   Keccak Circuit prover benches. -> `DEGREE=16 make packed_multi_keccak_bench`
--   EVM Circuit prover benches. -> `DEGREE=18 make evm_bench`.
--   State Circuit prover benches. -> `DEGREE=18 make state_bench`
-
-You can also run all benchmarks by running: `make circuit_benches DEGREE=18`.
-
-## GH Actions Benchmark Results
-
-Circuit Benchmark Results are accessible here: https://grafana.zkevm-testnet.org/d/vofy8DAVz/circuit-benchmarks?orgId=1
-
-- circuit_benchmarks panel displays:
-    - overall test result
-    - timers and system statistics
-    - url for downloading prover log and sys stat files
-    - clickable sysstats_url element that loads the memory and cpu utilization profiles for the given test
-    
+We recommend developers to go to our [circuit playground repo](https://github.com/scroll-tech/scroll-prover) for a detailed step-by-step guide on how to run proving.
 
 ## Project Layout
 
@@ -37,19 +24,19 @@ This repository contains several Rust packages that implement the zkevm. The hig
 
 [`bus-mapping`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/bus-mapping)
 
-- a crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof.
+- a crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for circuits.
 
 [`circuit-benchmarks`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/circuit-benchmarks)
 
-- Measures performance of each circuit based on proving and verifying time and execution trace parsing and generation for each subcircuit
+- (Deprecated) Measures performance of each circuit based on proving and verifying time and execution trace parsing and generation for each subcircuit
 
 [`eth-types`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/eth-types)
 
-- Different types helpful for various components of the zkevm, such as execution trace parsing or circuits
+- Different types helpful for various components of the EVM
 
 [`external-tracer`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/external-tracer)
 
-- Generates traces by connecting to an external tracer
+- Generates traces by connecting to an locally linked Geth EVM tracer
 
 [`gadgets`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/gadgets)
 
@@ -58,7 +45,7 @@ This repository contains several Rust packages that implement the zkevm. The hig
 
 [`geth-utils`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/geth-utils)
 
-- Provides output from latest geth APIs (debug_trace) as test vectors
+- Provides output from geth tracing APIs as circuit inputs
 
 [`integration-tests`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/integration-tests)
 
@@ -66,15 +53,15 @@ This repository contains several Rust packages that implement the zkevm. The hig
 
 [`keccak256`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/keccak256)
 
-- Modules for Keccak hash circuit
+- (Deprecated) Modules for Keccak hash circuit
 
 [`mock`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/mock)
 
-- Mock definitions and methods that are used to test circuits or opcodes
+- Testing module. Mock definitions and methods that are used to test circuits or opcodes
 
 [`testool`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/testool)
 
-- CLI that provides tools for testing
+- Parser and driver of official Ethereum Execution Tests
 
 [`zkevm-circuits`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/zkevm-circuits/src)
 
@@ -82,4 +69,4 @@ This repository contains several Rust packages that implement the zkevm. The hig
 
 [`zktrie`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/zktrie)
 
-- Modules for Merkle Patricia Trie circuit
+- Wrapper of scroll binary poseidon trie

@@ -1,9 +1,6 @@
 //! Execution step related module.
 
-use std::{
-    marker::PhantomData,
-    ops::{Add, Mul, Neg},
-};
+use std::ops::{Add, Mul, Neg};
 
 use crate::{
     circuit_input_builder::CallContext,
@@ -15,7 +12,7 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    Address, Field, GethExecStep, ToLittleEndian, Word, H256, U256,
+    Address, GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
@@ -27,6 +24,7 @@ use halo2_proofs::{
     },
     plonk::Expression,
 };
+use strum_macros::EnumIter;
 
 /// An execution step of the EVM.
 #[derive(Clone, Debug)]
@@ -206,7 +204,7 @@ impl ExecState {
 }
 
 /// Defines the various source/destination types for a copy event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, Default)]
 pub enum CopyDataType {
     /// When we need to pad the Copy rows of the circuit up to a certain maximum
     /// with rows that are not "useful".
@@ -214,6 +212,7 @@ pub enum CopyDataType {
     /// When the source for the copy event is the bytecode table.
     Bytecode,
     /// When the source/destination for the copy event is memory.
+    #[default]
     Memory,
     /// When the source for the copy event is tx's calldata.
     TxCalldata,
@@ -234,79 +233,6 @@ pub enum CopyDataType {
 impl CopyDataType {
     /// How many bits are necessary to represent a copy data type.
     pub const N_BITS: usize = 3usize;
-}
-const NUM_COPY_DATA_TYPES: usize = 8usize;
-pub struct CopyDataTypeIter {
-    idx: usize,
-    back_idx: usize,
-    marker: PhantomData<()>,
-}
-impl CopyDataTypeIter {
-    fn get(&self, idx: usize) -> Option<CopyDataType> {
-        match idx {
-            0usize => Some(CopyDataType::Padding),
-            1usize => Some(CopyDataType::Bytecode),
-            2usize => Some(CopyDataType::Memory),
-            3usize => Some(CopyDataType::TxCalldata),
-            4usize => Some(CopyDataType::TxLog),
-            5usize => Some(CopyDataType::RlcAcc),
-            6usize => Some(CopyDataType::AccessListAddresses),
-            7usize => Some(CopyDataType::AccessListStorageKeys),
-            _ => None,
-        }
-    }
-}
-impl strum::IntoEnumIterator for CopyDataType {
-    type Iterator = CopyDataTypeIter;
-    fn iter() -> CopyDataTypeIter {
-        CopyDataTypeIter {
-            idx: 0,
-            back_idx: 0,
-            marker: PhantomData,
-        }
-    }
-}
-impl Iterator for CopyDataTypeIter {
-    type Item = CopyDataType;
-    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        #[allow(clippy::iter_nth_zero)]
-        self.nth(0)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let t = if self.idx + self.back_idx >= NUM_COPY_DATA_TYPES {
-            0
-        } else {
-            NUM_COPY_DATA_TYPES - self.idx - self.back_idx
-        };
-        (t, Some(t))
-    }
-    fn nth(&mut self, n: usize) -> Option<<Self as Iterator>::Item> {
-        let idx = self.idx + n + 1;
-        if idx + self.back_idx > NUM_COPY_DATA_TYPES {
-            self.idx = NUM_COPY_DATA_TYPES;
-            None
-        } else {
-            self.idx = idx;
-            self.get(idx - 1)
-        }
-    }
-}
-impl ExactSizeIterator for CopyDataTypeIter {
-    fn len(&self) -> usize {
-        self.size_hint().0
-    }
-}
-impl DoubleEndedIterator for CopyDataTypeIter {
-    fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
-        let back_idx = self.back_idx + 1;
-        if self.idx + back_idx > NUM_COPY_DATA_TYPES {
-            self.back_idx = NUM_COPY_DATA_TYPES;
-            None
-        } else {
-            self.back_idx = back_idx;
-            self.get(NUM_COPY_DATA_TYPES - self.back_idx)
-        }
-    }
 }
 
 impl From<CopyDataType> for usize {
@@ -339,12 +265,6 @@ impl From<&CopyDataType> for u64 {
     }
 }
 
-impl Default for CopyDataType {
-    fn default() -> Self {
-        Self::Memory
-    }
-}
-
 impl_expr!(CopyDataType, u64::from);
 
 /// Defines a single copy step in a copy event. This type is unified over the
@@ -366,6 +286,24 @@ pub enum NumberOrHash {
     Number(usize),
     /// Variant to indicate a 256-bits hash value.
     Hash(H256),
+}
+
+impl NumberOrHash {
+    /// get hash value for NumberOrHash::Hash type
+    pub fn get_hash(&self) -> H256 {
+        match self {
+            Self::Hash(val) => *val,
+            _ => panic!("not a hash type"),
+        }
+    }
+
+    /// get number value for NumberOrHash::Number type
+    pub fn get_number(&self) -> usize {
+        match self {
+            Self::Number(val) => *val,
+            _ => panic!("not a number type"),
+        }
+    }
 }
 
 /// Represents all bytes related in one copy event.
@@ -868,7 +806,7 @@ impl From<(Word, Word, Word)> for ExpStep {
     }
 }
 
-/// Event representating an exponentiation `a ^ b == d (mod 2^256)`.
+/// Event representing an exponentiation `a ^ b == d (mod 2^256)`.
 #[derive(Clone, Debug)]
 pub struct ExpEvent {
     /// Base `a` for the exponentiation.
@@ -1428,7 +1366,7 @@ impl EcPairingOp {
     }
 }
 
-/// Event representating an exponentiation `a ^ b == d (mod m)` in precompile modexp.
+/// Event representing an exponentiation `a ^ b == d (mod m)` in precompile modexp.
 #[derive(Clone, Debug)]
 pub struct BigModExp {
     /// Base `a` for the exponentiation.
@@ -1452,7 +1390,7 @@ impl Default for BigModExp {
     }
 }
 
-/// Event representating an SHA256 hash in precompile sha256.
+/// Event representing an SHA256 hash in precompile sha256.
 #[derive(Clone, Debug, Default)]
 pub struct SHA256 {
     /// input bytes

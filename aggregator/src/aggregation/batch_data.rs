@@ -1,3 +1,4 @@
+use eth_types::H256;
 use ethers_core::utils::keccak256;
 use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
@@ -58,6 +59,7 @@ pub struct BatchDataConfig<const N_SNARKS: usize> {
 
 pub struct AssignedBatchDataExport {
     pub num_valid_chunks: AssignedCell<Fr, Fr>,
+    pub batch_data_len: AssignedCell<Fr, Fr>,
     pub versioned_hash: Vec<AssignedCell<Fr, Fr>>,
     pub chunk_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
     pub bytes_rlc: AssignedCell<Fr, Fr>,
@@ -371,6 +373,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn assign(
         &self,
         layouter: &mut impl Layouter<Fr>,
@@ -380,13 +383,14 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         // `core.rs`. Since these are already constrained, we can just use them as is.
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
         batch_data: &BatchData<N_SNARKS>,
+        versioned_hash: H256,
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBatchDataExport, Error> {
         self.load_range_tables(layouter)?;
 
         let assigned_rows = layouter.assign_region(
             || "BatchData rows",
-            |mut region| self.assign_rows(&mut region, challenge_value, batch_data),
+            |mut region| self.assign_rows(&mut region, challenge_value, batch_data, versioned_hash),
         )?;
 
         layouter.assign_region(
@@ -414,13 +418,14 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         region: &mut Region<Fr>,
         challenge_value: Challenges<Value<Fr>>,
         batch_data: &BatchData<N_SNARKS>,
+        versioned_hash: H256,
     ) -> Result<Vec<AssignedBatchDataConfig>, Error> {
         let n_rows_data = BatchData::<N_SNARKS>::n_rows_data();
         let n_rows_metadata = BatchData::<N_SNARKS>::n_rows_metadata();
         let n_rows_digest_rlc = BatchData::<N_SNARKS>::n_rows_digest_rlc();
         let n_rows_total = BatchData::<N_SNARKS>::n_rows();
 
-        let rows = batch_data.to_rows(challenge_value);
+        let rows = batch_data.to_rows(versioned_hash, challenge_value);
         assert_eq!(rows.len(), n_rows_total);
 
         // enable data selector
@@ -551,6 +556,12 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
             region.constrain_equal(one.cell(), one_cell)?;
             one
         };
+        let four = {
+            let four = rlc_config.load_private(region, &Fr::from(4), &mut rlc_config_offset)?;
+            let four_cell = rlc_config.four_cell(four.cell().region_index);
+            region.constrain_equal(four.cell(), four_cell)?;
+            four
+        };
         let fixed_chunk_indices = {
             let mut fixed_chunk_indices = vec![one.clone()];
             for i in 2..=N_SNARKS {
@@ -564,6 +575,8 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
             }
             fixed_chunk_indices
         };
+        let two = fixed_chunk_indices.get(1).expect("N_SNARKS >= 2");
+        let n_snarks = fixed_chunk_indices.last().expect("N_SNARKS >= 2");
         let pows_of_256 = {
             let mut pows_of_256 = vec![one.clone()];
             for (exponent, pow_of_256) in (1..=POWS_OF_256).zip_eq(
@@ -632,6 +645,9 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         let mut num_nonempty_chunks = zero.clone();
         let mut is_empty_chunks = Vec::with_capacity(N_SNARKS);
         let mut chunk_sizes = Vec::with_capacity(N_SNARKS);
+        // init: batch_data_len = 4 * N_SNARKS + 2 (metadata).
+        let mut batch_data_len =
+            rlc_config.mul_add(region, &four, n_snarks, two, &mut rlc_config_offset)?;
         for (i, is_padded_chunk) in chunks_are_padding.iter().enumerate() {
             let rows = assigned_rows
                 .iter()
@@ -679,6 +695,8 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
                 &num_nonempty_chunks,
                 &mut rlc_config_offset,
             )?;
+            batch_data_len =
+                rlc_config.add(region, &batch_data_len, &chunk_size, &mut rlc_config_offset)?;
 
             is_empty_chunks.push(is_empty_chunk);
             chunk_sizes.push(chunk_size);
@@ -940,6 +958,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
             .collect::<Vec<AssignedCell<Fr, Fr>>>();
         let export = AssignedBatchDataExport {
             num_valid_chunks,
+            batch_data_len,
             versioned_hash: assigned_rows
                 .iter()
                 .rev()

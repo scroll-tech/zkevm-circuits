@@ -24,7 +24,7 @@ impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
         rhs: Expression<F>,
     ) -> Self {
         let lt = LtGadget::<F, N_BYTES>::construct(cb, lhs, rhs);
-        let eq = IsZeroGadget::<F>::construct(cb, sum::expr(&lt.diff_bytes()));
+        let eq = IsZeroGadget::<F>::construct(cb, sum::expr(lt.diff_bytes()));
 
         Self { lt, eq }
     }
@@ -58,6 +58,7 @@ mod tests {
         util::Field,
     };
     use eth_types::*;
+    use gadgets::ToScalar;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]

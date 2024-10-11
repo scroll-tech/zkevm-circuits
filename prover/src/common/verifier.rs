@@ -1,4 +1,4 @@
-use crate::{io::deserialize_vk, utils::load_params, Proof};
+use crate::io::deserialize_vk;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::VerifyingKey,
@@ -11,14 +11,14 @@ mod evm;
 mod utils;
 
 #[derive(Debug)]
-pub struct Verifier<C: CircuitExt<Fr>> {
-    params: ParamsKZG<Bn256>,
+pub struct Verifier<'params, C: CircuitExt<Fr>> {
+    params: &'params ParamsKZG<Bn256>,
     vk: VerifyingKey<G1Affine>,
     phantom: PhantomData<C>,
 }
 
-impl<C: CircuitExt<Fr>> Verifier<C> {
-    pub fn new(params: ParamsKZG<Bn256>, vk: VerifyingKey<G1Affine>) -> Self {
+impl<'params, C: CircuitExt<Fr, Params = ()>> Verifier<'params, C> {
+    pub fn new(params: &'params ParamsKZG<Bn256>, vk: VerifyingKey<G1Affine>) -> Self {
         Self {
             params,
             vk,
@@ -26,20 +26,9 @@ impl<C: CircuitExt<Fr>> Verifier<C> {
         }
     }
 
-    pub fn from_params(params: ParamsKZG<Bn256>, raw_vk: &[u8]) -> Self {
+    pub fn from_params(params: &'params ParamsKZG<Bn256>, raw_vk: &[u8]) -> Self {
         let vk = deserialize_vk::<C>(raw_vk);
-
         Self::new(params, vk)
-    }
-
-    pub fn from_params_dir(params_dir: &str, degree: u32, vk: &[u8]) -> Self {
-        let params = load_params(params_dir, degree, None).unwrap();
-
-        Self::from_params(params, vk)
-    }
-
-    pub fn verify_proof(&self, proof: Proof) -> bool {
-        self.verify_snark(proof.to_snark())
     }
 
     pub fn verify_snark(&self, snark: Snark) -> bool {

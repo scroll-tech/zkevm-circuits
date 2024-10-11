@@ -117,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             lt
         });
 
-        // Merge contraints
+        // Merge constraints
         let shf_lo_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
         let shf_lo_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
         let shf_lo_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
@@ -262,10 +262,11 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         offset: usize,
         block: &Block,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [shift, a, b] = indices.map(|idx| block.rws[idx].stack_value());
 

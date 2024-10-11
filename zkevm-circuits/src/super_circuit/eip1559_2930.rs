@@ -1,7 +1,7 @@
 //! Helper functions for super circuit tests of EIP-1559
 
 use super::CircuitsParams;
-use eth_types::{address, l2_types::BlockTrace, AccessList, AccessListItem, H256};
+use eth_types::{address, l2_types::BlockTrace, AccessList, AccessListItem, Word, H256};
 use ethers_signers::{LocalWallet, Signer};
 use mock::{eth, gwei, TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
@@ -14,11 +14,14 @@ pub(crate) fn test_block_1559_trace() -> BlockTrace {
     let addr_a = wallet_a.address();
     let addr_b = address!("0x0000000000000000000000000000000000001559");
 
+    // 279 is l1 fee
+    let balance = gwei(80_000) + Word::from(279u64);
+
     TestContext::<2, 1>::new(
         None,
         |accs| {
             accs[0].address(addr_b).balance(eth(1));
-            accs[1].address(addr_a).balance(gwei(80_000));
+            accs[1].address(addr_a).balance(balance);
         },
         |mut txs, _accs| {
             txs[0]
@@ -47,7 +50,7 @@ pub(crate) fn test_circuits_params(max_txs: usize, max_calldata: usize) -> Circu
         max_exp_steps: 256,
         max_bytecode: 512,
         max_mpt_rows: 2049,
-        max_poseidon_rows: 512,
+        max_poseidon_rows: 1024,
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: 1,

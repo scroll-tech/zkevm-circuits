@@ -24,10 +24,9 @@ use crate::{
     },
     util::{Expr, Field},
 };
-use eth_types::{
-    evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, ToLittleEndian, ToScalar,
-};
+use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, ToLittleEndian};
 use gadgets::util::{not, select};
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -121,22 +120,24 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.block_lookup(tag.expr(), cb.curr.state.block_number.expr(), value);
         }
         let effective_tip = cb.query_word_rlc();
-        let sub_gas_price_by_base_fee =
-            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price.clone());
 
-        let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
-            MulWordByU64Gadget::construct(
-                cb,
-                if cfg!(feature = "scroll") {
-                    // For Scroll mode, basefee will not be burned.
-                    // It will also be sent to coinbase(fee_valut)
-                    tx_gas_price
-                } else {
-                    effective_tip.clone()
-                },
-                gas_used.clone() - effective_refund.min(),
-            )
-        });
+        let (mul_effective_tip_by_gas_used, sub_gas_price_by_base_fee) =
+            cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+                (
+                    MulWordByU64Gadget::construct(
+                        cb,
+                        if cfg!(feature = "scroll") {
+                            // For Scroll mode, basefee will not be burned.
+                            // It will also be sent to coinbase(fee_valut)
+                            tx_gas_price.clone()
+                        } else {
+                            effective_tip.clone()
+                        },
+                        gas_used.clone() - effective_refund.min(),
+                    ),
+                    AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price),
+                )
+            });
 
         let effective_fee = cb.query_word_rlc();
 
@@ -372,10 +373,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         } else {
             tx.gas_price - context.base_fee
         };
+        let addend = tx.gas_price.overflowing_sub(context.base_fee).0;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
-            [tx.gas_price - context.base_fee, context.base_fee],
+            [addend, context.base_fee],
             tx.gas_price,
         )?;
         let coinbase_reward = if tx.tx_type.is_l1_msg() {
@@ -415,7 +417,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             log::trace!("tx is l1msg and l1 fee is 0");
             0
         } else {
-            tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0
+            tx.l1_fee
+                .tx_l1_fee(tx.tx_data_gas_cost, tx.rlp_signed.len() as u64)
+                .0
         };
         log::trace!(
             "tx_l1_fee: {}, coinbase_reward: {}",

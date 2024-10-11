@@ -18,6 +18,7 @@ use log4rs::{
 };
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use std::fmt::Debug;
 use std::{
     fs::{self, metadata, File},
     io::{BufReader, Read},
@@ -82,42 +83,13 @@ pub fn load_params(
     Ok(p)
 }
 
-#[deprecated]
-fn post_process_tx_storage_proof(trace: &mut BlockTrace) {
-    // fill intrinsicStorageProofs into tx storage proof
-    let addrs = vec![
-        *bus_mapping::l2_predeployed::message_queue::ADDRESS,
-        *bus_mapping::l2_predeployed::l1_gas_price_oracle::ADDRESS,
-    ];
-    for tx_storage_trace in &mut trace.tx_storage_trace {
-        if let Some(proof) = tx_storage_trace.proofs.as_mut() {
-            for addr in &addrs {
-                proof.insert(
-                    *addr,
-                    trace
-                        .storage_trace
-                        .proofs
-                        .as_ref()
-                        .map(|p| p[addr].clone())
-                        .unwrap(),
-                );
-            }
-        }
-        for addr in &addrs {
-            tx_storage_trace
-                .storage_proofs
-                .insert(*addr, trace.storage_trace.storage_proofs[addr].clone());
-        }
-    }
-}
-
 /// get a block-result from file
 pub fn get_block_trace_from_file<P: AsRef<Path>>(path: P) -> BlockTrace {
     let mut buffer = Vec::new();
     let mut f = File::open(&path).unwrap();
     f.read_to_end(&mut buffer).unwrap();
 
-    let mut trace = serde_json::from_slice::<BlockTrace>(&buffer).unwrap_or_else(|e1| {
+    serde_json::from_slice::<BlockTrace>(&buffer).unwrap_or_else(|e1| {
         serde_json::from_slice::<BlockTraceJsonRpcResult>(&buffer)
             .map_err(|e2| {
                 panic!(
@@ -129,15 +101,15 @@ pub fn get_block_trace_from_file<P: AsRef<Path>>(path: P) -> BlockTrace {
             })
             .unwrap()
             .result
-    });
-    post_process_tx_storage_proof(&mut trace);
-    trace
+    })
 }
 
-pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
-    std::env::var(var_name)
+pub fn read_env_var<T: Debug + Clone + FromStr>(var_name: &'static str, default: T) -> T {
+    let r = std::env::var(var_name)
         .map(|s| s.parse::<T>().unwrap_or_else(|_| default.clone()))
-        .unwrap_or(default)
+        .unwrap_or(default);
+    log::debug!("read env var {var_name}, result: {r:?}");
+    r
 }
 
 #[derive(Debug)]

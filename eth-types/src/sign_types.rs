@@ -16,11 +16,7 @@ use ethers_core::{
 };
 use halo2curves::{
     ff::FromUniformBytes,
-    group::{
-        ff::{Field as GroupField, PrimeField},
-        prime::PrimeCurveAffine,
-        Curve,
-    },
+    group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
     secp256k1::{Fp, Fq, Secp256k1Affine},
     Coordinates, CurveAffine,
 };
@@ -193,7 +189,7 @@ pub fn recover_pk2(
     ct_option_ok_or(Secp256k1Affine::from_xy(x, y), Error::Signature)
 }
 
-/// Secp256k1 Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
+/// Secp256k1 Curve Scalar.  Reference: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
 /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
 pub static SECP256K1_Q: LazyLock<BigUint> =
     LazyLock::new(|| BigUint::from_bytes_le(&(Fq::zero() - Fq::one()).to_repr()) + 1u64);
@@ -207,9 +203,7 @@ pub fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
 /// Return a copy of the serialized public key with swapped Endianness.
 pub fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
     assert_eq!(pk.len(), 64);
-    let mut pk_swap = <&[T; 64]>::try_from(pk)
-        .map(|r| r.clone())
-        .expect("pk.len() != 64");
+    let mut pk_swap = <&[T; 64]>::try_from(pk).cloned().expect("pk.len() != 64");
     pk_swap[..32].reverse();
     pk_swap[32..].reverse();
     pk_swap

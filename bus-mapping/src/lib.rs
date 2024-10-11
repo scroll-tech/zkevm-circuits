@@ -180,7 +180,7 @@
 //! | `key`  | `val`         | `rw`    | `gc` | Note                                     |
 //! |:------:| ------------- | ------- | ---- | ---------------------------------------- |
 //! | `0x40` | `0`           | `Write` |      | Init                                     |
-//! | `0x40` | `0x80`        | `Write` | 0    | Assume written at the begining of `code` |
+//! | `0x40` | `0x80`        | `Write` | 0    | Assume written at the beginning of `code`|
 //! | `0x40` | `0x80`        | `Read`  | 4    | `56 MLOAD`                               |
 //! |   -    |               |         |      |                                          |
 //! | `0x80` | `0`           | `Write` |      | Init                                     |
@@ -228,7 +228,7 @@ pub mod circuit_input_builder;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;
-pub mod l2_predeployed;
+pub use eth_types::l2_predeployed;
 pub mod mock;
 pub mod operation;
 pub mod precompile;

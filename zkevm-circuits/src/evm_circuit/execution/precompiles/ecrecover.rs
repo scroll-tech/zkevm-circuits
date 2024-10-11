@@ -1,7 +1,8 @@
 use crate::util::Field;
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{evm_types::GasCost, word, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, word, ToLittleEndian, U256};
 use gadgets::util::{and, not, or, select, sum, Expr};
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

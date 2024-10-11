@@ -34,6 +34,12 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + TX_TABLE_LOOKUPS
     + RW_TABLE_LOOKUPS
     + BYTECODE_TABLE_LOOKUPS
+    // only add when feature 'dual-bytecode' is enabled
+    + if cfg!(feature = "dual-bytecode"){
+        BYTECODE_TABLE_LOOKUPS
+    }else{
+        0
+    }
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
@@ -59,6 +65,8 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::ModExp, MODEXP_TABLE_LOOKUPS),
     (Table::Ecc, ECC_TABLE_LOOKUPS),
     (Table::PowOfRand, POW_OF_RAND_TABLE_LOOKUPS),
+    #[cfg(feature = "dual-bytecode")]
+    (Table::Bytecode1, BYTECODE_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
@@ -117,7 +125,7 @@ pub(crate) const N_BITS_U8: usize = 8;
 pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 
 // Number of bytes that will be used of the memory address and size.
-// If any of the other more signficant bytes are used it will always result in
+// If any of the other more significant bytes are used it will always result in
 // an out-of-gas error.
 pub(crate) const N_BYTES_MEMORY_ADDRESS: usize = 5;
 pub(crate) const N_BYTES_MEMORY_WORD_SIZE: usize = 4;

@@ -3,6 +3,7 @@
 use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
+    test_util::CircuitTestBuilder,
     util::unusable_rows,
     witness::Block,
 };
@@ -39,10 +40,15 @@ fn copy_circuit_unusable_rows() {
 pub fn test_copy_circuit(
     copy_events: Vec<CopyEvent>,
     max_copy_rows: usize,
+    bytecode_map: Option<BTreeMap<Word, bool>>,
     external_data: ExternalData,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let circuit =
-        CopyCircuit::<Fr>::new_with_external_data(copy_events, max_copy_rows, external_data);
+    let circuit = CopyCircuit::<Fr>::new_with_external_data(
+        copy_events,
+        max_copy_rows,
+        bytecode_map,
+        external_data,
+    );
 
     let prover = MockProver::<Fr>::run(K, &circuit, vec![]).unwrap();
     prover.verify_par()
@@ -53,6 +59,7 @@ pub fn test_copy_circuit_from_block(block: Block) -> Result<(), Vec<VerifyFailur
     test_copy_circuit(
         block.copy_events,
         block.circuits_params.max_copy_rows,
+        block.bytecode_map,
         ExternalData {
             max_txs: block.circuits_params.max_txs,
             max_calldata: block.circuits_params.max_calldata,
@@ -285,7 +292,7 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
     builder
 }
 
-fn gen_access_list_data() -> CircuitInputBuilder {
+fn gen_access_list_data() -> Block {
     let test_access_list = AccessList(vec![
         AccessListItem {
             address: address!("0x0000000000000000000000000000000000001111"),
@@ -318,13 +325,9 @@ fn gen_access_list_data() -> CircuitInputBuilder {
         |block, _tx| block.number(0xcafeu64),
     )
     .unwrap();
-    let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-
-    builder
+    CircuitTestBuilder::new_from_test_ctx(test_ctx)
+        .build_witness_block()
+        .0
 }
 
 fn gen_create_data() -> CircuitInputBuilder {
@@ -421,8 +424,7 @@ fn copy_circuit_valid_tx_log() {
 
 #[test]
 fn copy_circuit_valid_access_list() {
-    let builder = gen_access_list_data();
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    let block = gen_access_list_data();
     assert_eq!(test_copy_circuit_from_block(block), Ok(()));
 }
 
@@ -454,7 +456,7 @@ fn copy_circuit_invalid_calldatacopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["rw lookup", "rw lookup"],
+        vec!["tx lookup for CallData", "rw lookup"],
     );
 }
 
@@ -579,12 +581,17 @@ fn variadic_size_check() {
         .unwrap();
     let block2 = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    let circuit = CopyCircuit::<Fr>::new(block1.copy_events, block1.circuits_params.max_copy_rows);
+    let circuit = CopyCircuit::<Fr>::new(
+        block1.copy_events,
+        block1.circuits_params.max_copy_rows,
+        block1.bytecode_map,
+    );
     let prover1 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(
         block2.copy_events.clone(),
         block2.circuits_params.max_copy_rows,
+        block2.bytecode_map,
     );
     let prover2 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
 

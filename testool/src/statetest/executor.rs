@@ -46,7 +46,7 @@ pub enum StateTestError {
     NonceMismatch { expected: U256, found: U256 },
     #[error("CodeMismatch(expected: {expected:?}, found:{found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
-    #[error("StorgeMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
+    #[error("StorageMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
     StorageMismatch {
         slot: U256,
         expected: U256,
@@ -159,7 +159,7 @@ fn check_post(
     Ok(())
 }
 
-fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
+pub fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     let tx_type = st.tx_type();
     let tx = st.build_tx();
 
@@ -215,7 +215,6 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                     || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
                 ..Default::default()
             },
-            chain_config: None,
             ..Default::default()
         },
         st.result,
@@ -273,7 +272,7 @@ fn trace_config_to_witness_block_l2(
     suite: TestSuite,
     circuits_params: CircuitsParams,
     verbose: bool,
-) -> Result<Option<(Block, CircuitInputBuilder)>, StateTestError> {
+) -> Result<Option<(eth_types::l2_types::BlockTrace, Block, CircuitInputBuilder)>, StateTestError> {
     let block_trace = external_tracer::l2trace(&trace_config);
 
     let block_trace = match (block_trace, st.exception) {
@@ -315,12 +314,9 @@ fn trace_config_to_witness_block_l2(
         Ok(_) => 0,
     };
 
-    set_env_coinbase(&block_trace.coinbase.address.unwrap());
-    env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
-    let difficulty_be_bytes = [0u8; 32];
-    env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+    eth_types::constants::set_scroll_block_constants_with_trace(&block_trace);
     let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace, false, false)
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace.clone(), false)
             .expect("could not handle block tx");
     builder
         .finalize_building()
@@ -333,7 +329,7 @@ fn trace_config_to_witness_block_l2(
     if exceed_max_steps != 0 {
         return Err(StateTestError::SkipTestMaxSteps(exceed_max_steps));
     }
-    Ok(Some((block, builder)))
+    Ok(Some((block_trace, block, builder)))
 }
 
 #[cfg(not(feature = "scroll"))]
@@ -425,6 +421,7 @@ fn trace_config_to_witness_block_l1(
         geth_traces: geth_traces.clone(),
         accounts: trace_config.accounts.values().cloned().collect(),
         eth_block: eth_block.clone(),
+        ..Default::default()
     };
 
     let block_data =
@@ -539,27 +536,31 @@ pub fn run_test(
     };
 
     #[cfg(feature = "scroll")]
-    let result = trace_config_to_witness_block_l2(
-        trace_config.clone(),
-        st.clone(),
-        suite.clone(),
-        circuits_params,
-        circuits_config.verbose,
-    )?;
+    let (_scroll_trace, witness_block, mut builder) = {
+        let result = trace_config_to_witness_block_l2(
+            trace_config.clone(),
+            st.clone(),
+            suite.clone(),
+            circuits_params,
+            circuits_config.verbose,
+        )?;
+        match result {
+            Some((scroll_trace, witness_block, builder)) => (scroll_trace, witness_block, builder),
+            None => return Ok(()),
+        }
+    };
     #[cfg(not(feature = "scroll"))]
-    let result = trace_config_to_witness_block_l1(
-        trace_config.clone(),
-        st.clone(),
-        suite.clone(),
-        circuits_params,
-        circuits_config.verbose,
-    )?;
-
-    let (witness_block, mut builder) = match result {
-        Some((witness_block, builder)) => (witness_block, builder),
-        None => {
-            log::info!("{}: return for no-witness-block", test_id);
-            return Ok(());
+    let (witness_block, mut builder) = {
+        let result = trace_config_to_witness_block_l1(
+            trace_config.clone(),
+            st.clone(),
+            suite.clone(),
+            circuits_params,
+            circuits_config.verbose,
+        )?;
+        match result {
+            Some((witness_block, builder)) => (witness_block, builder),
+            None => return Ok(()),
         }
     };
 
@@ -630,16 +631,24 @@ pub fn run_test(
         }
     } else {
         log::debug!("test super circuit {}", *CIRCUIT);
+
+        // TODO: these codes are too difficult to maintain.
+        // The correct way is to dump trace files,
+        // and use separate tools to test trace files.
         #[cfg(feature = "inner-prove")]
         {
-            set_env_coinbase(&st.env.current_coinbase);
+            eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
             prover::test::inner_prove(&test_id, &witness_block);
         }
         #[cfg(feature = "chunk-prove")]
         {
-            set_env_coinbase(&st.env.current_coinbase);
-            prover::test::chunk_prove(&test_id, &witness_block);
+            eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
+            prover::test::chunk_prove(
+                &test_id,
+                prover::ChunkProvingTask::from(vec![_scroll_trace]),
+            );
         }
+
         #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
         mock_prove(&test_id, &witness_block);
     };
@@ -690,17 +699,6 @@ pub fn run_test(
     }
     log::info!("{test_id}: run-test END");
     Ok(())
-}
-
-#[cfg(feature = "scroll")]
-fn set_env_coinbase(coinbase: &Address) -> String {
-    let coinbase = format!("0x{}", hex::encode(coinbase));
-    env::set_var("COINBASE", &coinbase);
-
-    // Used for inner-prove and chunk-prove.
-    env::set_var("INNER_LAYER_ID", &coinbase);
-
-    coinbase
 }
 
 #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]

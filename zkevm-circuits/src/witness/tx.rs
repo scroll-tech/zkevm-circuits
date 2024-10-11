@@ -22,18 +22,17 @@ use eth_types::{
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
-    AccessList, Address, Error, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word,
-    H256,
+    AccessList, Address, Error, Signature, ToBigEndian, ToLittleEndian, ToWord, Word, H256,
 };
 use ethers_core::{
     types::TransactionRequest,
     utils::{keccak256, rlp::Encodable},
 };
+use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
     halo2curves::{group::ff::PrimeField, secp256k1},
 };
-use mock::MockTransaction;
 use num::Integer;
 use num_bigint::BigUint;
 use std::{cmp::Ordering, collections::BTreeMap};
@@ -1143,8 +1142,9 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     }
 }
 
-impl From<MockTransaction> for Transaction {
-    fn from(mock_tx: MockTransaction) -> Self {
+#[cfg(any(feature = "test", test))]
+impl From<mock::MockTransaction> for Transaction {
+    fn from(mock_tx: mock::MockTransaction) -> Self {
         let is_create = mock_tx.to.is_none();
         let sig = Signature {
             r: mock_tx.r.expect("tx expected to be signed"),
@@ -1319,12 +1319,13 @@ pub(super) fn tx_convert(
 mod tests {
     use crate::witness::{tx::Challenges, RlpTag, Tag, Transaction};
     use eth_types::{
-        evm_types::gas_utils::tx_data_gas_cost, geth_types::TxType, Address, ToBigEndian, ToScalar,
+        evm_types::gas_utils::tx_data_gas_cost, geth_types::TxType, Address, ToBigEndian,
     };
     use ethers_core::{
         types::{Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
     };
+    use gadgets::ToScalar;
     use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
 
     fn rlc(be_bytes: &[u8], rand: Fr) -> Fr {

@@ -8,7 +8,7 @@ license.workspace = true
 halo2_proofs.workspace = true
 
 aggregator = { path = "../aggregator" }
-bus-mapping = { path = "../bus-mapping" }
+bus-mapping = { path = "../bus-mapping", default-features = false }
 eth-types = { path = "../eth-types" }
 mpt-zktrie = { path = "../zktrie" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
@@ -26,7 +26,7 @@ git-version = "0.3.5"
 hex.workspace = true
 itertools.workspace = true
 log.workspace = true
-log4rs = { version = "1.2.0", default_features = false, features = ["console_appender", "file_appender"] }
+log4rs = { version = "1.2.0", default-features = false, features = ["console_appender", "file_appender"] }
 num-bigint.workspace = true
 rand.workspace = true
 rand_xorshift.workspace = true
@@ -37,8 +37,7 @@ serde_stacker.workspace = true
 sha2 ="0.10.2"
 
 [features]
-default = []
-#default = ["scroll"]
+default = ["scroll"]
 parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn"]
 scroll = ["bus-mapping/scroll", "eth-types/scroll", "zkevm-circuits/scroll"]
 strict-ccc = ["bus-mapping/strict-ccc", "zkevm-circuits/strict-ccc"]

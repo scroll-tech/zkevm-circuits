@@ -25,12 +25,13 @@ struct ArithTestCircuit {
 impl Circuit<Fr> for ArithTestCircuit {
     type Config = RlcConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let challenges = Challenges::construct(meta);
+        let challenges = Challenges::construct_p1(meta);
         let keccak_table = KeccakTable::construct(meta);
         RlcConfig::configure(meta, &keccak_table, challenges)
     }

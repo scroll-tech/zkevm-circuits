@@ -20,11 +20,9 @@ use crate::{
     util::{Expr, Field},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{
-    evm_types::block_utils::{is_valid_block_number, NUM_PREV_BLOCK_ALLOWED},
-    ToScalar,
-};
+use eth_types::evm_types::block_utils::{is_valid_block_number, NUM_PREV_BLOCK_ALLOWED};
 use gadgets::util::not;
+use gadgets::ToScalar;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -144,10 +142,11 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         offset: usize,
         block: &Block,
         tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.same_context
+            .assign_exec_step(region, offset, block, call, step)?;
 
         let chain_id = block.chain_id;
         let current_block_number = block.context.ctxs[&tx.block_number].number;
