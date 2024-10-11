@@ -315,9 +315,8 @@ fn trace_config_to_witness_block_l2(
     };
 
     eth_types::constants::set_scroll_block_constants_with_trace(&block_trace);
-    let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace.clone(), false)
-            .expect("could not handle block tx");
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace.clone())
+        .expect("could not handle block tx");
     builder
         .finalize_building()
         .expect("could not finalize building block");

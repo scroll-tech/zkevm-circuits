@@ -97,11 +97,8 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
     }
 
     let mut traces = block_traces.into_iter();
-    let mut builder = CircuitInputBuilder::new_from_l2_trace(
-        get_super_circuit_params(),
-        traces.next().unwrap(),
-        false,
-    )?;
+    let mut builder =
+        CircuitInputBuilder::new_from_l2_trace(get_super_circuit_params(), traces.next().unwrap())?;
     for (idx, block_trace) in traces.enumerate() {
         log::debug!(
             "add_more_l2_trace idx {}, block num {:?}",
