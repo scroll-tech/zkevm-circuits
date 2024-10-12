@@ -603,6 +603,7 @@ impl<F: Field> SigCircuit<F> {
             QuantumCell::Existing(assigned_y_tmp),
             QuantumCell::Existing(pk_is_zero),
         );
+        // this line failed
         ecc_chip
             .field_chip
             .range
@@ -984,6 +985,8 @@ impl<F: Field> SigCircuit<F> {
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_r1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipR1<F>>>, Error>>()?;
 
+                println!("assigned_ecdsas_r1 {:?} ", assigned_ecdsas_r1);
+
                 // ================================================
                 // step 2: decompose the keys and messages
                 // ================================================
@@ -1032,7 +1035,7 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 3: compute RLC of keys and messages
                 // ================================================
-                // TODO: make assigned_sig_values include r1 signature.
+
                 let (mut assigned_keccak_values, mut assigned_sig_values): (
                     Vec<[AssignedValue<F>; 3]>,
                     Vec<AssignedSignatureVerify<F>>,
@@ -1084,11 +1087,6 @@ impl<F: Field> SigCircuit<F> {
                     .unzip();
 
                 // append keccak & sig values of r1
-                println!(
-                    "before assigned_keccak_values size {} {:?}",
-                    assigned_keccak_values.len(),
-                    assigned_keccak_values
-                );
                 assigned_keccak_values.extend(assigned_keccak_values_r1);
                 assigned_sig_values.extend(assigned_sig_values_r1);
 

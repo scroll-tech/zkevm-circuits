@@ -68,6 +68,7 @@ pub(super) type FpChipK1<F> = FpConfig<F, Fp_K1>;
 /// Chip to handle ECDSA(secp256r1)::Fp, the base field
 pub(super) type FpChipR1<F> = FpConfig<F, Fp_R1>;
 
+#[derive(Debug)]
 pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint>,
     pub(super) pk_is_zero: AssignedValue<F>,
@@ -90,6 +91,7 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) sig_is_valid: AssignedValue<F>,
 }
 
+#[derive(Debug)]
 pub(super) struct SignDataDecomposed<F: Field> {
     pub(super) pk_hash_cells: Vec<QuantumCell<F>>,
     pub(super) msg_hash_cells: Vec<QuantumCell<F>>,

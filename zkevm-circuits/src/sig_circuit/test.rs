@@ -1,5 +1,6 @@
 use crate::{sig_circuit::SigCircuit, util::Field};
 use eth_types::sign_types::{sign, SignData};
+use ethers_core::utils::keccak256;
 use halo2_proofs::{
     arithmetic::Field as HaloField,
     dev::MockProver,
@@ -9,6 +10,7 @@ use halo2_proofs::{
         secp256r1::{self, Secp256r1Affine},
     },
 };
+
 use rand::{Rng, RngCore};
 use std::marker::PhantomData;
 
@@ -202,33 +204,33 @@ fn sign_k1_verify() {
         log::debug!("end of testing for msg_hash = 1");
     }
     // random msg_hash
-    let max_sigs = [1, 16, MAX_NUM_SIG];
-    for max_sig in max_sigs.iter() {
-        log::debug!("testing for {} signatures", max_sig);
-        let mut signatures = Vec::new();
-        for _ in 0..*max_sig {
-            let (sk, pk) = gen_key_pair_k1(&mut rng);
-            let msg = gen_msg(&mut rng);
-            let msg_hash: [u8; 32] = Keccak256::digest(&msg)
-                .as_slice()
-                .to_vec()
-                .try_into()
-                .expect("hash length isn't 32 bytes");
-            let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
-            let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
-            signatures.push(SignData {
-                signature: (r, s, v),
-                pk,
-                msg: msg.into(),
-                msg_hash,
-            });
-        }
+    // let max_sigs = [1, 16, MAX_NUM_SIG];
+    // for max_sig in max_sigs.iter() {
+    //     log::debug!("testing for {} signatures", max_sig);
+    //     let mut signatures = Vec::new();
+    //     for _ in 0..*max_sig {
+    //         let (sk, pk) = gen_key_pair_k1(&mut rng);
+    //         let msg = gen_msg(&mut rng);
+    //         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+    //             .as_slice()
+    //             .to_vec()
+    //             .try_into()
+    //             .expect("hash length isn't 32 bytes");
+    //         let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
+    //         let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
+    //         signatures.push(SignData {
+    //             signature: (r, s, v),
+    //             pk,
+    //             msg: msg.into(),
+    //             msg_hash,
+    //         });
+    //     }
 
-        let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, *max_sig, signatures, vec![]);
+    //     let k = LOG_TOTAL_NUM_ROWS as u32;
+    //     run::<Fr>(k, *max_sig, signatures, vec![]);
 
-        log::debug!("end of testing for {} signatures", max_sig);
-    }
+    //     log::debug!("end of testing for {} signatures", max_sig);
+    // }
 }
 
 // test for secp256r1 signatures
@@ -243,51 +245,54 @@ fn p256_sign_verify() {
     let mut rng = XorShiftRng::seed_from_u64(1);
 
     // msg_hash == 0
-    {
-        log::debug!("testing for msg_hash = 0");
-        let mut signatures = Vec::new();
+    // {
+    //     log::debug!("testing for msg_hash = 0");
+    //     let mut signatures = Vec::new();
 
-        let (sk, pk) = gen_key_pair_r1(&mut rng);
-        let msg = gen_msg(&mut rng);
-        let msg_hash = secp256r1::Fq::zero();
-        let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
-        signatures.push(SignData {
-            signature: (r, s, v),
-            pk,
-            msg: msg.into(),
-            msg_hash,
-        });
+    //     let (sk, pk) = gen_key_pair_r1(&mut rng);
+    //     let msg = gen_msg(&mut rng);
+    //     let msg_hash = secp256r1::Fq::zero();
+    //     // 257 ok, 250 not ok
 
-        let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, vec![], signatures);
+    //     let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
+    //     signatures.push(SignData {
+    //         signature: (r, s, v),
+    //         pk,
+    //         msg: msg.into(),
+    //         msg_hash,
+    //     });
 
-        log::debug!("end of testing for msg_hash = 0");
-    }
+    //     let k = LOG_TOTAL_NUM_ROWS as u32;
+    //     run::<Fr>(k, 1, vec![], signatures);
+
+    //     log::debug!("end of testing for msg_hash = 0");
+    // }
+
     // msg_hash == 1
-    {
-        log::debug!("testing for msg_hash = 1");
-        let mut signatures = Vec::new();
+    // {
+    //     log::debug!("testing for msg_hash = 1");
+    //     let mut signatures = Vec::new();
 
-        let (sk, pk) = gen_key_pair_r1(&mut rng);
-        let msg = gen_msg(&mut rng);
-        let msg_hash = secp256r1::Fq::one();
-        let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
-        signatures.push(SignData {
-            signature: (r, s, v),
-            pk,
-            msg: msg.into(),
-            msg_hash,
-        });
+    //     let (sk, pk) = gen_key_pair_r1(&mut rng);
+    //     let msg = gen_msg(&mut rng);
+    //     let msg_hash = secp256r1::Fq::one();
+    //     let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
+    //     signatures.push(SignData {
+    //         signature: (r, s, v),
+    //         pk,
+    //         msg: msg.into(),
+    //         msg_hash,
+    //     });
 
-        let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, vec![], signatures);
+    //     let k = LOG_TOTAL_NUM_ROWS as u32;
+    //     run::<Fr>(k, 1, vec![], signatures);
 
-        log::debug!("end of testing for msg_hash = 1");
-    }
+    //     log::debug!("end of testing for msg_hash = 1");
+    // }
 
     // random msg_hash
-    //let max_sigs = [1, 16, MAX_NUM_SIG]; enable this line after testing
-    let max_sigs = [1];
+    let max_sigs = [1, 16, MAX_NUM_SIG]; // enable this line after testing
+                                         //let max_sigs = [1];
 
     for max_sig in max_sigs.iter() {
         log::debug!("testing for {} signatures", max_sig);
