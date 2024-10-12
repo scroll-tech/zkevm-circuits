@@ -525,7 +525,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     ) -> Result<CircuitInputBuilder, Error> {
         let block_trace = external_tracer::l2trace(trace_config)?;
         let mut builder =
-            CircuitInputBuilder::new_from_l2_trace(self.circuits_params, block_trace, false)?;
+            CircuitInputBuilder::new_from_l2_trace(self.circuits_params, block_trace)?;
         builder
             .finalize_building()
             .expect("could not finalize building block");
