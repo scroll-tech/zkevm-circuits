@@ -222,7 +222,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                     let mut builder = CircuitInputBuilder::new_from_l2_trace(
                         params,
                         self.test_ctx.unwrap().l2_trace().clone(),
-                        false,
                     )
                     .expect("could not handle block tx");
                     builder
