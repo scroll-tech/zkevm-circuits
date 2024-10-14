@@ -1,3 +1,4 @@
+use super::{AssignedBlobDataExport, BlobDataConfig};
 use crate::{constants::N_BYTES_U256, BatchData, RlcConfig};
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
@@ -9,7 +10,6 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error, Expression},
 };
 use serde::{Deserialize, Serialize};
-use super::{AssignedBlobDataExport, BlobDataConfig};
 use zkevm_circuits::{table::U8Table, util::Challenges};
 
 pub const BLOB_WIDTH: usize = 4096;
@@ -30,8 +30,8 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         u8_table: U8Table,
         _: RangeConfig<Fr>,
     ) -> Self {
-        Self{
-        data: BlobDataConfig::configure(meta, challenges, u8_table),
+        Self {
+            data: BlobDataConfig::configure(meta, challenges, u8_table),
         }
     }
 
@@ -65,9 +65,9 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct BlobConsistencyWitness {
-    #[serde(rename = "blob_versioned_hash")] 
+    #[serde(rename = "blob_versioned_hash")]
     id: H256,
-    blob_data_proof: [H256; 2]
+    blob_data_proof: [H256; 2],
 }
 
 impl BlobConsistencyWitness {

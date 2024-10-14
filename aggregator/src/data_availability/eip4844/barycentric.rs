@@ -18,8 +18,7 @@ use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
-    blob::{BLOB_WIDTH, N_BYTES_U256},
-    constants::{BITS, LIMBS},
+    constants::{BITS, LIMBS, N_BYTES_U256},
     data_availability::eip4844::blob::BLOB_WIDTH,
 };
 

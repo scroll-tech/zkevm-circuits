@@ -122,10 +122,9 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         ctx: &mut Context<Fr>,
         blob: &[U256; BLOB_WIDTH],
         challenge: U256,
-        evaluation: U256,
+        _: U256,
     ) -> AssignedBarycentricEvaluationConfig {
-        self.barycentric_evaluation
-            .assign(ctx, blob, challenge, evaluation)
+        self.barycentric_evaluation.assign(ctx, blob, challenge)
     }
 
     pub fn assign_blob_data(
@@ -148,9 +147,9 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct BlobConsistencyWitness {
-    #[serde(rename = "blob_versioned_hash")] 
+    #[serde(rename = "blob_versioned_hash")]
     id: H256,
-    blob_data_proof: [H256; 2]
+    blob_data_proof: [H256; 2],
 }
 
 impl BlobConsistencyWitness {
@@ -159,7 +158,11 @@ impl BlobConsistencyWitness {
         let versioned_hash = get_versioned_hash(&coeffs);
         let point_evaluation_assignments =
             PointEvaluationAssignments::new(&batch_data, bytes, versioned_hash);
-        let blob_data_proof = [point_evaluation_assignments.challenge, point_evaluation_assignments.evaluation].map(|x| H256::from_slice(&x.to_be_bytes()));
+        let blob_data_proof = [
+            point_evaluation_assignments.challenge,
+            point_evaluation_assignments.evaluation,
+        ]
+        .map(|x| H256::from_slice(&x.to_be_bytes()));
 
         Self {
             id: versioned_hash,

@@ -399,7 +399,8 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         // - preimage for each chunk's flattened L2 signed tx data
         // - preimage for the challenge digest
         let batch_data = BatchData::from(self);
-        let dynamic_preimages = batch_data.preimages(self.batch_header.blob_consistency_witness.id());
+        let dynamic_preimages =
+            batch_data.preimages(self.batch_header.blob_consistency_witness.id());
         for dynamic_preimage in dynamic_preimages {
             res.push(dynamic_preimage);
         }
