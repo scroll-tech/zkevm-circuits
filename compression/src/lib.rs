@@ -6,6 +6,7 @@
 /// Circuit implementation of compression circuit.
 mod circuit;
 mod params;
+pub mod utils;
 
 #[cfg(test)]
 mod tests;

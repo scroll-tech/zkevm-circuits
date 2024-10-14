@@ -1,6 +1,7 @@
 use super::Prover;
 use crate::io::serialize_vk;
 use anyhow::Result;
+use ce_snark_verifier_sdk::CircuitExt as CeCircuitExt;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::{keygen_pk2, Circuit, ProvingKey},
@@ -30,6 +31,31 @@ impl<'params> Prover<'params> {
         );
         let snark = gen_snark_shplonk(params, pk, circuit, rng, None::<String>)?;
         Ok(snark)
+    }
+
+    pub fn gen_snark_ce<C: CeCircuitExt<Fr>>(
+        &mut self,
+        id: &str,
+        degree: u32,
+        _rng: &mut (impl Rng + Send),
+        circuit: C,
+        desc: &str,
+    ) -> Result<ce_snark_verifier_sdk::Snark> {
+        let (params, pk) = self.params_and_pk(id, degree, &circuit)?;
+
+        log::info!(
+            "gen_snark_ce id {} desc {} vk transcript_repr {:?}",
+            id,
+            desc,
+            pk.get_vk().transcript_repr()
+        );
+
+        Ok(ce_snark_verifier_sdk::halo2::gen_snark_shplonk(
+            params,
+            pk,
+            circuit,
+            None::<String>,
+        ))
     }
 
     pub fn params(&self, degree: u32) -> &ParamsKZG<Bn256> {
