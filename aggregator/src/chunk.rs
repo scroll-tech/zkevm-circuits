@@ -229,7 +229,6 @@ impl ChunkInfo {
     }
 
     /// Sample a chunk info from random (for testing)
-    #[cfg(test)]
     pub(crate) fn mock_random_chunk_info_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
         use eth_types::Address;
         use ethers_core::types::TransactionRequest;

@@ -11,9 +11,7 @@ use crate::{
     batch::{BatchHash, BatchHeader},
     constants::MAX_AGG_SNARKS,
     eip4844::get_blob_bytes,
-    layer_0,
-    tests::mock_chunk::MockChunkCircuit,
-    BatchData, ChunkInfo,
+    layer_0, BatchData, ChunkInfo, MockChunkCircuit,
 };
 
 #[test]

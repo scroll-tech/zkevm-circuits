@@ -15,7 +15,7 @@ use ethers_core::{
     utils::keccak256,
 };
 use halo2curves::{
-    ff::FromUniformBytes,
+    ff::{Field, FromUniformBytes},
     group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
     secp256k1::{Fp, Fq, Secp256k1Affine},
     Coordinates, CurveAffine,

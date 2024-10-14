@@ -12,7 +12,8 @@ members = [
     "mock",
     "testool",
     "aggregator",
-    "prover"
+    "prover",
+    "compression",
 ]
 resolver = "2"
 
@@ -33,7 +34,7 @@ ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "
 ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"
 ff = "0.13"
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1", features = ["circuit-params"] }
 halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
 poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
@@ -59,6 +60,8 @@ serde_stacker = "0.1"
 sha3 = "0.10"
 snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop" }
 snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+ce-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "axiom-community-edition", package = "snark-verifier", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"] }
+ce-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "axiom-community-edition", package = "snark-verifier-sdk", default-features = false, features = ["loader_halo2", "halo2-pse", "loader_evm", "revm"] }
 strum = "0.25"
 strum_macros = "0.25"
 subtle = "2.4"
@@ -75,7 +78,7 @@ ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
-halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "v0.1.0" }
+halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "use_pairing" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }

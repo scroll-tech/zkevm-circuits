@@ -109,8 +109,10 @@ pub fn dump_data(dir: &str, filename: &str, data: &[u8]) {
     write_file(&mut PathBuf::from(dir), filename, data);
 }
 
-pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
-    dump_data(dir, &format!("vk_{filename}.vkey"), raw_vk);
+pub fn dump_vk(dir: &str, _filename: &str, raw_vk: &[u8]) {
+    // dump_data(dir, &format!("vk_{filename}.vkey"), raw_vk);
+    // TODO: fix this better!
+    dump_data(dir, "vk_chunk_0.vkey", raw_vk);
 }
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {

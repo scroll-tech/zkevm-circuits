@@ -9,12 +9,14 @@ halo2_proofs.workspace = true
 
 aggregator = { path = "../aggregator" }
 bus-mapping = { path = "../bus-mapping", default-features = false }
+compression = { path = "../compression" }
 eth-types = { path = "../eth-types" }
 mpt-zktrie = { path = "../zktrie" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
 
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
+ce-snark-verifier-sdk.workspace = true
 
 anyhow.workspace = true
 base64.workspace = true

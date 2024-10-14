@@ -29,30 +29,4 @@ impl ConfigParams {
             num_limbs: LIMBS,
         }
     }
-
-    pub(crate) fn default_compress_wide_param() -> Self {
-        Self {
-            strategy: FpStrategy::Simple,
-            degree: 22,
-            num_advice: vec![35],
-            num_lookup_advice: vec![1],
-            num_fixed: 1,
-            lookup_bits: 20,
-            limb_bits: BITS,
-            num_limbs: LIMBS,
-        }
-    }
-
-    pub(crate) fn _compress_thin_param() -> Self {
-        Self {
-            strategy: FpStrategy::Simple,
-            degree: 25,
-            num_advice: vec![1],
-            num_lookup_advice: vec![1],
-            num_fixed: 1,
-            lookup_bits: 20,
-            limb_bits: BITS,
-            num_limbs: LIMBS,
-        }
-    }
 }

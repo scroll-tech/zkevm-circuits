@@ -3,9 +3,12 @@ use crate::{
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
     consts::chunk_vk_filename,
     io::force_to_read,
+    utils::gen_rng,
     ChunkProof,
 };
-use aggregator::CompressionCircuit;
+use aggregator::extract_proof_and_instances_with_pairing_check;
+use anyhow::anyhow;
+use compression::CompressionCircuit;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
     plonk::VerifyingKey,
@@ -42,6 +45,13 @@ impl<'params> Verifier<'params> {
     }
 
     pub fn verify_chunk_proof(&self, proof: ChunkProof) -> bool {
-        self.inner.verify_snark(proof.to_snark())
+        let snark = proof.to_snark();
+        let params = self.inner.params();
+
+        extract_proof_and_instances_with_pairing_check(params, &[snark.clone()], gen_rng())
+            .map_err(|err| anyhow!("Failed to check pairing for the final chunk snark: {err:?}"))
+            .expect("Accumulator pairing pre-check for chunk proof verification should not fail.");
+
+        self.inner.verify_snark(snark)
     }
 }

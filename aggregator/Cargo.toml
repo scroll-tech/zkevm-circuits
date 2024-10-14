@@ -26,6 +26,7 @@ halo2-ecc.workspace = true
 halo2_proofs.workspace = true
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
+ce-snark-verifier-sdk.workspace = true
 strum.workspace = true
 strum_macros.workspace = true
 
