@@ -136,20 +136,48 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         let limb_bits = 88;
         let num_limbs = 3;
 
-        let range = RangeConfig::<F>::configure(
+        // let range = RangeConfig::<F>::configure(
+        //     meta,
+        //     RangeStrategy::Vertical,
+        //     &num_advice,
+        //     &num_lookup_advice,
+        //     1,
+        //     LOG_TOTAL_NUM_ROWS - 1,
+        //     0,
+        //     LOG_TOTAL_NUM_ROWS,
+        // );
+
+        // let ecdsa_k1_config =
+        //     FpConfig::construct(range.clone(), limb_bits, num_limbs, modulus::<Fp_K1>());
+        // let ecdsa_r1_config = FpConfig::construct(range, limb_bits, num_limbs, modulus::<Fp_R1>());
+        let ecdsa_k1_config = FpConfig::configure(
             meta,
-            RangeStrategy::Vertical,
+            FpStrategy::Simple,
             &num_advice,
             &num_lookup_advice,
             1,
             LOG_TOTAL_NUM_ROWS - 1,
+            88,
+            3,
+            modulus::<Fp_K1>(),
             0,
-            LOG_TOTAL_NUM_ROWS,
+            LOG_TOTAL_NUM_ROWS, // maximum k of the chip
         );
 
-        let ecdsa_k1_config =
-            FpConfig::construct(range.clone(), limb_bits, num_limbs, modulus::<Fp_K1>());
-        let ecdsa_r1_config = FpConfig::construct(range, limb_bits, num_limbs, modulus::<Fp_R1>());
+        // TODO: check if ecdsa_r1_config parameters need to be tuned.
+        let ecdsa_r1_config = FpConfig::configure(
+            meta,
+            FpStrategy::Simple,
+            &num_advice,
+            &num_lookup_advice,
+            1,
+            LOG_TOTAL_NUM_ROWS - 1,
+            88,
+            3,
+            modulus::<Fp_R1>(),
+            0,
+            LOG_TOTAL_NUM_ROWS, // maximum k of the chip
+        );
 
         // we need one phase 2 column to store RLC results
         #[cfg(feature = "onephase")]
@@ -217,8 +245,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 impl<F: Field> SigCircuitConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         // two chips use one `range` config, just load once
-        self.ecdsa_k1_config.range.load_lookup_table(layouter)
-        //self.ecdsa_r1_config.range.load_lookup_table(layouter)
+        self.ecdsa_k1_config.range.load_lookup_table(layouter)?;
+        self.ecdsa_r1_config.range.load_lookup_table(layouter)
     }
 }
 
@@ -271,6 +299,8 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     ) -> Result<(), Error> {
         // only initialze one RangeConfig which two chips (r1 & k1) shares
         config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
+        config.ecdsa_r1_config.range.load_lookup_table(layouter)?;
+
 
         // assign both k1 and r1 signatures
         self.assign(
@@ -461,7 +491,7 @@ impl<F: Field> SigCircuit<F> {
         ecc_chip
             .field_chip
             .range
-            .range_check(ctx, &assigned_y_tmp, 87);
+            .range_check(ctx, &assigned_y_tmp, 88);
 
         let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
         let sig_is_valid = gate.and_many(
@@ -527,6 +557,8 @@ impl<F: Field> SigCircuit<F> {
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Affine>(ctx, &pk_assigned);
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
+        println!("pk_is_valid {:?}", pk_is_valid);
+
         // build Fq chip from Fp chip
         let fq_chip =
             FpConfig::<F, Fq>::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq>());
@@ -560,6 +592,7 @@ impl<F: Field> SigCircuit<F> {
         // constrains v == y.is_oddness()
         // =======================================
         assert!(*v == 0 || *v == 1, "v is not boolean");
+        println!("V is {}, pub key x: {:?} y: {:?}", v, x, y);
 
         // we constrain:
         // - v + 2*tmp = y where y is already range checked (88 bits)
@@ -572,11 +605,18 @@ impl<F: Field> SigCircuit<F> {
 
         // the last 88 bits of y
         let assigned_y_limb = &y_coord.limbs()[0];
+        println!("assigned_y_tmp init {:?}, limbs {:?}",assigned_y_limb,  y_coord.limbs().len());
+
         let mut y_value = F::zero();
         assigned_y_limb.value().map(|&x| y_value = x);
+        println!("y_value  {:?}, v {}", y_value, v);
+        println!("F::TWO_INV  {:?}", F::TWO_INV);     
 
-        // y_tmp = (y_value - y_last_bit)/2
+        // y_tmp = (y_value - y_last_bit) / 2
         let y_tmp = (y_value - F::from(*v as u64)) * F::TWO_INV;
+
+        println!("y_tmp  {:?}", y_tmp);
+
         let assigned_y_tmp = gate.load_witness(ctx, Value::known(y_tmp));
 
         // y_tmp_double = (y_value - y_last_bit)
@@ -595,6 +635,7 @@ impl<F: Field> SigCircuit<F> {
             QuantumCell::Existing(*assigned_y_limb),
             QuantumCell::Existing(y_rec),
         );
+        println!("y_is_ok  {:?}", y_is_ok);
 
         // last step we want to constrain assigned_y_tmp is 87 bits
         let assigned_y_tmp = gate.select(
@@ -603,6 +644,8 @@ impl<F: Field> SigCircuit<F> {
             QuantumCell::Existing(assigned_y_tmp),
             QuantumCell::Existing(pk_is_zero),
         );
+
+        println!("assigned_y_tmp {:?}", assigned_y_tmp);
         // this line failed
         ecc_chip
             .field_chip
@@ -1027,7 +1070,7 @@ impl<F: Field> SigCircuit<F> {
                     // finalize the current lookup table before moving to next phase
                     // can only finalize one chip like ecdsa_k1_chip.
                     ecdsa_k1_chip.finalize(&mut ctx);
-                    //ecdsa_r1_chip.finalize(&mut ctx);
+                    ecdsa_r1_chip.finalize(&mut ctx);
                     ctx.print_stats(&["ECDSA context"]);
                     ctx.next_phase();
                 }
@@ -1117,6 +1160,8 @@ impl<F: Field> SigCircuit<F> {
                 // check lookups
                 // This is not optional.
                 let lookup_cells = ecdsa_k1_chip.finalize(&mut ctx);
+                let lookup_cells2 = ecdsa_r1_chip.finalize(&mut ctx);
+
                 log::info!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["ECDSA context"]);
