@@ -1315,7 +1315,7 @@ impl<const N_SNARKS: usize> BatchData<N_SNARKS> {
     }
 
     /// Get the witness rows for assignment to the BlobDataConfig.
-    pub(crate) fn to_rows(
+    fn to_rows(
         &self,
         versioned_hash: H256,
         challenge: Challenges<Value<Fr>>,

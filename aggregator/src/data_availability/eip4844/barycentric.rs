@@ -356,8 +356,7 @@ mod tests {
     use super::*;
     use crate::{
         aggregation::BatchData,
-        data_availability::eip4844::KZG_TRUSTED_SETUP,
-        data_availability::eip4844::{get_blob_bytes, get_coefficients},
+        data_availability::eip4844::{get_blob_bytes, get_coefficients, KZG_TRUSTED_SETUP},
         MAX_AGG_SNARKS,
     };
     use c_kzg::{Blob as RethBlob, KzgProof};

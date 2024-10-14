@@ -1,15 +1,7 @@
 use super::{get_coefficients, interpolate, BLS_MODULUS};
-use crate::{BatchData, BatchHash, ChunkInfo};
-
+use crate::BatchData;
 use eth_types::{H256, U256};
-use ethers_core::utils::keccak256;
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::{bls12_381::Scalar, bn256::Fr},
-};
-use itertools::Itertools;
-use std::iter::{once, repeat};
-use zkevm_circuits::util::Challenges;
+use halo2_proofs::halo2curves::bls12_381::Scalar;
 
 /// The number of coefficients (BLS12-381 scalars) to represent the blob polynomial in evaluation
 /// form.
@@ -77,8 +69,10 @@ mod tests {
     use super::*;
     use crate::{
         data_availability::eip4844::{get_blob_bytes, get_versioned_hash},
-        MAX_AGG_SNARKS,
+        BatchHash, ChunkInfo, MAX_AGG_SNARKS,
     };
+    use ethers_core::utils::keccak256;
+    use std::iter::{once, repeat};
 
     #[test]
     #[ignore = "only required for logging challenge digest"]
@@ -154,7 +148,7 @@ mod tests {
             let blob_bytes = get_blob_bytes(&batch_bytes);
             let coeffs = get_coefficients(&blob_bytes);
             let versioned_hash = get_versioned_hash(&coeffs);
-            let chunks_without_padding = crate::chunk::ChunkInfo::mock_chunk_infos(tcase);
+            let chunks_without_padding = ChunkInfo::mock_chunk_infos(tcase);
             let batch_hash = BatchHash::<MAX_AGG_SNARKS>::construct_with_unpadded(
                 &chunks_without_padding,
                 batch_header,
