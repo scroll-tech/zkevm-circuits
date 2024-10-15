@@ -69,7 +69,7 @@ pub fn load_tests(
         if exclude_test_ids_path.is_some() {
             log::warn!("--exclude-test-ids is ignored");
         }
-        let test_ids = read_test_ids(&test_ids_path)?;
+        let test_ids = read_test_ids(test_ids_path)?;
         let id_to_test: HashMap<_, _> = state_tests
             .iter()
             .map(|t| (t.id.clone(), t.clone()))
