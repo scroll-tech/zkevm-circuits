@@ -136,48 +136,49 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         let limb_bits = 88;
         let num_limbs = 3;
 
-        // let range = RangeConfig::<F>::configure(
+        let range = RangeConfig::<F>::configure(
+            meta,
+            RangeStrategy::Vertical,
+            &num_advice,
+            &num_lookup_advice,
+            1,
+            LOG_TOTAL_NUM_ROWS - 1,
+            0,
+            LOG_TOTAL_NUM_ROWS,
+        );
+
+        let ecdsa_k1_config =
+            FpConfig::construct(range.clone(), limb_bits, num_limbs, modulus::<Fp_K1>());
+        let ecdsa_r1_config = FpConfig::construct(range, limb_bits, num_limbs, modulus::<Fp_R1>());
+        
+        // let ecdsa_k1_config = FpConfig::configure(
         //     meta,
-        //     RangeStrategy::Vertical,
+        //     FpStrategy::Simple,
         //     &num_advice,
         //     &num_lookup_advice,
         //     1,
         //     LOG_TOTAL_NUM_ROWS - 1,
+        //     88,
+        //     3,
+        //     modulus::<Fp_K1>(),
         //     0,
-        //     LOG_TOTAL_NUM_ROWS,
+        //     LOG_TOTAL_NUM_ROWS, // maximum k of the chip
         // );
 
-        // let ecdsa_k1_config =
-        //     FpConfig::construct(range.clone(), limb_bits, num_limbs, modulus::<Fp_K1>());
-        // let ecdsa_r1_config = FpConfig::construct(range, limb_bits, num_limbs, modulus::<Fp_R1>());
-        let ecdsa_k1_config = FpConfig::configure(
-            meta,
-            FpStrategy::Simple,
-            &num_advice,
-            &num_lookup_advice,
-            1,
-            LOG_TOTAL_NUM_ROWS - 1,
-            88,
-            3,
-            modulus::<Fp_K1>(),
-            0,
-            LOG_TOTAL_NUM_ROWS, // maximum k of the chip
-        );
-
-        // TODO: check if ecdsa_r1_config parameters need to be tuned.
-        let ecdsa_r1_config = FpConfig::configure(
-            meta,
-            FpStrategy::Simple,
-            &num_advice,
-            &num_lookup_advice,
-            1,
-            LOG_TOTAL_NUM_ROWS - 1,
-            88,
-            3,
-            modulus::<Fp_R1>(),
-            0,
-            LOG_TOTAL_NUM_ROWS, // maximum k of the chip
-        );
+        // // TODO: check if ecdsa_r1_config parameters need to be tuned.
+        // let ecdsa_r1_config = FpConfig::configure(
+        //     meta,
+        //     FpStrategy::Simple,
+        //     &num_advice,
+        //     &num_lookup_advice,
+        //     1,
+        //     LOG_TOTAL_NUM_ROWS - 1,
+        //     88,
+        //     3,
+        //     modulus::<Fp_R1>(),
+        //     0,
+        //     LOG_TOTAL_NUM_ROWS, // maximum k of the chip
+        // );
 
         // we need one phase 2 column to store RLC results
         #[cfg(feature = "onephase")]
@@ -245,8 +246,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 impl<F: Field> SigCircuitConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         // two chips use one `range` config, just load once
-        self.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         self.ecdsa_r1_config.range.load_lookup_table(layouter)
+        //self.ecdsa_k1_config.range.load_lookup_table(layouter)
     }
 }
 
@@ -298,7 +299,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         // only initialze one RangeConfig which two chips (r1 & k1) shares
-        config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
+        //config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         config.ecdsa_r1_config.range.load_lookup_table(layouter)?;
 
 
@@ -593,6 +594,7 @@ impl<F: Field> SigCircuit<F> {
         // =======================================
         assert!(*v == 0 || *v == 1, "v is not boolean");
         println!("V is {}, pub key x: {:?} y: {:?}", v, x, y);
+        // println!(" bn256::Fr : {:?} y: {:?}", Fr);
 
         // we constrain:
         // - v + 2*tmp = y where y is already range checked (88 bits)
