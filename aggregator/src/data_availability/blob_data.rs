@@ -50,7 +50,7 @@ pub struct AssignedBlobDataExport {
     pub bytes_rlc: AssignedCell<Fr, Fr>,
     pub bytes_len: AssignedCell<Fr, Fr>,
     pub cooked_len: AssignedCell<Fr, Fr>,
-    // pub blob_crt_limbs: [[AssignedCell<Fr, Fr>; LIMBS]; BLOB_WIDTH],
+    pub blob_crts_limbs: [[AssignedCell<Fr, Fr>; LIMBS]; BLOB_WIDTH],
 }
 
 impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
@@ -163,7 +163,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         )?;
         let enable_encoding = assigned_bytes[0].clone();
 
-        let cooked_len = layouter.assign_region(
+        let (cooked_len, blob_crts_limbs) = layouter.assign_region(
             || "BlobData internal checks",
             |mut region| {
                 self.assign_internal_checks(
@@ -182,7 +182,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             bytes_rlc,
             bytes_len,
             cooked_len,
-            // blob_crt_limbs,
+            blob_crts_limbs,
         })
     }
 
@@ -299,7 +299,13 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_bytes: &[AssignedCell<Fr, Fr>],
         bytes_len: &AssignedCell<Fr, Fr>,
-    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+    ) -> Result<
+        (
+            AssignedCell<Fr, Fr>,
+            [[AssignedCell<Fr, Fr>; LIMBS]; BLOB_WIDTH],
+        ),
+        Error,
+    > {
         rlc_config.init(region)?;
         let mut rlc_config_offset = 0;
 
@@ -335,15 +341,16 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         ////////////////////////////////////////////////////////////////////////////////
 
         assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 1);
-        for (blob_crt_limbs, barycentric_crt) in blob_crts_limbs(
+        let blob_crts_limbs = blob_crts_limbs(
             region,
             rlc_config,
             assigned_bytes,
             &pows_of_256,
             &mut rlc_config_offset,
-        )
-        .iter()
-        .zip_eq(barycentric_assignments.iter().take(BLOB_WIDTH))
+        );
+        for (blob_crt_limbs, barycentric_crt) in blob_crts_limbs
+            .iter()
+            .zip_eq(barycentric_assignments.iter().take(BLOB_WIDTH))
         {
             for (blob_limb, barycentric_limb) in
                 blob_crt_limbs.iter().zip_eq(barycentric_crt.limbs())
@@ -357,7 +364,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         // by adding +1 to it before exporting.
         let cooked_bytes_len = rlc_config.add(region, bytes_len, &one, &mut rlc_config_offset)?;
 
-        Ok(cooked_bytes_len)
+        Ok((cooked_bytes_len, blob_crts_limbs))
     }
 }
 
