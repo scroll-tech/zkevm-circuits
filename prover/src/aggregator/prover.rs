@@ -12,18 +12,22 @@ use snark_verifier_sdk::Snark;
 use crate::{
     common,
     config::LayerId,
-    consts::{BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, CHUNK_PROTOCOL_FILENAME},
+    consts::{
+        BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, FD_HALO2_CHUNK_PROTOCOL,
+        FD_SP1_CHUNK_PROTOCOL,
+    },
     io::{force_to_read, try_to_read},
     proof::BundleProof,
     types::BundleProvingTask,
-    BatchProof, BatchProvingTask, ChunkProof,
+    BatchProof, BatchProvingTask, ChunkKind, ChunkProof,
 };
 
 #[derive(Debug)]
 pub struct Prover<'params> {
     // Make it public for testing with inner functions (unnecessary for FFI).
     pub prover_impl: common::Prover<'params>,
-    pub chunk_protocol: Vec<u8>,
+    pub halo2_protocol: Vec<u8>,
+    pub sp1_protocol: Vec<u8>,
     raw_vk_batch: Option<Vec<u8>>,
     raw_vk_bundle: Option<Vec<u8>>,
 }
@@ -37,7 +41,8 @@ impl<'params> Prover<'params> {
         env::set_var("KECCAK_ROWS", BATCH_KECCAK_ROW.to_string());
 
         let prover_impl = common::Prover::from_params_map(params_map);
-        let chunk_protocol = force_to_read(assets_dir, &CHUNK_PROTOCOL_FILENAME);
+        let halo2_protocol = force_to_read(assets_dir, &FD_HALO2_CHUNK_PROTOCOL);
+        let sp1_protocol = force_to_read(assets_dir, &FD_SP1_CHUNK_PROTOCOL);
 
         let raw_vk_batch = try_to_read(assets_dir, &BATCH_VK_FILENAME);
         let raw_vk_bundle = try_to_read(assets_dir, &BUNDLE_VK_FILENAME);
@@ -58,7 +63,8 @@ impl<'params> Prover<'params> {
 
         Self {
             prover_impl,
-            chunk_protocol,
+            halo2_protocol,
+            sp1_protocol,
             raw_vk_batch,
             raw_vk_bundle,
         }
@@ -67,12 +73,16 @@ impl<'params> Prover<'params> {
     // Return true if chunk proofs are valid (same protocol), false otherwise.
     pub fn check_protocol_of_chunks(&self, chunk_proofs: &[ChunkProof]) -> bool {
         chunk_proofs.iter().enumerate().all(|(i, proof)| {
-            let result = proof.protocol == self.chunk_protocol;
+            let protocol_expected = match proof.chunk_kind {
+                ChunkKind::Halo2 => &self.halo2_protocol,
+                ChunkKind::Sp1 => &self.sp1_protocol,
+            };
+            let result = &proof.protocol == protocol_expected;
             if !result {
                 log::error!(
                     "Non-match protocol of chunk-proof index-{}: expected = {:x}, actual = {:x}",
                     i,
-                    Sha256::digest(&self.chunk_protocol),
+                    Sha256::digest(protocol_expected),
                     Sha256::digest(&proof.protocol),
                 );
             }

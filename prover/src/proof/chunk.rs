@@ -7,6 +7,21 @@ use serde_derive::{Deserialize, Serialize};
 use snark_verifier::Protocol;
 use snark_verifier_sdk::Snark;
 
+/// The innermost SNARK belongs to the following variants.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ChunkKind {
+    /// halo2-based SuperCircuit.
+    Halo2,
+    /// sp1-based STARK with a halo2-backend.
+    Sp1,
+}
+
+impl Default for ChunkKind {
+    fn default() -> Self {
+        Self::Halo2
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ChunkProof {
     #[serde(with = "base64")]
@@ -14,6 +29,7 @@ pub struct ChunkProof {
     #[serde(flatten)]
     pub proof: Proof,
     pub chunk_info: ChunkInfo,
+    pub chunk_kind: ChunkKind,
     #[serde(default)]
     pub row_usages: Vec<SubCircuitRowUsage>,
 }
@@ -56,6 +72,7 @@ impl ChunkProof {
         snark: Snark,
         pk: Option<&ProvingKey<G1Affine>>,
         chunk_info: ChunkInfo,
+        chunk_kind: ChunkKind,
         row_usages: Vec<SubCircuitRowUsage>,
     ) -> Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
@@ -65,6 +82,7 @@ impl ChunkProof {
             protocol,
             proof,
             chunk_info,
+            chunk_kind,
             row_usages,
         })
     }
@@ -79,7 +97,6 @@ impl ChunkProof {
         // Dump vk and protocol.
         dump_vk(dir, &filename, &self.proof.vk);
         dump_data(dir, &format!("chunk_{filename}.protocol"), &self.protocol);
-
         dump_as_json(dir, &filename, &self)
     }
 
