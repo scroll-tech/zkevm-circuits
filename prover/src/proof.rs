@@ -19,7 +19,7 @@ mod evm;
 
 pub use batch::BatchProof;
 pub use bundle::BundleProof;
-pub use chunk::{compare_chunk_info, ChunkProof};
+pub use chunk::{compare_chunk_info, ChunkKind, ChunkProof};
 pub use evm::EvmProof;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

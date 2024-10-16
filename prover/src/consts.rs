@@ -16,6 +16,11 @@ pub fn chunk_vk_filename() -> String {
 pub static CHUNK_PROTOCOL_FILENAME: LazyLock<String> =
     LazyLock::new(|| read_env_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol".to_string()));
 
+pub static FD_HALO2_CHUNK_PROTOCOL: LazyLock<String> =
+    LazyLock::new(|| read_env_var("HALO2_CHUNK_PROTOCOL", "chunk_halo2.protocol".to_string()));
+pub static FD_SP1_CHUNK_PROTOCOL: LazyLock<String> =
+    LazyLock::new(|| read_env_var("SP1_CHUNK_PROTOCOL", "chunk_sp1.protocol".to_string()));
+
 pub static CHUNK_VK_FILENAME: LazyLock<String> = LazyLock::new(chunk_vk_filename);
 pub static BATCH_VK_FILENAME: LazyLock<String> = LazyLock::new(batch_vk_filename);
 pub static BUNDLE_VK_FILENAME: LazyLock<String> = LazyLock::new(bundle_vk_filename);

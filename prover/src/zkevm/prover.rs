@@ -106,6 +106,7 @@ impl<'params> Prover<'params> {
                     snark,
                     self.prover_impl.pk(LayerId::Layer2.id()),
                     chunk_info,
+                    chunk.chunk_kind,
                     row_usage,
                 );
 
