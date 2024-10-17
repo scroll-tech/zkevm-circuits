@@ -600,7 +600,7 @@ impl<F: Field> SigCircuit<F> {
         // check if p256 curve, for precompile p256Verify, there is no need of v in the input data
         // and just use public key (x, y) provided instead.
         // so only secp256k1 signature data need to check v oddness
-        let (sig_is_valid, assigned_y_is_odd) = if !self.is_p256_precompile::<Fp, Affine>() {
+        let (sig_is_valid, assigned_y_is_odd) = if self.is_p256_precompile::<Fp, Affine>() {
             let (y_is_ok, assigned_y_is_odd) =
                 self.check_y_oddness(ctx, ecdsa_chip, v, y_coord, pk_is_zero);
             let sig_is_valid = gate.and_many(

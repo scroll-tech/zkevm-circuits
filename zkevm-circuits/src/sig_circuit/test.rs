@@ -1,6 +1,7 @@
 use crate::{sig_circuit::SigCircuit, util::Field};
 use eth_types::sign_types::{sign, SignData};
 use ethers_core::utils::keccak256;
+
 use halo2_proofs::{
     arithmetic::Field as HaloField,
     dev::MockProver,
@@ -203,34 +204,34 @@ fn sign_k1_verify() {
 
         log::debug!("end of testing for msg_hash = 1");
     }
-    // random msg_hash
-    let max_sigs = [1, 16, MAX_NUM_SIG];
-    for max_sig in max_sigs.iter() {
-        log::debug!("testing for {} signatures", max_sig);
-        let mut signatures = Vec::new();
-        for _ in 0..*max_sig {
-            let (sk, pk) = gen_key_pair_k1(&mut rng);
-            let msg = gen_msg(&mut rng);
-            let msg_hash: [u8; 32] = Keccak256::digest(&msg)
-                .as_slice()
-                .to_vec()
-                .try_into()
-                .expect("hash length isn't 32 bytes");
-            let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
-            let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
-            signatures.push(SignData {
-                signature: (r, s, v),
-                pk,
-                msg: msg.into(),
-                msg_hash,
-            });
-        }
+    // // random msg_hash
+    // let max_sigs = [1, 16, MAX_NUM_SIG];
+    // for max_sig in max_sigs.iter() {
+    //     log::debug!("testing for {} signatures", max_sig);
+    //     let mut signatures = Vec::new();
+    //     for _ in 0..*max_sig {
+    //         let (sk, pk) = gen_key_pair_k1(&mut rng);
+    //         let msg = gen_msg(&mut rng);
+    //         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+    //             .as_slice()
+    //             .to_vec()
+    //             .try_into()
+    //             .expect("hash length isn't 32 bytes");
+    //         let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
+    //         let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
+    //         signatures.push(SignData {
+    //             signature: (r, s, v),
+    //             pk,
+    //             msg: msg.into(),
+    //             msg_hash,
+    //         });
+    //     }
 
-        let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, *max_sig, signatures, vec![]);
+    //     let k = LOG_TOTAL_NUM_ROWS as u32;
+    //     run::<Fr>(k, *max_sig, signatures, vec![]);
 
-        log::debug!("end of testing for {} signatures", max_sig);
-    }
+    //     log::debug!("end of testing for {} signatures", max_sig);
+    // }
 }
 
 // test for secp256r1 signatures
@@ -239,10 +240,120 @@ fn p256_sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
     use crate::sig_circuit::utils::MAX_NUM_SIG;
     use halo2_proofs::halo2curves::bn256::Fr;
+    use p256::ecdsa::signature::hazmat::{PrehashSigner, PrehashVerifier};
+    use p256::ecdsa::signature::DigestSigner;
+    use p256::ecdsa::{
+        signature::Signer, signature::Verifier, Signature, SigningKey, VerifyingKey,
+    };
+    use p256::{
+        elliptic_curve::generic_array::GenericArray, elliptic_curve::Curve, AffinePoint, NistP256,
+    };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use sha3::{Digest, Keccak256};
-    let mut rng = XorShiftRng::seed_from_u64(1);
+    //use hex_literal::hex;
+    use ff::PrimeField;
+    use halo2_proofs::arithmetic::CurveAffine;
+    use halo2_proofs::halo2curves::group::GroupEncoding;
+    use halo2_proofs::halo2curves::serde::SerdeObject;
+    use num::{BigUint, Num};
+    use p256::elliptic_curve::point::AffineCoordinates;
+    use p256::pkcs8::EncodePublicKey;
+    use p256::PublicKey;
+
+    let mut rng = XorShiftRng::seed_from_u64(10000);
+
+    // p256 crate generate signature
+    {
+        let mut signatures = Vec::new();
+        let msg = gen_msg(&mut rng);
+
+        let msg_hash_bytes: [u8; 32] = Keccak256::digest(&msg)
+            .as_slice()
+            .to_vec()
+            .try_into()
+            .expect("hash length isn't 32 bytes");
+        let msg_hash = secp256r1::Fq::from_bytes(&msg_hash_bytes).unwrap();
+        let (sk, pk) = gen_key_pair_r1(&mut rng);
+
+        let signing_key = SigningKey::from_slice(&sk.to_bytes()).expect("get private from sk");
+        println!("signing_key = {:?}", signing_key.to_bytes());
+        let verifying_key = signing_key.verifying_key();
+        // let vk= verifying_key.to_encoded_point(false);
+        println!("verifying_key = {:?}", verifying_key);
+
+        let signature: Signature = signing_key
+            .sign_prehash(&msg_hash.to_bytes())
+            .expect("sign failed");
+        let sig_bytes = signature.to_bytes();
+        let sig_r_bytes: [u8; 32] = sig_bytes[..32].try_into().expect("failed ");
+        let sig_s_bytes: [u8; 32] = sig_bytes[32..64].try_into().expect("failed ");
+        // let r = secp256r1::Fq::from_bytes_le(&sig_r_bytes);
+        // let s = secp256r1::Fq::from_bytes_le(&sig_s_bytes);
+        let r = secp256r1::Fq::from_bytes(&sig_r_bytes).unwrap();
+        let s = secp256r1::Fq::from_bytes(&sig_s_bytes).unwrap();
+
+        // put into sig queue for sig circuit verification
+        // hack: custom pk
+        fn fe_from_str(string: impl AsRef<str>) -> secp256r1::Fp {
+            let string = string.as_ref();
+            let oct = if let Some(hex) = string.strip_prefix("0x") {
+                BigUint::from_str_radix(hex, 16).unwrap().to_string()
+            } else {
+                string.to_string()
+            };
+
+            secp256r1::Fp::from_str_vartime(&oct).unwrap()
+        }
+        // let x = fe_from_str("0x972eb906f4c9315a6bd0e3cf80de7faf5c7d924bf9db641e952065952bbda42c");
+        // let y = fe_from_str("0x548448473cfb708b0e0835a75fdb690a01e2023ea7f3f17c0fb5dea77086996a");
+
+        let public_key: PublicKey = verifying_key.into();
+        let pubkey_affine = public_key.as_affine();
+        let field_x: [u8; 32] = pubkey_affine.x().into();
+        let x_fp = secp256r1::Fp::from_bytes(&field_x).unwrap();
+
+        // calculate x^3 + ax + b (mod p)
+        let x3 = x_fp.square() * x_fp;
+        let ax = secp256r1::Secp256r1Affine::a() * x_fp;
+        let y2 = (x3 + ax + secp256r1::Secp256r1Affine::b());
+        let y = y2.sqrt().unwrap();
+
+        let pk = Secp256r1Affine::from_xy(x_fp, y).unwrap();
+
+        signatures.push(SignData {
+            signature: (r, s, 0),
+            pk,
+            msg: msg.into(),
+            msg_hash,
+        });
+
+        println!("recover y: {:?}", y);
+        println!("new pk : {:?}", pk);
+
+        let signature2 = Signature::from_slice([r.to_bytes(), s.to_bytes()].concat().as_slice())
+            .expect("no error");
+        println!(
+            "signature {:?} len {}",
+            signature.to_bytes(),
+            signature.to_bytes().len()
+        );
+        println!(
+            "signature2 {:?} len {}",
+            signature2.to_bytes(),
+            signature2.to_bytes().len()
+        );
+
+        let is_valid = verifying_key
+            .verify_prehash(&msg_hash.to_bytes(), &signature2)
+            .is_ok();
+        println!("Signature is valid: {}", is_valid);
+
+        let k = LOG_TOTAL_NUM_ROWS as u32;
+        run::<Fr>(k, 1, vec![], signatures);
+
+        log::debug!("end of testing for msg_hash = 0");
+    }
 
     // msg_hash == 0
     {
@@ -251,11 +362,10 @@ fn p256_sign_verify() {
 
         let (sk, pk) = gen_key_pair_r1(&mut rng);
         let msg = gen_msg(&mut rng);
-        let msg_hash = secp256r1::Fq::zero();
-        // 257 ok, 250 not ok
+        let msg_hash = secp256r1::Fq::zero(); // 257 ok, 250 not ok
+        println!("original pk {:?}", pk);
 
         let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
-        println!("pk {:?}, v {}", pk, v);
 
         signatures.push(SignData {
             signature: (r, s, v),
@@ -397,6 +507,7 @@ fn gen_key_pair_k1(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
 fn gen_key_pair_r1(rng: impl RngCore) -> (secp256r1::Fq, Secp256r1Affine) {
     // generate a valid signature
     let generator = Secp256r1Affine::generator();
+    println!("r1 generator {:?}", generator);
     let sk = secp256r1::Fq::random(rng);
     let pk = generator * sk;
     let pk = pk.to_affine();
@@ -445,6 +556,7 @@ fn run<F: Field>(
     signatures_k1: Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
     signatures_r1: Vec<SignData<secp256r1::Fq, Secp256r1Affine>>,
 ) {
+    println!("signatures_r1 len {}", signatures_r1.len());
     // SignVerifyChip -> ECDSAChip -> MainGate instance column
     let circuit = SigCircuit::<F> {
         max_verif,

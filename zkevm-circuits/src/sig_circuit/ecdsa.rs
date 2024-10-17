@@ -246,5 +246,12 @@ where
         ],
     );
 
+    println!("r {:?}", r);
+    println!("s {:?}", s);
+    println!("equal_check {:?}", equal_check);
+    println!("x_3 {:?}", x_3);
+    println!("y_3 {:?}", y_3);
+    println!("res {:?}", res);
+
     (res, is_pubkey_zero, y_3)
 }
