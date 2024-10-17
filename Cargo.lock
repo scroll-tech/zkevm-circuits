@@ -2161,7 +2161,7 @@ dependencies = [
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -2176,7 +2176,7 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
 dependencies = [
  "ff",
  "group",
@@ -2251,7 +2251,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "1.1.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#6c5e9eec5088dc8b4a23edcdd1eaf8705b5fc7dc"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#e5ddf67e5ae16be38d6368ed355c7c41906272ab"
 dependencies = [
  "ark-std 0.3.0",
  "blake2b_simd",
@@ -4509,7 +4509,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=v0.1#58c46b74c73156b9e09dc27617369d2acfb4461b"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=feat/hybrid-snark-agg#7d9868ee25edc1b3e882f60c8f065e801f49f039"
 dependencies = [
  "bytes",
  "ethereum-types",
@@ -4532,7 +4532,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=v0.1#58c46b74c73156b9e09dc27617369d2acfb4461b"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=feat/hybrid-snark-agg#7d9868ee25edc1b3e882f60c8f065e801f49f039"
 dependencies = [
  "bincode",
  "ethereum-types",
