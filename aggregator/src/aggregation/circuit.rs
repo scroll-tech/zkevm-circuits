@@ -298,23 +298,28 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     log::info!("populating constants");
                     let mut preprocessed_polys_halo2 = Vec::with_capacity(7);
                     let mut preprocessed_polys_sp1 = Vec::with_capacity(7);
-                    for preprocessed_poly in PREPROCESSED_POLYS_HALO2.iter() {
+                    for (i, preprocessed_poly) in PREPROCESSED_POLYS_HALO2.iter().enumerate() {
+                        log::debug!("load const {i}");
                         preprocessed_polys_halo2.push(
                             loader
                                 .ec_point_load_const(preprocessed_poly)
                                 .into_assigned(),
                         );
+                        log::debug!("load const {i} OK");
                     }
-                    for preprocessed_poly in PREPROCESSED_POLYS_SP1.iter() {
+                    for (i, preprocessed_poly) in PREPROCESSED_POLYS_SP1.iter().enumerate() {
+                        log::debug!("load const (sp1) {i}");
                         preprocessed_polys_sp1.push(
                             loader
                                 .ec_point_load_const(preprocessed_poly)
                                 .into_assigned(),
                         );
+                        log::debug!("load const (sp1) {i} OK");
                     }
                     let transcript_init_state_halo2 = loader
                         .load_const(&TRANSCRIPT_INIT_STATE_HALO2)
                         .into_assigned();
+                    log::debug!("load transcript OK");
                     let transcript_init_state_sp1 = loader
                         .load_const(&TRANSCRIPT_INIT_STATE_SP1)
                         .into_assigned();
