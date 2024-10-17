@@ -18,8 +18,8 @@ use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
-    blob::{BLOB_WIDTH, N_BYTES_U256},
-    constants::{BITS, LIMBS},
+    constants::{BITS, LIMBS, N_BYTES_U256},
+    data_availability::eip4844::blob::BLOB_WIDTH,
 };
 
 /// Base 2 logarithm of BLOB_WIDTH.
@@ -29,6 +29,7 @@ pub static BLS_MODULUS: LazyLock<U256> = LazyLock::new(|| {
     U256::from_str_radix(Scalar::MODULUS, 16).expect("BLS_MODULUS from bls crate")
 });
 
+// does this need to be pub?
 pub static ROOTS_OF_UNITY: LazyLock<Vec<Scalar>> = LazyLock::new(|| {
     // https://github.com/ethereum/consensus-specs/blob/dev/specs/deneb/polynomial-commitments.md#constants
     let primitive_root_of_unity = Scalar::from(7);
@@ -354,8 +355,8 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 mod tests {
     use super::*;
     use crate::{
-        blob::{BatchData, KZG_TRUSTED_SETUP},
-        eip4844::{get_blob_bytes, get_coefficients},
+        aggregation::BatchData,
+        data_availability::eip4844::{get_blob_bytes, get_coefficients, KZG_TRUSTED_SETUP},
         MAX_AGG_SNARKS,
     };
     use c_kzg::{Blob as RethBlob, KzgProof};

@@ -18,12 +18,19 @@ use zkevm_circuits::{
 
 use crate::{
     aggregation::{
+        batch_data::N_BLOB_BYTES,
         witgen::{process, MultiBlockProcessResult},
-        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig,
-        RlcConfig,
+        BatchData, RlcConfig,
     },
-    blob::{BatchData, PointEvaluationAssignments, N_BLOB_BYTES, N_BYTES_U256},
-    eip4844::{decode_blob, get_blob_bytes, get_coefficients, get_versioned_hash},
+    constants::N_BYTES_U256,
+    data_availability::{
+        eip4844::{
+            blob::PointEvaluationAssignments, get_blob_bytes, get_coefficients, get_versioned_hash,
+            AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig,
+        },
+        BlobDataConfig,
+    },
+    decode_bytes,
     param::ConfigParams,
     BatchDataConfig, ChunkInfo, MAX_AGG_SNARKS,
 };
@@ -176,13 +183,9 @@ impl Circuit<Fr> for BlobCircuit {
 
         config.batch_data_config.load_range_tables(&mut layouter)?;
 
-        config.blob_data.assign(
-            &mut layouter,
-            challenge_values,
-            &config.rlc,
-            &blob_bytes,
-            &barycentric_assignments.barycentric_assignments,
-        )?;
+        config
+            .blob_data
+            .assign(&mut layouter, challenge_values, &config.rlc, &blob_bytes)?;
 
         layouter.assign_region(
             || "BatchDataConfig",
@@ -623,7 +626,7 @@ fn test_decode_blob() {
 
     // case 2: yes encode
     assert_eq!(
-        decode_blob(&conditional_encode(batch_bytes.as_slice(), true)).expect("should decode"),
+        decode_bytes(&conditional_encode(batch_bytes.as_slice(), true)).expect("should decode"),
         batch_bytes,
     );
 }

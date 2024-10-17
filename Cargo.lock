@@ -45,6 +45,7 @@ dependencies = [
  "ark-std 0.3.0",
  "bitstream-io",
  "c-kzg",
+ "cfg-if 1.0.0",
  "csv",
  "ctor",
  "encoder",

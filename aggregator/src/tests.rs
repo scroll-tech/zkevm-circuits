@@ -1,5 +1,4 @@
 mod aggregation;
-mod blob;
 mod compression;
 mod mock_chunk;
 mod recursion;
