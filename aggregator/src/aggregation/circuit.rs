@@ -252,15 +252,9 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     let barycentric = config.blob_consistency_config.assign_barycentric(
                         &mut ctx,
                         &coefficients,
-                        // todo: check that the byte order is correct!!!!
                         self.batch_hash
                             .blob_consistency_witness
                             .challenge()
-                            .0
-                            .into(),
-                        self.batch_hash
-                            .blob_consistency_witness
-                            .evaluation()
                             .0
                             .into(),
                     );
@@ -419,7 +413,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 challenges,
                 &config.rlc_config,
                 &self.batch_hash.blob_bytes,
-                barycentric_assignments,
             )?;
 
             BlobConsistencyConfig::<N_SNARKS>::link(

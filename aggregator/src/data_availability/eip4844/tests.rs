@@ -183,13 +183,9 @@ impl Circuit<Fr> for BlobCircuit {
 
         config.batch_data_config.load_range_tables(&mut layouter)?;
 
-        config.blob_data.assign(
-            &mut layouter,
-            challenge_values,
-            &config.rlc,
-            &blob_bytes,
-            &barycentric_assignments.barycentric_assignments,
-        )?;
+        config
+            .blob_data
+            .assign(&mut layouter, challenge_values, &config.rlc, &blob_bytes)?;
 
         layouter.assign_region(
             || "BatchDataConfig",

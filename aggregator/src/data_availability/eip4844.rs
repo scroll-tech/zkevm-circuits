@@ -122,7 +122,6 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         ctx: &mut Context<Fr>,
         blob: &[U256; BLOB_WIDTH],
         challenge: U256,
-        _: U256,
     ) -> AssignedBarycentricEvaluationConfig {
         self.barycentric_evaluation.assign(ctx, blob, challenge)
     }
@@ -133,15 +132,9 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         challenge_value: Challenges<Value<Fr>>,
         rlc_config: &RlcConfig,
         blob_bytes: &[u8],
-        barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
-        self.data.assign(
-            layouter,
-            challenge_value,
-            rlc_config,
-            blob_bytes,
-            barycentric_assignments,
-        )
+        self.data
+            .assign(layouter, challenge_value, rlc_config, blob_bytes)
     }
 
     pub fn link(

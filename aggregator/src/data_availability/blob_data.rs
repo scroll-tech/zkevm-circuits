@@ -4,7 +4,6 @@ use crate::{
     RlcConfig,
 };
 use gadgets::util::Expr;
-use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::Fr,
@@ -155,7 +154,6 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         challenge_value: Challenges<Value<Fr>>,
         rlc_config: &RlcConfig,
         blob_bytes: &[u8],
-        barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
         let (assigned_bytes, bytes_rlc, bytes_len, enable_encoding_bool) = layouter.assign_region(
             || "BlobData bytes",
@@ -166,13 +164,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         let (cooked_len, blob_crts_limbs) = layouter.assign_region(
             || "BlobData internal checks",
             |mut region| {
-                self.assign_internal_checks(
-                    &mut region,
-                    rlc_config,
-                    barycentric_assignments,
-                    &assigned_bytes,
-                    &bytes_len,
-                )
+                self.assign_internal_checks(&mut region, rlc_config, &assigned_bytes, &bytes_len)
             },
         )?;
 
@@ -296,7 +288,6 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         &self,
         region: &mut Region<Fr>,
         rlc_config: &RlcConfig,
-        barycentric_assignments: &[CRTInteger<Fr>],
         assigned_bytes: &[AssignedCell<Fr, Fr>],
         bytes_len: &AssignedCell<Fr, Fr>,
     ) -> Result<
@@ -336,11 +327,8 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         // form of the batch.
         rlc_config.enforce_binary(region, &assigned_bytes[0], &mut rlc_config_offset)?;
 
-        ////////////////////////////////////////////////////////////////////////////////
-        //////////////////////////////////// LINKING ///////////////////////////////////
-        ////////////////////////////////////////////////////////////////////////////////
-
-        assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 1);
+        // Compute 88 bit limbs so we can later check to equality to the inputs in the barycentric
+        // evaluation circuit.
         let blob_crts_limbs = blob_crts_limbs(
             region,
             rlc_config,
