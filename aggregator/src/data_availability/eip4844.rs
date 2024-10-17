@@ -12,24 +12,23 @@ use blob::PointEvaluationAssignments;
 mod tests;
 
 use super::{AssignedBlobDataExport, BlobDataConfig};
-use crate::constants::N_BYTES_U256;
-use crate::BatchData;
-use crate::RlcConfig;
+use crate::{constants::N_BYTES_U256, BatchData, RlcConfig};
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
-use halo2_base::gates::range::RangeConfig;
-use halo2_base::Context;
+use halo2_base::{gates::range::RangeConfig, Context};
 use halo2_ecc::bigint::CRTInteger;
-use halo2_proofs::circuit::Layouter;
-use halo2_proofs::circuit::Value;
-use halo2_proofs::halo2curves::bn256::Fr;
-use halo2_proofs::plonk::{ConstraintSystem, Error, Expression};
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter, Value},
+    halo2curves::bn256::Fr,
+    plonk::{ConstraintSystem, Error, Expression},
+};
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;
 use serde::{Deserialize, Serialize};
+use snark_verifier_sdk::LIMBS;
 use std::sync::Arc;
-use zkevm_circuits::table::U8Table;
-use zkevm_circuits::util::Challenges;
+use zkevm_circuits::{table::U8Table, util::Challenges};
 
 pub const BLOB_WIDTH: usize = 4096;
 /// The number data bytes we pack each BLS12-381 scalar into. The most-significant byte is 0.
@@ -142,6 +141,31 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
             rlc_config,
             blob_bytes,
             barycentric_assignments,
+        )
+    }
+
+    pub fn link(
+        layouter: &mut impl Layouter<Fr>,
+        blob_crts_limbs: &[[AssignedCell<Fr, Fr>; LIMBS]],
+        barycentric_crts: &[CRTInteger<Fr>],
+    ) -> Result<(), Error> {
+        assert_eq!(blob_crts_limbs.len(), BLOB_WIDTH);
+
+        layouter.assign_region(
+            || "constrain barycentric inputs to match blob",
+            |mut region| {
+                for (blob_crt_limbs, barycentric_crt) in blob_crts_limbs
+                    .iter()
+                    .zip_eq(barycentric_crts.iter().take(BLOB_WIDTH))
+                {
+                    for (blob_limb, barycentric_limb) in
+                        blob_crt_limbs.iter().zip_eq(barycentric_crt.limbs())
+                    {
+                        region.constrain_equal(blob_limb.cell(), barycentric_limb.cell())?;
+                    }
+                }
+                Ok(())
+            },
         )
     }
 }

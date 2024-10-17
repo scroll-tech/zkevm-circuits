@@ -23,11 +23,13 @@ use crate::{
         BatchData, RlcConfig,
     },
     constants::N_BYTES_U256,
-    data_availability::eip4844::{get_blob_bytes, get_coefficients, get_versioned_hash},
-    data_availability::eip4844::{
-        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig,
+    data_availability::{
+        eip4844::{
+            blob::PointEvaluationAssignments, get_blob_bytes, get_coefficients, get_versioned_hash,
+            AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig,
+        },
+        BlobDataConfig,
     },
-    data_availability::{eip4844::blob::PointEvaluationAssignments, BlobDataConfig},
     decode_bytes,
     param::ConfigParams,
     BatchDataConfig, ChunkInfo, MAX_AGG_SNARKS,

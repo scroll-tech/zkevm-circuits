@@ -348,16 +348,6 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             &pows_of_256,
             &mut rlc_config_offset,
         );
-        for (blob_crt_limbs, barycentric_crt) in blob_crts_limbs
-            .iter()
-            .zip_eq(barycentric_assignments.iter().take(BLOB_WIDTH))
-        {
-            for (blob_limb, barycentric_limb) in
-                blob_crt_limbs.iter().zip_eq(barycentric_crt.limbs())
-            {
-                region.constrain_equal(blob_limb.cell(), barycentric_limb.cell())?;
-            }
-        }
 
         // The zstd decoder (DecoderConfig) exports an encoded length that is 1 more than the
         // actual number of bytes in encoded data. Accordingly we "cook" the actual len(bytes) here

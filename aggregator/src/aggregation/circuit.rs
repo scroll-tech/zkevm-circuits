@@ -27,17 +27,14 @@ use crate::{
     batch::BatchHash,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
-    data_availability::get_coefficients, // TODO: fix this
+    data_availability::{
+        get_coefficients, // TODO: fix this
+        BlobConsistencyConfig,
+    },
     util::parse_hash_digest_cells,
     witgen::{zstd_encode, MultiBlockProcessResult},
-    ConfigParams,
-    LOG_DEGREE,
-    PI_CHAIN_ID,
-    PI_CURRENT_BATCH_HASH,
-    PI_CURRENT_STATE_ROOT,
-    PI_CURRENT_WITHDRAW_ROOT,
-    PI_PARENT_BATCH_HASH,
-    PI_PARENT_STATE_ROOT,
+    ConfigParams, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
+    PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
 
 /// Batch circuit, the chunk aggregation routine below recursion circuit
@@ -422,6 +419,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 challenges,
                 &config.rlc_config,
                 &self.batch_hash.blob_bytes,
+                barycentric_assignments,
+            )?;
+
+            BlobConsistencyConfig::<N_SNARKS>::link(
+                &mut layouter,
+                &blob_data_exports.blob_crts_limbs,
                 barycentric_assignments,
             )?;
 
