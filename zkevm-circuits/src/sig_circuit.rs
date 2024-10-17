@@ -150,7 +150,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         let ecdsa_k1_config =
             FpConfig::construct(range.clone(), limb_bits, num_limbs, modulus::<Fp_K1>());
         let ecdsa_r1_config = FpConfig::construct(range, limb_bits, num_limbs, modulus::<Fp_R1>());
-        
+
         // let ecdsa_k1_config = FpConfig::configure(
         //     meta,
         //     FpStrategy::Simple,
@@ -301,7 +301,6 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         // only initialze one RangeConfig which two chips (r1 & k1) shares
         //config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         config.ecdsa_r1_config.range.load_lookup_table(layouter)?;
-
 
         // assign both k1 and r1 signatures
         self.assign(
@@ -529,14 +528,11 @@ impl<F: Field> SigCircuit<F> {
         ctx: &mut Context<F>,
         ecdsa_chip: &FpConfig<F, Fp>,
         sign_data: &SignData<Fq, Affine>,
-        // TODO: refactor method `assign_ecdsa` to `assign_ecdsa<Fq, Affine>`
-        // or add more one parameter `sign_data_r1`
     ) -> Result<AssignedECDSA<F, FpConfig<F, Fp>>, Error>
     where
         Affine::Base: ff::PrimeField,
     {
         let gate = ecdsa_chip.gate();
-        let zero = gate.load_zero(ctx);
 
         let SignData {
             signature,
@@ -545,6 +541,8 @@ impl<F: Field> SigCircuit<F> {
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s, v) = signature;
+
+        println!("assign_ecdsa_generic: signature {:?}", signature);
 
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpConfig<F, Fp>>::construct(ecdsa_chip.clone());
@@ -558,7 +556,7 @@ impl<F: Field> SigCircuit<F> {
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Affine>(ctx, &pk_assigned);
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
-        println!("pk_is_valid {:?}", pk_is_valid);
+        println!("assign_ecdsa_generic: pk_is_valid {:?}", pk_is_valid);
 
         // build Fq chip from Fp chip
         let fq_chip =
@@ -589,36 +587,82 @@ impl<F: Field> SigCircuit<F> {
                 4,
             );
 
+        println!("sig_is_valid {:?}", sig_is_valid);
+
         // =======================================
         // constrains v == y.is_oddness()
         // =======================================
         assert!(*v == 0 || *v == 1, "v is not boolean");
         println!("V is {}, pub key x: {:?} y: {:?}", v, x, y);
-        // println!(" bn256::Fr : {:?} y: {:?}", Fr);
 
+        let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
+
+        // check if p256 curve, for precompile p256Verify, there is no need of v in the input data
+        // and just use public key (x, y) provided instead.
+        // so only secp256k1 signature data need to check v oddness
+        let (sig_is_valid, assigned_y_is_odd) = if Affine::a() == Fp::ZERO {
+            let (y_is_ok, assigned_y_is_odd) =
+                self.check_y_oddness(ctx, ecdsa_chip, v, y_coord, pk_is_zero);
+            let sig_is_valid = gate.and_many(
+                ctx,
+                vec![
+                    QuantumCell::Existing(sig_is_valid),
+                    QuantumCell::Existing(y_is_ok),
+                    QuantumCell::Existing(pk_not_zero),
+                ],
+            );
+
+            (sig_is_valid, assigned_y_is_odd)
+        } else {
+            let sig_is_valid = gate.and_many(
+                ctx,
+                vec![
+                    QuantumCell::Existing(sig_is_valid),
+                    QuantumCell::Existing(pk_not_zero),
+                ],
+            );
+
+            // for r1, don't use `assigned_y_is_odd` field, zero as placeholder.
+            (sig_is_valid, gate.load_zero(ctx)) // cache zero ?
+        };
+
+        Ok(AssignedECDSA {
+            pk: pk_assigned,
+            pk_is_zero,
+            msg_hash,
+            integer_r,
+            integer_s,
+            v: assigned_y_is_odd,
+            sig_is_valid,
+        })
+    }
+
+    fn check_y_oddness<Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField>(
+        &self,
+        ctx: &mut Context<F>,
+        ecdsa_chip: &FpConfig<F, Fp>,
+        v: &u8,
+        y_coord: CRTInteger<F>,
+        pk_is_zero: AssignedValue<F>,
+    ) -> (AssignedValue<F>, AssignedValue<F>) {
         // we constrain:
         // - v + 2*tmp = y where y is already range checked (88 bits)
         // - v is a binary
         // - tmp is also < 88 bits (this is crucial otherwise tmp may wrap around and break
         //   soundness)
+        let gate = ecdsa_chip.gate();
+        let zero = gate.load_zero(ctx);
 
         let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
         gate.assert_bit(ctx, assigned_y_is_odd);
 
         // the last 88 bits of y
         let assigned_y_limb = &y_coord.limbs()[0];
-        println!("assigned_y_tmp init {:?}, limbs {:?}",assigned_y_limb,  y_coord.limbs().len());
-
         let mut y_value = F::zero();
         assigned_y_limb.value().map(|&x| y_value = x);
-        println!("y_value  {:?}, v {}", y_value, v);
-        println!("F::TWO_INV  {:?}", F::TWO_INV);     
 
-        // y_tmp = (y_value - y_last_bit) / 2
+        // y_tmp = (y_value - y_last_bit)/2
         let y_tmp = (y_value - F::from(*v as u64)) * F::TWO_INV;
-
-        println!("y_tmp  {:?}", y_tmp);
-
         let assigned_y_tmp = gate.load_witness(ctx, Value::known(y_tmp));
 
         // y_tmp_double = (y_value - y_last_bit)
@@ -637,7 +681,6 @@ impl<F: Field> SigCircuit<F> {
             QuantumCell::Existing(*assigned_y_limb),
             QuantumCell::Existing(y_rec),
         );
-        println!("y_is_ok  {:?}", y_is_ok);
 
         // last step we want to constrain assigned_y_tmp is 87 bits
         let assigned_y_tmp = gate.select(
@@ -648,32 +691,15 @@ impl<F: Field> SigCircuit<F> {
         );
 
         println!("assigned_y_tmp {:?}", assigned_y_tmp);
-        // this line failed
+        //let ecc_chip = EccChip::<F, FpChipK1<F>>::construct(ecdsa_chip.clone());
+
+        let ecc_chip = EccChip::construct(ecdsa_chip.clone());
         ecc_chip
             .field_chip
             .range
-            // TODO: check 87 is appropriate for p256
             .range_check(ctx, &assigned_y_tmp, 87);
 
-        let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
-        let sig_is_valid = gate.and_many(
-            ctx,
-            vec![
-                QuantumCell::Existing(sig_is_valid),
-                QuantumCell::Existing(y_is_ok),
-                QuantumCell::Existing(pk_not_zero),
-            ],
-        );
-
-        Ok(AssignedECDSA {
-            pk: pk_assigned,
-            pk_is_zero,
-            msg_hash,
-            integer_r,
-            integer_s,
-            v: assigned_y_is_odd,
-            sig_is_valid,
-        })
+        (y_is_ok, assigned_y_is_odd)
     }
 
     fn enable_keccak_lookup(
@@ -1030,7 +1056,8 @@ impl<F: Field> SigCircuit<F> {
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_r1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipR1<F>>>, Error>>()?;
 
-                println!("assigned_ecdsas_r1 {:?} ", assigned_ecdsas_r1);
+                println!("assigned_ecdsas_k1 {:?} ", assigned_ecdsas_k1.len());
+                println!("assigned_ecdsas_r1 {:?} ", assigned_ecdsas_r1.len());
 
                 // ================================================
                 // step 2: decompose the keys and messages
