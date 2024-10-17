@@ -294,8 +294,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     // state of transcripts for every SNARK that is being aggregated belongs to the
                     // fixed set of values expected.
                     //
-                    // Commitments to the preprocessed polynomials.
-                    let mut ctx = loader.ctx_mut();
+                    // First we load the constants.
+                    log::info!("populating constants");
                     let mut preprocessed_polys_halo2 = Vec::with_capacity(7);
                     let mut preprocessed_polys_sp1 = Vec::with_capacity(7);
                     for preprocessed_poly in PREPROCESSED_POLYS_HALO2.iter() {
@@ -312,6 +312,16 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                                 .into_assigned(),
                         );
                     }
+                    let transcript_init_state_halo2 = loader
+                        .load_const(&TRANSCRIPT_INIT_STATE_HALO2)
+                        .into_assigned();
+                    let transcript_init_state_sp1 = loader
+                        .load_const(&TRANSCRIPT_INIT_STATE_SP1)
+                        .into_assigned();
+                    log::info!("populating constants OK");
+
+                    // Commitments to the preprocessed polynomials.
+                    let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     for preprocessed_polys in preprocessed_poly_sets.iter() {
                         let mut preprocessed_check_1 =
                             config.flex_gate().load_constant(&mut ctx, Fr::ONE);
@@ -351,12 +361,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     }
 
                     // Transcript initial state.
-                    let transcript_init_state_halo2 = loader
-                        .load_const(&TRANSCRIPT_INIT_STATE_HALO2)
-                        .into_assigned();
-                    let transcript_init_state_sp1 = loader
-                        .load_const(&TRANSCRIPT_INIT_STATE_SP1)
-                        .into_assigned();
                     for transcript_init_state in transcript_init_states {
                         let transcript_init_state = transcript_init_state
                             .expect("SNARK should have an initial state for transcript")
