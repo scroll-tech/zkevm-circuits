@@ -600,7 +600,7 @@ impl<F: Field> SigCircuit<F> {
         // check if p256 curve, for precompile p256Verify, there is no need of v in the input data
         // and just use public key (x, y) provided instead.
         // so only secp256k1 signature data need to check v oddness
-        let (sig_is_valid, assigned_y_is_odd) = if Affine::a() == Fp::ZERO {
+        let (sig_is_valid, assigned_y_is_odd) = if !self.is_p256_precompile::<Fp, Affine>() {
             let (y_is_ok, assigned_y_is_odd) =
                 self.check_y_oddness(ctx, ecdsa_chip, v, y_coord, pk_is_zero);
             let sig_is_valid = gate.and_many(
@@ -622,7 +622,7 @@ impl<F: Field> SigCircuit<F> {
                 ],
             );
 
-            // for r1, don't use `assigned_y_is_odd` field, zero as placeholder.
+            // for p256, don't use `assigned_y_is_odd` field, zero as placeholder.
             (sig_is_valid, gate.load_zero(ctx)) // cache zero ?
         };
 
@@ -637,6 +637,17 @@ impl<F: Field> SigCircuit<F> {
         })
     }
 
+    // check if precompile p256Verify
+    fn is_p256_precompile<
+        Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
+        Affine: CurveAffine<Base = Fp>,
+    >(
+        &self,
+    ) -> bool {
+        Affine::a() == Fp::ZERO
+    }
+
+    // check v and y oddness relation for secp2256k1
     fn check_y_oddness<Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField>(
         &self,
         ctx: &mut Context<F>,

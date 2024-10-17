@@ -75,6 +75,7 @@ pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
     pub(super) msg_hash: CRTInteger<F>,
     pub(super) integer_r: CRTInteger<F>,
     pub(super) integer_s: CRTInteger<F>,
+    // precompile p256verify not use v field.
     pub(super) v: AssignedValue<F>,
     pub(super) sig_is_valid: AssignedValue<F>,
 }
