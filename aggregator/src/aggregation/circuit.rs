@@ -7,7 +7,9 @@ use crate::{
 };
 use ark_std::{end_timer, start_timer};
 use halo2_base::{
-    gates::GateInstructions, utils::fe_to_biguint, Context, ContextParams, QuantumCell::Existing,
+    gates::{GateInstructions, RangeInstructions},
+    Context, ContextParams,
+    QuantumCell::Existing,
 };
 
 use halo2_ecc::fields::FieldChip;
@@ -28,13 +30,15 @@ use std::rc::Rc;
 use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
+use snark_verifier::loader::halo2::{
+    halo2_ecc::halo2_base::AssignedValue, Halo2Loader, IntegerInstructions,
+};
+use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
     loader::halo2::halo2_ecc::halo2_base,
     pcs::kzg::{Bdfg21, Kzg},
 };
-use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier_sdk::{aggregate_hybrid, flatten_accumulator};
 use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
@@ -322,12 +326,18 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     let transcript_init_state_halo2 = config
                         .ecc_chip()
                         .field_chip()
-                        .load_constant(&mut ctx, fe_to_biguint(&fixed_transcript_init_state_halo2));
+                        .range()
+                        .gate()
+                        .assign_constant(&mut ctx, fixed_transcript_init_state_halo2)
+                        .expect("IntegerInstructions::assign_constant infallible");
                     log::debug!("load transcript OK");
                     let transcript_init_state_sp1 = config
                         .ecc_chip()
                         .field_chip()
-                        .load_constant(&mut ctx, fe_to_biguint(&fixed_transcript_init_state_sp1));
+                        .range()
+                        .gate()
+                        .assign_constant(&mut ctx, fixed_transcript_init_state_sp1)
+                        .expect("IntegerInstructions::assign_constant infallible");
                     log::info!("populating constants OK");
 
                     // Commitments to the preprocessed polynomials.
@@ -341,7 +351,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                             .zip_eq(preprocessed_polys_halo2.iter())
                             .zip_eq(preprocessed_polys_sp1.iter())
                         {
-                            let commitment = commitment.clone().into_assigned();
                             let check_1 =
                                 config
                                     .ecc_chip()
@@ -370,11 +379,9 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     }
 
                     // Transcript initial state.
-                    /*
                     for transcript_init_state in transcript_init_states {
                         let transcript_init_state = transcript_init_state
-                            .expect("SNARK should have an initial state for transcript")
-                            .into_assigned();
+                            .expect("SNARK should have an initial state for transcript");
                         let transcript_check_1 = config.flex_gate().is_equal(
                             &mut ctx,
                             Existing(transcript_init_state),
@@ -394,7 +401,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                             .flex_gate()
                             .assert_is_const(&mut ctx, &transcript_check, Fr::ONE);
                     }
-                    */
 
                     // extract the following cells for later constraints
                     // - the accumulators

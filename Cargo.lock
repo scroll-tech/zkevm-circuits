@@ -4509,7 +4509,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=feat/hybrid-snark-agg#7d9868ee25edc1b3e882f60c8f065e801f49f039"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=feat/hybrid-snark-agg#0d7c3ae2ea12b864fe8e361c1a2662039ac6c626"
 dependencies = [
  "bytes",
  "ethereum-types",
@@ -4532,7 +4532,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=feat/hybrid-snark-agg#7d9868ee25edc1b3e882f60c8f065e801f49f039"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=feat/hybrid-snark-agg#0d7c3ae2ea12b864fe8e361c1a2662039ac6c626"
 dependencies = [
  "bincode",
  "ethereum-types",
