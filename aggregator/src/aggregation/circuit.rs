@@ -6,8 +6,11 @@ use crate::{
     PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
 use ark_std::{end_timer, start_timer};
-use halo2_base::{gates::GateInstructions, Context, ContextParams, QuantumCell::Existing};
+use halo2_base::{
+    gates::GateInstructions, utils::fe_to_biguint, Context, ContextParams, QuantumCell::Existing,
+};
 
+use halo2_ecc::fields::FieldChip;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use halo2_ecc::{ecc::EccChip, fields::fp::FpConfig};
 
@@ -31,10 +34,7 @@ use snark_verifier::{
     loader::halo2::halo2_ecc::halo2_base,
     pcs::kzg::{Bdfg21, Kzg},
 };
-use snark_verifier::{
-    loader::{EcPointLoader, ScalarLoader},
-    pcs::kzg::KzgSuccinctVerifyingKey,
-};
+use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier_sdk::{aggregate_hybrid, flatten_accumulator};
 use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
@@ -283,6 +283,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         &self.snarks_with_padding,
                         self.as_proof(),
                     );
+                    let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
                         log::trace!("{}-th instance: {:?}", i, e.value)
                     }
@@ -299,36 +300,37 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         FIXED_PROTOCOL_HALO2.clone();
                     let (fixed_preprocessed_polys_sp1, fixed_transcript_init_state_sp1) =
                         FIXED_PROTOCOL_SP1.clone();
-                    for (i, preprocessed_poly) in fixed_preprocessed_polys_halo2.iter().enumerate()
+                    for (i, &preprocessed_poly) in fixed_preprocessed_polys_halo2.iter().enumerate()
                     {
                         log::debug!("load const {i}");
                         preprocessed_polys_halo2.push(
-                            loader
-                                .ec_point_load_const(preprocessed_poly)
-                                .into_assigned(),
+                            config
+                                .ecc_chip()
+                                .assign_constant_point(&mut ctx, preprocessed_poly),
                         );
                         log::debug!("load const {i} OK");
                     }
-                    for (i, preprocessed_poly) in fixed_preprocessed_polys_sp1.iter().enumerate() {
+                    for (i, &preprocessed_poly) in fixed_preprocessed_polys_sp1.iter().enumerate() {
                         log::debug!("load const (sp1) {i}");
                         preprocessed_polys_sp1.push(
-                            loader
-                                .ec_point_load_const(preprocessed_poly)
-                                .into_assigned(),
+                            config
+                                .ecc_chip()
+                                .assign_constant_point(&mut ctx, preprocessed_poly),
                         );
                         log::debug!("load const (sp1) {i} OK");
                     }
-                    let transcript_init_state_halo2 = loader
-                        .load_const(&fixed_transcript_init_state_halo2)
-                        .into_assigned();
+                    let transcript_init_state_halo2 = config
+                        .ecc_chip()
+                        .field_chip()
+                        .load_constant(&mut ctx, fe_to_biguint(&fixed_transcript_init_state_halo2));
                     log::debug!("load transcript OK");
-                    let transcript_init_state_sp1 = loader
-                        .load_const(&fixed_transcript_init_state_sp1)
-                        .into_assigned();
+                    let transcript_init_state_sp1 = config
+                        .ecc_chip()
+                        .field_chip()
+                        .load_constant(&mut ctx, fe_to_biguint(&fixed_transcript_init_state_sp1));
                     log::info!("populating constants OK");
 
                     // Commitments to the preprocessed polynomials.
-                    let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     for preprocessed_polys in preprocessed_poly_sets.iter() {
                         let mut preprocessed_check_1 =
                             config.flex_gate().load_constant(&mut ctx, Fr::ONE);
@@ -368,6 +370,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     }
 
                     // Transcript initial state.
+                    /*
                     for transcript_init_state in transcript_init_states {
                         let transcript_init_state = transcript_init_state
                             .expect("SNARK should have an initial state for transcript")
@@ -391,6 +394,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                             .flex_gate()
                             .assert_is_const(&mut ctx, &transcript_check, Fr::ONE);
                     }
+                    */
 
                     // extract the following cells for later constraints
                     // - the accumulators
