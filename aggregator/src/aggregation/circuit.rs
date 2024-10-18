@@ -287,10 +287,28 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         &self.snarks_with_padding,
                         self.as_proof(),
                     );
-                    let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
+
+                    // extract the following cells for later constraints
+                    // - the accumulators
+                    // - the public inputs from each snark
+                    accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
+                    // the snark is not a fresh one, assigned_instances already contains an
+                    // accumulator so we want to skip the first 12 elements from the public
+                    // input
+                    snark_inputs.extend(
+                        assigned_aggregation_instances
+                            .iter()
+                            .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
+                    );
                     for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
                         log::trace!("{}-th instance: {:?}", i, e.value)
                     }
+
+                    loader
+                        .ctx_mut()
+                        .print_stats(&["snark aggregation"]);
+
+                    let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
 
                     // We must ensure that the commitments to preprocessed polynomial and initial
                     // state of transcripts for every SNARK that is being aggregated belongs to the
@@ -402,20 +420,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                             .assert_is_const(&mut ctx, &transcript_check, Fr::ONE);
                     }
 
-                    // extract the following cells for later constraints
-                    // - the accumulators
-                    // - the public inputs from each snark
-                    accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
-                    // the snark is not a fresh one, assigned_instances already contains an
-                    // accumulator so we want to skip the first 12 elements from the public
-                    // input
-                    snark_inputs.extend(
-                        assigned_aggregation_instances
-                            .iter()
-                            .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
-                    );
-
-                    ctx.print_stats(&["snark aggregation [chunks -> batch]"]);
+                    ctx.print_stats(&["protocol check"]);
 
                     log::debug!("batching: assigning barycentric");
                     let barycentric = config.barycentric.assign(
