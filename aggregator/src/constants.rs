@@ -105,8 +105,11 @@ pub type TranscriptInitState = Fr;
 pub type FixedProtocol = (PreprocessedPolyCommits, TranscriptInitState);
 
 pub static FIXED_PROTOCOL_HALO2: LazyLock<FixedProtocol> = LazyLock::new(|| {
-    let path =
+    let name =
         std::env::var("HALO2_CHUNK_PROTOCOL").unwrap_or("chunk_chunk_halo2.protocol".to_string());
+    let dir =
+        std::env::var("SCROLL_PROVER_ASSETS_DIR").unwrap_or("./tests/test_assets".to_string());
+    let path = std::path::Path::new(&dir).join(name);
     let file = std::fs::File::open(&path).expect("could not open file");
     let reader = std::io::BufReader::new(file);
     let protocol: snark_verifier::Protocol<G1Affine> =
@@ -119,8 +122,11 @@ pub static FIXED_PROTOCOL_HALO2: LazyLock<FixedProtocol> = LazyLock::new(|| {
     )
 });
 pub static FIXED_PROTOCOL_SP1: LazyLock<FixedProtocol> = LazyLock::new(|| {
-    let path =
+    let name =
         std::env::var("SP1_CHUNK_PROTOCOL").unwrap_or("chunk_chunk_sp1.protocol".to_string());
+    let dir =
+        std::env::var("SCROLL_PROVER_ASSETS_DIR").unwrap_or("./tests/test_assets".to_string());
+    let path = std::path::Path::new(&dir).join(name);
     let file = std::fs::File::open(&path).expect("could not open file");
     let reader = std::io::BufReader::new(file);
     let protocol: snark_verifier::Protocol<G1Affine> =
