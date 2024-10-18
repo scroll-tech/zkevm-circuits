@@ -100,6 +100,39 @@ pub const MAX_AGG_SNARKS: usize = 45;
 /// belonging to each of the above SNARK kinds.
 ///
 /// Represents the fixed commitments to the preprocessed polynomials for [`ChunkKind::Halo2`].
+pub type PreprocessedPolyCommits = Vec<G1Affine>;
+pub type TranscriptInitState = Fr;
+pub type FixedProtocol = (PreprocessedPolyCommits, TranscriptInitState);
+
+pub static FIXED_PROTOCOL_HALO2: LazyLock<FixedProtocol> = LazyLock::new(|| {
+    let path =
+        std::env::var("HALO2_CHUNK_PROTOCOL").unwrap_or("chunk_chunk_halo2.protocol".to_string());
+    let file = std::fs::File::open(&path).expect("could not open file");
+    let reader = std::io::BufReader::new(file);
+    let protocol: snark_verifier::Protocol<G1Affine> =
+        serde_json::from_reader(reader).expect("could not deserialise protocol");
+    (
+        protocol.preprocessed,
+        protocol
+            .transcript_initial_state
+            .expect("transcript initial state is None"),
+    )
+});
+pub static FIXED_PROTOCOL_SP1: LazyLock<FixedProtocol> = LazyLock::new(|| {
+    let path =
+        std::env::var("SP1_CHUNK_PROTOCOL").unwrap_or("chunk_chunk_sp1.protocol".to_string());
+    let file = std::fs::File::open(&path).expect("could not open file");
+    let reader = std::io::BufReader::new(file);
+    let protocol: snark_verifier::Protocol<G1Affine> =
+        serde_json::from_reader(reader).expect("could not deserialise protocol");
+    (
+        protocol.preprocessed,
+        protocol
+            .transcript_initial_state
+            .expect("transcript initial state is None"),
+    )
+});
+
 pub static PREPROCESSED_POLYS_HALO2: LazyLock<Vec<G1Affine>> = LazyLock::new(|| {
     vec![
         G1Affine {

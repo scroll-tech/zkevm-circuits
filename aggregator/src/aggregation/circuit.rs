@@ -43,10 +43,7 @@ use zkevm_circuits::util::Challenges;
 use crate::{
     aggregation::witgen::process,
     batch::BatchHash,
-    constants::{
-        ACC_LEN, DIGEST_LEN, PREPROCESSED_POLYS_HALO2, PREPROCESSED_POLYS_SP1,
-        TRANSCRIPT_INIT_STATE_HALO2, TRANSCRIPT_INIT_STATE_SP1,
-    },
+    constants::{ACC_LEN, DIGEST_LEN, FIXED_PROTOCOL_HALO2, FIXED_PROTOCOL_SP1},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
     AssignedBarycentricEvaluationConfig, ConfigParams,
@@ -298,7 +295,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     log::info!("populating constants");
                     let mut preprocessed_polys_halo2 = Vec::with_capacity(7);
                     let mut preprocessed_polys_sp1 = Vec::with_capacity(7);
-                    for (i, preprocessed_poly) in PREPROCESSED_POLYS_HALO2.iter().enumerate() {
+                    let (fixed_preprocessed_polys_halo2, fixed_transcript_init_state_halo2) =
+                        FIXED_PROTOCOL_HALO2.clone();
+                    let (fixed_preprocessed_polys_sp1, fixed_transcript_init_state_sp1) =
+                        FIXED_PROTOCOL_SP1.clone();
+                    for (i, preprocessed_poly) in fixed_preprocessed_polys_halo2.iter().enumerate()
+                    {
                         log::debug!("load const {i}");
                         preprocessed_polys_halo2.push(
                             loader
@@ -307,7 +309,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         );
                         log::debug!("load const {i} OK");
                     }
-                    for (i, preprocessed_poly) in PREPROCESSED_POLYS_SP1.iter().enumerate() {
+                    for (i, preprocessed_poly) in fixed_preprocessed_polys_sp1.iter().enumerate() {
                         log::debug!("load const (sp1) {i}");
                         preprocessed_polys_sp1.push(
                             loader
@@ -317,11 +319,11 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         log::debug!("load const (sp1) {i} OK");
                     }
                     let transcript_init_state_halo2 = loader
-                        .load_const(&TRANSCRIPT_INIT_STATE_HALO2)
+                        .load_const(&fixed_transcript_init_state_halo2)
                         .into_assigned();
                     log::debug!("load transcript OK");
                     let transcript_init_state_sp1 = loader
-                        .load_const(&TRANSCRIPT_INIT_STATE_SP1)
+                        .load_const(&fixed_transcript_init_state_sp1)
                         .into_assigned();
                     log::info!("populating constants OK");
 
