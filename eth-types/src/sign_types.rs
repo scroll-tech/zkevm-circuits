@@ -50,6 +50,8 @@ pub fn sign<
 ) -> (Fq, Fq, u8) {
     let randomness_inv = Option::<Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Affine::generator();
+    // generator is indeed for r1 if call with r1 type.
+
     let sig_point = generator * randomness;
     let sig_v: bool = sig_point.to_affine().into_coordinates().1.is_odd().into();
 
@@ -57,13 +59,62 @@ pub fn sign<
         .expect("point is the identity")
         .x();
 
+    println!("x_Fp {:?}", x);
+    println!("Fq modulus {:?}", Fq::MODULUS);
+    println!("x.repr {:?}", x.to_repr());
+
     let mut x_bytes = [0u8; 64];
     x_bytes[..32].copy_from_slice(&x.to_repr());
 
     let sig_r = Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
 
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
+
+    println!("sig_point {:?}", sig_point.to_affine());
+    println!("sig_r {:?}", sig_r);
+    println!("sig_s {:?}", sig_s);
+
     (sig_r, sig_s, u8::from(sig_v))
+}
+
+/// Do a secp256k1 or secp256r1 signature verification with a given pub key.
+/// Refers to https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256k1/curve.rs
+/// and https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256r1/curve.rs
+pub fn verify<
+    Fp: PrimeField<Repr = [u8; 32]>,
+    Fq: PrimeField + FromUniformBytes<64>,
+    Affine: CurveAffine<ScalarExt = Fq, Base = Fp> + std::ops::Mul<Fq> + CurveAffineExt,
+>(
+    pub_key: Affine,
+    r: Fq,
+    s: Fq,
+    msg_hash: Fq,
+    // if pubkey is not recovered , v is not neccessary. 
+    v: Option<bool>, 
+) -> bool {
+    // Verify
+    let s_inv = s.invert().unwrap();
+    let u_1 = msg_hash * s_inv;
+    let u_2 = r * s_inv;
+
+    let g = Affine::generator();
+    let v_1 = g * u_1;
+    let v_2 = pub_key * u_2;
+
+    let r_point = (v_1 + v_2).to_affine().coordinates().unwrap();
+    let x_candidate = r_point.x();
+    let r_candidate = mod_n(*x_candidate);
+
+    r == r_candidate
+}
+
+// convert Fp to Fq
+fn mod_n<Fp: PrimeField<Repr = [u8; 32]>, Fq: PrimeField + FromUniformBytes<64>>(x: Fp) -> Fq {
+    let mut x_repr = [0u8; 32];
+    x_repr.copy_from_slice(x.to_repr().as_ref());
+    let mut x_bytes = [0u8; 64];
+    x_bytes[..32].copy_from_slice(&x_repr[..]);
+    Fq::from_uniform_bytes(&x_bytes)
 }
 
 /// Signature data required by the SignVerify Chip as input to verify a
