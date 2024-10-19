@@ -1,10 +1,17 @@
 use bus_mapping::Error;
 use eth_types::{
     geth_types::TxType,
-    sign_types::{get_dummy_tx, pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    sign_types::{get_dummy_tx, pk_bytes_le_generic, pk_bytes_swap_endianness, SignData},
     ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::keccak256;
+use ff::PrimeField;
+use halo2_base::utils::CurveAffineExt;
+use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::halo2curves::{
+    secp256k1::{self, Secp256k1Affine},
+    secp256r1::{self, Secp256r1Affine},
+};
 use itertools::Itertools;
 
 use super::{Block, BlockContexts, Transaction};
@@ -68,11 +75,18 @@ pub fn keccak_inputs(block: &Block) -> Result<Vec<Vec<u8>>, Error> {
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
 /// signature datas.
-pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
+/// TODO: check if need to support p256 SignData type later.
+pub fn keccak_inputs_sign_verify<
+    Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
+    Fq: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
+    Affine: CurveAffine<Base = Fp, ScalarExt = Fq> + CurveAffineExt,
+>(
+    sigs: &[SignData<Fq, Affine>],
+) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
     let dummy_sign_data = SignData::default();
-    for sig in sigs.iter().chain(std::iter::once(&dummy_sign_data)) {
-        let pk_le = pk_bytes_le(&sig.pk);
+    for sig in sigs {
+        let pk_le = pk_bytes_le_generic(&sig.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         inputs.push(pk_be.to_vec());
         inputs.push(sig.msg.to_vec());
@@ -186,7 +200,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[Transaction]) -> Result<Vec<Vec<u8>>, Err
         .collect::<Vec<u8>>();
     inputs.push(chunk_txbytes);
 
-    let sign_datas: Vec<SignData> = txs
+    let sign_datas: Vec<SignData<secp256k1::Fq, Secp256k1Affine>> = txs
         .iter()
         .enumerate()
         .filter(|(i, tx)| {

@@ -7,7 +7,8 @@ use halo2_ecc::{
 };
 use halo2_proofs::{
     circuit::Value,
-    halo2curves::secp256k1::{Fp, Fq},
+    halo2curves::secp256k1::{Fp as Fp_K1, Fq as Fq_K1},
+    halo2curves::secp256r1::{Fp as Fp_R1, Fq as Fq_R1},
 };
 
 // Hard coded parameters.
@@ -61,16 +62,20 @@ pub(super) fn calc_required_lookup_advices(num_verif: usize) -> usize {
 }
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field
-pub(super) type FqChip<F> = FpConfig<F, Fq>;
-/// Chip to handle ECDSA::Fp, the base field
-pub(super) type FpChip<F> = FpConfig<F, Fp>;
+pub(super) type FqChipK1<F> = FpConfig<F, Fq_K1>;
+/// Chip to handle ECDSA(secp256k1)::Fp, the base field
+pub(super) type FpChipK1<F> = FpConfig<F, Fp_K1>;
+/// Chip to handle ECDSA(secp256r1)::Fp, the base field
+pub(super) type FpChipR1<F> = FpConfig<F, Fp_R1>;
 
+#[derive(Debug)]
 pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint>,
     pub(super) pk_is_zero: AssignedValue<F>,
     pub(super) msg_hash: CRTInteger<F>,
     pub(super) integer_r: CRTInteger<F>,
     pub(super) integer_s: CRTInteger<F>,
+    // precompile p256verify not use v field.
     pub(super) v: AssignedValue<F>,
     pub(super) sig_is_valid: AssignedValue<F>,
 }
@@ -87,6 +92,7 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) sig_is_valid: AssignedValue<F>,
 }
 
+#[derive(Debug)]
 pub(super) struct SignDataDecomposed<F: Field> {
     pub(super) pk_hash_cells: Vec<QuantumCell<F>>,
     pub(super) msg_hash_cells: Vec<QuantumCell<F>>,
