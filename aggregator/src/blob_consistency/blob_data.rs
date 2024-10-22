@@ -361,7 +361,7 @@ fn blob_crts_limbs(
         .map(|coefficient_bytes| {
             coefficient_bytes
                 .iter()
-                .rev() // reverse bytes to match endianess of crt limbs
+                .rev() // reverse bytes to match endianness of crt limbs
                 .chunks(BITS / 8)
                 .into_iter()
                 .map(|chunk_bytes| {

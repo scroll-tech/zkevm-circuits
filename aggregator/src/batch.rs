@@ -26,7 +26,7 @@ pub struct BatchHeader<const N_SNARKS: usize> {
     pub last_block_timestamp: u64,
     /// The data hash of the batch
     pub data_hash: H256,
-    // /// information needed to check that the blobs in the circuit match the blob the data availibility provided.
+    // /// information needed to check that the blobs in the circuit match the blob the data availability provided.
     #[serde(flatten)]
     pub blob_consistency_witness: BlobConsistencyWitness,
 }

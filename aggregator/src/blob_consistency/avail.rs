@@ -10,8 +10,8 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error, Expression},
 };
 use serde::{Deserialize, Serialize};
-use zkevm_circuits::{table::U8Table, util::Challenges};
 use snark_verifier_sdk::LIMBS;
+use zkevm_circuits::{table::U8Table, util::Challenges};
 
 pub const BLOB_WIDTH: usize = 4096;
 
