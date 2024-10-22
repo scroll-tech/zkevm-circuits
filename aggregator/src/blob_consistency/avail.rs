@@ -1,7 +1,6 @@
-use super::{AssignedBlobDataExport, BlobDataConfig};
-use crate::{constants::N_BYTES_U256, BatchData, RlcConfig};
-use eth_types::{ToBigEndian, H256, U256};
-use ethers_core::k256::sha2::{Digest, Sha256};
+use super::{AssignedBlobDataExport};
+use crate::{BatchData, RlcConfig};
+use eth_types::{H256, U256};
 use halo2_base::{gates::range::RangeConfig, AssignedValue, Context};
 use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
@@ -20,9 +19,9 @@ pub struct BlobConsistencyConfig<const N_SNARKS: usize> {}
 
 impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
     pub fn construct(
-        meta: &mut ConstraintSystem<Fr>,
-        challenges: &Challenges<Expression<Fr>>,
-        u8_table: U8Table,
+        _meta: &mut ConstraintSystem<Fr>,
+        _challenges: &Challenges<Expression<Fr>>,
+        _u8_table: U8Table,
         _: RangeConfig<Fr>,
     ) -> Self {
         unimplemented!()
@@ -30,27 +29,27 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
 
     pub fn assign_barycentric(
         &self,
-        ctx: &mut Context<Fr>,
-        bytes: &[u8],
-        challenge: U256,
+        _ctx: &mut Context<Fr>,
+        _bytes: &[u8],
+        _challenge: U256,
     ) -> AssignedBarycentricEvaluationConfig {
         unimplemented!()
     }
 
     pub fn assign_blob_data(
         &self,
-        layouter: &mut impl Layouter<Fr>,
-        challenge_value: Challenges<Value<Fr>>,
-        rlc_config: &RlcConfig,
-        blob_bytes: &[u8],
+        _layouter: &mut impl Layouter<Fr>,
+        _challenge_value: Challenges<Value<Fr>>,
+        _rlc_config: &RlcConfig,
+        _blob_bytes: &[u8],
     ) -> Result<AssignedBlobDataExport, Error> {
         unimplemented!()
     }
 
     pub fn link(
-        layouter: &mut impl Layouter<Fr>,
-        blob_crts_limbs: &[[AssignedCell<Fr, Fr>; LIMBS]],
-        barycentric_crts: &[CRTInteger<Fr>],
+        _layouter: &mut impl Layouter<Fr>,
+        _blob_crts_limbs: &[[AssignedCell<Fr, Fr>; LIMBS]],
+        _barycentric_crts: &[CRTInteger<Fr>],
     ) -> Result<(), Error> {
         unimplemented!()
     }
@@ -64,7 +63,7 @@ pub struct BlobConsistencyWitness {
 }
 
 impl BlobConsistencyWitness {
-    pub fn new<const N_SNARKS: usize>(bytes: &[u8], _: &BatchData<N_SNARKS>) -> Self {
+    pub fn new<const N_SNARKS: usize>(_bytes: &[u8], _: &BatchData<N_SNARKS>) -> Self {
         Self {
             id: H256::default(), // should be keccak of bytes
             blob_data_proof: Default::default(),

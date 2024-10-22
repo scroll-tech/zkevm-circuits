@@ -8,10 +8,12 @@ use cfg_if::cfg_if;
 mod blob_data;
 use blob_data::{AssignedBlobDataExport, BlobDataConfig};
 
-#[cfg(feature = "da-avail")]
+// TODO: remove dead code instead
+#[allow(dead_code)]
 mod avail;
 
-#[cfg(not(feature = "da-avail"))]
+// TODO: remove dead code instead
+#[allow(dead_code)]
 mod eip4844;
 
 cfg_if! {
