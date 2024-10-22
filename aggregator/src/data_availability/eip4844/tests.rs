@@ -154,7 +154,7 @@ impl Circuit<Fr> for BlobCircuit {
                     PointEvaluationAssignments::new(&self.data, &blob_bytes, versioned_hash);
                 Ok(config.barycentric.assign(
                     &mut ctx,
-                    &point_eval.coefficients,
+                    &blob_bytes,
                     point_eval.challenge_digest,
                 ))
             },

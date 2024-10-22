@@ -19,7 +19,7 @@ use std::{iter::successors, sync::LazyLock};
 
 use crate::{
     constants::{BITS, LIMBS, N_BYTES_U256},
-    data_availability::eip4844::blob::BLOB_WIDTH,
+    data_availability::eip4844::{get_coefficients, blob::BLOB_WIDTH},
 };
 
 /// Base 2 logarithm of BLOB_WIDTH.
@@ -102,9 +102,11 @@ impl BarycentricEvaluationConfig {
     pub fn assign(
         &self,
         ctx: &mut Context<Fr>,
-        blob: &[U256; BLOB_WIDTH],
+        bytes: &[u8],
         challenge_digest: U256,
     ) -> AssignedBarycentricEvaluationConfig {
+        let blob = get_coefficients(bytes);
+
         // some constants for later use.
         let one = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::one()));
         let blob_width = self

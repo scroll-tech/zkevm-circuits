@@ -36,7 +36,7 @@ pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
 pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 
 /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
-pub fn get_coefficients(blob_bytes: &[u8]) -> [U256; BLOB_WIDTH] {
+fn get_coefficients(blob_bytes: &[u8]) -> [U256; BLOB_WIDTH] {
     let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
     assert!(
@@ -120,10 +120,10 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
     pub fn assign_barycentric(
         &self,
         ctx: &mut Context<Fr>,
-        blob: &[U256; BLOB_WIDTH],
+        bytes: &[u8],
         challenge: U256,
     ) -> AssignedBarycentricEvaluationConfig {
-        self.barycentric_evaluation.assign(ctx, blob, challenge)
+        self.barycentric_evaluation.assign(ctx, bytes, challenge)
     }
 
     pub fn assign_blob_data(

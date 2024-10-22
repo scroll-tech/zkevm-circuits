@@ -28,7 +28,6 @@ use crate::{
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     data_availability::{
-        get_coefficients, // TODO: fix this
         BlobConsistencyConfig,
     },
     util::parse_hash_digest_cells,
@@ -248,10 +247,9 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     log::debug!("batching: assigning barycentric");
-                    let coefficients = get_coefficients(&self.batch_hash.blob_bytes);
                     let barycentric = config.blob_consistency_config.assign_barycentric(
                         &mut ctx,
-                        &coefficients,
+                        &self.batch_hash.blob_bytes,
                         self.batch_hash
                             .blob_consistency_witness
                             .challenge()
