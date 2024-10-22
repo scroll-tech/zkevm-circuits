@@ -11,17 +11,12 @@ use halo2_proofs::{
 };
 use serde::{Deserialize, Serialize};
 use zkevm_circuits::{table::U8Table, util::Challenges};
+use snark_verifier_sdk::LIMBS;
 
 pub const BLOB_WIDTH: usize = 4096;
 
-pub fn get_coefficients(bytes: &[u8]) -> [U256; BLOB_WIDTH] {
-    [U256::zero(); BLOB_WIDTH]
-}
-
 #[derive(Debug, Clone)]
-pub struct BlobConsistencyConfig<const N_SNARKS: usize> {
-    data: BlobDataConfig<N_SNARKS>,
-}
+pub struct BlobConsistencyConfig<const N_SNARKS: usize> {}
 
 impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
     pub fn construct(
@@ -30,19 +25,16 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         u8_table: U8Table,
         _: RangeConfig<Fr>,
     ) -> Self {
-        Self {
-            data: BlobDataConfig::configure(meta, challenges, u8_table),
-        }
+        unimplemented!()
     }
 
     pub fn assign_barycentric(
         &self,
         ctx: &mut Context<Fr>,
-        blob: &[U256; BLOB_WIDTH],
+        bytes: &[u8],
         challenge: U256,
-        evaluation: U256,
     ) -> AssignedBarycentricEvaluationConfig {
-        Default::default()
+        unimplemented!()
     }
 
     pub fn assign_blob_data(
@@ -51,15 +43,16 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         challenge_value: Challenges<Value<Fr>>,
         rlc_config: &RlcConfig,
         blob_bytes: &[u8],
-        barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
-        self.data.assign(
-            layouter,
-            challenge_value,
-            rlc_config,
-            blob_bytes,
-            barycentric_assignments,
-        )
+        unimplemented!()
+    }
+
+    pub fn link(
+        layouter: &mut impl Layouter<Fr>,
+        blob_crts_limbs: &[[AssignedCell<Fr, Fr>; LIMBS]],
+        barycentric_crts: &[CRTInteger<Fr>],
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 }
 
