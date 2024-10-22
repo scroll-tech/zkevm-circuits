@@ -22,7 +22,6 @@ use crate::{
         witgen::{process, MultiBlockProcessResult},
         BatchData, RlcConfig,
     },
-    constants::N_BYTES_U256,
     blob_consistency::{
         eip4844::{
             blob::PointEvaluationAssignments, get_blob_bytes, get_coefficients, get_versioned_hash,
@@ -30,6 +29,7 @@ use crate::{
         },
         BlobDataConfig,
     },
+    constants::N_BYTES_U256,
     decode_bytes,
     param::ConfigParams,
     BatchDataConfig, ChunkInfo, MAX_AGG_SNARKS,

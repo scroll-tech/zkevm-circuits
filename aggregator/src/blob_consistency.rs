@@ -11,17 +11,15 @@ use blob_data::{AssignedBlobDataExport, BlobDataConfig};
 #[cfg(feature = "da-avail")]
 mod avail;
 
-#[cfg(feature = "da-eip4844")]
+#[cfg(not(feature = "da-avail"))]
 mod eip4844;
 
 cfg_if! {
     if #[cfg(feature = "da-avail")] {
         // const DATA_AVAILABILITY: DataAvailibility = DataAvailibility::Avail;
         pub use avail::{BlobConsistencyConfig, BlobConsistencyWitness, BLOB_WIDTH};
-    } else if #[cfg(feature = "da-eip4844")] {
+    } else {
         // const DATA_AVAILABILITY: DataAvailibility = DataAvailibility::Eip4844;
         pub use eip4844::{BlobConsistencyConfig, BlobConsistencyWitness, BLOB_WIDTH};
-    } else {
-        compile_error!("no da feature flag set");
     }
 }

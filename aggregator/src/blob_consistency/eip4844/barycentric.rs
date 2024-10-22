@@ -1,3 +1,5 @@
+use super::{blob::BLOB_WIDTH, get_coefficients};
+use crate::constants::{BITS, LIMBS, N_BYTES_U256};
 use eth_types::{ToLittleEndian, U256};
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions},
@@ -16,8 +18,6 @@ use halo2_proofs::{
 use itertools::Itertools;
 use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
-use super::{blob::BLOB_WIDTH, get_coefficients};
-use crate::constants::{BITS, LIMBS, N_BYTES_U256};
 
 /// Base 2 logarithm of BLOB_WIDTH.
 const LOG_BLOB_WIDTH: usize = 12;
