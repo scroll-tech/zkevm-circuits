@@ -15,7 +15,6 @@ use snark_verifier::{
             fields::{fp::FpConfig, FieldChip},
             halo2_base::{
                 gates::{GateInstructions, RangeInstructions},
-                utils::fe_to_biguint,
                 AssignedValue, Context, ContextParams,
                 QuantumCell::Existing,
             },
@@ -34,12 +33,12 @@ use crate::{
     aggregation::{decoder::WORKED_EXAMPLE, witgen::process, BatchCircuitConfig, BatchData},
     batch::BatchHash,
     blob_consistency::BlobConsistencyConfig,
-    constants::{ACC_LEN, DIGEST_LEN, FIXED_PROTOCOL_HALO2, FIXED_PROTOCOL_SP1},
+    constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
     witgen::{zstd_encode, MultiBlockProcessResult},
-    ConfigParams, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
-    PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
+    ConfigParams, FixedProtocol, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH,
+    PI_CURRENT_STATE_ROOT, PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
 
 /// Batch circuit, the chunk aggregation routine below recursion circuit
@@ -63,14 +62,21 @@ pub struct BatchCircuit<const N_SNARKS: usize> {
     // batch hash circuit for which the snarks are generated
     // the chunks in this batch are also padded already
     pub batch_hash: BatchHash<N_SNARKS>,
+
+    /// The SNARK protocol from the halo2-based inner circuit route.
+    pub halo2_protocol: FixedProtocol,
+    /// The SNARK protocol from the sp1-based inner circuit route.
+    pub sp1_protocol: FixedProtocol,
 }
 
 impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
-    pub fn new(
+    pub fn new<P: Into<FixedProtocol>>(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
         batch_hash: BatchHash<N_SNARKS>,
+        halo2_protocol: P,
+        sp1_protocol: P,
     ) -> Result<Self, snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
@@ -128,6 +134,8 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
             flattened_instances,
             as_proof: Value::known(as_proof),
             batch_hash,
+            halo2_protocol: halo2_protocol.into(),
+            sp1_protocol: sp1_protocol.into(),
         })
     }
 
@@ -252,9 +260,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         log::trace!("{}-th instance: {:?}", i, e.value)
                     }
 
-                    loader
-                        .ctx_mut()
-                        .print_stats(&["snark aggregation"]);
+                    loader.ctx_mut().print_stats(&["snark aggregation"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
 
@@ -266,11 +272,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     log::info!("populating constants");
                     let mut preprocessed_polys_halo2 = Vec::with_capacity(7);
                     let mut preprocessed_polys_sp1 = Vec::with_capacity(7);
-                    let (fixed_preprocessed_polys_halo2, fixed_transcript_init_state_halo2) =
-                        FIXED_PROTOCOL_HALO2.clone();
-                    let (fixed_preprocessed_polys_sp1, fixed_transcript_init_state_sp1) =
-                        FIXED_PROTOCOL_SP1.clone();
-                    for (i, &preprocessed_poly) in fixed_preprocessed_polys_halo2.iter().enumerate()
+                    for (i, &preprocessed_poly) in
+                        self.halo2_protocol.preprocessed.iter().enumerate()
                     {
                         log::debug!("load const {i}");
                         preprocessed_polys_halo2.push(
@@ -280,7 +283,8 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         );
                         log::debug!("load const {i} OK");
                     }
-                    for (i, &preprocessed_poly) in fixed_preprocessed_polys_sp1.iter().enumerate() {
+                    for (i, &preprocessed_poly) in self.sp1_protocol.preprocessed.iter().enumerate()
+                    {
                         log::debug!("load const (sp1) {i}");
                         preprocessed_polys_sp1.push(
                             config
@@ -294,7 +298,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         .field_chip()
                         .range()
                         .gate()
-                        .assign_constant(&mut ctx, fixed_transcript_init_state_halo2)
+                        .assign_constant(&mut ctx, self.halo2_protocol.init_state)
                         .expect("IntegerInstructions::assign_constant infallible");
                     log::debug!("load transcript OK");
                     let transcript_init_state_sp1 = config
@@ -302,7 +306,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         .field_chip()
                         .range()
                         .gate()
-                        .assign_constant(&mut ctx, fixed_transcript_init_state_sp1)
+                        .assign_constant(&mut ctx, self.sp1_protocol.init_state)
                         .expect("IntegerInstructions::assign_constant infallible");
                     log::info!("populating constants OK");
 

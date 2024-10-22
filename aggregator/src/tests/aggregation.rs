@@ -209,6 +209,7 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
             })
             .collect_vec()
     };
+    let snark_protocol = real_snarks[0].protocol.clone();
 
     // ==========================
     // padded chunks
@@ -225,6 +226,8 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
         [real_snarks, padded_snarks].concat().as_ref(),
         rng,
         batch_hash,
+        &snark_protocol,
+        &snark_protocol,
     )
     .unwrap()
 }
@@ -293,6 +296,8 @@ fn build_batch_circuit_skip_encoding<const N_SNARKS: usize>() -> BatchCircuit<N_
             })
             .collect_vec()
     };
+    let snark_protocol = real_snarks[0].protocol.clone();
+
     // ==========================
     // padded chunks
     // ==========================
@@ -302,6 +307,8 @@ fn build_batch_circuit_skip_encoding<const N_SNARKS: usize>() -> BatchCircuit<N_
         [real_snarks, padded_snarks].concat().as_ref(),
         rng,
         batch_hash,
+        &snark_protocol,
+        &snark_protocol,
     )
     .unwrap()
 }
