@@ -1,6 +1,9 @@
 use crate::{
-    aggregation::{batch_data::N_BLOB_BYTES, POWS_OF_256},
-    blob_consistency::{eip4844::N_DATA_BYTES_PER_COEFFICIENT, BLOB_WIDTH},
+    aggregation::{
+        batch_data::{N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
+        POWS_OF_256,
+    },
+    blob_consistency::BLOB_WIDTH,
     RlcConfig,
 };
 use gadgets::util::Expr;

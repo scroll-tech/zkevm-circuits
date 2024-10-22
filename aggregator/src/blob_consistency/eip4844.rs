@@ -12,7 +12,10 @@ use blob::PointEvaluationAssignments;
 mod tests;
 
 use super::{AssignedBlobDataExport, BlobDataConfig};
-use crate::{constants::N_BYTES_U256, BatchData, RlcConfig};
+use crate::{
+    aggregation::batch_data::N_DATA_BYTES_PER_COEFFICIENT, constants::N_BYTES_U256, BatchData,
+    RlcConfig,
+};
 use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
 use halo2_base::{gates::range::RangeConfig, Context};
@@ -31,8 +34,6 @@ use std::sync::Arc;
 use zkevm_circuits::{table::U8Table, util::Challenges};
 
 pub const BLOB_WIDTH: usize = 4096;
-/// The number data bytes we pack each BLS12-381 scalar into. The most-significant byte is 0.
-pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
 pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 
 /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
