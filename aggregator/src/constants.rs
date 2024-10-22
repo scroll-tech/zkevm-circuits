@@ -1,6 +1,3 @@
-use halo2_proofs::halo2curves::bn256::{Fr, G1Affine};
-use std::sync::LazyLock;
-
 // A chain_id is u64 and uses 8 bytes
 pub(crate) const CHAIN_ID_LEN: usize = 8;
 
@@ -88,61 +85,3 @@ pub(crate) const BITS: usize = 88;
 /// If the input size is less than this, dummy snarks
 /// will be padded.
 pub const MAX_AGG_SNARKS: usize = 45;
-
-/// Alias for a list of G1 points.
-type PreprocessedPolyCommits = Vec<G1Affine>;
-/// Alias for the transcript's initial state.
-type TranscriptInitState = Fr;
-/// Alias for the fixed part of the protocol which consists of the commitments to the preprocessed
-/// polynomials and the initial state of the transcript.
-type FixedProtocol = (PreprocessedPolyCommits, TranscriptInitState);
-
-/// The [`Batch Circuit`] supports aggregation of up to [`MAX_AGG_SNARKS`] SNARKs, where either
-/// SNARK is of 2 kinds, namely:
-///
-/// 1. halo2-based [`SuperCircuit`] -> [`CompressionCircuit`] (wide) -> `CompressionCircuit` (thin)
-/// 2. sp1-based STARK -> halo2-based backend -> `CompressionCircuit` (thin)
-///
-/// For each SNARK witness provided for aggregation, we require that the commitments to the
-/// preprocessed polynomials and the transcript's initial state belong to a fixed set, one
-/// belonging to each of the above SNARK kinds.
-///
-/// Represents the fixed commitments to the preprocessed polynomials and the initial state of the
-/// transcript for [`ChunkKind::Halo2`].
-pub static FIXED_PROTOCOL_HALO2: LazyLock<FixedProtocol> = LazyLock::new(|| {
-    let name =
-        std::env::var("HALO2_CHUNK_PROTOCOL").unwrap_or("chunk_chunk_halo2.protocol".to_string());
-    let dir =
-        std::env::var("SCROLL_PROVER_ASSETS_DIR").unwrap_or("./tests/test_assets".to_string());
-    let path = std::path::Path::new(&dir).join(name);
-    let file = std::fs::File::open(&path).expect("could not open file");
-    let reader = std::io::BufReader::new(file);
-    let protocol: snark_verifier::Protocol<G1Affine> =
-        serde_json::from_reader(reader).expect("could not deserialise protocol");
-    (
-        protocol.preprocessed,
-        protocol
-            .transcript_initial_state
-            .expect("transcript initial state is None"),
-    )
-});
-
-/// Represents the fixed commitments to the preprocessed polynomials and the initial state of the
-/// transcript for [`ChunkKind::Sp1`].
-pub static FIXED_PROTOCOL_SP1: LazyLock<FixedProtocol> = LazyLock::new(|| {
-    let name =
-        std::env::var("SP1_CHUNK_PROTOCOL").unwrap_or("chunk_chunk_sp1.protocol".to_string());
-    let dir =
-        std::env::var("SCROLL_PROVER_ASSETS_DIR").unwrap_or("./tests/test_assets".to_string());
-    let path = std::path::Path::new(&dir).join(name);
-    let file = std::fs::File::open(&path).expect("could not open file");
-    let reader = std::io::BufReader::new(file);
-    let protocol: snark_verifier::Protocol<G1Affine> =
-        serde_json::from_reader(reader).expect("could not deserialise protocol");
-    (
-        protocol.preprocessed,
-        protocol
-            .transcript_initial_state
-            .expect("transcript initial state is None"),
-    )
-});

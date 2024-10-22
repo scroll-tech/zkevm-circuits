@@ -240,6 +240,8 @@ impl<'params> Prover<'params> {
             LayerId::Layer3.id(),
             LayerId::Layer3.degree(),
             batch_info,
+            &self.halo2_protocol,
+            &self.sp1_protocol,
             &layer2_snarks,
             output_dir,
         )?;
