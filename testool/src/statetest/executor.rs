@@ -159,7 +159,7 @@ fn check_post(
     Ok(())
 }
 
-fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
+pub fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     let tx_type = st.tx_type();
     let tx = st.build_tx();
 
