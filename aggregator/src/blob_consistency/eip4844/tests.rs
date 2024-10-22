@@ -23,7 +23,7 @@ use crate::{
         BatchData, RlcConfig,
     },
     constants::N_BYTES_U256,
-    data_availability::{
+    blob_consistency::{
         eip4844::{
             blob::PointEvaluationAssignments, get_blob_bytes, get_coefficients, get_versioned_hash,
             AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig,
@@ -152,11 +152,9 @@ impl Circuit<Fr> for BlobCircuit {
 
                 let point_eval =
                     PointEvaluationAssignments::new(&self.data, &blob_bytes, versioned_hash);
-                Ok(config.barycentric.assign(
-                    &mut ctx,
-                    &blob_bytes,
-                    point_eval.challenge_digest,
-                ))
+                Ok(config
+                    .barycentric
+                    .assign(&mut ctx, &blob_bytes, point_eval.challenge_digest))
             },
         )?;
 

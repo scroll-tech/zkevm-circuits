@@ -25,11 +25,9 @@ use zkevm_circuits::util::Challenges;
 use crate::{
     aggregation::{decoder::WORKED_EXAMPLE, witgen::process, BatchCircuitConfig, BatchData},
     batch::BatchHash,
+    blob_consistency::BlobConsistencyConfig,
     constants::{ACC_LEN, DIGEST_LEN},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
-    data_availability::{
-        BlobConsistencyConfig,
-    },
     util::parse_hash_digest_cells,
     witgen::{zstd_encode, MultiBlockProcessResult},
     ConfigParams, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,

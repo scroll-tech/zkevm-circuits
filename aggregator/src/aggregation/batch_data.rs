@@ -1,5 +1,5 @@
 use crate::{
-    aggregation::rlc::POWS_OF_256, constants::N_BYTES_U256, data_availability::BLOB_WIDTH,
+    aggregation::rlc::POWS_OF_256, blob_consistency::BLOB_WIDTH, constants::N_BYTES_U256,
     BatchHash, ChunkInfo, RlcConfig,
 };
 use eth_types::{H256, U256};

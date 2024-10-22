@@ -17,8 +17,8 @@ use zkevm_circuits::{
 };
 
 use crate::{
+    blob_consistency::BlobConsistencyConfig,
     constants::{BITS, LIMBS},
-    data_availability::BlobConsistencyConfig,
     param::ConfigParams,
     BatchDataConfig, DecoderConfig, DecoderConfigArgs, RlcConfig,
 };

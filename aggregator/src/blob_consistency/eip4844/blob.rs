@@ -68,7 +68,7 @@ impl PointEvaluationAssignments {
 mod tests {
     use super::*;
     use crate::{
-        data_availability::eip4844::{get_blob_bytes, get_versioned_hash},
+        blob_consistency::eip4844::{get_blob_bytes, get_versioned_hash},
         BatchHash, ChunkInfo, MAX_AGG_SNARKS,
     };
     use ethers_core::utils::keccak256;

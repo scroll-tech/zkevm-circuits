@@ -6,7 +6,7 @@ use ethers_core::utils::keccak256;
 use gadgets::{util::split_h256, Field};
 use serde::{Deserialize, Serialize};
 
-use crate::{aggregation::BatchData, chunk::ChunkInfo, data_availability::BlobConsistencyWitness};
+use crate::{aggregation::BatchData, blob_consistency::BlobConsistencyWitness, chunk::ChunkInfo};
 
 /// Batch header provides additional fields from the context (within recursion)
 /// for constructing the preimage of the batch hash.

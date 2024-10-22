@@ -16,11 +16,8 @@ use halo2_proofs::{
 use itertools::Itertools;
 use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
-
-use crate::{
-    constants::{BITS, LIMBS, N_BYTES_U256},
-    data_availability::eip4844::{get_coefficients, blob::BLOB_WIDTH},
-};
+use super::{blob::BLOB_WIDTH, get_coefficients};
+use crate::constants::{BITS, LIMBS, N_BYTES_U256};
 
 /// Base 2 logarithm of BLOB_WIDTH.
 const LOG_BLOB_WIDTH: usize = 12;
@@ -358,7 +355,7 @@ mod tests {
     use super::*;
     use crate::{
         aggregation::BatchData,
-        data_availability::eip4844::{get_blob_bytes, get_coefficients, KZG_TRUSTED_SETUP},
+        blob_consistency::eip4844::{get_blob_bytes, get_coefficients, KZG_TRUSTED_SETUP},
         MAX_AGG_SNARKS,
     };
     use c_kzg::{Blob as RethBlob, KzgProof};

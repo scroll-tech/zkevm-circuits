@@ -8,6 +8,8 @@ mod batch;
 mod recursion;
 // This module implements `Chunk` related data types.
 // A chunk is a list of blocks.
+/// Blob consistency checks
+pub mod blob_consistency;
 mod chunk;
 /// proof compression
 mod compression;
@@ -15,8 +17,6 @@ mod compression;
 mod constants;
 /// Core module for circuit assignment
 mod core;
-/// Data availibility checks
-pub mod data_availability;
 /// Parameters for compression circuit
 mod param;
 /// utilities
