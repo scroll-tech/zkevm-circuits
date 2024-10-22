@@ -6,6 +6,7 @@ use crate::{
 };
 use aggregator::{BatchCircuit, BatchHash};
 use anyhow::{anyhow, Result};
+use halo2_proofs::halo2curves::bn256::G1Affine;
 use rand::Rng;
 use snark_verifier_sdk::Snark;
 use std::env;
@@ -17,13 +18,26 @@ impl<'params> Prover<'params> {
         degree: u32,
         mut rng: impl Rng + Send,
         batch_info: BatchHash<N_SNARKS>,
+        halo2_protocol: &[u8],
+        sp1_protocol: &[u8],
         previous_snarks: &[Snark],
     ) -> Result<Snark> {
         env::set_var("AGGREGATION_CONFIG", layer_config_path(id));
 
-        let circuit: BatchCircuit<N_SNARKS> =
-            BatchCircuit::new(self.params(degree), previous_snarks, &mut rng, batch_info)
-                .map_err(|err| anyhow!("Failed to construct aggregation circuit: {err:?}"))?;
+        let halo2_protocol =
+            serde_json::from_slice::<snark_verifier::Protocol<G1Affine>>(halo2_protocol)?;
+        let sp1_protocol =
+            serde_json::from_slice::<snark_verifier::Protocol<G1Affine>>(sp1_protocol)?;
+
+        let circuit: BatchCircuit<N_SNARKS> = BatchCircuit::new(
+            self.params(degree),
+            previous_snarks,
+            &mut rng,
+            batch_info,
+            halo2_protocol,
+            sp1_protocol,
+        )
+        .map_err(|err| anyhow!("Failed to construct aggregation circuit: {err:?}"))?;
 
         self.gen_snark(id, degree, &mut rng, circuit, "gen_agg_snark")
     }
@@ -34,6 +48,8 @@ impl<'params> Prover<'params> {
         id: &str,
         degree: u32,
         batch_info: BatchHash<N_SNARKS>,
+        halo2_protocol: &[u8],
+        sp1_protocol: &[u8],
         previous_snarks: &[Snark],
         output_dir: Option<&str>,
     ) -> Result<Snark> {
@@ -48,7 +64,15 @@ impl<'params> Prover<'params> {
             Some(snark) => Ok(snark),
             None => {
                 let rng = gen_rng();
-                let result = self.gen_agg_snark(id, degree, rng, batch_info, previous_snarks);
+                let result = self.gen_agg_snark(
+                    id,
+                    degree,
+                    rng,
+                    batch_info,
+                    halo2_protocol,
+                    sp1_protocol,
+                    previous_snarks,
+                );
                 if let (Some(_), Ok(snark)) = (output_dir, &result) {
                     write_snark(&file_path, snark);
                 }
