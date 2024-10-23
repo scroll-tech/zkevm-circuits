@@ -137,10 +137,7 @@ impl CircuitCapacityChecker {
             self.acc_row_usage.clone()
         }
     }
-    pub fn estimate_circuit_capacity(
-        &mut self,
-        trace: BlockTrace,
-    ) -> Result<RowUsage, anyhow::Error> {
+    pub fn estimate_circuit_capacity(&mut self, trace: BlockTrace) -> anyhow::Result<RowUsage> {
         let (mut estimate_builder, codedb_prev) =
             if let Some((code_db, sdb, mpt_state)) = self.builder_ctx.take() {
                 // here we create a new builder for another (sealed) witness block

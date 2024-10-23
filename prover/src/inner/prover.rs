@@ -2,8 +2,8 @@ use crate::{
     common,
     config::INNER_DEGREE,
     io::serialize_vk,
-    utils::{chunk_trace_to_witness_block, gen_rng},
-    zkevm::circuit::TargetCircuit,
+    utils::gen_rng,
+    zkevm::circuit::{chunk_trace_to_witness_block, TargetCircuit},
     Proof,
 };
 use anyhow::Result;

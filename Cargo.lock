@@ -3615,6 +3615,7 @@ dependencies = [
  "sha2",
  "snark-verifier",
  "snark-verifier-sdk",
+ "thiserror",
  "zkevm-circuits",
 ]
 

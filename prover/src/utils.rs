@@ -1,8 +1,5 @@
 #![allow(deprecated)]
-use crate::{
-    types::BlockTraceJsonRpcResult,
-    zkevm::circuit::{block_traces_to_witness_block, print_chunk_stats},
-};
+use crate::types::BlockTraceJsonRpcResult;
 use anyhow::{bail, Result};
 use chrono::Utc;
 use eth_types::l2_types::BlockTrace;
@@ -125,14 +122,6 @@ pub fn metric_of_witness_block(block: &Block) -> ChunkMetric {
         num_tx: block.txs.len(),
         num_step: block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>(),
     }
-}
-
-pub fn chunk_trace_to_witness_block(chunk_trace: Vec<BlockTrace>) -> Result<Block> {
-    if chunk_trace.is_empty() {
-        bail!("Empty chunk trace");
-    }
-    print_chunk_stats(&chunk_trace);
-    block_traces_to_witness_block(chunk_trace)
 }
 
 // Return the output dir.
