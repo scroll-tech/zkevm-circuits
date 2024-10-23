@@ -1,12 +1,14 @@
 #[cfg(feature = "scroll")]
 mod capacity_checker;
 pub mod circuit;
+mod error;
 mod prover;
 mod verifier;
 
 pub use self::prover::Prover;
 #[cfg(feature = "scroll")]
 pub use capacity_checker::{CircuitCapacityChecker, RowUsage};
+pub use error::ChunkProverError;
 use serde::{Deserialize, Serialize};
 pub use verifier::Verifier;
 

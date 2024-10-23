@@ -1,12 +1,19 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    common, config::LayerId, consts::CHUNK_VK_FILENAME, io::try_to_read, proof::compare_chunk_info,
-    types::ChunkProvingTask, utils::chunk_trace_to_witness_block,
-    zkevm::circuit::calculate_row_usage_of_witness_block, ChunkProof,
+    common,
+    config::LayerId,
+    consts::CHUNK_VK_FILENAME,
+    io::try_to_read,
+    proof::compare_chunk_info,
+    types::ChunkProvingTask,
+    zkevm::{
+        circuit::{calculate_row_usage_of_witness_block, chunk_trace_to_witness_block},
+        ChunkProverError, RowUsage,
+    },
+    ChunkProof,
 };
 use aggregator::ChunkInfo;
-use anyhow::Result;
 use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
 
 #[derive(Debug)]
@@ -67,62 +74,64 @@ impl<'params> Prover<'params> {
     pub fn gen_chunk_proof(
         &mut self,
         chunk: ChunkProvingTask,
-        chunk_identifier: Option<&str>,
+        chunk_id: Option<&str>,
         inner_id: Option<&str>,
         output_dir: Option<&str>,
-    ) -> Result<ChunkProof> {
+    ) -> Result<ChunkProof, ChunkProverError> {
         assert!(!chunk.is_empty());
 
-        let chunk_identifier =
-            chunk_identifier.map_or_else(|| chunk.identifier(), |name| name.to_string());
+        let chunk_id = chunk_id.map_or_else(|| chunk.identifier(), |name| name.to_string());
 
-        let chunk_proof = match output_dir
-            .and_then(|output_dir| ChunkProof::from_json_file(output_dir, &chunk_identifier).ok())
-        {
-            Some(proof) => Ok(proof),
-            None => {
-                let witness_block = chunk_trace_to_witness_block(chunk.block_traces)?;
-                let row_usage = calculate_row_usage_of_witness_block(&witness_block)?;
-                log::info!("Got witness block");
+        let cached_proof =
+            output_dir.and_then(|dir| ChunkProof::from_json_file(dir, &chunk_id).ok());
 
-                let chunk_info = ChunkInfo::from_witness_block(&witness_block, false);
-                if let Some(chunk_info_input) = chunk.chunk_info.as_ref() {
-                    compare_chunk_info(
-                        &format!("gen_chunk_proof {chunk_identifier:?}"),
-                        &chunk_info,
-                        chunk_info_input,
-                    )?;
-                }
-                let snark = self.prover_impl.load_or_gen_final_chunk_snark(
-                    &chunk_identifier,
-                    &witness_block,
-                    inner_id,
-                    output_dir,
-                )?;
+        let chunk_proof = cached_proof.unwrap_or({
+            let witness_block = chunk_trace_to_witness_block(chunk.block_traces)?;
+            log::info!("Got witness block");
 
-                self.check_vk();
-
-                let result = ChunkProof::new(
-                    snark,
-                    self.prover_impl.pk(LayerId::Layer2.id()),
-                    chunk_info,
-                    chunk.chunk_kind,
-                    row_usage,
-                );
-
-                if let (Some(output_dir), Ok(proof)) = (output_dir, &result) {
-                    proof.dump(output_dir, &chunk_identifier)?;
-                }
-
-                result
+            let sub_circuit_row_usages = calculate_row_usage_of_witness_block(&witness_block)?;
+            let row_usage = RowUsage::from_row_usage_details(sub_circuit_row_usages.clone());
+            if !row_usage.is_ok {
+                return Err(ChunkProverError::CircuitCapacityOverflow(row_usage));
             }
-        }?;
+
+            let chunk_info = ChunkInfo::from_witness_block(&witness_block, false);
+            if let Some(chunk_info_input) = chunk.chunk_info.as_ref() {
+                compare_chunk_info(
+                    &format!("gen_chunk_proof {chunk_id:?}"),
+                    &chunk_info,
+                    chunk_info_input,
+                )?;
+            }
+            let snark = self
+                .prover_impl
+                .load_or_gen_final_chunk_snark(&chunk_id, &witness_block, inner_id, output_dir)
+                .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
+
+            self.check_vk();
+
+            let result = ChunkProof::new(
+                snark,
+                self.prover_impl.pk(LayerId::Layer2.id()),
+                chunk_info,
+                chunk.chunk_kind,
+                sub_circuit_row_usages,
+            );
+
+            if let (Some(output_dir), Ok(proof)) = (output_dir, &result) {
+                proof
+                    .dump(output_dir, &chunk_id)
+                    .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
+            }
+
+            result.map_err(|e| ChunkProverError::Custom(e.to_string()))?
+        });
 
         if let Some(verifier) = &self.verifier {
             if !verifier.verify_chunk_proof(chunk_proof.clone()) {
-                anyhow::bail!("chunk prover cannot generate valid proof");
+                return Err(String::from("chunk proof verification failed").into());
             }
-            log::info!("verify_chunk_proof done");
+            log::info!("chunk proof verified OK");
         }
 
         Ok(chunk_proof)
