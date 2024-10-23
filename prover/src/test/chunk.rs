@@ -30,7 +30,7 @@ pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
     let mut prover = CHUNK_PROVER.lock().expect("poisoned chunk-prover");
 
     let proof = prover
-        .gen_chunk_proof(chunk, None, None, None)
+        .gen_halo2_chunk_proof(chunk, None, None, None)
         .unwrap_or_else(|err| panic!("{desc}: failed to generate chunk snark: {err}"));
     log::info!("{desc}: generated chunk proof");
 
@@ -41,7 +41,7 @@ pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
         verifier
     };
 
-    let verified = verifier.verify_chunk_proof(proof.clone());
+    let verified = verifier.verify_chunk_proof(&proof);
     assert!(verified, "{desc}: failed to verify chunk snark");
 
     log::info!("{desc}: chunk-prove END");

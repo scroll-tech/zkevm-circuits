@@ -11,22 +11,20 @@ pub struct BlockTraceJsonRpcResult {
 }
 pub use eth_types::base64;
 
-use crate::{BatchProof, ChunkKind, ChunkProof};
+use crate::{BatchProof, ChunkProof};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChunkProvingTask {
     /// Prover can check `chunk_info` is consistent with block traces
     pub chunk_info: Option<ChunkInfo>,
     pub block_traces: Vec<BlockTrace>,
-    pub chunk_kind: ChunkKind,
 }
 
 impl ChunkProvingTask {
-    pub fn new(block_traces: Vec<BlockTrace>, chunk_kind: ChunkKind) -> Self {
+    pub fn new(block_traces: Vec<BlockTrace>) -> Self {
         Self {
             block_traces,
             chunk_info: None,
-            chunk_kind,
         }
     }
     pub fn is_empty(&self) -> bool {

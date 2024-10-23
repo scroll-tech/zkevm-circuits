@@ -41,7 +41,7 @@ impl<'params> Verifier<'params> {
         verifier.into()
     }
 
-    pub fn verify_chunk_proof(&self, proof: ChunkProof) -> bool {
+    pub fn verify_chunk_proof(&self, proof: &ChunkProof) -> bool {
         self.inner.verify_snark(proof.to_snark())
     }
 }
