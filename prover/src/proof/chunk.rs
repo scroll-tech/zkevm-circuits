@@ -7,7 +7,7 @@ use snark_verifier::Protocol;
 use snark_verifier_sdk::Snark;
 
 /// The innermost SNARK belongs to the following variants.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum ChunkKind {
     /// halo2-based SuperCircuit.
     Halo2,
@@ -100,13 +100,13 @@ impl ChunkProof {
         dump_as_json(dir, &filename, &self)
     }
 
-    pub fn to_snark(self) -> Snark {
+    pub fn to_snark(&self) -> Snark {
         let instances = self.proof.instances();
         let protocol = serde_json::from_slice::<Protocol<G1Affine>>(&self.protocol).unwrap();
 
         Snark {
             protocol,
-            proof: self.proof.proof,
+            proof: self.proof.proof.clone(),
             instances,
         }
     }

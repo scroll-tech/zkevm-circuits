@@ -11,10 +11,11 @@ use crate::{
         circuit::{calculate_row_usage_of_witness_block, chunk_trace_to_witness_block},
         ChunkProverError, RowUsage,
     },
-    ChunkProof,
+    ChunkKind, ChunkProof,
 };
 use aggregator::ChunkInfo;
 use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
+use snark_verifier_sdk::Snark;
 
 #[derive(Debug)]
 pub struct Prover<'params> {
@@ -71,7 +72,7 @@ impl<'params> Prover<'params> {
     ///     If it is not set, default value(first block number of this chuk) will be used.
     ///   id:
     ///     TODO(zzhang). clean this. I think it can only be None or Some(0)...
-    pub fn gen_chunk_proof(
+    pub fn gen_halo2_chunk_proof(
         &mut self,
         chunk: ChunkProvingTask,
         chunk_id: Option<&str>,
@@ -114,7 +115,7 @@ impl<'params> Prover<'params> {
                 snark,
                 self.prover_impl.pk(LayerId::Layer2.id()),
                 chunk_info,
-                chunk.chunk_kind,
+                ChunkKind::Halo2,
                 sub_circuit_row_usages,
             );
 
@@ -128,7 +129,72 @@ impl<'params> Prover<'params> {
         });
 
         if let Some(verifier) = &self.verifier {
-            if !verifier.verify_chunk_proof(chunk_proof.clone()) {
+            if !verifier.verify_chunk_proof(&chunk_proof) {
+                return Err(String::from("chunk proof verification failed").into());
+            }
+            log::info!("chunk proof verified OK");
+        }
+
+        Ok(chunk_proof)
+    }
+
+    /// Generates a chunk proof by compressing the provided SNARK. The generated proof uses the
+    /// [`CompressionCircuit`][aggregator::CompressionCircuit] to compress the supplied
+    /// [`SNARK`][snark_verifier_sdk::Snark] only once using thin-compression parameters.
+    ///
+    /// The [`ChunkProof`] represents the Layer-2 proof in Scroll's proving pipeline and the
+    /// generated SNARK can then be used as inputs to the [`BatchCircuit`][aggregator::BatchCircuit].
+    ///
+    /// This method should be used iff the input SNARK was generated from a halo2-backend for Sp1.
+    /// In order to construct a chunk proof via the halo2-based
+    /// [`SuperCircuit`][zkevm_circuits::super_circuit::SuperCircuit], please use [`gen_chunk_proof`][Self::gen_chunk_proof].
+    pub fn gen_sp1_chunk_proof(
+        &mut self,
+        inner_snark: Snark,
+        chunk: ChunkProvingTask,
+        chunk_id: Option<&str>,
+        output_dir: Option<&str>,
+    ) -> Result<ChunkProof, ChunkProverError> {
+        assert!(!chunk.is_empty());
+
+        let chunk_id = chunk_id.map_or_else(|| chunk.identifier(), |name| name.to_string());
+
+        let snark = self
+            .prover_impl
+            .load_or_gen_comp_snark(
+                &chunk_id,
+                LayerId::Layer2.id(),
+                true,
+                LayerId::Layer2.degree(),
+                inner_snark,
+                output_dir,
+            )
+            .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
+
+        self.check_vk();
+
+        let chunk_info = chunk.chunk_info.unwrap_or({
+            let witness_block = chunk_trace_to_witness_block(chunk.block_traces)?;
+            ChunkInfo::from_witness_block(&witness_block, false)
+        });
+
+        let chunk_proof = ChunkProof::new(
+            snark,
+            self.prover_impl.pk(LayerId::Layer2.id()),
+            chunk_info,
+            ChunkKind::Sp1,
+            vec![], // no row usages for ChunkKind::Sp1
+        )
+        .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
+
+        if let Some(output_dir) = output_dir {
+            chunk_proof
+                .dump(output_dir, &chunk_id)
+                .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
+        }
+
+        if let Some(verifier) = &self.verifier {
+            if !verifier.verify_chunk_proof(&chunk_proof) {
                 return Err(String::from("chunk proof verification failed").into());
             }
             log::info!("chunk proof verified OK");
