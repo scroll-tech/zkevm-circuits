@@ -1,4 +1,3 @@
-use crate::zkevm::{ChunkProverError, SubCircuitRowUsage};
 use bus_mapping::{circuit_input_builder::CircuitInputBuilder, Error as CircuitBuilderError};
 use eth_types::{l2_types::BlockTrace, ToWord};
 use itertools::Itertools;
@@ -9,6 +8,10 @@ use zkevm_circuits::{
     witness::block_convert,
 };
 
+use crate::zkevm::{ChunkProverError, SubCircuitRowUsage};
+
+/// Returns the row-usage for all sub-circuits in the process of applying the entire witness block
+/// to the super circuit.
 pub fn calculate_row_usage_of_witness_block(
     witness_block: &Block,
 ) -> Result<Vec<SubCircuitRowUsage>, ChunkProverError> {
@@ -45,14 +48,17 @@ pub fn calculate_row_usage_of_witness_block(
         .collect_vec())
 }
 
-pub fn dummy_witness_block() -> anyhow::Result<Block> {
-    log::debug!("generate dummy witness block");
+/// Generate a dummy witness block to eventually generate proving key and verifying key for the
+/// target circuit without going through the expensive process of actual witness assignment.
+pub fn dummy_witness_block() -> Block {
     let dummy_chain_id = 0;
-    let witness_block = zkevm_circuits::witness::dummy_witness_block(dummy_chain_id);
-    log::debug!("generate dummy witness block done");
-    Ok(witness_block)
+    zkevm_circuits::witness::dummy_witness_block(dummy_chain_id)
 }
 
+/// Build a witness block from block traces for all blocks in the chunk.
+///
+/// Kind of a duplication of [`self::chunk_trace_to_witness_block`], so should eventually be
+/// deprecated.
 pub fn block_traces_to_witness_block(
     block_traces: Vec<BlockTrace>,
 ) -> Result<Block, ChunkProverError> {
@@ -103,6 +109,7 @@ pub fn block_traces_to_witness_block(
     Ok(witness_block)
 }
 
+/// Build a witness block from block traces for all blocks in the chunk.
 pub fn chunk_trace_to_witness_block(
     chunk_trace: Vec<BlockTrace>,
 ) -> Result<Block, ChunkProverError> {

@@ -1,19 +1,21 @@
 #[cfg(feature = "scroll")]
 mod capacity_checker;
-pub mod circuit;
-mod error;
-mod prover;
-mod verifier;
-
-pub use self::prover::Prover;
 #[cfg(feature = "scroll")]
-pub use capacity_checker::{CircuitCapacityChecker, RowUsage};
+pub use capacity_checker::{CircuitCapacityChecker, RowUsage, SubCircuitRowUsage};
+
+pub mod circuit;
+
+mod error;
 pub use error::ChunkProverError;
-use serde::{Deserialize, Serialize};
+
+mod prover;
+pub use prover::Prover;
+
+mod verifier;
 pub use verifier::Verifier;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SubCircuitRowUsage {
-    pub name: String,
-    pub row_number: usize,
-}
+/// Alias to be re-exported.
+pub type ChunkProver<'a> = Prover<'a>;
+
+/// Alias to be re-exported.
+pub type ChunkVerifier<'a> = Verifier<'a>;
