@@ -23,12 +23,18 @@ pub mod types;
 pub mod utils;
 pub mod zkevm;
 
+use std::collections::BTreeMap;
+
 pub use aggregator::{check_chunk_hashes, BatchData, BatchHash, BatchHeader, MAX_AGG_SNARKS};
 pub use common::{ChunkInfo, CompressionCircuit};
 pub use eth_types;
 pub use eth_types::l2_types::BlockTrace;
 pub use evm::deploy_and_call;
+use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
 pub use proof::{BatchProof, BundleProof, ChunkKind, ChunkProof, EvmProof, Proof};
 pub use snark_verifier_sdk::{CircuitExt, Snark};
 pub use types::{BatchProvingTask, BundleProvingTask, ChunkProvingTask, WitnessBlock};
 pub use zkevm_circuits;
+
+/// Alias for convenience.
+pub type ParamsMap = BTreeMap<u32, ParamsKZG<Bn256>>;

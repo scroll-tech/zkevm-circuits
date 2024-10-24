@@ -128,7 +128,7 @@ impl<'params> Prover<'params> {
                 .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
 
             // Sanity check on the verifying key used at Layer-2.
-            self.check_vk();
+            self.check_vk()?;
 
             // Construct the chunk proof.
             let chunk_proof = ChunkProof::new(
@@ -199,7 +199,7 @@ impl<'params> Prover<'params> {
             .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
 
         // Sanity check on the verifying key used at Layer-2.
-        self.check_vk();
+        self.check_vk()?;
 
         // We reconstruct some metadata to be attached with the chunk proof.
         let chunk_info = chunk.chunk_info.unwrap_or({
@@ -243,17 +243,27 @@ impl<'params> Prover<'params> {
     /// Sanity check for the [`VerifyinKey`][halo2_proofs::plonk::VerifyingKey] used to generate
     /// Layer-2 SNARK that is wrapped inside the [`ChunkProof`]. The prover generated VK is
     /// expected to match the VK used to initialise the prover.
-    fn check_vk(&self) {
+    fn check_vk(&self) -> Result<(), ChunkProverError> {
         if let Some(expected_vk) = self.raw_vk.as_ref() {
-            if let Some(generated_vk) = self.prover_impl.raw_vk(LayerId::Layer2.id()) {
+            let base64_exp_vk = base64::encode(expected_vk);
+            if let Some(generated_vk) = self.prover_impl.raw_vk(LayerId::Layer2.id()).as_ref() {
+                let base64_gen_vk = base64::encode(generated_vk);
                 if generated_vk.ne(expected_vk) {
                     log::error!(
                         "ChunkProver: VK mismatch! found={}, expected={}",
-                        base64::encode(generated_vk),
-                        base64::encode(expected_vk),
+                        base64_gen_vk,
+                        base64_exp_vk,
                     );
+                    return Err(ChunkProverError::VerifyingKeyMismatch(
+                        base64_gen_vk,
+                        base64_exp_vk,
+                    ));
                 }
+            } else {
+                return Err(ChunkProverError::VerifyingKeyNotFound(base64_exp_vk));
             }
         }
+
+        Ok(())
     }
 }
