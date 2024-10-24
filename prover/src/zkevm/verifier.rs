@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env};
+use std::env;
 
 use aggregator::CompressionCircuit;
 use halo2_proofs::{
@@ -12,11 +12,8 @@ use crate::{
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
     consts::chunk_vk_filename,
     io::force_to_read,
-    ChunkProof,
+    ChunkProof, ParamsMap,
 };
-
-/// Alias for a map of degree to KZG setup parameters.
-type ParamsMap = BTreeMap<u32, ParamsKZG<Bn256>>;
 
 /// Verifier capable of verifying a [`ChunkProof`].
 #[derive(Debug)]

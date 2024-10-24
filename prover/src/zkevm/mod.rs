@@ -14,8 +14,8 @@ pub use prover::Prover;
 mod verifier;
 pub use verifier::Verifier;
 
-/// Alias to be re-exported.
+/// Alias for convenience.
 pub type ChunkProver<'a> = Prover<'a>;
 
-/// Alias to be re-exported.
+/// Alias for convenience.
 pub type ChunkVerifier<'a> = Verifier<'a>;

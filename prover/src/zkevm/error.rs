@@ -17,6 +17,13 @@ pub enum ChunkProverError {
     /// [halo2_error]: halo2_proofs::plonk::Error
     #[error(transparent)]
     Halo2(#[from] halo2_proofs::plonk::Error),
+    /// Error indicating that the verifying key found post proof generation does not match the
+    /// expected verifying key.
+    #[error("verifying key mismatch: found={0}, expected={1}")]
+    VerifyingKeyMismatch(String, String),
+    /// Error indicating that no verifying key was found post proof generation.
+    #[error("verifying key not found: expected={0}")]
+    VerifyingKeyNotFound(String),
     /// Represents all other custom errors.
     #[error("custom error: {0}")]
     Custom(String),
