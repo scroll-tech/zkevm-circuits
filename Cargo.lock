@@ -2106,7 +2106,7 @@ dependencies = [
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=ecc_double_p256#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=ecc_double_p256#f533846c55602aea51cfacbb7b30cf46479c1446"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -2121,7 +2121,7 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=ecc_double_p256#3fcd22ba5e433cd57261028630a6bc534dc57e91"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=ecc_double_p256#f533846c55602aea51cfacbb7b30cf46479c1446"
 dependencies = [
  "ff",
  "group",
