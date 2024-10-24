@@ -43,6 +43,7 @@ where
         modulus::<SF>(),
     );
     let n = scalar_chip.load_constant(ctx, scalar_chip.p.to_biguint().unwrap());
+    println!("n of scalar_chip {:?}", n);
 
     // check whether the pubkey is (0, 0), i.e. in the case of ecrecover, no pubkey could be
     // recovered.
@@ -72,12 +73,19 @@ where
         .gate()
         .or(ctx, Existing(r_is_zero), Existing(r_in_range));
     let s_is_zero = scalar_chip.is_soft_zero(ctx, s);
+
     let s_in_range = scalar_chip.is_soft_nonzero(ctx, s);
     let s_is_valid = base_chip
         .range()
         .gate()
         .or(ctx, Existing(s_is_zero), Existing(s_in_range));
 
+    println!("r {:?}", r);
+    println!("s {:?}", s);
+    println!("pub_key {:?}", pubkey);
+    println!("msg_hash {:?}", msghash);
+    println!("r_is_valid {:?}", r_is_valid);
+    println!("s_is_valid {:?}", s_is_valid);
     // load required constants
     let zero = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::ZERO));
     let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::ONE));
@@ -95,9 +103,12 @@ where
     let u1 = scalar_chip.divide(ctx, msghash, &s_prime);
     let u1 = scalar_chip.select(ctx, &zero, &u1, &s_is_zero);
 
+    println!("u1 after: {:?}", u1);
+
     // compute u2 = r * s^{-1} mod n
     let u2 = scalar_chip.divide(ctx, r, &s_prime);
     let u2 = scalar_chip.select(ctx, &zero, &u2, &s_is_zero);
+    println!("u2 after: {:?}", u2);
 
     // we want to compute u1*G + u2*PK, there are two edge cases
     // 1. either u1 or u2 is 0; we use binary selections to handle the this case
@@ -108,7 +119,7 @@ where
     // =================================
     let u1_is_zero = scalar_chip.is_zero(ctx, &u1);
     let u1_prime = scalar_chip.select(ctx, &one, &u1, &u1_is_zero);
-    let u1_mul = fixed_base::scalar_multiply::<F, _, _>(
+    let u1_mul_affine = fixed_base::scalar_multiply::<F, _, GA>(
         base_chip,
         ctx,
         &GA::generator(),
@@ -116,13 +127,19 @@ where
         base_chip.limb_bits,
         fixed_window_bits,
     );
-    let u1_mul = ecc_chip.select(ctx, &point_at_infinity, &u1_mul, &u1_is_zero);
+    println!("u1_mul point {:?}", u1_mul_affine);
+    println!("u1_is_zero {:?}", u1_is_zero);
+
+    let u1_mul = ecc_chip.select(ctx, &point_at_infinity, &u1_mul_affine, &u1_is_zero);
 
     // compute u2 * pubkey
     let u2_prime = scalar_chip.select(ctx, &one, &u2, &s_is_zero);
     let pubkey_prime = ecc_chip.load_random_point::<GA>(ctx);
     let pubkey_prime = ecc_chip.select(ctx, &pubkey_prime, pubkey, &is_pubkey_zero);
-    let u2_mul = scalar_multiply::<F, _>(
+    println!("u2_prime {:?}", u2_prime);
+    println!("pubkey_prime {:?}", pubkey_prime);
+
+    let u2_mul_affine = scalar_multiply::<F, _, GA>(
         base_chip,
         ctx,
         &pubkey_prime,
@@ -130,12 +147,16 @@ where
         base_chip.limb_bits,
         var_window_bits,
     );
+
+    println!("u2_mul_affine point {:?}", u2_mul_affine);
+
     let u2_is_zero =
         base_chip
             .range()
             .gate()
             .or(ctx, Existing(s_is_zero), Existing(is_pubkey_zero));
-    let u2_mul = ecc_chip.select(ctx, &point_at_infinity, &u2_mul, &u2_is_zero);
+    let u2_mul = ecc_chip.select(ctx, &point_at_infinity, &u2_mul_affine, &u2_is_zero);
+    println!("u2_is_zero {:?}", u2_is_zero);
 
     // =================================
     // case 2:
@@ -151,6 +172,8 @@ where
             .gate()
             .and(ctx, Existing(u1_is_zero), Existing(u2_is_zero));
     let u1_u2_x_eq = base_chip.is_equal(ctx, u1_mul.x(), u2_mul.x());
+
+    println!("u1_u2_x_eq {:?}", u1_u2_x_eq);
     let u1_u2_y_neg = {
         let u2_y_neg = base_chip.negate(ctx, u2_mul.y());
         base_chip.is_equal(ctx, u1_mul.y(), &u2_y_neg)
@@ -161,17 +184,21 @@ where
         Existing(u1_u2_x_eq),
         Existing(u1_u2_y_neg),
     );
+
+    println!("sum_is_infinity {:?}", sum_is_infinity);
+
     let sum_is_not_infinity = base_chip
         .gate()
         .not(ctx, QuantumCell::Existing(sum_is_infinity));
 
+    println!("sum_is_not_infinity {:?}", sum_is_not_infinity);
     // For a valid ECDSA signature, the x co-ordinate of u1.G + u2.Pk, i.e. x_3, MUST EQUAL r
     //
     // For ec_add:
     // P:(x_1, y_1) + Q:(x_2, y_2) == (x_3, y_3) we have:
     // - lambda == (y_2 - y_1) / (x_2 - x_1) (mod n)
     // - x_3 == (lambda * lambda) - x_1 - x_2 (mod n)
-    // - y_3 == lambda * (x_1 - x_3) - y_1 (mod n)
+    // - y_3 == lambda * (x_1 - x_3) + y_1 (mod n)
     let (x_3, y_3) = {
         // we implement divide_unsafe in a non-panicking way, lambda = dy/dx (mod n)
         let dx = base_chip.sub_no_carry(ctx, u2_mul.x(), u1_mul.x());
@@ -194,7 +221,9 @@ where
         let x_3 = base_chip.carry_mod(ctx, &x_3_no_carry);
         let dx_13 = base_chip.sub_no_carry(ctx, u1_mul.x(), &x_3);
         let lambda_dx_13 = base_chip.mul_no_carry(ctx, &lambda, &dx_13);
-        let y_3_no_carry = base_chip.sub_no_carry(ctx, &lambda_dx_13, u1_mul.y());
+        //let y_3_no_carry = base_chip.sub_no_carry(ctx, &lambda_dx_13, u1_mul.y());
+        let y_3_no_carry = base_chip.add_no_carry(ctx, &lambda_dx_13, u1_mul.y());
+
         let y_3 = base_chip.carry_mod(ctx, &y_3_no_carry);
 
         // edge cases
@@ -207,6 +236,10 @@ where
 
         (x_3, y_3)
     };
+
+    scalar_chip.enforce_less_than(ctx, &x_3);
+    println!("enforce_less_than x_3 {:?} ", x_3);
+
     let equal_check = base_chip.is_equal(ctx, &x_3, r);
 
     // TODO: maybe the big_less_than is optional?
@@ -246,8 +279,6 @@ where
         ],
     );
 
-    println!("r {:?}", r);
-    println!("s {:?}", s);
     println!("equal_check {:?}", equal_check);
     println!("x_3 {:?}", x_3);
     println!("y_3 {:?}", y_3);

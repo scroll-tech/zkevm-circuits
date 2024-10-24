@@ -50,8 +50,6 @@ pub fn sign<
 ) -> (Fq, Fq, u8) {
     let randomness_inv = Option::<Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Affine::generator();
-    // generator is indeed for r1 if call with r1 type.
-
     let sig_point = generator * randomness;
     let sig_v: bool = sig_point.to_affine().into_coordinates().1.is_odd().into();
 
@@ -89,19 +87,34 @@ pub fn verify<
     r: Fq,
     s: Fq,
     msg_hash: Fq,
-    // if pubkey is not recovered , v is not neccessary. 
-    v: Option<bool>, 
+    // if pubkey is provided rather than from recovered , v is not neccessary.
+    v: Option<bool>,
 ) -> bool {
+    println!("r {:?}", r);
+    println!("s {:?}", s);
+    println!("pub_key {:?}", pub_key);
+    println!("msg_hash {:?}", msg_hash);
     // Verify
     let s_inv = s.invert().unwrap();
     let u_1 = msg_hash * s_inv;
+    println!("verify u_1: {:?}", u_1);
     let u_2 = r * s_inv;
+    println!("verify u_2: {:?}", u_2);
 
     let g = Affine::generator();
-    let v_1 = g * u_1;
-    let v_2 = pub_key * u_2;
+    let u1_affine = g * u_1;
+    println!(
+        "verify u1_affine: {:?}",
+        u1_affine.to_affine().coordinates().unwrap()
+    );
 
-    let r_point = (v_1 + v_2).to_affine().coordinates().unwrap();
+    let u2_affine = pub_key * u_2;
+    println!(
+        "verify u2_affine: {:?}",
+        u2_affine.to_affine().coordinates().unwrap()
+    );
+
+    let r_point = (u1_affine + u2_affine).to_affine().coordinates().unwrap();
     let x_candidate = r_point.x();
     let r_candidate = mod_n(*x_candidate);
 

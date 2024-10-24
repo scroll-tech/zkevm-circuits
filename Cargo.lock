@@ -1183,6 +1183,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f55bf8e7b65898637379c1b74eb1551107c8294ed26d855ceb9fd1a09cfc9bc0"
 dependencies = [
  "const-oid",
+ "pem-rfc7468",
  "zeroize",
 ]
 
@@ -1317,6 +1318,7 @@ dependencies = [
  "ff",
  "generic-array",
  "group",
+ "pem-rfc7468",
  "pkcs8",
  "rand_core",
  "sec1",
@@ -2104,7 +2106,7 @@ dependencies = [
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=ecc_double_p256#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -2119,7 +2121,7 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#5e3a1c94d069c168febc4586fe6734e6b31b21bb"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=ecc_double_p256#3fcd22ba5e433cd57261028630a6bc534dc57e91"
 dependencies = [
  "ff",
  "group",
@@ -3067,6 +3069,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "p256"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder",
+ "sha2",
+]
+
+[[package]]
 name = "pairing"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3182,6 +3196,15 @@ checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest 0.10.7",
  "hmac",
+]
+
+[[package]]
+name = "pem-rfc7468"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88b39c9bfcfc231068454382784bb460aae594343fb030d46e9f50a645418412"
+dependencies = [
+ "base64ct",
 ]
 
 [[package]]
@@ -3441,6 +3464,15 @@ dependencies = [
  "lazy_static",
  "term",
  "unicode-width",
+]
+
+[[package]]
+name = "primeorder"
+version = "0.13.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
+dependencies = [
+ "elliptic-curve",
 ]
 
 [[package]]
@@ -4359,7 +4391,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#572ef69d1595fca82213d3b05e859eaf355a5fa1"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=check_p256_branch#e722703f7df2b12cb356162875dc1c169aedfcd1"
 dependencies = [
  "bytes",
  "ethereum-types",
@@ -4382,7 +4414,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#572ef69d1595fca82213d3b05e859eaf355a5fa1"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=check_p256_branch#e722703f7df2b12cb356162875dc1c169aedfcd1"
 dependencies = [
  "bincode",
  "ethereum-types",
@@ -5583,6 +5615,7 @@ dependencies = [
  "mpt-zktrie",
  "num",
  "num-bigint",
+ "p256",
  "paste",
  "poseidon-circuit",
  "pretty_assertions",

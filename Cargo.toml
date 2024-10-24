@@ -37,8 +37,8 @@ halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.
 halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
 poseidon-base = { package = "poseidon-base", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "main" }
-halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
-halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
+halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "ecc_double_p256", default-features=false, features=["halo2-pse","display"] }
+halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "ecc_double_p256", default-features=false, features=["halo2-pse","display"] }
 hex = "0.4"
 itertools = "0.11"
 libsecp256k1 = "0.7"
@@ -57,8 +57,8 @@ serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_stacker = "0.1"
 sha3 = "0.10"
-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop" }
-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "check_p256_branch" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "check_p256_branch", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
 strum = "0.25"
 strum_macros = "0.25"
 subtle = "2.4"
