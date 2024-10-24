@@ -31,7 +31,7 @@ use ethers_core::{
 use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
-    halo2curves::{group::ff::PrimeField, secp256k1},
+    halo2curves::{group::ff::PrimeField, secp256k1, secp256r1},
 };
 use num::Integer;
 use num_bigint::BigUint;
@@ -136,7 +136,8 @@ impl Transaction {
     }
 
     /// Sign data
-    pub fn sign_data(&self) -> Result<SignData, Error> {
+    /// TODO: check this method is used to sign p256 data later.
+    pub fn sign_data(&self) -> Result<SignData<secp256k1::Fq, secp256k1::Secp256k1Affine>, Error> {
         if self.r.is_zero() && self.s.is_zero() && self.v == 0 {
             return Ok(SignData::default());
         }

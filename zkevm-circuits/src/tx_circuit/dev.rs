@@ -120,7 +120,8 @@ impl<F: Field> TxCircuitTester<F> {
         TxCircuitTester::<F> {
             sig_circuit: SigCircuit {
                 max_verif: max_txs,
-                signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+                signatures_k1: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+                signatures_r1: vec![],
                 _marker: PhantomData,
             },
             tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, start_l1_queue_index, txs),

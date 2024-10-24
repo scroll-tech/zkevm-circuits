@@ -63,6 +63,10 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
+    halo2curves::{
+        secp256k1::{self, Secp256k1Affine},
+        secp256r1::{self, Secp256r1Affine},
+    },
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -3012,7 +3016,9 @@ impl<F: Field> TxCircuitConfig<F> {
         region: &mut Region<'_, F>,
         offset: &mut usize,
         tx: &Transaction,
-        sign_data: &SignData,
+        sign_data: &SignData<secp256k1::Fq, Secp256k1Affine>,
+        // TODO: refactor method `assign_fixed_rows` to `assign_fixed_rows<Fq, Affine>`
+        // or add more one parameter `assign_fixed_rows_r1`
         next_tx: Option<&Transaction>,
         total_l1_popped_before: u64,
         num_all_txs_acc: u64,
@@ -4032,7 +4038,7 @@ impl<F: Field> TxCircuit<F> {
             .collect::<Vec<Vec<u8>>>();
         inputs.extend_from_slice(&hash_datas);
 
-        let sign_datas: Vec<SignData> = self
+        let sign_datas = self
             .txs
             .iter()
             .chain(iter::once(&padding_tx))
@@ -4046,7 +4052,8 @@ impl<F: Field> TxCircuit<F> {
                     })
                 }
             })
-            .collect::<Result<Vec<SignData>, Error>>()?;
+            //  TODO: add p256 signature here ?
+            .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, Error>>()?;
         // Keccak inputs from SignVerify Chip
         let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
         inputs.extend_from_slice(&sign_verify_inputs);
@@ -4164,7 +4171,8 @@ impl<F: Field> TxCircuit<F> {
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
         start_l1_queue_index: u64,
-        sign_datas: Vec<SignData>,
+        sign_datas: Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
+        // TODO: add `sign_datas_r1" ?
         padding_txs: &[Transaction],
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         config.tx_rom_table.load(layouter)?;
@@ -4458,7 +4466,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 tx
             })
             .collect::<Vec<Transaction>>();
-        let sign_datas: Vec<SignData> = self
+        let sign_datas = self
             .txs
             .iter()
             .chain(padding_txs.iter())
@@ -4472,7 +4480,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                     })
                 }
             })
-            .collect::<Result<Vec<SignData>, Error>>()?;
+            .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, Error>>()?;
 
         // check if tx.caller_address == recovered_pk
         let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
@@ -4518,7 +4526,7 @@ pub(crate) fn get_sign_data(
     txs: &[Transaction],
     max_txs: usize,
     chain_id: usize,
-) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
+) -> Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, halo2_proofs::plonk::Error> {
     let padding_txs = (txs.len()..max_txs)
         .map(|i| {
             let mut tx = Transaction::dummy(chain_id as u64);
@@ -4526,7 +4534,7 @@ pub(crate) fn get_sign_data(
             tx
         })
         .collect::<Vec<Transaction>>();
-    let signatures: Vec<SignData> = txs
+    let signatures = txs
         .iter()
         .chain(padding_txs.iter())
         .map(|tx| {
@@ -4541,7 +4549,8 @@ pub(crate) fn get_sign_data(
                 })
             }
         })
-        .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
+        // TODO: add p256 signatures here ?
+        .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, halo2_proofs::plonk::Error>>()?;
     Ok(signatures)
 }
 

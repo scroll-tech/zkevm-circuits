@@ -24,6 +24,10 @@ use eth_types::{
     state_db::{CodeDB, StateDB},
     Address, ToLittleEndian, Word, H256, U256,
 };
+use halo2_proofs::halo2curves::{
+    secp256k1::{self, Secp256k1Affine},
+    secp256r1::{self, Secp256r1Affine},
+};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
@@ -150,21 +154,33 @@ impl Block {
     }
 
     /// Get signature (witness) from the block for tx signatures and ecRecover calls.
-    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
-        let mut signatures: Vec<SignData> = self
+    pub(crate) fn get_sign_data(
+        &self,
+        padding: bool,
+    ) -> Vec<SignData<secp256k1::Fq, Secp256k1Affine>> {
+        let mut signatures = self
             .txs
             .iter()
             // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
             .filter(|tx| !tx.tx_type.is_l1_msg())
             .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
-            .collect::<Vec<SignData>>();
+            .collect::<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>>();
         signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
         if padding && self.txs.len() < self.circuits_params.max_txs {
             // padding tx's sign data
             signatures.push(Transaction::dummy(self.chain_id).sign_data().unwrap());
         }
         signatures
+    }
+
+    /// Get signature (witness) from the block's p256Veirfy calls.
+    pub(crate) fn get_sign_data_p256(
+        &self,
+        padding: bool,
+    ) -> Vec<SignData<secp256r1::Fq, Secp256r1Affine>> {
+        // TODO: handle padding ?
+        self.precompile_events.get_p256_verify_events()
     }
 
     /// Get EcAdd operations from all precompiled contract calls in this block.
