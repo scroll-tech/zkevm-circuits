@@ -17,10 +17,10 @@ use zkevm_circuits::{
 };
 
 use crate::{
+    blob_consistency::BlobConsistencyConfig,
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, DecoderConfigArgs,
-    RlcConfig,
+    BatchDataConfig, DecoderConfig, DecoderConfigArgs, RlcConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -34,14 +34,12 @@ pub struct BatchCircuitConfig<const N_SNARKS: usize> {
     pub keccak_circuit_config: KeccakCircuitConfig<Fr>,    
     /// RLC config
     pub rlc_config: RlcConfig,
-    /// The blob data's config.
-    pub blob_data_config: BlobDataConfig<N_SNARKS>,
     /// The batch data's config.
     pub batch_data_config: BatchDataConfig<N_SNARKS>,
     /// The zstd decoder's config.
     pub decoder_config: DecoderConfig<1024, 512>,
-    /// Config to do the barycentric evaluation on blob polynomial.
-    pub barycentric: BarycentricEvaluationConfig,
+    /// Config check witness blob matches commitment to blob obtained from data availability provider.
+    pub blob_consistency_config: BlobConsistencyConfig<N_SNARKS>,
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
     /// - chain id (1 element)
@@ -99,9 +97,6 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
             params.degree as usize,
         );
 
-        // Barycentric.
-        let barycentric = BarycentricEvaluationConfig::construct(base_field_config.range.clone());
-
         let columns = keccak_circuit_config.cell_manager.columns();
         log::info!("keccak uses {} columns", columns.len(),);
 
@@ -120,7 +115,6 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
         let u8_table = U8Table::construct(meta);
         let range_table = RangeTable::construct(meta);
         let challenges_expr = challenges.exprs(meta);
-        let blob_data_config = BlobDataConfig::configure(meta, &challenges_expr, u8_table);
         let batch_data_config = BatchDataConfig::configure(
             meta,
             &challenges_expr,
@@ -131,6 +125,14 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
 
         // Zstd decoder.
         let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+
+        // Blob consistency.
+        let blob_consistency_config = BlobConsistencyConfig::construct(
+            meta,
+            &challenges_expr,
+            u8_table,
+            base_field_config.range.clone(),
+        );
 
         let pow2_table = Pow2Table::construct(meta);
         let range8 = RangeTable::construct(meta);
@@ -172,12 +174,11 @@ impl<const N_SNARKS: usize> BatchCircuitConfig<N_SNARKS> {
         Self {
             base_field_config,
             rlc_config,
-            blob_data_config,
             keccak_circuit_config,
             instance,
-            barycentric,
             batch_data_config,
             decoder_config,
+            blob_consistency_config,
         }
     }
 

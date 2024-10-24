@@ -11,6 +11,7 @@ gadgets = { path = "../gadgets" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features=false, features = ["debug-annotations", "parallel_syn"] }
 
 ark-std.workspace = true
+cfg-if.workspace = true
 ctor.workspace = true
 env_logger.workspace = true
 ethers-core.workspace = true
@@ -47,3 +48,4 @@ csv = "1.1"
 default = ["revm-precompile/c-kzg", "halo2_proofs/circuit-params"]
 display = []
 print-trace = ["ark-std/print-trace"]
+da-avail = []

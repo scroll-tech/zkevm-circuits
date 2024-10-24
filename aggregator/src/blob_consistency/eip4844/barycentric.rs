@@ -1,3 +1,5 @@
+use super::{blob::BLOB_WIDTH, get_coefficients};
+use crate::constants::{BITS, LIMBS, N_BYTES_U256};
 use eth_types::{ToLittleEndian, U256};
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions},
@@ -17,11 +19,6 @@ use itertools::Itertools;
 use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
 
-use crate::{
-    blob::{BLOB_WIDTH, N_BYTES_U256},
-    constants::{BITS, LIMBS},
-};
-
 /// Base 2 logarithm of BLOB_WIDTH.
 const LOG_BLOB_WIDTH: usize = 12;
 
@@ -29,6 +26,7 @@ pub static BLS_MODULUS: LazyLock<U256> = LazyLock::new(|| {
     U256::from_str_radix(Scalar::MODULUS, 16).expect("BLS_MODULUS from bls crate")
 });
 
+// does this need to be pub?
 pub static ROOTS_OF_UNITY: LazyLock<Vec<Scalar>> = LazyLock::new(|| {
     // https://github.com/ethereum/consensus-specs/blob/dev/specs/deneb/polynomial-commitments.md#constants
     let primitive_root_of_unity = Scalar::from(7);
@@ -101,9 +99,11 @@ impl BarycentricEvaluationConfig {
     pub fn assign(
         &self,
         ctx: &mut Context<Fr>,
-        blob: &[U256; BLOB_WIDTH],
+        bytes: &[u8],
         challenge_digest: U256,
     ) -> AssignedBarycentricEvaluationConfig {
+        let blob = get_coefficients(bytes);
+
         // some constants for later use.
         let one = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::one()));
         let blob_width = self
@@ -354,8 +354,8 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 mod tests {
     use super::*;
     use crate::{
-        blob::{BatchData, KZG_TRUSTED_SETUP},
-        eip4844::{get_blob_bytes, get_coefficients},
+        aggregation::BatchData,
+        blob_consistency::eip4844::{get_blob_bytes, get_coefficients, KZG_TRUSTED_SETUP},
         MAX_AGG_SNARKS,
     };
     use c_kzg::{Blob as RethBlob, KzgProof};
