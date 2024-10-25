@@ -608,7 +608,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
         powers_of_256: &[QuantumCell<F>],
         op: &EcMulOp,
-    ) -> EcMulDecomposed<F> {
+    ) -> EcMulDecomposed<F>
+// where C: CurveAffine<Base = Fq>,
+    {
         log::trace!("[ECC] ==> EcMul Assignment START:");
         log_context_cursor!(ctx);
 
@@ -650,7 +652,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcMul Inputs Assigned:");
         log_context_cursor!(ctx);
 
-        let point_r_got = ecc_chip.scalar_mult(
+        let point_r_got = ecc_chip.scalar_mult::<G1Affine>(
             ctx,
             &point_p,
             &scalar_s.scalar.limbs().to_vec(),
