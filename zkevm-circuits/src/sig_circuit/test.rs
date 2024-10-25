@@ -155,7 +155,7 @@ fn test_edge_cases() {
 #[test]
 fn sign_k1_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
-    use crate::sig_circuit::utils::MAX_NUM_SIG;
+    use crate::sig_circuit::utils::MAX_NUM_SIG_K1;
     use halo2_proofs::halo2curves::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -205,7 +205,7 @@ fn sign_k1_verify() {
         log::debug!("end of testing for msg_hash = 1");
     }
     // random msg_hash
-    let max_sigs = [1, 16, MAX_NUM_SIG];
+    let max_sigs = [1, 16, MAX_NUM_SIG_K1];
     for max_sig in max_sigs.iter() {
         log::debug!("testing for {} signatures", max_sig);
         let mut signatures = Vec::new();
@@ -238,7 +238,7 @@ fn sign_k1_verify() {
 #[test]
 fn p256_sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
-    use crate::sig_circuit::utils::MAX_NUM_SIG;
+    use crate::sig_circuit::utils::MAX_NUM_SIG_K1;
     use halo2_proofs::halo2curves::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -295,7 +295,7 @@ fn p256_sign_verify() {
     }
 
     // random msg_hash
-    let max_sigs = [1, 16, MAX_NUM_SIG];
+    let max_sigs = [1, 16, MAX_NUM_SIG_K1];
 
     for max_sig in max_sigs.iter() {
         log::debug!("testing for {} signatures", max_sig);
@@ -430,7 +430,7 @@ fn p256_sign_verify() {
 #[test]
 fn sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
-    use crate::sig_circuit::utils::MAX_NUM_SIG;
+    use crate::sig_circuit::utils::MAX_NUM_SIG_K1;
     use halo2_proofs::halo2curves::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -543,14 +543,15 @@ fn sign_r1_with_rng(
 
 fn run<F: Field>(
     k: u32,
-    max_verif: usize,
+    max_verify_k1: usize,
+    max_verify_r1: usize,
     signatures_k1: Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
     signatures_r1: Vec<SignData<secp256r1::Fq, Secp256r1Affine>>,
 ) {
-    println!("signatures_r1 len {}", signatures_r1.len());
     // SignVerifyChip -> ECDSAChip -> MainGate instance column
     let circuit = SigCircuit::<F> {
-        max_verif,
+        max_verify_k1,
+        max_verify_r1,
         signatures_k1,
         signatures_r1,
         _marker: PhantomData,

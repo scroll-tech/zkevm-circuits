@@ -107,13 +107,13 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         #[cfg(feature = "onephase")]
-        let num_advice = [calc_required_advices(MAX_NUM_SIG)];
+        let num_advice = [calc_required_advices(MAX_NUM_SIG_K1)];
         #[cfg(not(feature = "onephase"))]
         // need an additional phase 2 column/basic gate to hold the witnesses during RLC
         // computations
-        let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
+        let num_advice = [calc_required_advices(MAX_NUM_SIG_K1), 1];
 
-        let num_lookup_advice = [calc_required_lookup_advices(MAX_NUM_SIG)];
+        let num_lookup_advice = [calc_required_lookup_advices(MAX_NUM_SIG_K1)];
 
         #[cfg(feature = "onephase")]
         log::info!("configuring ECDSA chip with single phase");
@@ -255,11 +255,10 @@ impl<F: Field> SigCircuitConfig<F> {
 /// key corresponding to an Ethereum Address.
 #[derive(Clone, Debug, Default)]
 pub struct SigCircuit<F: Field> {
-    /// Max number of verifications
-    pub max_verif: usize,
-    /// TODO: split max_verif to max_verify_k1 and max_verify_r1
-    /// pub max_verif_k1: usize,
-    /// pub max_verif_r1: usize,
+    /// Max number of k1 sig verifications
+    pub max_verify_k1: usize,
+    /// Max number of r1 sig verifications
+    pub max_verify_r1: usize,
     /// Without padding Secp256k1 signatures
     pub signatures_k1: Vec<SignData<Fq_K1, Secp256k1Affine>>,
     /// Without padding Secp256r1 signatures
@@ -272,10 +271,11 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
     fn new_from_block(block: &crate::witness::Block) -> Self {
-        assert!(block.circuits_params.max_txs <= MAX_NUM_SIG);
+        assert!(block.circuits_params.max_txs <= MAX_NUM_SIG_K1);
 
         SigCircuit {
-            max_verif: MAX_NUM_SIG,
+            max_verify_k1: MAX_NUM_SIG_K1,
+            max_verify_r1: MAX_NUM_SIG_R1,
             signatures_k1: block.get_sign_data(true),
             signatures_r1: block.get_sign_data_p256(true),
             _marker: Default::default(),
@@ -339,7 +339,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
         // circuit won't have more space for the padding tx's ECDSA verification. Then the
         // prover won't be able to produce any valid proof.
-        let max_num_verif = MAX_NUM_SIG - 1;
+        let max_num_verif = MAX_NUM_SIG_K1 - 1;
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
@@ -352,9 +352,10 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
 
 impl<F: Field> SigCircuit<F> {
     /// Return a new SigCircuit
-    pub fn new(max_verif: usize) -> Self {
+    pub fn new(max_verify_k1: usize, max_verify_r1: usize) -> Self {
         Self {
-            max_verif,
+            max_verify_k1: max_verify_k1,
+            max_verify_r1: max_verify_r1,
             signatures_k1: Vec::new(),
             signatures_r1: Vec::new(),
             _marker: PhantomData,
@@ -1031,11 +1032,11 @@ impl<F: Field> SigCircuit<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
         println!("come to assign");
-        if (signatures_k1.len() + signatures_r1.len()) > self.max_verif {
+        if (signatures_k1.len() + signatures_r1.len()) > self.max_verify {
             error!(
                 "signatures.len() = {} > max_verif = {}",
                 signatures_k1.len() + signatures_r1.len(),
-                self.max_verif
+                self.max_verify
             );
             return Err(Error::Synthesis);
         }
@@ -1062,7 +1063,7 @@ impl<F: Field> SigCircuit<F> {
                 let assigned_ecdsas_k1 = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
-                    .take(self.max_verif - signatures_r1.len())
+                    .take(self.max_verify - signatures_r1.len())
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_k1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipK1<F>>>, Error>>()?;
 
@@ -1081,7 +1082,7 @@ impl<F: Field> SigCircuit<F> {
                 let sign_data_k1_decomposed = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
-                    .take(self.max_verif - signatures_r1.len())
+                    .take(self.max_verify - signatures_r1.len())
                     .zip_eq(assigned_ecdsas_k1.iter())
                     .map(|(sign_data, assigned_ecdsa)| {
                         self.sign_data_decomposition_generic(
@@ -1129,7 +1130,7 @@ impl<F: Field> SigCircuit<F> {
                 ) = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
-                    .take(self.max_verif - signatures_r1.len() )
+                    .take(self.max_verify - signatures_r1.len() )
                     .zip_eq(assigned_ecdsas_k1.iter())
                     .zip_eq(sign_data_k1_decomposed.iter())
                     .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {

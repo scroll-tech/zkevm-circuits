@@ -177,7 +177,7 @@ fn run<F: Field>(
     let k = max(20, log2_ceil(active_row_num));
     let circuit = TxCircuitTester::<F> {
         sig_circuit: SigCircuit {
-            max_verif: max_txs,
+            max_verify: max_txs,
             signatures_k1: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
             // TODO: check if need to add p256 signatures here.
             signatures_r1: vec![],

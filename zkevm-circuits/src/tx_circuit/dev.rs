@@ -119,7 +119,7 @@ impl<F: Field> TxCircuitTester<F> {
     ) -> Self {
         TxCircuitTester::<F> {
             sig_circuit: SigCircuit {
-                max_verif: max_txs,
+                max_verify: max_txs,
                 signatures_k1: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
                 signatures_r1: vec![],
                 _marker: PhantomData,
