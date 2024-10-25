@@ -1,16 +1,16 @@
-use super::Prover;
-use crate::{
-    config::INNER_DEGREE,
-    utils::metric_of_witness_block,
-    zkevm::circuit::{block_traces_to_witness_block, TargetCircuit},
-};
 use anyhow::bail;
 use eth_types::l2_types::BlockTrace;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::witness::Block;
 
-impl<'params, C: TargetCircuit> Prover<'params, C> {
+use crate::{
+    config::INNER_DEGREE,
+    utils::metric_of_witness_block,
+    zkevm::circuit::{block_traces_to_witness_block, TargetCircuit},
+};
+
+impl<'params, C: TargetCircuit> super::Prover<'params, C> {
     pub fn mock_prove_target_circuit(block_trace: BlockTrace) -> anyhow::Result<()> {
         Self::mock_prove_target_circuit_chunk(vec![block_trace])
     }

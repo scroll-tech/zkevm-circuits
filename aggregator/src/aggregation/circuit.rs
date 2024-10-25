@@ -2,16 +2,22 @@ use crate::{
     aggregation::decoder::WORKED_EXAMPLE,
     blob::BatchData,
     witgen::{zstd_encode, MultiBlockProcessResult},
-    LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
+    FixedProtocol, LOG_DEGREE, PI_CHAIN_ID, PI_CURRENT_BATCH_HASH, PI_CURRENT_STATE_ROOT,
     PI_CURRENT_WITHDRAW_ROOT, PI_PARENT_BATCH_HASH, PI_PARENT_STATE_ROOT,
 };
 use ark_std::{end_timer, start_timer};
-use halo2_base::{Context, ContextParams};
+use halo2_base::{
+    gates::{GateInstructions, RangeInstructions},
+    Context, ContextParams,
+    QuantumCell::Existing,
+};
 
+use halo2_ecc::fields::FieldChip;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use halo2_ecc::{ecc::EccChip, fields::fp::FpConfig};
 
 use halo2_proofs::{
+    arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::{Circuit, ConstraintSystem, Error, Selector},
@@ -24,7 +30,9 @@ use std::rc::Rc;
 use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader};
+use snark_verifier::loader::halo2::{
+    halo2_ecc::halo2_base::AssignedValue, Halo2Loader, IntegerInstructions,
+};
 use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
@@ -32,7 +40,7 @@ use snark_verifier::{
     pcs::kzg::{Bdfg21, Kzg},
 };
 #[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier_sdk::{aggregate, flatten_accumulator};
+use snark_verifier_sdk::{aggregate_hybrid, flatten_accumulator};
 use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
 use zkevm_circuits::util::Challenges;
 
@@ -68,14 +76,21 @@ pub struct BatchCircuit<const N_SNARKS: usize> {
     // batch hash circuit for which the snarks are generated
     // the chunks in this batch are also padded already
     pub batch_hash: BatchHash<N_SNARKS>,
+
+    /// The SNARK protocol from the halo2-based inner circuit route.
+    pub halo2_protocol: FixedProtocol,
+    /// The SNARK protocol from the sp1-based inner circuit route.
+    pub sp1_protocol: FixedProtocol,
 }
 
 impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
-    pub fn new(
+    pub fn new<P: Into<FixedProtocol>>(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
         batch_hash: BatchHash<N_SNARKS>,
+        halo2_protocol: P,
+        sp1_protocol: P,
     ) -> Result<Self, snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
@@ -133,6 +148,8 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
             flattened_instances,
             as_proof: Value::known(as_proof),
             batch_hash,
+            halo2_protocol: halo2_protocol.into(),
+            sp1_protocol: sp1_protocol.into(),
         })
     }
 
@@ -268,15 +285,17 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     // - new accumulator
                     //
                     log::debug!("aggregation: chunk aggregation");
-                    let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
+                    let (
+                        assigned_aggregation_instances,
+                        acc,
+                        preprocessed_poly_sets,
+                        transcript_init_states,
+                    ) = aggregate_hybrid::<Kzg<Bn256, Bdfg21>>(
                         &self.svk,
                         &loader,
                         &self.snarks_with_padding,
                         self.as_proof(),
                     );
-                    for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
-                        log::trace!("{}-th instance: {:?}", i, e.value)
-                    }
 
                     // extract the following cells for later constraints
                     // - the accumulators
@@ -290,12 +309,124 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                             .iter()
                             .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                     );
+                    for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
+                        log::trace!("{}-th instance: {:?}", i, e.value)
+                    }
 
-                    loader
-                        .ctx_mut()
-                        .print_stats(&["snark aggregation [chunks -> batch]"]);
+                    loader.ctx_mut().print_stats(&["snark aggregation"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
+
+                    // We must ensure that the commitments to preprocessed polynomial and initial
+                    // state of transcripts for every SNARK that is being aggregated belongs to the
+                    // fixed set of values expected.
+                    //
+                    // First we load the constants.
+                    log::info!("populating constants");
+                    let mut preprocessed_polys_halo2 = Vec::with_capacity(7);
+                    let mut preprocessed_polys_sp1 = Vec::with_capacity(7);
+                    for (i, &preprocessed_poly) in
+                        self.halo2_protocol.preprocessed.iter().enumerate()
+                    {
+                        log::debug!("load const {i}");
+                        preprocessed_polys_halo2.push(
+                            config
+                                .ecc_chip()
+                                .assign_constant_point(&mut ctx, preprocessed_poly),
+                        );
+                        log::debug!("load const {i} OK");
+                    }
+                    for (i, &preprocessed_poly) in self.sp1_protocol.preprocessed.iter().enumerate()
+                    {
+                        log::debug!("load const (sp1) {i}");
+                        preprocessed_polys_sp1.push(
+                            config
+                                .ecc_chip()
+                                .assign_constant_point(&mut ctx, preprocessed_poly),
+                        );
+                        log::debug!("load const (sp1) {i} OK");
+                    }
+                    let transcript_init_state_halo2 = config
+                        .ecc_chip()
+                        .field_chip()
+                        .range()
+                        .gate()
+                        .assign_constant(&mut ctx, self.halo2_protocol.init_state)
+                        .expect("IntegerInstructions::assign_constant infallible");
+                    log::debug!("load transcript OK");
+                    let transcript_init_state_sp1 = config
+                        .ecc_chip()
+                        .field_chip()
+                        .range()
+                        .gate()
+                        .assign_constant(&mut ctx, self.sp1_protocol.init_state)
+                        .expect("IntegerInstructions::assign_constant infallible");
+                    log::info!("populating constants OK");
+
+                    // Commitments to the preprocessed polynomials.
+                    for preprocessed_polys in preprocessed_poly_sets.iter() {
+                        let mut preprocessed_check_1 =
+                            config.flex_gate().load_constant(&mut ctx, Fr::ONE);
+                        let mut preprocessed_check_2 =
+                            config.flex_gate().load_constant(&mut ctx, Fr::ONE);
+                        for ((commitment, comm_halo2), comm_sp1) in preprocessed_polys
+                            .iter()
+                            .zip_eq(preprocessed_polys_halo2.iter())
+                            .zip_eq(preprocessed_polys_sp1.iter())
+                        {
+                            let check_1 =
+                                config
+                                    .ecc_chip()
+                                    .is_equal(&mut ctx, &commitment, comm_halo2);
+                            let check_2 =
+                                config.ecc_chip().is_equal(&mut ctx, &commitment, comm_sp1);
+                            preprocessed_check_1 = config.flex_gate().and(
+                                &mut ctx,
+                                Existing(preprocessed_check_1),
+                                Existing(check_1),
+                            );
+                            preprocessed_check_2 = config.flex_gate().and(
+                                &mut ctx,
+                                Existing(preprocessed_check_2),
+                                Existing(check_2),
+                            );
+                        }
+                        let preprocessed_check = config.flex_gate().or(
+                            &mut ctx,
+                            Existing(preprocessed_check_1),
+                            Existing(preprocessed_check_2),
+                        );
+                        config
+                            .flex_gate()
+                            .assert_is_const(&mut ctx, &preprocessed_check, Fr::ONE);
+                    }
+
+                    // Transcript initial state.
+                    for transcript_init_state in transcript_init_states {
+                        let transcript_init_state = transcript_init_state
+                            .expect("SNARK should have an initial state for transcript");
+                        let transcript_check_1 = config.flex_gate().is_equal(
+                            &mut ctx,
+                            Existing(transcript_init_state),
+                            Existing(transcript_init_state_halo2),
+                        );
+                        let transcript_check_2 = config.flex_gate().is_equal(
+                            &mut ctx,
+                            Existing(transcript_init_state),
+                            Existing(transcript_init_state_sp1),
+                        );
+                        let transcript_check = config.flex_gate().or(
+                            &mut ctx,
+                            Existing(transcript_check_1),
+                            Existing(transcript_check_2),
+                        );
+                        config
+                            .flex_gate()
+                            .assert_is_const(&mut ctx, &transcript_check, Fr::ONE);
+                    }
+
+                    ctx.print_stats(&["protocol check"]);
+
                     log::debug!("batching: assigning barycentric");
                     let barycentric = config.barycentric.assign(
                         &mut ctx,

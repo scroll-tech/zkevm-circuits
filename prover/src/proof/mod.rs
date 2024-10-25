@@ -1,15 +1,15 @@
 use crate::{
     io::{deserialize_fr, deserialize_vk, serialize_fr, serialize_vk, write_file},
-    types::base64,
     utils::short_git_version,
 };
 use anyhow::Result;
+use eth_types::base64;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, ProvingKey, VerifyingKey},
 };
 use serde_derive::{Deserialize, Serialize};
-use snark_verifier_sdk::{verify_evm_proof, Snark};
+use snark_verifier_sdk::Snark;
 use std::{fs::File, path::PathBuf};
 
 mod batch;
@@ -19,7 +19,7 @@ mod evm;
 
 pub use batch::BatchProof;
 pub use bundle::BundleProof;
-pub use chunk::{compare_chunk_info, ChunkProof};
+pub use chunk::{compare_chunk_info, ChunkKind, ChunkProof};
 pub use evm::EvmProof;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -71,7 +71,11 @@ impl Proof {
     }
 
     pub fn evm_verify(&self, deployment_code: Vec<u8>) -> bool {
-        verify_evm_proof(deployment_code, self.instances(), self.proof().to_vec())
+        let instances = self.instances();
+        let proof = self.proof().to_vec();
+        let calldata = snark_verifier::loader::evm::encode_calldata(&instances, &proof);
+        let result = crate::evm::deploy_and_call(deployment_code, calldata);
+        result.is_ok()
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {

@@ -1,6 +1,4 @@
-use crate::zkevm::SubCircuitRowUsage;
-use anyhow::{bail, Result};
-use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+use bus_mapping::{circuit_input_builder::CircuitInputBuilder, Error as CircuitBuilderError};
 use eth_types::{l2_types::BlockTrace, ToWord};
 use itertools::Itertools;
 use mpt_zktrie::state::ZkTrieHash;
@@ -10,14 +8,20 @@ use zkevm_circuits::{
     witness::block_convert,
 };
 
+use crate::zkevm::{ChunkProverError, SubCircuitRowUsage};
+
+/// Returns the row-usage for all sub-circuits in the process of applying the entire witness block
+/// to the super circuit.
 pub fn calculate_row_usage_of_witness_block(
     witness_block: &Block,
-) -> Result<Vec<SubCircuitRowUsage>> {
+) -> Result<Vec<SubCircuitRowUsage>, ChunkProverError> {
     let rows = ScrollSuperCircuit::min_num_rows_block_subcircuits(witness_block);
 
     // Check whether we need to "estimate" poseidon sub circuit row usage
     if witness_block.mpt_updates.smt_traces.is_empty() {
-        bail!("ligth mode no longer supported");
+        return Err(ChunkProverError::Custom(
+            "light mode no longer supported".to_string(),
+        ));
     }
 
     let first_block_num = witness_block.first_block_number();
@@ -34,45 +38,34 @@ pub fn calculate_row_usage_of_witness_block(
             .sum::<usize>(),
         rows,
     );
-    let row_usage_details: Vec<SubCircuitRowUsage> = rows
+
+    Ok(rows
         .into_iter()
         .map(|x| SubCircuitRowUsage {
             name: x.name,
             row_number: x.row_num_real,
         })
-        .collect_vec();
-    Ok(row_usage_details)
+        .collect_vec())
 }
 
-pub fn print_chunk_stats(block_traces: &[BlockTrace]) {
-    let num_blocks = block_traces.len();
-    let num_txs = block_traces
-        .iter()
-        .map(|b| b.transactions.len())
-        .sum::<usize>();
-    let total_tx_len = block_traces
-        .iter()
-        .flat_map(|b| b.transactions.iter().map(|t| t.data.len()))
-        .sum::<usize>();
-    log::info!(
-        "check capacity of block traces, num_block {}, num_tx {}, tx total len {}",
-        num_blocks,
-        num_txs,
-        total_tx_len
-    );
-}
-
-pub fn dummy_witness_block() -> Result<Block> {
-    log::debug!("generate dummy witness block");
+/// Generate a dummy witness block to eventually generate proving key and verifying key for the
+/// target circuit without going through the expensive process of actual witness assignment.
+pub fn dummy_witness_block() -> Block {
     let dummy_chain_id = 0;
-    let witness_block = zkevm_circuits::witness::dummy_witness_block(dummy_chain_id);
-    log::debug!("generate dummy witness block done");
-    Ok(witness_block)
+    zkevm_circuits::witness::dummy_witness_block(dummy_chain_id)
 }
 
-pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block> {
+/// Build a witness block from block traces for all blocks in the chunk.
+///
+/// Kind of a duplication of [`self::chunk_trace_to_witness_block`], so should eventually be
+/// deprecated.
+pub fn block_traces_to_witness_block(
+    block_traces: Vec<BlockTrace>,
+) -> Result<Block, ChunkProverError> {
     if block_traces.is_empty() {
-        bail!("use dummy_witness_block instead");
+        return Err(ChunkProverError::Custom(
+            "empty block traces! hint: use dummy_witness_block instead".to_string(),
+        ));
     }
     let block_num = block_traces.len();
     let total_tx_num = block_traces
@@ -80,12 +73,12 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
         .map(|b| b.transactions.len())
         .sum::<usize>();
     if total_tx_num > MAX_TXS {
-        bail!(
+        return Err(ChunkProverError::Custom(format!(
             "tx num overflow {}, block range {} to {}",
             total_tx_num,
             block_traces[0].header.number.unwrap(),
             block_traces[block_num - 1].header.number.unwrap()
-        );
+        )));
     }
     log::info!(
         "block_traces_to_witness_block, block num {}, tx num {}",
@@ -116,8 +109,19 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
     Ok(witness_block)
 }
 
+/// Build a witness block from block traces for all blocks in the chunk.
+pub fn chunk_trace_to_witness_block(
+    chunk_trace: Vec<BlockTrace>,
+) -> Result<Block, ChunkProverError> {
+    if chunk_trace.is_empty() {
+        return Err(ChunkProverError::Custom("Empty chunk trace".to_string()));
+    }
+    print_chunk_stats(&chunk_trace);
+    block_traces_to_witness_block(chunk_trace)
+}
+
 /// Finalize building and return witness block
-pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block> {
+pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block, CircuitBuilderError> {
     builder.finalize_building()?;
 
     log::debug!("converting builder.block to witness block");
@@ -151,4 +155,22 @@ pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block> {
     }
 
     Ok(witness_block)
+}
+
+fn print_chunk_stats(block_traces: &[BlockTrace]) {
+    let num_blocks = block_traces.len();
+    let num_txs = block_traces
+        .iter()
+        .map(|b| b.transactions.len())
+        .sum::<usize>();
+    let total_tx_len = block_traces
+        .iter()
+        .flat_map(|b| b.transactions.iter().map(|t| t.data.len()))
+        .sum::<usize>();
+    log::info!(
+        "check capacity of block traces, num_block {}, num_tx {}, tx total len {}",
+        num_blocks,
+        num_txs,
+        total_tx_len
+    );
 }

@@ -1,15 +1,16 @@
-use crate::{
-    common,
-    config::INNER_DEGREE,
-    io::serialize_vk,
-    utils::{chunk_trace_to_witness_block, gen_rng},
-    zkevm::circuit::TargetCircuit,
-    Proof,
-};
 use anyhow::Result;
 use eth_types::l2_types::BlockTrace;
 use snark_verifier_sdk::Snark;
 use std::marker::PhantomData;
+
+use crate::{
+    common,
+    config::INNER_DEGREE,
+    io::serialize_vk,
+    utils::gen_rng,
+    zkevm::circuit::{chunk_trace_to_witness_block, TargetCircuit},
+    Proof,
+};
 
 mod mock;
 
