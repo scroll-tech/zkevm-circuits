@@ -1,5 +1,5 @@
 mod prover;
-mod verifier;
+pub use prover::Prover as InnerProver;
 
-pub use self::prover::Prover;
-pub use verifier::Verifier;
+mod verifier;
+pub use verifier::Verifier as InnerVerifier;

@@ -4,6 +4,9 @@ pub use error::BatchProverError;
 mod prover;
 pub use prover::{check_chunk_hashes, Prover};
 
+mod recursion;
+pub use recursion::RecursionTask;
+
 mod verifier;
 pub use verifier::Verifier;
 
