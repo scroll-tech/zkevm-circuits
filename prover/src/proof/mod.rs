@@ -74,8 +74,7 @@ impl Proof {
         let instances = self.instances();
         let proof = self.proof().to_vec();
         let calldata = snark_verifier::loader::evm::encode_calldata(&instances, &proof);
-        let result = crate::evm::deploy_and_call(deployment_code, calldata);
-        result.is_ok()
+        crate::evm::deploy_and_call(deployment_code, calldata).is_ok()
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {

@@ -1,12 +1,19 @@
-use crate::{io::write_file, EvmProof};
+use std::{path::PathBuf, str::FromStr};
+
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::VerifyingKey,
     poly::kzg::commitment::ParamsKZG,
 };
+use revm::{
+    primitives::{Env, ExecutionResult, Output, SpecId, TxEnv, TxKind},
+    Evm, InMemoryDB,
+};
+
 use snark_verifier::pcs::kzg::{Bdfg21, Kzg};
 use snark_verifier_sdk::CircuitExt;
-use std::{path::PathBuf, str::FromStr};
+
+use crate::{io::write_file, EvmProof};
 
 /// Dump YUL and binary bytecode(use `solc` in PATH) to output_dir.
 /// Panic if error encountered.
@@ -39,11 +46,6 @@ pub fn gen_evm_verifier<C: CircuitExt<Fr>>(
     let success = evm_proof.proof.evm_verify(deployment_code);
     assert!(success);
 }
-
-use revm::{
-    primitives::{Env, ExecutionResult, Output, SpecId, TxEnv, TxKind},
-    Evm, InMemoryDB,
-};
 
 /// Deploy contract and then call with calldata.
 /// Returns gas_used of call to deployed contract if both transactions are successful.
