@@ -6,9 +6,9 @@ use rand::Rng;
 use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 
 use crate::{
+    aggregator::RecursionTask,
     config::layer_config_path,
     io::{load_snark, write_snark},
-    recursion::RecursionTask,
     utils::gen_rng,
 };
 
