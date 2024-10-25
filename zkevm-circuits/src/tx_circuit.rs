@@ -4549,7 +4549,6 @@ pub(crate) fn get_sign_data(
                 })
             }
         })
-        // TODO: add p256 signatures here ?
         .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, halo2_proofs::plonk::Error>>()?;
     Ok(signatures)
 }

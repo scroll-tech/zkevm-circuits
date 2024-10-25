@@ -57,20 +57,13 @@ pub fn sign<
         .expect("point is the identity")
         .x();
 
-    println!("x_Fp {:?}", x);
-    println!("Fq modulus {:?}", Fq::MODULUS);
-    println!("x.repr {:?}", x.to_repr());
-
     let mut x_bytes = [0u8; 64];
     x_bytes[..32].copy_from_slice(&x.to_repr());
 
-    let sig_r = Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+    // get x cordinate (E::Base) on E::Scalar
+    let sig_r = Fq::from_uniform_bytes(&x_bytes);
 
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-
-    println!("sig_point {:?}", sig_point.to_affine());
-    println!("sig_r {:?}", sig_r);
-    println!("sig_s {:?}", sig_s);
 
     (sig_r, sig_s, u8::from(sig_v))
 }
@@ -88,36 +81,23 @@ pub fn verify<
     s: Fq,
     msg_hash: Fq,
     // if pubkey is provided rather than from recovered , v is not neccessary.
-    v: Option<bool>,
+    _v: Option<bool>,
 ) -> bool {
-    println!("r {:?}", r);
-    println!("s {:?}", s);
-    println!("pub_key {:?}", pub_key);
-    println!("msg_hash {:?}", msg_hash);
     // Verify
     let s_inv = s.invert().unwrap();
     let u_1 = msg_hash * s_inv;
-    println!("verify u_1: {:?}", u_1);
     let u_2 = r * s_inv;
-    println!("verify u_2: {:?}", u_2);
 
     let g = Affine::generator();
     let u1_affine = g * u_1;
-    println!(
-        "verify u1_affine: {:?}",
-        u1_affine.to_affine().coordinates().unwrap()
-    );
 
     let u2_affine = pub_key * u_2;
-    println!(
-        "verify u2_affine: {:?}",
-        u2_affine.to_affine().coordinates().unwrap()
-    );
 
     let r_point = (u1_affine + u2_affine).to_affine().coordinates().unwrap();
     let x_candidate = r_point.x();
     let r_candidate = mod_n(*x_candidate);
 
+    // v is used to recovery y, not use it for now.
     r == r_candidate
 }
 
@@ -199,7 +179,7 @@ impl SignData<Fq_R1, Secp256r1Affine> {
         if self.pk.is_identity().into() {
             return Address::zero();
         }
-        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le_p256(&self.pk)));
+        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le_generic(&self.pk)));
         Address::from_slice(&pk_hash[12..])
     }
 }
@@ -326,19 +306,7 @@ pub fn pk_bytes_le_generic<
 ) -> [u8; 64] {
     let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
     let mut pk_le = [0u8; 64];
-    //pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
-    //pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
     pk_le[..32].copy_from_slice(&pk_coord.x().to_repr());
     pk_le[32..].copy_from_slice(&pk_coord.y().to_repr());
-    pk_le
-}
-
-// TODO: refactor to generic type: `pk_bytes_le_<Affine: CurveAffineExt>(pk: &Affine)`
-/// Return the secp256k1 public key (x, y) coordinates in little endian bytes.
-pub fn pk_bytes_le_p256(pk: &Secp256r1Affine) -> [u8; 64] {
-    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
-    let mut pk_le = [0u8; 64];
-    pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
-    pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
     pk_le
 }

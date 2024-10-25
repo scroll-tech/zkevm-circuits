@@ -257,6 +257,9 @@ impl<F: Field> SigCircuitConfig<F> {
 pub struct SigCircuit<F: Field> {
     /// Max number of verifications
     pub max_verif: usize,
+    /// TODO: split max_verif to max_verify_k1 and max_verify_r1
+    /// pub max_verif_k1: usize,
+    /// pub max_verif_r1: usize,
     /// Without padding Secp256k1 signatures
     pub signatures_k1: Vec<SignData<Fq_K1, Secp256k1Affine>>,
     /// Without padding Secp256r1 signatures
@@ -413,6 +416,7 @@ impl<F: Field> SigCircuit<F> {
         let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Secp256k1Affine>(ctx, &pk_assigned);
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
+        println!("pk_is_valid {:?}", pk_is_valid);
 
         // build Fq chip from Fp chip
         // TODO: check if need to add new fq_chip_r
