@@ -1,5 +1,6 @@
-use crate::utils::read_env_var;
 use std::sync::LazyLock;
+
+use crate::utils::read_env_var;
 
 // TODO: is it a good design to use LazyLock? Why not read env var each time?
 

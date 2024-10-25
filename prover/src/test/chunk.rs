@@ -1,7 +1,7 @@
 use std::sync::{LazyLock, Mutex};
 
 use crate::{
-    config::ZKEVM_DEGREES,
+    config::CHUNK_PROVER_DEGREES,
     utils::read_env_var,
     zkevm::{Prover, Verifier},
     ChunkProof, ChunkProvingTask, ParamsMap,
@@ -9,7 +9,7 @@ use crate::{
 
 static PARAMS_MAP: LazyLock<ParamsMap> = LazyLock::new(|| {
     let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
-    crate::common::Prover::load_params_map(&params_dir, &ZKEVM_DEGREES)
+    crate::common::Prover::load_params_map(&params_dir, &CHUNK_PROVER_DEGREES)
 });
 
 static CHUNK_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
