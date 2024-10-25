@@ -1,9 +1,9 @@
 use crate::{
     io::{deserialize_fr, deserialize_vk, serialize_fr, serialize_vk, write_file},
-    types::base64,
     utils::short_git_version,
 };
 use anyhow::Result;
+use eth_types::base64;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, ProvingKey, VerifyingKey},

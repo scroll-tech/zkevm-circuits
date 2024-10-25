@@ -1,17 +1,13 @@
-use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
+use std::sync::{LazyLock, Mutex};
 
 use crate::{
     config::ZKEVM_DEGREES,
     utils::read_env_var,
     zkevm::{Prover, Verifier},
-    ChunkProof, ChunkProvingTask,
-};
-use std::{
-    collections::BTreeMap,
-    sync::{LazyLock, Mutex},
+    ChunkProof, ChunkProvingTask, ParamsMap,
 };
 
-static PARAMS_MAP: LazyLock<BTreeMap<u32, ParamsKZG<Bn256>>> = LazyLock::new(|| {
+static PARAMS_MAP: LazyLock<ParamsMap> = LazyLock::new(|| {
     let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
     crate::common::Prover::load_params_map(&params_dir, &ZKEVM_DEGREES)
 });
