@@ -1,16 +1,17 @@
-use super::Prover;
-use crate::{
-    config::layer_config_path,
-    io::{load_snark, write_snark},
-    utils::gen_rng,
-};
+use std::env;
+
 use aggregator::CompressionCircuit;
 use anyhow::{anyhow, Result};
 use rand::Rng;
 use snark_verifier_sdk::Snark;
-use std::env;
 
-impl<'params> Prover<'params> {
+use crate::{
+    config::layer_config_path,
+    utils::gen_rng,
+    utils::{load_snark, write_snark},
+};
+
+impl<'params> super::Prover<'params> {
     pub fn gen_comp_snark(
         &mut self,
         id: &str,

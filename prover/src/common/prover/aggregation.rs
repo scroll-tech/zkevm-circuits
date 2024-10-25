@@ -1,17 +1,18 @@
-use super::Prover;
-use crate::{
-    config::layer_config_path,
-    io::{load_snark, write_snark},
-    utils::gen_rng,
-};
+use std::env;
+
 use aggregator::{BatchCircuit, BatchHash};
 use anyhow::{anyhow, Result};
 use halo2_proofs::halo2curves::bn256::G1Affine;
 use rand::Rng;
 use snark_verifier_sdk::Snark;
-use std::env;
 
-impl<'params> Prover<'params> {
+use crate::{
+    config::layer_config_path,
+    utils::gen_rng,
+    utils::{load_snark, write_snark},
+};
+
+impl<'params> super::Prover<'params> {
     #[allow(clippy::too_many_arguments)]
     pub fn gen_agg_snark<const N_SNARKS: usize>(
         &mut self,

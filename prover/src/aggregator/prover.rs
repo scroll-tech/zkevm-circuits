@@ -13,9 +13,9 @@ use crate::{
         BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, FD_HALO2_CHUNK_PROTOCOL,
         FD_SP1_CHUNK_PROTOCOL,
     },
-    io::{force_to_read, try_to_read},
     proof::BundleProof,
     types::BundleProvingTask,
+    utils::{force_to_read, try_to_read},
     BatchProof, BatchProvingTask, ChunkKind, ChunkProof, ParamsMap,
 };
 

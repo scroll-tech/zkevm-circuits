@@ -1,16 +1,16 @@
-use super::Prover;
-use crate::{
-    config::INNER_DEGREE,
-    io::{load_snark, write_snark},
-    utils::{gen_rng, metric_of_witness_block},
-    zkevm::circuit::{SuperCircuit, TargetCircuit},
-};
 use anyhow::Result;
 use rand::Rng;
 use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 use zkevm_circuits::evm_circuit::witness::Block;
 
-impl<'params> Prover<'params> {
+use crate::{
+    config::INNER_DEGREE,
+    utils::{gen_rng, metric_of_witness_block},
+    utils::{load_snark, write_snark},
+    zkevm::circuit::{SuperCircuit, TargetCircuit},
+};
+
+impl<'params> super::Prover<'params> {
     pub fn gen_inner_snark<C: TargetCircuit>(
         &mut self,
         id: &str,

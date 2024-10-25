@@ -12,9 +12,8 @@ use crate::{
     common,
     config::{LAYER4_CONFIG_PATH, LAYER4_DEGREE},
     consts::{batch_vk_filename, DEPLOYMENT_CODE_FILENAME},
-    evm::deploy_and_call,
-    io::{force_to_read, try_to_read},
     proof::BundleProof,
+    utils::{deploy_and_call, force_to_read, try_to_read},
     ParamsMap,
 };
 

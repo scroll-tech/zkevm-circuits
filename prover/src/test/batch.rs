@@ -4,9 +4,8 @@ use crate::{
     aggregator::{Prover, Verifier},
     config::{LayerId, BATCH_PROVER_DEGREES},
     consts::DEPLOYMENT_CODE_FILENAME,
-    io::force_to_read,
     types::BundleProvingTask,
-    utils::read_env_var,
+    utils::{force_to_read, read_env_var},
     BatchProvingTask, ParamsMap,
 };
 

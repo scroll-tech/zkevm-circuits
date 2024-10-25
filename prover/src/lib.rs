@@ -52,14 +52,8 @@ pub use config::*;
 mod consts;
 pub use consts::*;
 
-mod evm;
-pub use evm::deploy_and_call;
-
 mod inner;
 pub use inner::*;
-
-mod io;
-pub use io::*;
 
 mod proof;
 pub use proof::{BatchProof, BundleProof, ChunkKind, ChunkProof, EvmProof, Proof};
