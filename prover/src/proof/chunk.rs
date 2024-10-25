@@ -1,6 +1,7 @@
 use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
-use crate::{types::base64, zkevm::SubCircuitRowUsage};
+use crate::zkevm::SubCircuitRowUsage;
 use aggregator::ChunkInfo;
+use eth_types::base64;
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
 use snark_verifier::Protocol;
