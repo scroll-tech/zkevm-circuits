@@ -1,5 +1,8 @@
 mod prover;
-mod verifier;
+pub use prover::Prover;
 
-pub use self::{prover::Prover, verifier::Verifier};
+mod verifier;
+pub use verifier::Verifier;
+
+// Re-export from the aggregator crate.
 pub use aggregator::{ChunkInfo, CompressionCircuit};

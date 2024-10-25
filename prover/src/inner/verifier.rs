@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::{common, config::INNER_DEGREE, io::deserialize_vk, zkevm::circuit::TargetCircuit};
 use halo2_proofs::{halo2curves::bn256::Bn256, plonk::keygen_vk, poly::kzg::commitment::ParamsKZG};
 use snark_verifier_sdk::Snark;
+
+use crate::{common, config::INNER_DEGREE, utils::deserialize_vk, zkevm::circuit::TargetCircuit};
 
 #[derive(Debug)]
 pub struct Verifier<'params, C: TargetCircuit> {

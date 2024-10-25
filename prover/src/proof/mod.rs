@@ -1,7 +1,5 @@
-use crate::{
-    io::{deserialize_fr, deserialize_vk, serialize_fr, serialize_vk, write_file},
-    utils::short_git_version,
-};
+use std::{fs::File, path::PathBuf};
+
 use anyhow::Result;
 use eth_types::base64;
 use halo2_proofs::{
@@ -10,7 +8,11 @@ use halo2_proofs::{
 };
 use serde_derive::{Deserialize, Serialize};
 use snark_verifier_sdk::Snark;
-use std::{fs::File, path::PathBuf};
+
+use crate::utils::{
+    deploy_and_call, deserialize_fr, deserialize_vk, serialize_fr, serialize_vk, short_git_version,
+    write_file,
+};
 
 mod batch;
 mod bundle;
@@ -74,7 +76,7 @@ impl Proof {
         let instances = self.instances();
         let proof = self.proof().to_vec();
         let calldata = snark_verifier::loader::evm::encode_calldata(&instances, &proof);
-        crate::evm::deploy_and_call(deployment_code, calldata).is_ok()
+        deploy_and_call(deployment_code, calldata).is_ok()
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {
@@ -118,7 +120,7 @@ pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {
     let file_path = dump_proof_path(dir, filename);
-    crate::io::from_json_file(&file_path)
+    crate::utils::from_json_file(&file_path)
 }
 
 fn dump_proof_path(dir: &str, filename: &str) -> String {

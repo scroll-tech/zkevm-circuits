@@ -8,9 +8,9 @@ use crate::{
     common,
     config::LayerId,
     consts::CHUNK_VK_FILENAME,
-    io::try_to_read,
     proof::compare_chunk_info,
     types::ChunkProvingTask,
+    utils::try_to_read,
     zkevm::{
         circuit::{calculate_row_usage_of_witness_block, chunk_trace_to_witness_block},
         ChunkProverError, ChunkVerifier, RowUsage,

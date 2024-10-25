@@ -6,8 +6,8 @@ use std::marker::PhantomData;
 use crate::{
     common,
     config::INNER_DEGREE,
-    io::serialize_vk,
     utils::gen_rng,
+    utils::serialize_vk,
     zkevm::circuit::{chunk_trace_to_witness_block, TargetCircuit},
     Proof,
 };

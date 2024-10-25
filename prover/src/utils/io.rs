@@ -1,3 +1,9 @@
+use std::{
+    fs::File,
+    io::{Cursor, Read, Write},
+    path::{Path, PathBuf},
+};
+
 use anyhow;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
@@ -6,11 +12,6 @@ use halo2_proofs::{
 };
 use snark_verifier::util::arithmetic::PrimeField;
 use snark_verifier_sdk::Snark;
-use std::{
-    fs::File,
-    io::{Cursor, Read, Write},
-    path::{Path, PathBuf},
-};
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(file_path: &str) -> anyhow::Result<P> {
     if !Path::new(&file_path).exists() {

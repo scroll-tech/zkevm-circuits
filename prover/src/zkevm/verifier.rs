@@ -11,7 +11,7 @@ use crate::{
     common,
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
     consts::chunk_vk_filename,
-    io::force_to_read,
+    utils::force_to_read,
     ChunkProof, ParamsMap,
 };
 

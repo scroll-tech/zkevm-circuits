@@ -12,10 +12,11 @@ use revm::{
 use snark_verifier::pcs::kzg::{Bdfg21, Kzg};
 use snark_verifier_sdk::CircuitExt;
 
-use crate::{io::write_file, EvmProof};
+use crate::{utils::write_file, EvmProof};
 
 /// Dump YUL and binary bytecode(use `solc` in PATH) to output_dir.
-/// Panic if error encountered.
+///
+/// Panics if the verifier contract cannot successfully verify the [`EvmProof`].
 pub fn gen_evm_verifier<C: CircuitExt<Fr>>(
     params: &ParamsKZG<Bn256>,
     vk: &VerifyingKey<G1Affine>,
@@ -36,18 +37,18 @@ pub fn gen_evm_verifier<C: CircuitExt<Fr>>(
         yul_file_path.as_deref(),
     );
 
+    // Write the contract binary if an output directory was specified.
     if let Some(dir) = output_dir {
-        // Dump bytecode.
         let mut dir = PathBuf::from_str(dir).unwrap();
         write_file(&mut dir, "evm_verifier.bin", &deployment_code);
     }
 
-    let success = evm_proof.proof.evm_verify(deployment_code);
-    assert!(success);
+    assert!(evm_proof.proof.evm_verify(deployment_code));
 }
 
 /// Deploy contract and then call with calldata.
-/// Returns gas_used of call to deployed contract if both transactions are successful.
+///
+/// Returns the gas used to verify proof.
 pub fn deploy_and_call(deployment_code: Vec<u8>, calldata: Vec<u8>) -> Result<u64, String> {
     let mut evm = EVM {
         env: Default::default(),

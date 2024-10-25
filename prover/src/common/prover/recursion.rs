@@ -8,13 +8,11 @@ use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 use crate::{
     aggregator::RecursionTask,
     config::layer_config_path,
-    io::{load_snark, write_snark},
     utils::gen_rng,
+    utils::{load_snark, write_snark},
 };
 
-use super::Prover;
-
-impl<'params> Prover<'params> {
+impl<'params> super::Prover<'params> {
     pub fn gen_recursion_snark(
         &mut self,
         id: &str,

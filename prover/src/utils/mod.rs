@@ -26,6 +26,12 @@ use zkevm_circuits::evm_circuit::witness::Block;
 
 use crate::types::BlockTraceJsonRpcResult;
 
+mod evm;
+pub use evm::*;
+
+mod io;
+pub use io::*;
+
 pub static LOGGER: Once = Once::new();
 
 pub const DEFAULT_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytesUnchecked;
