@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::Path};
 
 use aggregator::{BatchCircuit, BatchHash};
 use anyhow::{anyhow, Result};
@@ -8,12 +8,52 @@ use snark_verifier_sdk::Snark;
 
 use crate::{
     config::layer_config_path,
-    utils::gen_rng,
-    utils::{load_snark, write_snark},
+    utils::{gen_rng, read_json_deep, write_json},
 };
 
 impl<'params> super::Prover<'params> {
-    pub fn gen_agg_snark<const N_SNARKS: usize>(
+    pub fn load_or_gen_agg_snark<const N_SNARKS: usize>(
+        &mut self,
+        name: &str,
+        id: &str,
+        degree: u32,
+        batch_info: BatchHash<N_SNARKS>,
+        halo2_protocol: &[u8],
+        sp1_protocol: &[u8],
+        previous_snarks: &[Snark],
+        output_dir: Option<&str>,
+    ) -> Result<Snark> {
+        // If an output directory is provided and we are successfully able to locate a SNARK with
+        // the same identifier on disk, return early.
+        if let Some(dir) = output_dir {
+            let path = Path::new(dir).join(format!("aggregation_snark_{}_{}.json", id, name));
+            if let Ok(snark) = read_json_deep(&path) {
+                return Ok(snark);
+            }
+        }
+
+        // Generate the layer-3 SNARK.
+        let rng = gen_rng();
+        let snark = self.gen_agg_snark(
+            id,
+            degree,
+            rng,
+            batch_info,
+            halo2_protocol,
+            sp1_protocol,
+            previous_snarks,
+        )?;
+
+        // Write to disk if an output directory is provided.
+        if let Some(dir) = output_dir {
+            let path = Path::new(dir).join(format!("aggregation_snark_{}_{}.json", id, name));
+            write_json(&path, &snark)?;
+        }
+
+        Ok(snark)
+    }
+
+    fn gen_agg_snark<const N_SNARKS: usize>(
         &mut self,
         id: &str,
         degree: u32,
@@ -41,45 +81,5 @@ impl<'params> super::Prover<'params> {
         .map_err(|err| anyhow!("Failed to construct aggregation circuit: {err:?}"))?;
 
         self.gen_snark(id, degree, &mut rng, circuit, "gen_agg_snark")
-    }
-
-    pub fn load_or_gen_agg_snark<const N_SNARKS: usize>(
-        &mut self,
-        name: &str,
-        id: &str,
-        degree: u32,
-        batch_info: BatchHash<N_SNARKS>,
-        halo2_protocol: &[u8],
-        sp1_protocol: &[u8],
-        previous_snarks: &[Snark],
-        output_dir: Option<&str>,
-    ) -> Result<Snark> {
-        let file_path = format!(
-            "{}/aggregation_snark_{}_{}.json",
-            output_dir.unwrap_or_default(),
-            id,
-            name
-        );
-
-        match output_dir.and_then(|_| load_snark(&file_path).ok().flatten()) {
-            Some(snark) => Ok(snark),
-            None => {
-                let rng = gen_rng();
-                let result = self.gen_agg_snark(
-                    id,
-                    degree,
-                    rng,
-                    batch_info,
-                    halo2_protocol,
-                    sp1_protocol,
-                    previous_snarks,
-                );
-                if let (Some(_), Ok(snark)) = (output_dir, &result) {
-                    write_snark(&file_path, snark);
-                }
-
-                result
-            }
-        }
     }
 }

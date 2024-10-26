@@ -15,7 +15,7 @@ use crate::{
         circuit::{calculate_row_usage_of_witness_block, chunk_trace_to_witness_block},
         ChunkProverError, ChunkVerifier, RowUsage,
     },
-    ChunkKind, ChunkProof,
+    ChunkKind, ChunkProofV2, ChunkProofV2Metadata, ProverError,
 };
 
 /// Prover responsible for generating [`chunk proofs`][ChunkProof].
@@ -83,7 +83,7 @@ impl<'params> Prover<'params> {
         chunk_id: Option<&str>,
         inner_id: Option<&str>,
         output_dir: Option<&str>,
-    ) -> Result<ChunkProof, ChunkProverError> {
+    ) -> Result<ChunkProofV2, ProverError> {
         // Panic if the chunk is empty, i.e. no traces were found.
         assert!(!chunk.is_empty());
 
@@ -91,72 +91,71 @@ impl<'params> Prover<'params> {
         let chunk_id = chunk_id.map_or_else(|| chunk.identifier(), |name| name.to_string());
 
         // Try to locate a cached chunk proof for the same identifier.
-        let cached_proof =
-            output_dir.and_then(|dir| ChunkProof::from_json_file(dir, &chunk_id).ok());
+        if let Some(dir) = output_dir.as_ref() {
+            if let Ok(chunk_proof) = ChunkProofV2::from_json(dir, &chunk_id) {
+                return Ok(chunk_proof);
+            }
+        }
 
         // Generate the proof if proof was not found in cache.
-        let chunk_proof = cached_proof.unwrap_or({
-            // Construct the chunk as witness and check circuit capacity for the halo2-based super
-            // circuit.
-            let witness_block = chunk_trace_to_witness_block(chunk.block_traces)?;
-            let sub_circuit_row_usages = calculate_row_usage_of_witness_block(&witness_block)?;
-            let row_usage = RowUsage::from_row_usage_details(sub_circuit_row_usages.clone());
+        //
+        // Construct the chunk as witness and check circuit capacity for the halo2-based super
+        // circuit.
+        let witness_block = chunk_trace_to_witness_block(chunk.block_traces)?;
+        let sub_circuit_row_usages = calculate_row_usage_of_witness_block(&witness_block)?;
+        let row_usage = RowUsage::from_row_usage_details(sub_circuit_row_usages.clone());
 
-            // If the circuit-capacity checker (ccc) overflows, early-return with appropriate
-            // error.
-            if !row_usage.is_ok {
-                return Err(ChunkProverError::CircuitCapacityOverflow(row_usage));
-            }
+        // If the circuit-capacity checker (ccc) overflows, early-return with appropriate
+        // error.
+        if !row_usage.is_ok {
+            return Err(ChunkProverError::CircuitCapacityOverflow(row_usage).into());
+        }
 
-            // Build the chunk information required by the inner circuit for SNARK generation.
-            let chunk_info_reconstructed = ChunkInfo::from_witness_block(&witness_block, false);
+        // Build the chunk information required by the inner circuit for SNARK generation.
+        let chunk_info_reconstructed = ChunkInfo::from_witness_block(&witness_block, false);
 
-            // Sanity check: if chunk information was already provided, make sure it exactly
-            // matches the chunk information reconstructed from the block traces of the chunk.
-            if let Some(chunk_info_provided) = chunk.chunk_info.as_ref() {
-                compare_chunk_info(
-                    &format!("gen_halo2_chunk_proof {chunk_id:?}"),
-                    &chunk_info_reconstructed,
-                    chunk_info_provided,
-                )?;
-            }
-
-            // Generate the final Layer-2 SNARK.
-            let snark = self
-                .prover_impl
-                .load_or_gen_final_chunk_snark(&chunk_id, &witness_block, inner_id, output_dir)
-                .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
-
-            // Sanity check on the verifying key used at Layer-2.
-            self.check_vk()?;
-
-            // Construct the chunk proof.
-            let chunk_proof = ChunkProof::new(
-                snark,
-                self.prover_impl.pk(LayerId::Layer2.id()),
-                chunk_info_reconstructed,
-                ChunkKind::Halo2,
-                sub_circuit_row_usages,
+        // Sanity check: if chunk information was already provided, make sure it exactly
+        // matches the chunk information reconstructed from the block traces of the chunk.
+        if let Some(chunk_info_provided) = chunk.chunk_info.as_ref() {
+            compare_chunk_info(
+                &format!("gen_halo2_chunk_proof {chunk_id:?}"),
+                &chunk_info_reconstructed,
+                chunk_info_provided,
             )
+            .map_err(|e| ChunkProverError::Custom(e))?;
+        }
+
+        // Generate the final Layer-2 SNARK.
+        let snark = self
+            .prover_impl
+            .load_or_gen_final_chunk_snark(&chunk_id, &witness_block, inner_id, output_dir)
             .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
 
-            // If the output directory was provided, write the proof to disk.
-            if let Some(output_dir) = output_dir {
-                chunk_proof
-                    .dump(output_dir, &chunk_id)
-                    .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
-            }
+        // Sanity check on the verifying key used at Layer-2.
+        self.check_vk()?;
 
-            chunk_proof
-        });
+        // Construct the chunk proof.
+        let chunk_proof_metadata = ChunkProofV2Metadata::new(
+            &snark,
+            ChunkKind::Halo2,
+            chunk_info_reconstructed,
+            Some(row_usage),
+        )?;
+        let chunk_proof = ChunkProofV2::new(
+            snark,
+            self.prover_impl.pk(LayerId::Layer2.id()),
+            chunk_proof_metadata,
+        )?;
+
+        // If the output directory was provided, write the proof to disk.
+        if let Some(output_dir) = output_dir {
+            chunk_proof.dump(output_dir, &chunk_id)?;
+        }
 
         // If the verifier was set, i.e. production environments, we also do a sanity verification
         // of the proof that was generated above.
         if let Some(verifier) = &self.verifier {
-            if !verifier.verify_chunk_proof(&chunk_proof) {
-                return Err(String::from("chunk proof verification failed").into());
-            }
-            log::info!("chunk proof verified OK");
+            verifier.verify_chunk_proof(&chunk_proof)?;
         }
 
         Ok(chunk_proof)
@@ -178,7 +177,7 @@ impl<'params> Prover<'params> {
         chunk: ChunkProvingTask,
         chunk_id: Option<&str>,
         output_dir: Option<&str>,
-    ) -> Result<ChunkProof, ChunkProverError> {
+    ) -> Result<ChunkProofV2, ProverError> {
         // Panic if the chunk is empty, i.e. no traces were found.
         assert!(!chunk.is_empty());
 
@@ -212,29 +211,23 @@ impl<'params> Prover<'params> {
         // Note that the `row_usage` has been set to an empty vector, because in the sp1-route we
         // don't have the notion of rows being allocated to sub-circuits, as in the case of the
         // halo2-route.
-        let chunk_proof = ChunkProof::new(
+        let chunk_proof_metadata =
+            ChunkProofV2Metadata::new(&snark, ChunkKind::Sp1, chunk_info, None)?;
+        let chunk_proof = ChunkProofV2::new(
             snark,
             self.prover_impl.pk(LayerId::Layer2.id()),
-            chunk_info,
-            ChunkKind::Sp1,
-            vec![],
-        )
-        .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
+            chunk_proof_metadata,
+        )?;
 
         // If the output directory was provided, write the proof to disk.
         if let Some(output_dir) = output_dir {
-            chunk_proof
-                .dump(output_dir, &chunk_id)
-                .map_err(|e| ChunkProverError::Custom(e.to_string()))?;
+            chunk_proof.dump(output_dir, &chunk_id)?;
         }
 
         // If the verifier was set, i.e. production environments, we also do a sanity verification
         // of the proof that was generated above.
         if let Some(verifier) = &self.verifier {
-            if !verifier.verify_chunk_proof(&chunk_proof) {
-                return Err(String::from("chunk proof verification failed").into());
-            }
-            log::info!("chunk proof verified OK");
+            verifier.verify_chunk_proof(&chunk_proof)?;
         }
 
         Ok(chunk_proof)

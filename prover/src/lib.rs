@@ -54,11 +54,11 @@ pub use config::*;
 mod consts;
 pub use consts::*;
 
-mod inner;
-pub use inner::*;
+mod error;
+pub use error::*;
 
 mod proof;
-pub use proof::{BatchProof, BundleProof, ChunkKind, ChunkProof, EvmProof, Proof};
+pub use proof::*;
 
 mod test;
 pub use test::{batch_prove, bundle_prove, chunk_prove, inner_prove};

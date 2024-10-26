@@ -1,4 +1,5 @@
-use super::{dump_as_json, dump_vk, from_json_file, Proof};
+use std::path::Path;
+
 use anyhow::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
@@ -6,9 +7,13 @@ use halo2_proofs::{
 };
 use serde_derive::{Deserialize, Serialize};
 
+use crate::utils::read_json_deep;
+
+use super::{dump_as_json, dump_vk, InnerProof};
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EvmProof {
-    pub proof: Proof,
+    pub proof: InnerProof,
     pub num_instance: Vec<usize>,
 }
 
@@ -19,7 +24,7 @@ impl EvmProof {
         num_instance: Vec<usize>,
         pk: Option<&ProvingKey<G1Affine>>,
     ) -> Result<Self> {
-        let proof = Proof::new(proof, instances, pk);
+        let proof = InnerProof::new(proof, instances, pk);
 
         Ok(Self {
             proof,
@@ -28,14 +33,17 @@ impl EvmProof {
     }
 
     pub fn from_json_file(dir: &str, name: &str) -> Result<Self> {
-        from_json_file(dir, &dump_filename(name))
+        let path = Path::new(dir).join(dump_filename(name));
+        Ok(read_json_deep(&path)?)
     }
 
     pub fn dump(&self, dir: &str, name: &str) -> Result<()> {
         let filename = dump_filename(name);
 
-        dump_vk(dir, &filename, &self.proof.vk);
-        dump_as_json(dir, &filename, &self)
+        dump_vk(dir, &filename, &self.proof.vk)?;
+        dump_as_json(dir, &filename, &self)?;
+
+        Ok(())
     }
 }
 

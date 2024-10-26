@@ -1,11 +1,15 @@
-use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
-use crate::zkevm::SubCircuitRowUsage;
+use std::path::Path;
+
 use aggregator::ChunkInfo;
 use eth_types::base64;
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
 use snark_verifier::Protocol;
 use snark_verifier_sdk::Snark;
+
+use crate::{utils::read_json_deep, zkevm::SubCircuitRowUsage};
+
+use super::{dump_as_json, dump_data, dump_vk, InnerProof};
 
 /// The innermost SNARK belongs to the following variants.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -27,7 +31,7 @@ pub struct ChunkProof {
     #[serde(with = "base64")]
     pub protocol: Vec<u8>,
     #[serde(flatten)]
-    pub proof: Proof,
+    pub proof: InnerProof,
     pub chunk_info: ChunkInfo,
     pub chunk_kind: ChunkKind,
     #[serde(default)]
@@ -77,7 +81,7 @@ impl ChunkProof {
         row_usages: Vec<SubCircuitRowUsage>,
     ) -> anyhow::Result<Self> {
         let protocol = serde_json::to_vec(&snark.protocol)?;
-        let proof = Proof::new(snark.proof, &snark.instances, pk);
+        let proof = InnerProof::new(snark.proof, &snark.instances, pk);
 
         Ok(Self {
             protocol,
@@ -89,16 +93,19 @@ impl ChunkProof {
     }
 
     pub fn from_json_file(dir: &str, name: &str) -> anyhow::Result<Self> {
-        from_json_file(dir, &dump_filename(name))
+        let path = Path::new(dir).join(dump_filename(name));
+        Ok(read_json_deep(&path)?)
     }
 
     pub fn dump(&self, dir: &str, name: &str) -> anyhow::Result<()> {
         let filename = dump_filename(name);
 
         // Dump vk and protocol.
-        dump_vk(dir, &filename, &self.proof.vk);
-        dump_data(dir, &format!("chunk_{filename}.protocol"), &self.protocol);
-        dump_as_json(dir, &filename, &self)
+        dump_vk(dir, &filename, &self.proof.vk)?;
+        dump_data(dir, &format!("chunk_{filename}.protocol"), &self.protocol)?;
+        dump_as_json(dir, &filename, &self)?;
+
+        Ok(())
     }
 
     pub fn to_snark(&self) -> Snark {

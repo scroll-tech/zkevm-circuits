@@ -18,7 +18,8 @@ use crate::{
     proof::BundleProof,
     types::BundleProvingTask,
     utils::{force_to_read, try_to_read},
-    BatchProof, BatchProvingTask, ChunkKind, ChunkProof, ParamsMap,
+    BatchProofV2, BatchProofV2Metadata, BatchProvingTask, ChunkKind, ChunkProof, ParamsMap,
+    ProverError,
 };
 
 /// Prover capable of generating [`BatchProof`] and [`BundleProof`].
@@ -129,15 +130,14 @@ impl<'params> Prover<'params> {
         batch: BatchProvingTask,
         name: Option<&str>,
         output_dir: Option<&str>,
-    ) -> Result<BatchProof, BatchProverError> {
+    ) -> Result<BatchProofV2, ProverError> {
         // Denotes the identifier for this batch proving task. Eventually a generated proof is
         // cached to disk using this identifier.
         let name = name.map_or_else(|| batch.identifier(), |name| name.to_string());
 
         // Return early if the batch proof was found on disk.
         if let Some(output_dir) = output_dir {
-            if let Ok(batch_proof) = BatchProof::from_json_file(output_dir, &name) {
-                log::info!("batch proof found on disk! id={name}, path={output_dir}");
+            if let Ok(batch_proof) = BatchProofV2::from_json(output_dir, &name) {
                 return Ok(batch_proof);
             }
         }
@@ -157,7 +157,7 @@ impl<'params> Prover<'params> {
                 layer3_snark,
                 output_dir,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| BatchProverError::Custom(e.to_string()))?;
         log::info!("Got batch compression thin proof (layer-4): {name}");
 
         // Sanity check on the layer-4 verifying key.
@@ -167,18 +167,13 @@ impl<'params> Prover<'params> {
         let pk = self.prover_impl.pk(LayerId::Layer4.id());
 
         // Build a wrapper around the layer-4 SNARK, aka batch proof.
-        let batch_proof =
-            BatchProof::new(layer4_snark, pk, batch_hash).map_err(|e| e.to_string())?;
+        let batch_proof_metadata = BatchProofV2Metadata::new(&layer4_snark, batch_hash)?;
+        let batch_proof = BatchProofV2::new(layer4_snark, pk, batch_proof_metadata)?;
 
         // If an output directory was provided, write the generated batch proof and layer-4
         // verifying key to disk.
         if let Some(output_dir) = output_dir {
-            batch_proof
-                .dump_vk(output_dir, "agg")
-                .map_err(|e| e.to_string())?;
-            batch_proof
-                .dump(output_dir, &name)
-                .map_err(|e| e.to_string())?;
+            batch_proof.dump(output_dir, &name)?;
         }
 
         Ok(batch_proof)
@@ -196,7 +191,7 @@ impl<'params> Prover<'params> {
         bundle: BundleProvingTask,
         name: Option<&str>,
         output_dir: Option<&str>,
-    ) -> Result<BundleProof, BatchProverError> {
+    ) -> Result<BundleProof, ProverError> {
         // Denotes the identifier for this bundle proving task. Eventually a generated proof is
         // written to disk using this name.
         let name = name.map_or_else(|| bundle.identifier(), |name| name.to_string());
@@ -218,7 +213,7 @@ impl<'params> Prover<'params> {
                 &bundle_snarks,
                 output_dir,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| BatchProverError::Custom(e.to_string()))?;
 
         // Load from disk or generate a layer-6 Compression Circuit SNARK. Since we use a Keccak
         // hasher for the proof transcript at layer-6, the output proof is EVM-verifiable.
@@ -232,7 +227,7 @@ impl<'params> Prover<'params> {
                 layer5_snark,
                 output_dir,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| BatchProverError::Custom(e.to_string()))?;
 
         // Sanity check for the layer-6 verifying key.
         self.check_bundle_vk()?;
@@ -244,7 +239,7 @@ impl<'params> Prover<'params> {
         if let Some(output_dir) = output_dir {
             bundle_proof
                 .dump(output_dir, "recursion")
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| BatchProverError::Custom(e.to_string()))?;
         }
 
         Ok(bundle_proof)
@@ -258,13 +253,14 @@ impl<'params> Prover<'params> {
         batch: BatchProvingTask,
         name: &str,
         output_dir: Option<&str>,
-    ) -> Result<(Snark, H256), BatchProverError> {
+    ) -> Result<(Snark, H256), ProverError> {
         // Early return with an error if the number of SNARKs to aggregate is not within limits.
         let num_chunks = batch.chunk_proofs.len();
         if !(1..=MAX_AGG_SNARKS).contains(&num_chunks) {
             return Err(BatchProverError::Custom(format!(
                 "1 <= num_chunks <= MAX_AGG_SNARKS, found={num_chunks}"
-            )));
+            ))
+            .into());
         }
 
         // Sanity check on the chunk proof's SNARK protocols.
@@ -311,28 +307,32 @@ impl<'params> Prover<'params> {
             return Err(BatchProverError::Custom(format!(
                 "BatchHeader(sanity) data_hash mismatch! expected={}, got={}",
                 batch.batch_header.data_hash, batch_header.data_hash
-            )));
+            ))
+            .into());
         }
         // Batch's random challenge point (z) must match.
         if batch_header.blob_data_proof[0] != batch.batch_header.blob_data_proof[0] {
             return Err(BatchProverError::Custom(format!(
                 "BatchHeader(sanity) random challenge (z) mismatch! expected={}, got={}",
                 batch.batch_header.blob_data_proof[0], batch_header.blob_data_proof[0],
-            )));
+            ))
+            .into());
         }
         // Batch's evaluation at z, i.e. y, must match.
         if batch_header.blob_data_proof[1] != batch.batch_header.blob_data_proof[1] {
             return Err(BatchProverError::Custom(format!(
                 "BatchHeader(sanity) evaluation (y) mismatch! expected={}, got={}",
                 batch.batch_header.blob_data_proof[1], batch_header.blob_data_proof[1],
-            )));
+            ))
+            .into());
         }
         // The versioned hash of the blob that encodes the batch must match.
         if batch_header.blob_versioned_hash != batch.batch_header.blob_versioned_hash {
             return Err(BatchProverError::Custom(format!(
                 "BatchHeader(sanity) blob versioned_hash mismatch! expected={}, got={}",
                 batch.batch_header.blob_versioned_hash, batch_header.blob_versioned_hash,
-            )));
+            ))
+            .into());
         }
 
         // Build relevant types that are used for batch circuit witness assignments.
@@ -342,13 +342,14 @@ impl<'params> Prover<'params> {
 
         // Sanity check: validate that conditionally decoded blob should match batch data.
         let batch_bytes = batch_data.get_batch_data_bytes();
-        let decoded_blob_bytes = decode_blob(&batch.blob_bytes).map_err(|e| e.to_string())?;
+        let decoded_blob_bytes =
+            decode_blob(&batch.blob_bytes).map_err(|e| BatchProverError::Custom(e.to_string()))?;
         if batch_bytes != decoded_blob_bytes {
             return Err(BatchProverError::Custom(format!(
                 "BatchProvingTask(sanity) decoded blob bytes do not match batch bytes! len(expected)={}, len(got)={}",
                 decoded_blob_bytes.len(),
                 batch_bytes.len(),
-            )));
+            )).into());
         }
 
         // Load from disk or generate the layer-3 SNARK using the batch circuit.
@@ -364,7 +365,7 @@ impl<'params> Prover<'params> {
                 &layer2_snarks,
                 output_dir,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| BatchProverError::Custom(e.to_string()))?;
 
         Ok((layer3_snark, batch_hash))
     }
@@ -372,10 +373,7 @@ impl<'params> Prover<'params> {
     /// Sanity check: validate that the SNARK [`protocol`][snark_verifier::Protocol] for the SNARKs
     /// being aggregated by the [`BatchCircuit`][aggregator::BatchCircuit] match the expected SNARK
     /// protocols conditional to the chunk proof generation route utilised, i.e. halo2 or sp1.
-    fn check_protocol_of_chunks(
-        &self,
-        chunk_proofs: &[ChunkProof],
-    ) -> Result<(), BatchProverError> {
+    fn check_protocol_of_chunks(&self, chunk_proofs: &[ChunkProof]) -> Result<(), ProverError> {
         for (i, proof) in chunk_proofs.iter().enumerate() {
             let expected = match proof.chunk_kind {
                 ChunkKind::Halo2 => &self.halo2_protocol,
@@ -394,7 +392,8 @@ impl<'params> Prover<'params> {
                     i,
                     expected_digest,
                     found_digest,
-                ));
+                )
+                .into());
             }
         }
 
@@ -404,7 +403,7 @@ impl<'params> Prover<'params> {
     /// Sanity check for the [`VerifyinKey`][halo2_proofs::plonk::VerifyingKey] used to generate
     /// Layer-4 SNARK that is wrapped inside the [`BatchProof`]. The prover generated VK is
     /// expected to match the VK used to initialise the prover.
-    fn check_batch_vk(&self) -> Result<(), BatchProverError> {
+    fn check_batch_vk(&self) -> Result<(), ProverError> {
         let layer = LayerId::Layer4;
         if let Some(expected_vk) = self.raw_vk_batch.as_ref() {
             let base64_exp_vk = base64::encode(expected_vk);
@@ -421,10 +420,11 @@ impl<'params> Prover<'params> {
                         layer,
                         base64_gen_vk,
                         base64_exp_vk,
-                    ));
+                    )
+                    .into());
                 }
             } else {
-                return Err(BatchProverError::VerifyingKeyNotFound(layer, base64_exp_vk));
+                return Err(BatchProverError::VerifyingKeyNotFound(layer, base64_exp_vk).into());
             }
         }
 
@@ -434,7 +434,7 @@ impl<'params> Prover<'params> {
     /// Sanity check for the [`VerifyinKey`][halo2_proofs::plonk::VerifyingKey] used to generate
     /// Layer-6 SNARK that is wrapped inside the [`BundleProof`]. The prover generated VK is
     /// expected to match the VK used to initialise the prover.
-    fn check_bundle_vk(&self) -> Result<(), BatchProverError> {
+    fn check_bundle_vk(&self) -> Result<(), ProverError> {
         let layer = LayerId::Layer6;
         if let Some(expected_vk) = self.raw_vk_bundle.as_ref() {
             let base64_exp_vk = base64::encode(expected_vk);
@@ -451,10 +451,11 @@ impl<'params> Prover<'params> {
                         layer,
                         base64_gen_vk,
                         base64_exp_vk,
-                    ));
+                    )
+                    .into());
                 }
             } else {
-                return Err(BatchProverError::VerifyingKeyNotFound(layer, base64_exp_vk));
+                return Err(BatchProverError::VerifyingKeyNotFound(layer, base64_exp_vk).into());
             }
         }
 

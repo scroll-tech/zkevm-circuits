@@ -24,6 +24,9 @@ pub enum ChunkProverError {
     /// Error indicating that no verifying key was found post proof generation.
     #[error("verifying key not found: expected={0}")]
     VerifyingKeyNotFound(String),
+    /// Error indicating that proof verification failed.
+    #[error("proof verification failure")]
+    Verification,
     /// Represents all other custom errors.
     #[error("custom error: {0}")]
     Custom(String),

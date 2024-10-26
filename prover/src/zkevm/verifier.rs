@@ -12,7 +12,7 @@ use crate::{
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
     consts::chunk_vk_filename,
     utils::force_to_read,
-    ChunkProof, ParamsMap,
+    ChunkProofV2, ChunkProverError, ParamsMap, ProverError,
 };
 
 /// Verifier capable of verifying a [`ChunkProof`].
@@ -59,7 +59,12 @@ impl<'params> Verifier<'params> {
     }
 
     /// Verify a chunk proof. Returns true if the verification is successful.
-    pub fn verify_chunk_proof(&self, proof: &ChunkProof) -> bool {
-        self.inner.verify_snark(proof.to_snark())
+    pub fn verify_chunk_proof(&self, proof: &ChunkProofV2) -> Result<(), ProverError> {
+        let snark = proof.try_into()?;
+        if self.inner.verify_snark(snark) {
+            Ok(())
+        } else {
+            Err(ChunkProverError::Verification.into())
+        }
     }
 }

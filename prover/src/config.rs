@@ -157,6 +157,18 @@ impl LayerId {
             Self::Inner => unreachable!("No config file for super (inner) circuit"),
         }
     }
+
+    /// Whether or not the [`Snark`][snark_verifier_sdk::Snark] generated at this layer has an
+    /// accumulator.
+    ///
+    /// Every SNARK layer on top of the [`innermost layer`][LayerId::Inner] has an accumulator.
+    pub fn accumulator(&self) -> bool {
+        if let Self::Inner = self {
+            false
+        } else {
+            true
+        }
+    }
 }
 
 /// Returns the path to the [`Config Parameters`][aggregator::ConfigParams] that configure the

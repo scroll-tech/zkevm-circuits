@@ -50,7 +50,7 @@ pub fn batch_prove(test: &str, batch: BatchProvingTask) {
         verifier
     };
     let verified = verifier.verify_batch_proof(&proof);
-    assert!(verified, "{test}: failed to verify batch proof");
+    assert!(verified.is_ok(), "{test}: failed to verify batch proof");
 
     log::info!("{test}: batch-prove END");
 }
