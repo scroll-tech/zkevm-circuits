@@ -11,9 +11,8 @@ use crate::{
     common,
     config::{LAYER4_CONFIG_PATH, LAYER4_DEGREE},
     consts::{batch_vk_filename, DEPLOYMENT_CODE_FILENAME},
-    proof::BundleProof,
     utils::{deploy_and_call, force_to_read, try_to_read},
-    BatchProofV2, BatchProverError, ParamsMap, ProverError,
+    BatchProofV2, BatchProverError, BundleProofV2, ParamsMap, ProverError,
 };
 
 /// Verifier capable of verifying both [`BatchProof`][crate::BatchProof] and [`BundleProof`].
@@ -85,13 +84,13 @@ impl<'params> Verifier<'params> {
     ///
     /// Returns `false` if the verifier contract's deployment bytecode is not set. Otherwise
     /// deploys the contract and verifies the proof utilising an [`EVM Executor`][revm].
-    pub fn verify_bundle_proof(&self, bundle_proof: BundleProof) -> bool {
-        self.deployment_code.as_ref().map_or_else(
-            || {
-                log::error!("EVM verifier deployment code not found");
-                false
-            },
-            |code| deploy_and_call(code.to_vec(), bundle_proof.calldata()).is_ok(),
-        )
+    pub fn verify_bundle_proof(&self, bundle_proof: &BundleProofV2) -> Result<(), ProverError> {
+        if let Some(code) = self.deployment_code.as_ref() {
+            deploy_and_call(code.to_vec(), bundle_proof.calldata())
+                .map_err(|e| BatchProverError::Custom(e.to_string()))?;
+            Ok(())
+        } else {
+            Err(BatchProverError::VerifierCodeMissing.into())
+        }
     }
 }

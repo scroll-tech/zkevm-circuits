@@ -83,8 +83,8 @@ pub fn bundle_prove(test: &str, bundle: BundleProvingTask) {
         verifier
     };
 
-    let verified = verifier.verify_bundle_proof(proof);
-    assert!(verified, "{test}: failed to verify bundle proof");
+    let verified = verifier.verify_bundle_proof(&proof);
+    assert!(verified.is_ok(), "{test}: failed to verify bundle proof");
 
     log::info!("{test}: bundle-prove END");
 }
