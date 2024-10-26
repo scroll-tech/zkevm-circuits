@@ -168,6 +168,7 @@ fn build_eip1559_tx(id: usize) -> Transaction {
 fn run<F: Field>(
     txs: Vec<Transaction>,
     chain_id: u64,
+    // k1 signatures
     max_txs: usize,
     max_calldata: usize,
     start_l1_queue_index: u64,
@@ -177,7 +178,9 @@ fn run<F: Field>(
     let k = max(20, log2_ceil(active_row_num));
     let circuit = TxCircuitTester::<F> {
         sig_circuit: SigCircuit {
-            max_verify: max_txs,
+            max_verify_k1: max_txs,
+            // tx circuit test dones't need r1 sigantures
+            max_verify_r1: 0usize,
             signatures_k1: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
             // TODO: check if need to add p256 signatures here.
             signatures_r1: vec![],

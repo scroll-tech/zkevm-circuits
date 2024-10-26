@@ -148,7 +148,7 @@ fn test_edge_cases() {
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 10, signatures, vec![]);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 10, 10, signatures, vec![]);
 }
 
 // test for secp256k1 signatures
@@ -179,7 +179,7 @@ fn sign_k1_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, signatures, vec![]);
+        run::<Fr>(k, 1, 1, signatures, vec![]);
 
         log::debug!("end of testing for msg_hash = 0");
     }
@@ -200,7 +200,7 @@ fn sign_k1_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, signatures, vec![]);
+        run::<Fr>(k, 1, 1, signatures, vec![]);
 
         log::debug!("end of testing for msg_hash = 1");
     }
@@ -228,7 +228,7 @@ fn sign_k1_verify() {
         }
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, *max_sig, signatures, vec![]);
+        run::<Fr>(k, *max_sig, *max_sig, signatures, vec![]);
 
         log::debug!("end of testing for {} signatures", max_sig);
     }
@@ -267,7 +267,7 @@ fn p256_sign_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, vec![], signatures);
+        run::<Fr>(k, 1_usize, 1_usize, vec![], signatures);
 
         log::debug!("end of testing for msg_hash = 0");
     }
@@ -289,7 +289,7 @@ fn p256_sign_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, vec![], signatures);
+        run::<Fr>(k, 1, 1, vec![], signatures);
 
         log::debug!("end of testing for msg_hash = 1");
     }
@@ -320,7 +320,7 @@ fn p256_sign_verify() {
         }
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, *max_sig, vec![], signatures);
+        run::<Fr>(k, 0usize, *max_sig, vec![], signatures);
 
         log::debug!("end of testing for {} signatures", max_sig);
     }
@@ -477,7 +477,7 @@ fn sign_verify() {
         }
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 2 * (*max_sig), signatures_k1, signatures_r1);
+        run::<Fr>(k, *max_sig, *max_sig, signatures_k1, signatures_r1);
 
         log::debug!("end of testing for {} signatures", 2 * max_sig);
     }
