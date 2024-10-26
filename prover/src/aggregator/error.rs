@@ -11,6 +11,17 @@ pub enum BatchProverError {
     /// [`protocol`][snark_verifier::Protocol] did not match the expected protocols.
     #[error("SNARK protocol mismatch: index={0}, expected={1}, found={2}")]
     ChunkProtocolMismatch(usize, String, String),
+    /// Indicates that after generating an EVM verifier contract, the proof itself could not be
+    /// verified successfully, implying that this sanity check failed.
+    #[error("EVM verifier contract could not verify proof")]
+    SanityEVMVerifier,
+    /// Error indicating that the verification of batch proof failed.
+    #[error("proof verification failure")]
+    Verification,
+    /// Error indicating that in the final [`BundleProof`][crate::BundleProofV2] the number of
+    /// instances found does not match the number of instances expected.
+    #[error("number of instances in bundle proof mismatch! expected={0}, got={1}")]
+    PublicInputsMismatch(usize, usize),
     /// This variant represents other errors.
     #[error("custom: {0}")]
     Custom(String),

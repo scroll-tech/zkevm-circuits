@@ -1,36 +1,21 @@
 use std::{
-    fs::File,
-    io::{Cursor, Read, Write, BufReader},
+    fs,
+    io::{Cursor, Write},
     path::{Path, PathBuf},
 };
 
-use anyhow;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, VerifyingKey},
     SerdeFormat,
 };
-use serde::de::Deserialize;
+use serde::{
+    de::{Deserialize, DeserializeOwned},
+    Serialize,
+};
 use snark_verifier::util::arithmetic::PrimeField;
-use snark_verifier_sdk::Snark;
 
-pub fn from_json_file<'de, P, T>(filename: P) -> anyhow::Result<T>
-where
-    P: AsRef<Path>,
-    T: Deserialize<'de>,
-{
-    let file_path = filename.as_ref();
-    if !file_path.exists() {
-        anyhow::bail!("File {:?} doesn't exist", file_path);
-    }
-
-    let fd = File::open(file_path)?;
-    let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(fd));
-    deserializer.disable_recursion_limit();
-    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
-
-    Ok(serde::Deserialize::deserialize(deserializer)?)
-}
+use crate::ProverError;
 
 pub fn serialize_fr(f: &Fr) -> Vec<u8> {
     f.to_bytes().to_vec()
@@ -60,33 +45,12 @@ pub fn serialize_instance(instance: &[Vec<Fr>]) -> Vec<u8> {
     serde_json::to_vec(&instances_for_serde).unwrap()
 }
 
-pub fn read_all<P>(filename: P) -> Vec<u8>
-where
-    P: AsRef<Path>,
-{
-    let mut buf = vec![];
-    let mut fd = std::fs::File::open(filename).unwrap();
-    fd.read_to_end(&mut buf).unwrap();
-    buf
-}
-
-pub fn read_file(folder: &mut PathBuf, filename: &str) -> Vec<u8> {
-    let mut buf = vec![];
-
-    folder.push(filename);
-    let mut fd = std::fs::File::open(folder.as_path()).unwrap();
-    folder.pop();
-
-    fd.read_to_end(&mut buf).unwrap();
-    buf
-}
-
 pub fn try_to_read(dir: &str, filename: &str) -> Option<Vec<u8>> {
     let mut path = PathBuf::from(dir);
     path.push(filename);
 
     if path.exists() {
-        Some(read_all(path))
+        self::read(&path).ok()
     } else {
         None
     }
@@ -115,50 +79,59 @@ pub fn deserialize_vk<C: Circuit<Fr, Params = ()>>(raw_vk: &[u8]) -> VerifyingKe
         .unwrap_or_else(|_| panic!("failed to deserialize vk with len {}", raw_vk.len()))
 }
 
-pub fn write_snark(file_path: &str, snark: &Snark) {
-    log::debug!("write_snark to {file_path}");
-    let mut fd = std::fs::File::create(file_path).unwrap();
-    serde_json::to_writer(&mut fd, snark).unwrap();
-    log::debug!("write_snark to {file_path} done");
+/// Read bytes from a file.
+pub fn read<P: AsRef<Path>>(path: P) -> Result<Vec<u8>, ProverError> {
+    let path = path.as_ref();
+    fs::read(path).map_err(|source| ProverError::IoReadWrite {
+        source,
+        path: path.into(),
+    })
 }
 
-pub fn load_snark(file_path: &str) -> anyhow::Result<Option<Snark>> {
-    if !Path::new(file_path).exists() {
-        return Ok(None);
-    }
+/// Wrapper to read JSON file.
+pub fn read_json<P: AsRef<Path>, T: DeserializeOwned>(path: P) -> Result<T, ProverError> {
+    let path = path.as_ref();
+    let bytes = read(path)?;
+    serde_json::from_slice(&bytes).map_err(|source| ProverError::JsonReadWrite {
+        source,
+        path: path.to_path_buf(),
+    })
+}
 
-    let fd = File::open(file_path)?;
+/// Wrapper to read JSON that might be deeply nested.
+pub fn read_json_deep<P: AsRef<Path>, T: DeserializeOwned>(path: P) -> Result<T, ProverError> {
+    let fd = fs::File::open(path)?;
     let mut deserializer = serde_json::Deserializer::from_reader(fd);
     deserializer.disable_recursion_limit();
     let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
-    let snark = serde::Deserialize::deserialize(deserializer)?;
-    Ok(Some(snark))
+    Ok(Deserialize::deserialize(deserializer)?)
 }
 
-pub fn load_instances(buf: &[u8]) -> Vec<Vec<Vec<Fr>>> {
-    let instances: Vec<Vec<Vec<Vec<u8>>>> = serde_json::from_reader(buf).unwrap();
-    instances
-        .into_iter()
-        .map(|l1| {
-            l1.into_iter()
-                .map(|l2| {
-                    l2.into_iter()
-                        .map(|buf| Fr::from_bytes(&buf.try_into().unwrap()).unwrap())
-                        .collect()
-                })
-                .collect()
-        })
-        .collect()
+/// Try to read bytes from a file.
+///
+/// Returns an optional value, which is `None` in case of an i/o error encountered.
+pub fn try_read<P: AsRef<Path>>(path: P) -> Option<Vec<u8>> {
+    self::read(path).ok()
 }
 
-#[ignore]
-#[test]
-fn test_block_trace_convert() {
-    let trace_v1: eth_types::l2_types::BlockTrace =
-        from_json_file("src/testdata/trace_v1_5224657.json").expect("should load");
-    let trace_v2: eth_types::l2_types::BlockTraceV2 = trace_v1.into();
-    let mut fd = std::fs::File::create("src/testdata/trace_v2_5224657.json").unwrap();
-    serde_json::to_writer_pretty(&mut fd, &trace_v2).unwrap();
-    // then we can use this command to compare the traces:
-    // vimdiff <(jq -S "del(.executionResults)|del(.txStorageTraces)" src/testdata/trace_v1_5224657.json) <(jq -S . src/testdata/trace_v2_5224657.json)
+/// Read bytes from a file.
+///
+/// Panics if any i/o error encountered.
+pub fn force_read<P: AsRef<Path> + std::fmt::Debug>(path: P) -> Vec<u8> {
+    self::read(path.as_ref()).expect(&format!("no file found! path={path:?}"))
+}
+
+/// Wrapper functionality to write bytes to a file.
+pub fn write<P: AsRef<Path>>(path: P, data: &[u8]) -> Result<(), ProverError> {
+    let path = path.as_ref();
+    fs::write(path, data).map_err(|source| ProverError::IoReadWrite {
+        source,
+        path: path.into(),
+    })
+}
+
+/// Serialize the provided type to JSON format and write to the given path.
+pub fn write_json<P: AsRef<Path>, T: Serialize>(path: P, value: &T) -> Result<(), ProverError> {
+    let mut writer = fs::File::create(path)?;
+    Ok(serde_json::to_writer(&mut writer, value)?)
 }

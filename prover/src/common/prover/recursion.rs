@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::Path};
 
 use aggregator::{initial_recursion_snark, RecursionCircuit, StateTransition, MAX_AGG_SNARKS};
 use anyhow::Result;
@@ -8,12 +8,41 @@ use snark_verifier_sdk::{gen_snark_shplonk, Snark};
 use crate::{
     aggregator::RecursionTask,
     config::layer_config_path,
-    utils::gen_rng,
-    utils::{load_snark, write_snark},
+    utils::{gen_rng, read_json_deep, write_json},
 };
 
 impl<'params> super::Prover<'params> {
-    pub fn gen_recursion_snark(
+    pub fn load_or_gen_recursion_snark(
+        &mut self,
+        name: &str,
+        id: &str,
+        degree: u32,
+        batch_snarks: &[Snark],
+        output_dir: Option<&str>,
+    ) -> Result<Snark> {
+        // If an output directory is provided and we are successfully able to locate a SNARK with
+        // the same identifier on disk, return early.
+        if let Some(dir) = output_dir {
+            let path = Path::new(dir).join(format!("recursion_snark_{}_{}.json", id, name));
+            if let Ok(snark) = read_json_deep(&path) {
+                return Ok(snark);
+            }
+        }
+
+        // Generate the layer-5 recursion SNARK.
+        let rng = gen_rng();
+        let snark = self.gen_recursion_snark(id, degree, rng, batch_snarks)?;
+
+        // Write to disk if an output directory is provided.
+        if let Some(dir) = output_dir {
+            let path = Path::new(dir).join(format!("recursion_snark_{}_{}.json", id, name));
+            write_json(&path, &snark)?;
+        }
+
+        Ok(snark)
+    }
+
+    fn gen_recursion_snark(
         &mut self,
         id: &str,
         degree: u32,
@@ -75,34 +104,5 @@ impl<'params> super::Prover<'params> {
         }
 
         Ok(cur_snark)
-    }
-
-    pub fn load_or_gen_recursion_snark(
-        &mut self,
-        name: &str,
-        id: &str,
-        degree: u32,
-        batch_snarks: &[Snark],
-        output_dir: Option<&str>,
-    ) -> Result<Snark> {
-        let file_path = format!(
-            "{}/recursion_snark_{}_{}.json",
-            output_dir.unwrap_or_default(),
-            id,
-            name
-        );
-
-        match output_dir.and_then(|_| load_snark(&file_path).ok().flatten()) {
-            Some(snark) => Ok(snark),
-            None => {
-                let rng = gen_rng();
-                let result = self.gen_recursion_snark(id, degree, rng, batch_snarks);
-                if let (Some(_), Ok(snark)) = (output_dir, &result) {
-                    write_snark(&file_path, snark);
-                }
-
-                result
-            }
-        }
     }
 }

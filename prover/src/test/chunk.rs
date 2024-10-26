@@ -4,7 +4,7 @@ use crate::{
     config::CHUNK_PROVER_DEGREES,
     utils::read_env_var,
     zkevm::{Prover, Verifier},
-    ChunkProof, ChunkProvingTask, ParamsMap,
+    ChunkProofV2, ChunkProvingTask, ParamsMap,
 };
 
 static PARAMS_MAP: LazyLock<ParamsMap> = LazyLock::new(|| {
@@ -20,7 +20,7 @@ static CHUNK_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
     Mutex::new(prover)
 });
 
-pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
+pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProofV2 {
     log::info!("{desc}: chunk-prove BEGIN");
 
     let mut prover = CHUNK_PROVER.lock().expect("poisoned chunk-prover");
@@ -38,7 +38,7 @@ pub fn chunk_prove(desc: &str, chunk: ChunkProvingTask) -> ChunkProof {
     };
 
     let verified = verifier.verify_chunk_proof(&proof);
-    assert!(verified, "{desc}: failed to verify chunk snark");
+    assert!(verified.is_ok(), "{desc}: failed to verify chunk snark");
 
     log::info!("{desc}: chunk-prove END");
 

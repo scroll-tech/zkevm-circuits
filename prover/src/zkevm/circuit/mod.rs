@@ -4,8 +4,7 @@ use zkevm_circuits::{super_circuit::params::ScrollSuperCircuit, util::SubCircuit
 
 mod builder;
 pub use builder::{
-    block_traces_to_witness_block, calculate_row_usage_of_witness_block,
-    chunk_trace_to_witness_block, finalize_builder,
+    calculate_row_usage_of_witness_block, chunk_trace_to_witness_block, finalize_builder,
 };
 
 /// A target circuit trait is a wrapper of inner circuit, with convenient APIs for building

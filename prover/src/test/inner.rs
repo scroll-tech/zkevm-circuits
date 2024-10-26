@@ -3,7 +3,7 @@ use std::sync::{LazyLock, Mutex};
 use crate::{
     common::{Prover, Verifier},
     config::{LayerId, INNER_DEGREE},
-    utils::{gen_rng, read_env_var},
+    utils::read_env_var,
     zkevm::circuit::{SuperCircuit, TargetCircuit},
     ParamsMap, WitnessBlock,
 };
@@ -25,9 +25,8 @@ pub fn inner_prove(test: &str, witness_block: &WitnessBlock) {
 
     let mut prover = INNER_PROVER.lock().expect("poisoned inner-prover");
 
-    let rng = gen_rng();
     let snark = prover
-        .gen_inner_snark::<SuperCircuit>("inner", rng, witness_block)
+        .load_or_gen_inner_snark("", "inner", witness_block, None)
         .unwrap_or_else(|err| panic!("{test}: failed to generate inner snark: {err}"));
     log::info!("{test}: generated inner snark");
 

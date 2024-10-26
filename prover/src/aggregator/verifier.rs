@@ -6,7 +6,6 @@ use halo2_proofs::{
     plonk::VerifyingKey,
     poly::kzg::commitment::ParamsKZG,
 };
-use snark_verifier_sdk::Snark;
 
 use crate::{
     common,
@@ -14,7 +13,7 @@ use crate::{
     consts::{batch_vk_filename, DEPLOYMENT_CODE_FILENAME},
     proof::BundleProof,
     utils::{deploy_and_call, force_to_read, try_to_read},
-    ParamsMap,
+    BatchProofV2, BatchProverError, ParamsMap, ProverError,
 };
 
 /// Verifier capable of verifying both [`BatchProof`][crate::BatchProof] and [`BundleProof`].
@@ -72,8 +71,13 @@ impl<'params> Verifier<'params> {
     }
 
     /// Verify a [`Layer-4`][crate::config::LayerId::Layer4] [`CompressionCircuit`] [`Snark`].
-    pub fn verify_batch_proof<S: Into<Snark>>(&self, snark: S) -> bool {
-        self.inner.verify_snark(snark.into())
+    pub fn verify_batch_proof(&self, batch_proof: &BatchProofV2) -> Result<(), ProverError> {
+        let snark = batch_proof.try_into()?;
+        if self.inner.verify_snark(snark) {
+            Ok(())
+        } else {
+            Err(BatchProverError::Verification.into())
+        }
     }
 
     /// Verify a [`Layer-6`][crate::config::LayerId::Layer6] EVM-verifiable

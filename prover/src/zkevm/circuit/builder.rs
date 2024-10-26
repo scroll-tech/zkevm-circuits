@@ -56,57 +56,6 @@ pub fn dummy_witness_block() -> Block {
 }
 
 /// Build a witness block from block traces for all blocks in the chunk.
-///
-/// Kind of a duplication of [`self::chunk_trace_to_witness_block`], so should eventually be
-/// deprecated.
-pub fn block_traces_to_witness_block(
-    block_traces: Vec<BlockTrace>,
-) -> Result<Block, ChunkProverError> {
-    if block_traces.is_empty() {
-        return Err(ChunkProverError::Custom(
-            "empty block traces! hint: use dummy_witness_block instead".to_string(),
-        ));
-    }
-    let block_num = block_traces.len();
-    let total_tx_num = block_traces
-        .iter()
-        .map(|b| b.transactions.len())
-        .sum::<usize>();
-    if total_tx_num > MAX_TXS {
-        return Err(ChunkProverError::Custom(format!(
-            "tx num overflow {}, block range {} to {}",
-            total_tx_num,
-            block_traces[0].header.number.unwrap(),
-            block_traces[block_num - 1].header.number.unwrap()
-        )));
-    }
-    log::info!(
-        "block_traces_to_witness_block, block num {}, tx num {}",
-        block_num,
-        total_tx_num,
-    );
-    for block_trace in block_traces.iter() {
-        log::debug!("start_l1_queue_index: {}", block_trace.start_l1_queue_index);
-    }
-
-    let mut traces = block_traces.into_iter();
-    let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(get_super_circuit_params(), traces.next().unwrap())?;
-    for (idx, block_trace) in traces.enumerate() {
-        log::debug!(
-            "add_more_l2_trace idx {}, block num {:?}",
-            idx + 1,
-            block_trace.header.number
-        );
-        builder.add_more_l2_trace(block_trace)?;
-    }
-    let witness_block = finalize_builder(&mut builder)?;
-    // send to other thread to drop
-    std::thread::spawn(move || drop(builder.block));
-    Ok(witness_block)
-}
-
-/// Build a witness block from block traces for all blocks in the chunk.
 pub fn chunk_trace_to_witness_block(
     chunk_trace: Vec<BlockTrace>,
 ) -> Result<Block, ChunkProverError> {
@@ -151,6 +100,57 @@ pub fn finalize_builder(builder: &mut CircuitInputBuilder) -> Result<Block, Circ
         assert!(state.switch_to(new_root_hash));
     }
 
+    Ok(witness_block)
+}
+
+/// Build a witness block from block traces for all blocks in the chunk.
+///
+/// Kind of a duplication of [`self::chunk_trace_to_witness_block`], so should eventually be
+/// deprecated.
+fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block, ChunkProverError> {
+    if block_traces.is_empty() {
+        return Err(ChunkProverError::Custom(
+            "empty block traces! hint: use dummy_witness_block instead".to_string(),
+        ));
+    }
+    let block_num = block_traces.len();
+    let total_tx_num = block_traces
+        .iter()
+        .map(|b| b.transactions.len())
+        .sum::<usize>();
+    if total_tx_num > MAX_TXS {
+        return Err(ChunkProverError::Custom(format!(
+            "tx num overflow {}, block range {} to {}",
+            total_tx_num,
+            block_traces[0].header.number.unwrap(),
+            block_traces[block_num - 1].header.number.unwrap()
+        )));
+    }
+    log::info!(
+        "block_traces_to_witness_block, block num {}, tx num {}",
+        block_num,
+        total_tx_num,
+    );
+    for block_trace in block_traces.iter() {
+        log::debug!("start_l1_queue_index: {}", block_trace.start_l1_queue_index);
+    }
+
+    let mut traces = block_traces.into_iter();
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(
+        get_super_circuit_params(),
+        traces.next().unwrap(),
+    )?;
+    for (idx, block_trace) in traces.enumerate() {
+        log::debug!(
+            "add_more_l2_trace idx {}, block num {:?}",
+            idx + 1,
+            block_trace.header.number
+        );
+        builder.add_more_l2_trace(block_trace)?;
+    }
+    let witness_block = finalize_builder(&mut builder)?;
+    // send to other thread to drop
+    std::thread::spawn(move || drop(builder.block));
     Ok(witness_block)
 }
 

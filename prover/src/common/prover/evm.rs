@@ -68,7 +68,7 @@ impl<'params> super::Prover<'params> {
         let evm_proof = EvmProof::new(proof, &instances, num_instance, Some(pk))?;
 
         if read_env_var("SCROLL_PROVER_DUMP_YUL", false) {
-            gen_evm_verifier::<C>(params, pk.get_vk(), &evm_proof, output_dir);
+            gen_evm_verifier::<C>(params, pk.get_vk(), &evm_proof, output_dir)?;
         }
 
         Ok(evm_proof)

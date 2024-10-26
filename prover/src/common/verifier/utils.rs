@@ -1,4 +1,3 @@
-use super::Verifier;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::VerifyingKey,
@@ -6,7 +5,7 @@ use halo2_proofs::{
 };
 use snark_verifier_sdk::CircuitExt;
 
-impl<'params, C: CircuitExt<Fr>> Verifier<'params, C> {
+impl<'params, C: CircuitExt<Fr>> super::Verifier<'params, C> {
     pub fn params(&self) -> &ParamsKZG<Bn256> {
         self.params
     }
