@@ -198,23 +198,36 @@ const PUBLIC_INPUT_LEN: usize = 13;
 const PUBLIC_INPUT_BYTES: usize = PUBLIC_INPUT_LEN * 32;
 
 impl BundleProofV2 {
-    /// Encode the calldata for the proof verification transaction to be made on-chain.
-    ///
-    /// [ public_input_bytes | accumulator_bytes | proof ]
-    pub fn calldata(&self) -> Result<Vec<u8>, ProverError> {
+    /// Construct a new proof given raw proof and instance values. Generally to be used in the case
+    /// of final EVM proof using the [`gen_evm_verifier`][snark_verifier_sdk::gen_evm_verifier]
+    /// method.
+    pub fn new_from_raw(proof: &[u8], instances: &[u8], vk: &[u8]) -> Result<Self, ProverError> {
         // Sanity check on the number of public input bytes.
         let expected_len = ACCUMULATOR_BYTES + PUBLIC_INPUT_BYTES;
-        let got_len = self.instances.len();
+        let got_len = instances.len();
         if got_len != expected_len {
             return Err(BatchProverError::PublicInputsMismatch(expected_len, got_len).into());
         }
 
-        Ok(std::iter::empty()
+        Ok(Self {
+            inner: BundleProofV2Metadata::default(),
+            proof: proof.to_vec(),
+            instances: instances.to_vec(),
+            vk: vk.to_vec(),
+            git_version: short_git_version(),
+        })
+    }
+
+    /// Encode the calldata for the proof verification transaction to be made on-chain.
+    ///
+    /// [ public_input_bytes | accumulator_bytes | proof ]
+    pub fn calldata(&self) -> Vec<u8> {
+        std::iter::empty()
             .chain(self.instances[ACCUMULATOR_BYTES..].iter())
             .chain(self.instances[0..ACCUMULATOR_BYTES].iter())
             .chain(self.proof.iter())
             .cloned()
-            .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
     }
 }
 
@@ -303,7 +316,7 @@ impl Proof for BatchProofV2Metadata {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct BundleProofV2Metadata;
 
 impl Proof for BundleProofV2Metadata {

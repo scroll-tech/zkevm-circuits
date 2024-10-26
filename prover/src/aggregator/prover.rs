@@ -15,11 +15,10 @@ use crate::{
         BATCH_KECCAK_ROW, BATCH_VK_FILENAME, BUNDLE_VK_FILENAME, FD_HALO2_CHUNK_PROTOCOL,
         FD_SP1_CHUNK_PROTOCOL,
     },
-    proof::BundleProof,
     types::BundleProvingTask,
     utils::{force_to_read, try_to_read},
-    BatchProofV2, BatchProofV2Metadata, BatchProvingTask, ChunkKind, ChunkProof, ParamsMap,
-    ProverError,
+    BatchProofV2, BatchProofV2Metadata, BatchProvingTask, BundleProofV2, ChunkKind, ChunkProof,
+    ParamsMap, ProverError,
 };
 
 /// Prover capable of generating [`BatchProof`] and [`BundleProof`].
@@ -191,7 +190,7 @@ impl<'params> Prover<'params> {
         bundle: BundleProvingTask,
         name: Option<&str>,
         output_dir: Option<&str>,
-    ) -> Result<BundleProof, ProverError> {
+    ) -> Result<BundleProofV2, ProverError> {
         // Denotes the identifier for this bundle proving task. Eventually a generated proof is
         // written to disk using this name.
         let name = name.map_or_else(|| bundle.identifier(), |name| name.to_string());
@@ -233,13 +232,15 @@ impl<'params> Prover<'params> {
         self.check_bundle_vk()?;
 
         // Wrap the layer-6 proof into the wrapper Bundle Proof.
-        let bundle_proof = BundleProof::from(layer6_proof.proof);
+        let bundle_proof = BundleProofV2::new_from_raw(
+            &layer6_proof.proof.proof,
+            &layer6_proof.proof.instances,
+            &layer6_proof.proof.vk,
+        )?;
 
         // If an output directory was provided, write the bundle proof to disk.
         if let Some(output_dir) = output_dir {
-            bundle_proof
-                .dump(output_dir, "recursion")
-                .map_err(|e| BatchProverError::Custom(e.to_string()))?;
+            bundle_proof.dump(output_dir, "recursion")?;
         }
 
         Ok(bundle_proof)

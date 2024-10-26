@@ -18,6 +18,9 @@ pub enum BatchProverError {
     /// Error indicating that the verification of batch proof failed.
     #[error("proof verification failure")]
     Verification,
+    /// Error indicating that the verifier contract's deployment code is not found.
+    #[error("EVM verifier deployment code not found!")]
+    VerifierCodeMissing,
     /// Error indicating that in the final [`BundleProof`][crate::BundleProofV2] the number of
     /// instances found does not match the number of instances expected.
     #[error("number of instances in bundle proof mismatch! expected={0}, got={1}")]
