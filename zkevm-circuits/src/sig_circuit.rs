@@ -314,7 +314,6 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             challenges,
         )?;
 
-        println!("end_assign");
         Ok(())
     }
 
@@ -339,7 +338,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
         // circuit won't have more space for the padding tx's ECDSA verification. Then the
         // prover won't be able to produce any valid proof.
-        let max_num_verif = MAX_NUM_SIG_K1 - 1;
+        let max_num_verif = MAX_NUM_SIG_K1 + MAX_NUM_SIG_R1 - 1;
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
@@ -398,8 +397,6 @@ impl<F: Field> SigCircuit<F> {
         ctx: &mut Context<F>,
         ecdsa_chip: &FpChipK1<F>,
         sign_data: &SignData<Fq_K1, Secp256k1Affine>,
-        // TODO: refactor method `assign_ecdsa` to `assign_ecdsa<Fq, Affine>`
-        // or add more one parameter `sign_data_r1`
     ) -> Result<AssignedECDSA<F, FpChipK1<F>>, Error> {
         let gate = ecdsa_chip.gate();
         let zero = gate.load_zero(ctx);
@@ -420,7 +417,6 @@ impl<F: Field> SigCircuit<F> {
         println!("pk_is_valid {:?}", pk_is_valid);
 
         // build Fq chip from Fp chip
-        // TODO: check if need to add new fq_chip_r
         let fq_chip = FqChipK1::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq_K1>());
         let integer_r =
             fq_chip.load_private(ctx, FqChipK1::<F>::fe_to_witness(&Value::known(*sig_r)));
@@ -496,7 +492,7 @@ impl<F: Field> SigCircuit<F> {
         ecc_chip
             .field_chip
             .range
-            .range_check(ctx, &assigned_y_tmp, 88);
+            .range_check(ctx, &assigned_y_tmp, 87);
 
         let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
         let sig_is_valid = gate.and_many(
@@ -605,7 +601,7 @@ impl<F: Field> SigCircuit<F> {
         // check if p256 curve, for precompile p256Verify, there is no need of v in the input data
         // and just use public key (x, y) provided instead.
         // so only secp256k1 signature data need to check v oddness
-        let (sig_is_valid, assigned_y_is_odd) = if self.is_p256_precompile::<Fp, Affine>() {
+        let (sig_is_valid, assigned_y_is_odd) = if self.is_k1_sig::<Fp, Affine>() {
             let (y_is_ok, assigned_y_is_odd) =
                 self.check_y_oddness(ctx, ecdsa_chip, v, y_coord, pk_is_zero);
             let sig_is_valid = gate.and_many(
@@ -642,8 +638,8 @@ impl<F: Field> SigCircuit<F> {
         })
     }
 
-    // check if precompile p256Verify
-    fn is_p256_precompile<
+    // check if secp256k1 sig.
+    fn is_k1_sig<
         Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
         Affine: CurveAffine<Base = Fp>,
     >(
@@ -778,7 +774,6 @@ impl<F: Field> SigCircuit<F> {
     >(
         &self,
         ctx: &mut Context<F>,
-        //ecdsa_chip: &FpChipK1<F>,
         ecdsa_chip: &FpConfig<F, Fp>,
         sign_data: &SignData<Fq, Affine>,
         assigned_data: &AssignedECDSA<F, FpConfig<F, Fp>>,
@@ -1031,12 +1026,20 @@ impl<F: Field> SigCircuit<F> {
         signatures_r1: &[SignData<Fq_R1, Secp256r1Affine>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
-        println!("come to assign");
-        if (signatures_k1.len() + signatures_r1.len()) > self.max_verify {
+        if signatures_k1.len() > self.max_verify_k1 {
             error!(
-                "signatures.len() = {} > max_verif = {}",
-                signatures_k1.len() + signatures_r1.len(),
-                self.max_verify
+                "signatures_k1.len() = {} > max_verify_k1 = {}",
+                signatures_k1.len(),
+                self.max_verify_k1
+            );
+            return Err(Error::Synthesis);
+        }
+
+        if signatures_r1.len() > self.max_verify_r1 {
+            error!(
+                "signatures_r1.len() = {} > max_verify_r1 = {}",
+                signatures_r1.len(),
+                self.max_verify_r1
             );
             return Err(Error::Synthesis);
         }
@@ -1063,17 +1066,17 @@ impl<F: Field> SigCircuit<F> {
                 let assigned_ecdsas_k1 = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
-                    .take(self.max_verify - signatures_r1.len())
+                    .take(self.max_verify_k1)
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_k1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipK1<F>>>, Error>>()?;
 
                 let assigned_ecdsas_r1 = signatures_r1
                     .iter()
+                    // .chain(std::iter::repeat(
+                    //     &SignData::<Fq_R1,Secp256r1Affine>::default()))
+                    // .take(self.max_verify_r1)
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_r1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipR1<F>>>, Error>>()?;
-
-                println!("assigned_ecdsas_k1 {:?} ", assigned_ecdsas_k1.len());
-                println!("assigned_ecdsas_r1 {:?} ", assigned_ecdsas_r1.len());
 
                 // ================================================
                 // step 2: decompose the keys and messages
@@ -1082,7 +1085,7 @@ impl<F: Field> SigCircuit<F> {
                 let sign_data_k1_decomposed = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
-                    .take(self.max_verify - signatures_r1.len())
+                    .take(self.max_verify_k1)
                     .zip_eq(assigned_ecdsas_k1.iter())
                     .map(|(sign_data, assigned_ecdsa)| {
                         self.sign_data_decomposition_generic(
@@ -1096,6 +1099,10 @@ impl<F: Field> SigCircuit<F> {
 
                 let sign_data_r1_decomposed = signatures_r1
                     .iter()
+                    .chain(std::iter::repeat(
+                        &SignData::<Fq_R1, Secp256r1Affine>::default(),
+                    ))
+                    .take(self.max_verify_r1)
                     .zip_eq(assigned_ecdsas_r1.iter())
                     .map(|(sign_data, assigned_ecdsa)| {
                         self.sign_data_decomposition_generic(
@@ -1130,7 +1137,7 @@ impl<F: Field> SigCircuit<F> {
                 ) = signatures_k1
                     .iter()
                     .chain(std::iter::repeat(&SignData::default()))
-                    .take(self.max_verify - signatures_r1.len() )
+                    .take(self.max_verify_k1)
                     .zip_eq(assigned_ecdsas_k1.iter())
                     .zip_eq(sign_data_k1_decomposed.iter())
                     .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
@@ -1155,6 +1162,8 @@ impl<F: Field> SigCircuit<F> {
                     Vec<AssignedSignatureVerify<F>>,
                 ) = signatures_r1
                     .iter()
+                     .chain(std::iter::repeat(&SignData::<Fq_R1,Secp256r1Affine>::default()))
+                    .take(self.max_verify_r1)
                     .zip_eq(assigned_ecdsas_r1.iter())
                     .zip_eq(sign_data_r1_decomposed.iter())
                     .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
@@ -1181,11 +1190,7 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 4: deferred keccak checks
                 // ================================================
-                println!(
-                    "assigned_keccak_values size {} {:?}",
-                    assigned_keccak_values.len(),
-                    assigned_keccak_values
-                );
+
                 for (i, [is_address_zero, pk_rlc, pk_hash_rlc]) in
                     assigned_keccak_values.iter().enumerate()
                 {
@@ -1205,7 +1210,6 @@ impl<F: Field> SigCircuit<F> {
                 // check lookups
                 // This is not optional.
                 let lookup_cells = ecdsa_k1_chip.finalize(&mut ctx);
-                let lookup_cells2 = ecdsa_r1_chip.finalize(&mut ctx);
 
                 log::info!("total number of lookup cells: {}", lookup_cells);
 

@@ -206,6 +206,23 @@ static SIGN_DATA_DEFAULT: LazyLock<SignData<Fq_K1, Secp256k1Affine>> = LazyLock:
     sign_data
 });
 
+static SIGN_DATA_DEFAULT_R1: LazyLock<SignData<Fq_R1, Secp256r1Affine>> = LazyLock::new(|| {
+    let sk = Fq_R1::one().double();
+    let pk = Secp256r1Affine::generator() * sk;
+    let pk = pk.to_affine();
+
+    let msg = [0u8; 32];
+    let msg_hash = Fq_R1::one();
+    let signature = sign::<Fp_R1, Fq_R1, Secp256r1Affine>(Fq_R1::one(), sk, msg_hash);
+
+    SignData {
+        signature,
+        pk,
+        msg: msg.into(),
+        msg_hash,
+    }
+});
+
 // Default for secp256k1
 impl Default for SignData<Fq_K1, Secp256k1Affine> {
     // Hardcoded valid signature corresponding to a hardcoded private key and
@@ -215,6 +232,18 @@ impl Default for SignData<Fq_K1, Secp256k1Affine> {
     // message hash and public key).
     fn default() -> Self {
         SIGN_DATA_DEFAULT.clone()
+    }
+}
+
+// Default for secp256r1
+impl Default for SignData<Fq_R1, Secp256r1Affine> {
+    // Hardcoded valid signature corresponding to a hardcoded private key and
+    // message hash generated from "nothing up my sleeve" values to make the
+    // ECDSA chip pass the constraints, to be use for padding signature
+    // verifications (where the constraints pass, but we don't care about the
+    // message hash and public key).
+    fn default() -> Self {
+        SIGN_DATA_DEFAULT_R1.clone()
     }
 }
 
@@ -308,5 +337,14 @@ pub fn pk_bytes_le_generic<
     let mut pk_le = [0u8; 64];
     pk_le[..32].copy_from_slice(&pk_coord.x().to_repr());
     pk_le[32..].copy_from_slice(&pk_coord.y().to_repr());
+    pk_le
+}
+
+/// p256 get addr
+pub fn pk_bytes_le_p256(pk: &Secp256r1Affine) -> [u8; 64] {
+    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
+    let mut pk_le = [0u8; 64];
+    pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
+    pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
     pk_le
 }

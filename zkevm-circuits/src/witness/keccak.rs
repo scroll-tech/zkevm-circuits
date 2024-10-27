@@ -75,7 +75,6 @@ pub fn keccak_inputs(block: &Block) -> Result<Vec<Vec<u8>>, Error> {
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
 /// signature datas.
-/// TODO: check if need to support p256 SignData type later.
 pub fn keccak_inputs_sign_verify<
     Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
     Fq: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
@@ -84,7 +83,7 @@ pub fn keccak_inputs_sign_verify<
     sigs: &[SignData<Fq, Affine>],
 ) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
-    let dummy_sign_data = SignData::default();
+    //let dummy_sign_data = SignData::<Fq, Affine>::default();
     for sig in sigs {
         let pk_le = pk_bytes_le_generic(&sig.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
