@@ -28,10 +28,9 @@ use strum_macros::EnumIter;
 
 use halo2_proofs::halo2curves::{
     // secp256k1 curve
-    secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
+    secp256k1::{Fq as Fq_K1, Secp256k1Affine},
     // p256 curve
-    secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
-    Coordinates,
+    secp256r1::{Fq as Fq_R1, Secp256r1Affine},
     //CurveAffine,
 };
 

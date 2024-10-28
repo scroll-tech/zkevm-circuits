@@ -13,9 +13,9 @@ use halo2_proofs::{
 
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
-pub(super) const MAX_NUM_SIG_K1: usize = 128;
-// MAX_NUM_SIG/4 for MAX_NUM_SIG_R1 ?
-pub(super) const MAX_NUM_SIG_R1: usize = 32;
+pub(super) const MAX_NUM_SIG_K1: usize = 110;
+// MAX NUM OF SIG_R1
+pub(super) const MAX_NUM_SIG_R1: usize = 15;
 
 // Each ecdsa signature requires 461174 cells
 pub(super) const CELLS_PER_SIG: usize = 461174;
