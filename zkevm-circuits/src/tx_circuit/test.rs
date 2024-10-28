@@ -179,7 +179,7 @@ fn run<F: Field>(
     let circuit = TxCircuitTester::<F> {
         sig_circuit: SigCircuit {
             max_verify_k1: max_txs,
-            // tx circuit test dones't need r1 sigantures
+            // tx circuit test dones't need r1 signatures
             max_verify_r1: 0usize,
             signatures_k1: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
             // TODO: check if need to add p256 signatures here.

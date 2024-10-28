@@ -301,7 +301,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        // only initialze one RangeConfig which two chips (r1 & k1) shares
+        // only initialize one RangeConfig which two chips (r1 & k1) shares
         //config.ecdsa_k1_config.range.load_lookup_table(layouter)?;
         config.ecdsa_r1_config.range.load_lookup_table(layouter)?;
 

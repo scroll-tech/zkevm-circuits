@@ -388,7 +388,7 @@ fn p256_sign_verify() {
 //         let mut field_x: [u8; 32] = pubkey_affine.x().into();
 //         let x_fp = secp256r1::Fp::from_raw_bytes_unchecked(&field_x);
 //         // println!("x_fp : {:?}", x_fp.to_bytes());
-//         // can not get y from pubkey_affine direclty.
+//         // can not get y from pubkey_affine directly.
 //         // calculate x^3 + ax + b (mod p)
 //         let x3 = x_fp.square() * x_fp;
 //         let ax = secp256r1::Secp256r1Affine::a() * x_fp;

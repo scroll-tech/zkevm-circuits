@@ -80,7 +80,7 @@ pub fn verify<
     r: Fq,
     s: Fq,
     msg_hash: Fq,
-    // if pubkey is provided rather than from recovered , v is not neccessary.
+    // if pubkey is provided rather than from recovered , v is not necessary.
     _v: Option<bool>,
 ) -> bool {
     // Verify
