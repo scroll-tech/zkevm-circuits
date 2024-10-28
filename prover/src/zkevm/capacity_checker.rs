@@ -95,9 +95,6 @@ impl RowUsage {
 
 #[derive(Debug)]
 pub struct CircuitCapacityChecker {
-    /// When "light_mode" enabled, we skip zktrie subcircuit in row estimation to avoid the heavy
-    /// poseidon cost.
-    pub light_mode: bool,
     pub acc_row_usage: RowUsage,
     pub row_usages: Vec<RowUsage>,
     pub builder_ctx: Option<(CodeDB, StateDB, Option<ZktrieState>)>,
@@ -115,7 +112,6 @@ impl CircuitCapacityChecker {
         Self {
             acc_row_usage: RowUsage::new(),
             row_usages: Vec::new(),
-            light_mode: true,
             builder_ctx: None,
         }
     }
@@ -123,9 +119,6 @@ impl CircuitCapacityChecker {
         self.builder_ctx = None;
         self.acc_row_usage = RowUsage::new();
         self.row_usages = Vec::new();
-    }
-    pub fn set_light_mode(&mut self, light_mode: bool) {
-        self.light_mode = light_mode;
     }
     pub fn get_tx_num(&self) -> usize {
         self.row_usages.len()
@@ -173,11 +166,7 @@ impl CircuitCapacityChecker {
                 (builder, Some(code_db))
             } else {
                 (
-                    CircuitInputBuilder::new_from_l2_trace(
-                        get_super_circuit_params(),
-                        trace,
-                        self.light_mode,
-                    )?,
+                    CircuitInputBuilder::new_from_l2_trace(get_super_circuit_params(), trace)?,
                     None,
                 )
             };

@@ -1,45 +1,25 @@
-use crate::{utils::read_env_var, zkevm::SubCircuitRowUsage};
+use crate::zkevm::SubCircuitRowUsage;
 use anyhow::{bail, Result};
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use eth_types::{l2_types::BlockTrace, ToWord};
 use itertools::Itertools;
 use mpt_zktrie::state::ZkTrieHash;
-use std::sync::LazyLock;
 use zkevm_circuits::{
     evm_circuit::witness::Block,
     super_circuit::params::{get_super_circuit_params, ScrollSuperCircuit, MAX_TXS},
     witness::block_convert,
 };
 
-static CHAIN_ID: LazyLock<u64> = LazyLock::new(|| read_env_var("CHAIN_ID", 534352));
-
 pub fn calculate_row_usage_of_witness_block(
     witness_block: &Block,
 ) -> Result<Vec<SubCircuitRowUsage>> {
-    let mut rows = ScrollSuperCircuit::min_num_rows_block_subcircuits(witness_block);
+    let rows = ScrollSuperCircuit::min_num_rows_block_subcircuits(witness_block);
+
     // Check whether we need to "estimate" poseidon sub circuit row usage
     if witness_block.mpt_updates.smt_traces.is_empty() {
-        assert_eq!(rows[11].name, "poseidon");
-        assert_eq!(rows[14].name, "mpt");
-
-        // TODO: make this a function parameter?
-        let is_follower = witness_block.txs.len() > 1;
-
-        // For a storage access, avg account trie depth + storage trie depth
-        // These 2 numbers are very very conservative now.
-        let avg_trie_depth = if is_follower { 64 } else { 128 };
-
-        // Fr::hash_block_size()
-        let poseidon_round_rows = 9;
-        // 96 is 3 word lookup. See comments of MptCircuit::min_num_rows_block
-        let mpt_updates_num = rows[14].row_num_real / 96;
-        let mpt_poseidon_rows = mpt_updates_num * avg_trie_depth * poseidon_round_rows;
-
-        rows[11].row_num_real += mpt_poseidon_rows;
-        log::debug!("calculate_row_usage_of_witness_block light mode, adding {mpt_poseidon_rows} poseidon rows");
-    } else {
-        log::debug!("calculate_row_usage_of_witness_block normal mode, skip adding poseidon rows");
+        bail!("light mode no longer supported");
     }
+
     let first_block_num = witness_block.first_block_number();
     let last_block_num = witness_block.last_block_number();
 
@@ -82,25 +62,10 @@ pub fn print_chunk_stats(block_traces: &[BlockTrace]) {
     );
 }
 
-/// check if block traces match preset parameters
-pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
-    let chain_id = block_traces
-        .iter()
-        .map(|block_trace| block_trace.chain_id)
-        .next()
-        .unwrap_or(*CHAIN_ID);
-    if *CHAIN_ID != chain_id {
-        bail!(
-            "CHAIN_ID env var is wrong. chain id in trace {chain_id}, CHAIN_ID {}",
-            *CHAIN_ID
-        );
-    }
-    Ok(())
-}
-
 pub fn dummy_witness_block() -> Result<Block> {
     log::debug!("generate dummy witness block");
-    let witness_block = zkevm_circuits::witness::dummy_witness_block(*CHAIN_ID);
+    let dummy_chain_id = 0;
+    let witness_block = zkevm_circuits::witness::dummy_witness_block(dummy_chain_id);
     log::debug!("generate dummy witness block done");
     Ok(witness_block)
 }
@@ -109,7 +74,6 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
     if block_traces.is_empty() {
         bail!("use dummy_witness_block instead");
     }
-    validite_block_traces(&block_traces)?;
     let block_num = block_traces.len();
     let total_tx_num = block_traces
         .iter()
@@ -133,11 +97,8 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
     }
 
     let mut traces = block_traces.into_iter();
-    let mut builder = CircuitInputBuilder::new_from_l2_trace(
-        get_super_circuit_params(),
-        traces.next().unwrap(),
-        false,
-    )?;
+    let mut builder =
+        CircuitInputBuilder::new_from_l2_trace(get_super_circuit_params(), traces.next().unwrap())?;
     for (idx, block_trace) in traces.enumerate() {
         log::debug!(
             "add_more_l2_trace idx {}, block num {:?}",
