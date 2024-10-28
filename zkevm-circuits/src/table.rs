@@ -2591,7 +2591,7 @@ impl SigTable {
                 let signatures_k1 = block.get_sign_data(false);
                 let signatures_r1 = block.get_sign_data_p256(false);
 
-                // TODO: connect signatures_r1 in following loop.
+                // connect signatures_r1 in following loop.
                 let signatures =
                     Self::combine_signatures(&signatures_k1, &signatures_r1, challenges);
                 for (

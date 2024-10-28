@@ -3017,8 +3017,6 @@ impl<F: Field> TxCircuitConfig<F> {
         offset: &mut usize,
         tx: &Transaction,
         sign_data: &SignData<secp256k1::Fq, Secp256k1Affine>,
-        // TODO: refactor method `assign_fixed_rows` to `assign_fixed_rows<Fq, Affine>`
-        // or add more one parameter `assign_fixed_rows_r1`
         next_tx: Option<&Transaction>,
         total_l1_popped_before: u64,
         num_all_txs_acc: u64,

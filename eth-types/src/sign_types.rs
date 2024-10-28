@@ -17,11 +17,7 @@ use ethers_core::{
 use halo2curves::{
     ff::FromUniformBytes,
     //group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
-    group::{
-        ff::{Field as GroupField, PrimeField},
-        prime::PrimeCurveAffine,
-        Curve, GroupEncoding,
-    },
+    group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
 
     // secp256k1 curve
     secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
@@ -340,7 +336,7 @@ pub fn pk_bytes_le_generic<
     pk_le
 }
 
-/// p256 get addr
+/// this helper should can be removed now.
 pub fn pk_bytes_le_p256(pk: &Secp256r1Affine) -> [u8; 64] {
     let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
     let mut pk_le = [0u8; 64];

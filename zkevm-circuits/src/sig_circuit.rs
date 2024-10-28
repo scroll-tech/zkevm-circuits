@@ -414,7 +414,6 @@ impl<F: Field> SigCircuit<F> {
         let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Secp256k1Affine>(ctx, &pk_assigned);
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
-        println!("pk_is_valid {:?}", pk_is_valid);
 
         // build Fq chip from Fp chip
         let fq_chip = FqChipK1::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq_K1>());
@@ -430,7 +429,6 @@ impl<F: Field> SigCircuit<F> {
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
         let (sig_is_valid, pk_is_zero, y_coord) =
-            // add new p256 curve `ecdsa_verify_no_pubkey_check`
             ecdsa_verify_no_pubkey_check::<F, Fp_K1, Fq_K1, Secp256k1Affine>(
                 &ecc_chip.field_chip,
                 ctx,
@@ -519,7 +517,6 @@ impl<F: Field> SigCircuit<F> {
     // FpChip: can be FpChipK1 or FpChipR1
     // Fq: can be Fq_K1 or Fq_R1
     // Affine can be Secp256k1Affine or Secp256r1Affine
-    //fn assign_ecdsa_generic<FpChip: FieldChip<F>, Fq: PrimeField, Affine: CurveAffine<Base = FpChip::FieldType> + CurveAffineExt>(
     fn assign_ecdsa_generic<
         Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
         Fq: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
@@ -557,8 +554,6 @@ impl<F: Field> SigCircuit<F> {
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Affine>(ctx, &pk_assigned);
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
-        println!("assign_ecdsa_generic: pk_is_valid {:?}", pk_is_valid);
-
         // build Fq chip from Fp chip
         let fq_chip =
             FpConfig::<F, Fq>::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq>());
@@ -576,7 +571,7 @@ impl<F: Field> SigCircuit<F> {
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
         let (sig_is_valid, pk_is_zero, y_coord) =
-            // add new p256 curve `ecdsa_verify_no_pubkey_check`
+            // `ecdsa_verify_no_pubkey_check`can verify p256 constraints now after fix halo2-ecc issue
             ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Affine>(
                 &ecc_chip.field_chip,
                 ctx,

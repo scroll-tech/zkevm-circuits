@@ -177,7 +177,7 @@ where
     // P:(x_1, y_1) + Q:(x_2, y_2) == (x_3, y_3) we have:
     // - lambda == (y_2 - y_1) / (x_2 - x_1) (mod n)
     // - x_3 == (lambda * lambda) - x_1 - x_2 (mod n)
-    // - y_3 == lambda * (x_1 - x_3) + y_1 (mod n)
+    // - y_3 == lambda * (x_1 - x_3) - y_1 (mod n)
     let (x_3, y_3) = {
         // we implement divide_unsafe in a non-panicking way, lambda = dy/dx (mod n)
         let dx = base_chip.sub_no_carry(ctx, u2_mul.x(), u1_mul.x());
@@ -216,7 +216,6 @@ where
     };
 
     scalar_chip.enforce_less_than(ctx, &x_3);
-    println!("enforce_less_than x_3 {:?} ", x_3);
 
     let equal_check = base_chip.is_equal(ctx, &x_3, r);
 
@@ -256,8 +255,6 @@ where
             Existing(is_pubkey_not_zero),
         ],
     );
-
-    println!("equal_check {:?}", equal_check);
 
     (res, is_pubkey_zero, y_3)
 }
