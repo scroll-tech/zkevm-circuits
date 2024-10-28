@@ -2,7 +2,7 @@ use super::{
     parse,
     spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
-use crate::{abi, utils::MainnetFork, Compiler};
+use crate::{abi, compiler::Compiler, utils::MainnetFork};
 use anyhow::{anyhow, bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};

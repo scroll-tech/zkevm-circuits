@@ -1,3 +1,4 @@
+#![feature(lazy_cell)]
 //! Integration testing
 
 #![deny(rustdoc::broken_intra_doc_links)]

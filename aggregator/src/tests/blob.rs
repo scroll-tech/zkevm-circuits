@@ -149,7 +149,6 @@ impl Circuit<Fr> for BlobCircuit {
                     &mut ctx,
                     &point_eval.coefficients,
                     point_eval.challenge_digest,
-                    point_eval.evaluation,
                 ))
             },
         )?;

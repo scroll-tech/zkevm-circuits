@@ -256,7 +256,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         self.batch_hash
                             .point_evaluation_assignments
                             .challenge_digest,
-                        self.batch_hash.point_evaluation_assignments.evaluation,
                     );
 
                     ctx.print_stats(&["barycentric"]);

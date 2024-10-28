@@ -1,3 +1,4 @@
+#![feature(lazy_cell)]
 //! Mock types and functions to generate GethData used for tests
 
 use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Word};

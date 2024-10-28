@@ -1,4 +1,4 @@
-use crate::{abi, Compiler};
+use crate::{abi, compiler::Compiler};
 use anyhow::{bail, Context, Result};
 use eth_types::{address, AccessList, AccessListItem, Address, Bytes, H256, U256};
 use log::debug;

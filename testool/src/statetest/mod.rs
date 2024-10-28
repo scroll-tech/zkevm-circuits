@@ -1,4 +1,4 @@
-mod executor;
+pub mod executor;
 mod json;
 mod parse;
 mod results;
