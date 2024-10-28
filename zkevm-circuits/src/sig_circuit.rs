@@ -151,35 +151,6 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             FpConfig::construct(range.clone(), limb_bits, num_limbs, modulus::<Fp_K1>());
         let ecdsa_r1_config = FpConfig::construct(range, limb_bits, num_limbs, modulus::<Fp_R1>());
 
-        // let ecdsa_k1_config = FpConfig::configure(
-        //     meta,
-        //     FpStrategy::Simple,
-        //     &num_advice,
-        //     &num_lookup_advice,
-        //     1,
-        //     LOG_TOTAL_NUM_ROWS - 1,
-        //     88,
-        //     3,
-        //     modulus::<Fp_K1>(),
-        //     0,
-        //     LOG_TOTAL_NUM_ROWS, // maximum k of the chip
-        // );
-
-        // // TODO: check if ecdsa_r1_config parameters need to be tuned.
-        // let ecdsa_r1_config = FpConfig::configure(
-        //     meta,
-        //     FpStrategy::Simple,
-        //     &num_advice,
-        //     &num_lookup_advice,
-        //     1,
-        //     LOG_TOTAL_NUM_ROWS - 1,
-        //     88,
-        //     3,
-        //     modulus::<Fp_R1>(),
-        //     0,
-        //     LOG_TOTAL_NUM_ROWS, // maximum k of the chip
-        // );
-
         // we need one phase 2 column to store RLC results
         #[cfg(feature = "onephase")]
         let rlc_column = meta.advice_column_in(halo2_proofs::plonk::FirstPhase);
@@ -580,8 +551,6 @@ impl<F: Field> SigCircuit<F> {
                 4,
                 4,
             );
-
-        println!("sig_is_valid {:?}", sig_is_valid);
 
         // =======================================
         // constrains v == y.is_oddness()
