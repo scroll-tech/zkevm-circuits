@@ -4038,7 +4038,7 @@ impl<F: Field> TxCircuit<F> {
             .collect::<Vec<Vec<u8>>>();
         inputs.extend_from_slice(&hash_datas);
 
-        let sign_datas = self
+        let mut sign_datas = self
             .txs
             .iter()
             .chain(iter::once(&padding_tx))
@@ -4053,6 +4053,7 @@ impl<F: Field> TxCircuit<F> {
                 }
             })
             .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, Error>>()?;
+        sign_datas.push(SignData::default());
         // Keccak inputs from SignVerify Chip
         let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
         inputs.extend_from_slice(&sign_verify_inputs);
@@ -4481,8 +4482,10 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             })
             .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, Error>>()?;
 
+        let mut sign_datas_with_dummy = sign_datas.clone();
+        sign_datas_with_dummy.push(SignData::default());
         // check if tx.caller_address == recovered_pk
-        let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
+        let recovered_pks = keccak_inputs_sign_verify(&sign_datas_with_dummy)
             .into_iter()
             .enumerate()
             .filter(|(idx, _)| {

@@ -238,7 +238,7 @@ fn sign_k1_verify() {
 #[test]
 fn p256_sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
-    use crate::sig_circuit::utils::MAX_NUM_SIG_K1;
+    use crate::sig_circuit::utils::MAX_NUM_SIG_R1;
     use halo2_proofs::halo2curves::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -294,7 +294,7 @@ fn p256_sign_verify() {
     }
 
     // random msg_hash
-    let max_sigs = [1, 16, MAX_NUM_SIG_K1];
+    let max_sigs = [1, 16, MAX_NUM_SIG_R1];
 
     for max_sig in max_sigs.iter() {
         log::debug!("testing for {} signatures", max_sig);
