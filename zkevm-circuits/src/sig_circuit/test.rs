@@ -228,7 +228,7 @@ fn sign_k1_verify() {
         }
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, *max_sig, *max_sig, signatures, vec![]);
+        run::<Fr>(k, *max_sig, 0, signatures, vec![]);
 
         log::debug!("end of testing for {} signatures", max_sig);
     }
@@ -429,7 +429,7 @@ fn p256_sign_verify() {
 #[test]
 fn sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
-    use crate::sig_circuit::utils::MAX_NUM_SIG_K1;
+    use crate::sig_circuit::utils::MAX_NUM_SIG_R1;
     use halo2_proofs::halo2curves::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -437,11 +437,9 @@ fn sign_verify() {
     let mut rng = XorShiftRng::seed_from_u64(1);
 
     // random msg_hash
-    //let max_sigs = [1, 16, MAX_NUM_SIG];
-    let max_sigs = [1];
+    let max_sigs = [1, 16, MAX_NUM_SIG_R1];
 
     for max_sig in max_sigs.iter() {
-        // max_sig secp256k1 and max_sig secp256r1 signatures
         log::debug!("testing for {} signatures", 2 * max_sig);
         let mut signatures_k1: Vec<SignData<secp256k1::Fq, Secp256k1Affine>> = Vec::new();
         let mut signatures_r1: Vec<SignData<secp256r1::Fq, Secp256r1Affine>> = Vec::new();

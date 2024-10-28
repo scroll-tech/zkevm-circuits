@@ -540,8 +540,6 @@ impl<F: Field> SigCircuit<F> {
         } = sign_data;
         let (sig_r, sig_s, v) = signature;
 
-        println!("assign_ecdsa_generic: signature {:?}", signature);
-
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpConfig<F, Fp>>::construct(ecdsa_chip.clone());
         // match pk {
@@ -589,7 +587,6 @@ impl<F: Field> SigCircuit<F> {
         // constrains v == y.is_oddness()
         // =======================================
         assert!(*v == 0 || *v == 1, "v is not boolean");
-        println!("V is {}, pub key x: {:?} y: {:?}", v, x, y);
 
         let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
 
@@ -697,7 +694,6 @@ impl<F: Field> SigCircuit<F> {
             QuantumCell::Existing(pk_is_zero),
         );
 
-        println!("assigned_y_tmp {:?}", assigned_y_tmp);
         //let ecc_chip = EccChip::<F, FpChipK1<F>>::construct(ecdsa_chip.clone());
 
         let ecc_chip = EccChip::construct(ecdsa_chip.clone());
