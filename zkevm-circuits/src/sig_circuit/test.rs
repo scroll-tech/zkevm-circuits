@@ -253,7 +253,6 @@ fn p256_sign_verify() {
         let (sk, pk) = gen_key_pair_r1(&mut rng);
         let msg = gen_msg(&mut rng);
         let msg_hash = secp256r1::Fq::zero();
-        println!("original pk {:?}", pk);
 
         let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
         let is_valid_r1 = verify(pk, r, s, msg_hash, None);
@@ -267,7 +266,7 @@ fn p256_sign_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1_usize, 1_usize, vec![], signatures);
+        run::<Fr>(k, 0_usize, 1_usize, vec![], signatures);
 
         log::debug!("end of testing for msg_hash = 0");
     }
@@ -289,7 +288,7 @@ fn p256_sign_verify() {
         });
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, 1, 1, vec![], signatures);
+        run::<Fr>(k, 1, 2, vec![], signatures);
 
         log::debug!("end of testing for msg_hash = 1");
     }

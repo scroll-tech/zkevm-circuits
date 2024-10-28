@@ -4052,7 +4052,6 @@ impl<F: Field> TxCircuit<F> {
                     })
                 }
             })
-            //  TODO: add p256 signature here ?
             .collect::<Result<Vec<SignData<secp256k1::Fq, Secp256k1Affine>>, Error>>()?;
         // Keccak inputs from SignVerify Chip
         let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);

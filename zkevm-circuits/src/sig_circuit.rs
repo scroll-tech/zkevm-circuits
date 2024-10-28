@@ -1072,9 +1072,10 @@ impl<F: Field> SigCircuit<F> {
 
                 let assigned_ecdsas_r1 = signatures_r1
                     .iter()
-                    // .chain(std::iter::repeat(
-                    //     &SignData::<Fq_R1,Secp256r1Affine>::default()))
-                    // .take(self.max_verify_r1)
+                    .chain(std::iter::repeat(
+                        &SignData::<Fq_R1, Secp256r1Affine>::default(),
+                    ))
+                    .take(self.max_verify_r1)
                     .map(|sign_data| self.assign_ecdsa_generic(&mut ctx, ecdsa_r1_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChipR1<F>>>, Error>>()?;
 
@@ -1122,7 +1123,6 @@ impl<F: Field> SigCircuit<F> {
                     // finalize the current lookup table before moving to next phase
                     // can only finalize one chip like ecdsa_k1_chip.
                     ecdsa_k1_chip.finalize(&mut ctx);
-                    ecdsa_r1_chip.finalize(&mut ctx);
                     ctx.print_stats(&["ECDSA context"]);
                     ctx.next_phase();
                 }
@@ -1162,7 +1162,7 @@ impl<F: Field> SigCircuit<F> {
                     Vec<AssignedSignatureVerify<F>>,
                 ) = signatures_r1
                     .iter()
-                     .chain(std::iter::repeat(&SignData::<Fq_R1,Secp256r1Affine>::default()))
+                    .chain(std::iter::repeat(&SignData::<Fq_R1,Secp256r1Affine>::default()))
                     .take(self.max_verify_r1)
                     .zip_eq(assigned_ecdsas_r1.iter())
                     .zip_eq(sign_data_r1_decomposed.iter())
@@ -1186,7 +1186,6 @@ impl<F: Field> SigCircuit<F> {
                 // append keccak & sig values of r1
                 assigned_keccak_values.extend(assigned_keccak_values_r1);
                 assigned_sig_values.extend(assigned_sig_values_r1);
-
                 // ================================================
                 // step 4: deferred keccak checks
                 // ================================================
