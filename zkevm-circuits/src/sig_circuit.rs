@@ -106,14 +106,15 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
+        let max_num_sig = MAX_NUM_SIG_K1 + MAX_NUM_SIG_R1;
         #[cfg(feature = "onephase")]
-        let num_advice = [calc_required_advices(MAX_NUM_SIG_K1)];
+        let num_advice = [calc_required_advices(max_num_sig)];
         #[cfg(not(feature = "onephase"))]
         // need an additional phase 2 column/basic gate to hold the witnesses during RLC
         // computations
-        let num_advice = [calc_required_advices(MAX_NUM_SIG_K1), 1];
+        let num_advice = [calc_required_advices(max_num_sig), 1];
 
-        let num_lookup_advice = [calc_required_lookup_advices(MAX_NUM_SIG_K1)];
+        let num_lookup_advice = [calc_required_lookup_advices(max_num_sig)];
 
         #[cfg(feature = "onephase")]
         log::info!("configuring ECDSA chip with single phase");
