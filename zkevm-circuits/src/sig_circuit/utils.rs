@@ -13,7 +13,7 @@ use halo2_proofs::{
 
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
-pub(super) const MAX_NUM_SIG_K1: usize = 50;
+pub(super) const MAX_NUM_SIG_K1: usize = 100;
 // MAX NUM OF SIG_R1
 pub(super) const MAX_NUM_SIG_R1: usize = 15;
 
