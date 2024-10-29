@@ -208,14 +208,19 @@ static SIGN_DATA_DEFAULT_R1: LazyLock<SignData<Fq_R1, Secp256r1Affine>> = LazyLo
     let pk = pk.to_affine();
 
     let msg = [0u8; 32];
-    let msg_hash = Fq_R1::one();
-    let signature = sign::<Fp_R1, Fq_R1, Secp256r1Affine>(Fq_R1::one(), sk, msg_hash);
+    //let msg_hash = Fq_R1::one();
+
+    let msg_hash = keccak256(msg);
+    let msg_hash_fq = Fq_R1::from_bytes(&msg_hash).unwrap();
+
+    let signature = sign::<Fp_R1, Fq_R1, Secp256r1Affine>(Fq_R1::one(), sk, msg_hash_fq);
 
     SignData {
         signature,
         pk,
         msg: msg.into(),
-        msg_hash,
+        //msg_hash,
+        msg_hash: msg_hash_fq,
     }
 });
 
