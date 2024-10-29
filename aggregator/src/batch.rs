@@ -84,11 +84,6 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
             last_block_timestamp,
             data_hash: batch_data_hash.into(),
             blob_consistency_witness,
-            // blob_versioned_hash,
-            // blob_data_proof: [
-            //     H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
-            //     H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
-            // ],
         }
     }
 
@@ -161,15 +156,11 @@ pub struct BatchHash<const N_SNARKS: usize> {
     pub(crate) current_batch_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
-    // /// 4844 point evaluation check related assignments.
-    // pub(crate) point_evaluation_assignments: PointEvaluationAssignments,
-    // /// The 4844 versioned hash for the blob.
-    // pub(crate) versioned_hash: H256,
     /// The context batch header
     pub(crate) batch_header: BatchHeader<N_SNARKS>,
     /// The blob bytes (may be encoded batch bytes, or may be raw batch bytes).
     pub(crate) blob_bytes: Vec<u8>,
-
+    /// Witness data to prove that the blob used as advice in the circuit matches the blob from the data availability layer.
     pub blob_consistency_witness: BlobConsistencyWitness,
 }
 
