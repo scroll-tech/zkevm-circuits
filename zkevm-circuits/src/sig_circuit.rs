@@ -312,15 +312,20 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
         // circuit won't have more space for the padding tx's ECDSA verification. Then the
         // prover won't be able to produce any valid proof.
-        let max_num_verif = std::cmp::max(ecdsa_verif_k1_count, ecdsa_verif_r1_count) - 1;
+        let max_num_verify_k1 = MAX_NUM_SIG_K1 - 1;
+        let max_num_verify_r1 = MAX_NUM_SIG_R1 - 1;
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
         // This functionality allows l2geth to decide if additional ops can be added.
-        let min_row_num = std::cmp::max(
-            (row_num / max_num_verif) * ecdsa_verif_k1_count,
-            (row_num / max_num_verif) * ecdsa_verif_r1_count,
-        );
+
+        let min_row_num = [
+            (row_num / max_num_verify_k1) * ecdsa_verif_k1_count,
+            (row_num / max_num_verify_r1) * ecdsa_verif_r1_count,
+        ]
+        .into_iter()
+        .max()
+        .unwrap();
 
         (min_row_num, row_num)
     }
@@ -524,11 +529,7 @@ impl<F: Field> SigCircuit<F> {
 
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpConfig<F, Fp>>::construct(ecdsa_chip.clone());
-        // match pk {
-        //     Secp256k1Affine { x, y } => println!("k1 affine"),
-        //     Secp256R1Affine { x, y } => println!("k1 affine"),
-        //     _ => panic!("found unknown PK type, not Secp256k1Affine or Secp256R1Affine"),
-        // }
+
         let (x, y) = pk.into_coordinates();
         let pk_assigned = ecc_chip.load_private(ctx, (Value::known(x), Value::known(y)));
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Affine>(ctx, &pk_assigned);
