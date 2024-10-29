@@ -2589,7 +2589,7 @@ impl SigTable {
             || "sig table (dev load)",
             |mut region| {
                 let signatures_k1 = block.get_sign_data(false);
-                let signatures_r1 = block.get_sign_data_p256(false);
+                let signatures_r1 = block.get_sign_data_p256(false, 0);
 
                 // connect signatures_r1 in following loop.
                 let signatures =

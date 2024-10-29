@@ -178,9 +178,17 @@ impl Block {
     pub(crate) fn get_sign_data_p256(
         &self,
         padding: bool,
+        max_p256: usize,
     ) -> Vec<SignData<secp256r1::Fq, Secp256r1Affine>> {
-        // TODO: handle padding ?
-        self.precompile_events.get_p256_verify_events()
+        let mut p256_sigs = self.precompile_events.get_p256_verify_events();
+
+        // handle padding
+        if padding && p256_sigs.len() < max_p256 {
+            // padding data
+            p256_sigs.push(SignData::default());
+        }
+
+        p256_sigs
     }
 
     /// Get EcAdd operations from all precompiled contract calls in this block.
