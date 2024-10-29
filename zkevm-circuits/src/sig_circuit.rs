@@ -94,6 +94,9 @@ pub struct SigCircuitConfig<F: Field> {
     sig_table: SigTable,
 }
 
+const LIMB_BITS: usize = 88;
+const NUM_LIMBS: usize = 3;
+
 impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
     type ConfigArgs = SigCircuitConfigArgs<F>;
 
@@ -134,8 +137,6 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // - num_limbs: 3
         //
         // TODO: make those parameters tunable from a config file
-        let limb_bits = 88;
-        let num_limbs = 3;
 
         let range = RangeConfig::<F>::configure(
             meta,
@@ -149,8 +150,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         );
 
         let ecdsa_k1_config =
-            FpConfig::construct(range.clone(), limb_bits, num_limbs, modulus::<Fp_K1>());
-        let ecdsa_r1_config = FpConfig::construct(range, limb_bits, num_limbs, modulus::<Fp_R1>());
+            FpConfig::construct(range.clone(), LIMB_BITS, NUM_LIMBS, modulus::<Fp_K1>());
+        let ecdsa_r1_config = FpConfig::construct(range, LIMB_BITS, NUM_LIMBS, modulus::<Fp_R1>());
 
         // we need one phase 2 column to store RLC results
         #[cfg(feature = "onephase")]
@@ -298,24 +299,28 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             block.circuits_params.max_vertical_circuit_rows
         };
 
-        let ecdsa_verif_count = block
+        let ecdsa_verif_k1_count = block
             .txs
             .iter()
             .filter(|tx| !tx.tx_type.is_l1_msg())
             .count()
-            + block.precompile_events.get_ecrecover_events().len()
-            + block.precompile_events.get_p256_verify_events().len();
+            + block.precompile_events.get_ecrecover_events().len();
+
+        let ecdsa_verif_r1_count = block.precompile_events.get_p256_verify_events().len();
 
         // Reserve one ecdsa verification for padding tx such that the bad case in which some tx
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
         // circuit won't have more space for the padding tx's ECDSA verification. Then the
         // prover won't be able to produce any valid proof.
-        let max_num_verif = MAX_NUM_SIG_K1 + MAX_NUM_SIG_R1 - 1;
+        let max_num_verif = std::cmp::max(ecdsa_verif_k1_count, ecdsa_verif_r1_count) - 1;
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
         // This functionality allows l2geth to decide if additional ops can be added.
-        let min_row_num = (row_num / max_num_verif) * ecdsa_verif_count;
+        let min_row_num = std::cmp::max(
+            (row_num / max_num_verif) * ecdsa_verif_k1_count,
+            (row_num / max_num_verif) * ecdsa_verif_r1_count,
+        );
 
         (min_row_num, row_num)
     }
@@ -388,7 +393,12 @@ impl<F: Field> SigCircuit<F> {
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
         // build Fq chip from Fp chip
-        let fq_chip = FqChipK1::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq_K1>());
+        let fq_chip = FqChipK1::construct(
+            ecdsa_chip.range.clone(),
+            LIMB_BITS,
+            NUM_LIMBS,
+            modulus::<Fq_K1>(),
+        );
         let integer_r =
             fq_chip.load_private(ctx, FqChipK1::<F>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
@@ -462,7 +472,7 @@ impl<F: Field> SigCircuit<F> {
         ecc_chip
             .field_chip
             .range
-            .range_check(ctx, &assigned_y_tmp, 87);
+            .range_check(ctx, &assigned_y_tmp, LIMB_BITS - 1);
 
         let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
         let sig_is_valid = gate.and_many(
@@ -525,8 +535,12 @@ impl<F: Field> SigCircuit<F> {
         gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
         // build Fq chip from Fp chip
-        let fq_chip =
-            FpConfig::<F, Fq>::construct(ecdsa_chip.range().clone(), 88, 3, modulus::<Fq>());
+        let fq_chip = FpConfig::<F, Fq>::construct(
+            ecdsa_chip.range().clone(),
+            LIMB_BITS,
+            NUM_LIMBS,
+            modulus::<Fq>(),
+        );
         let integer_r =
             fq_chip.load_private(ctx, FpConfig::<F, Fq>::fe_to_witness(&Value::known(*sig_r)));
         let integer_s =
@@ -670,7 +684,7 @@ impl<F: Field> SigCircuit<F> {
         ecc_chip
             .field_chip
             .range
-            .range_check(ctx, &assigned_y_tmp, 87);
+            .range_check(ctx, &assigned_y_tmp, LIMB_BITS - 1);
 
         (y_is_ok, assigned_y_is_odd)
     }

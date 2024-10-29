@@ -20,7 +20,7 @@ pub(super) const MAX_NUM_SIG_R1: usize = 15;
 // Each ecdsa signature requires 461174 cells
 pub(super) const CELLS_PER_SIG: usize = 550000;
 // Each ecdsa signature requires 63276 lookup cells
-pub(super) const LOOKUP_CELLS_PER_SIG: usize = 75000;
+pub(super) const LOOKUP_CELLS_PER_SIG: usize = 70000;
 // Total number of rows allocated for ecdsa chip
 pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed
