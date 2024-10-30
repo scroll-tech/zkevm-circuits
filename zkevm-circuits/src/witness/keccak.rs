@@ -34,6 +34,16 @@ pub fn keccak_inputs(block: &Block) -> Result<Vec<Vec<u8>>, Error> {
         "keccak total len after ecrecover: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
+
+    // p256
+    let mut p256_sigs = block.precompile_events.get_p256_verify_events();
+    p256_sigs.push(SignData::default());
+    keccak_inputs.extend_from_slice(&keccak_inputs_sign_verify(&p256_sigs));
+    log::debug!(
+        "keccak total len after p256_verify: {}",
+        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
+    );
+
     // PI circuit
     keccak_inputs.extend(keccak_inputs_pi_circuit(
         block.chain_id,

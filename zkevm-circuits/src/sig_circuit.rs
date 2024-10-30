@@ -1160,7 +1160,7 @@ impl<F: Field> SigCircuit<F> {
                     .unzip();
 
                 // append keccak & sig values of r1
-                // assigned_keccak_values.extend(assigned_keccak_values_r1);
+                assigned_keccak_values.extend(assigned_keccak_values_r1);
                 assigned_sig_values.extend(assigned_sig_values_r1);
                 // ================================================
                 // step 4: deferred keccak checks
