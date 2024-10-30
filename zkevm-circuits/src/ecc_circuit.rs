@@ -608,9 +608,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
         powers_of_256: &[QuantumCell<F>],
         op: &EcMulOp,
-    ) -> EcMulDecomposed<F>
-// where C: CurveAffine<Base = Fq>,
-    {
+    ) -> EcMulDecomposed<F> {
         log::trace!("[ECC] ==> EcMul Assignment START:");
         log_context_cursor!(ctx);
 

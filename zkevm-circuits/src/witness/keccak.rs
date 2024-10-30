@@ -27,9 +27,9 @@ pub fn keccak_inputs(block: &Block) -> Result<Vec<Vec<u8>>, Error> {
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
     // Ecrecover
-    keccak_inputs.extend_from_slice(&keccak_inputs_sign_verify(
-        &block.precompile_events.get_ecrecover_events(),
-    ));
+    let mut ecrecover_sigs = block.precompile_events.get_ecrecover_events();
+    ecrecover_sigs.push(SignData::default());
+    keccak_inputs.extend_from_slice(&keccak_inputs_sign_verify(&ecrecover_sigs));
     log::debug!(
         "keccak total len after ecrecover: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
@@ -200,7 +200,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[Transaction]) -> Result<Vec<Vec<u8>>, Err
         .collect::<Vec<u8>>();
     inputs.push(chunk_txbytes);
 
-    let sign_datas: Vec<SignData<secp256k1::Fq, Secp256k1Affine>> = txs
+    let mut sign_datas: Vec<SignData<secp256k1::Fq, Secp256k1Affine>> = txs
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
@@ -223,6 +223,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[Transaction]) -> Result<Vec<Vec<u8>>, Err
         })
         .try_collect()?;
     // Keccak inputs from SignVerify Chip
+    sign_datas.push(SignData::default());
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);
 

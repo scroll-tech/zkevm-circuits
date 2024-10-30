@@ -182,7 +182,6 @@ fn run<F: Field>(
             // tx circuit test dones't need r1 signatures
             max_verify_r1: 0usize,
             signatures_k1: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
-            // TODO: check if need to add p256 signatures here.
             signatures_r1: vec![],
             _marker: PhantomData,
         },

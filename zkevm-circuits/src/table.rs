@@ -2639,9 +2639,6 @@ impl SigTable {
         let evm_word = challenges.evm_word();
 
         // refactor to more uniform method to replace following two loops.
-        // let construct_sig_table_items =
-        // |signatures: &Vec<SignData<, _>>| -> Vec<(Value<F>, Value<F>, Value<F>, Value<F>, Value<F>, Value<F>)> {
-        // };
 
         for (offset, sign_data) in signatures_k1.iter().enumerate() {
             let msg_hash_rlc = evm_word.map(|challenge| {

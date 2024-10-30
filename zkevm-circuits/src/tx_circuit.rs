@@ -4170,7 +4170,6 @@ impl<F: Field> TxCircuit<F> {
         layouter: &mut impl Layouter<F>,
         start_l1_queue_index: u64,
         sign_datas: Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
-        // TODO: add `sign_datas_r1" ?
         padding_txs: &[Transaction],
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         config.tx_rom_table.load(layouter)?;

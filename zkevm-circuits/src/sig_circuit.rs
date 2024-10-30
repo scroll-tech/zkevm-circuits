@@ -772,7 +772,7 @@ impl<F: Field> SigCircuit<F> {
             .collect_vec();
 
         // ================================================
-        // pk hash cellsreset
+        // pk hash cells
         // ================================================
         let pk_le = pk_bytes_le_generic(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
@@ -893,7 +893,7 @@ impl<F: Field> SigCircuit<F> {
         })
     }
 
-    // this helper support both secp256k1 snf secp256r1
+    // this helper support both secp256k1 and secp256r1
     #[allow(clippy::too_many_arguments)]
     fn assign_sig_verify_generic<
         Fp: PrimeField<Repr = [u8; 32]> + halo2_base::utils::ScalarField,
@@ -1160,7 +1160,7 @@ impl<F: Field> SigCircuit<F> {
                     .unzip();
 
                 // append keccak & sig values of r1
-                assigned_keccak_values.extend(assigned_keccak_values_r1);
+                // assigned_keccak_values.extend(assigned_keccak_values_r1);
                 assigned_sig_values.extend(assigned_sig_values_r1);
                 // ================================================
                 // step 4: deferred keccak checks
