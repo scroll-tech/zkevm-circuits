@@ -188,8 +188,8 @@ impl BlobConsistencyWitness {
         self.blob_versioned_hash
     }
 
-    pub fn challenge_digest(&self) -> H256 {
-        self.challenge_digest
+    pub fn challenge_digest(&self) -> U256 {
+        word_from_digest(self.challenge_digest)
     }
 
     pub fn challenge(&self) -> Scalar {
@@ -228,4 +228,4 @@ fn word_from_digest(x: H256) -> U256 {
     U256::from_big_endian(&x.to_fixed_bytes())
 }
 
-// word_from scalar would not be used.
+// word_from_scalar would not be used.
