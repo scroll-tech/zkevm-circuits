@@ -3,12 +3,12 @@ use crate::{BatchData, RlcConfig};
 use eth_types::{H256, U256};
 use halo2_base::{gates::range::RangeConfig, AssignedValue, Context};
 use halo2_ecc::bigint::CRTInteger;
+use halo2_proofs::halo2curves::bls12_381::Scalar;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
     plonk::{ConstraintSystem, Error, Expression},
 };
-use serde::{Deserialize, Serialize};
 use snark_verifier_sdk::LIMBS;
 use zkevm_circuits::{table::U8Table, util::Challenges};
 
@@ -55,31 +55,36 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BlobConsistencyWitness {
-    #[serde(rename = "blob_versioned_hash")]
-    id: H256,
-    blob_data_proof: [H256; 2],
+    blob_versioned_hash: H256,
+    challenge_digest: H256,
+    evaluation: Scalar,
 }
 
 impl BlobConsistencyWitness {
-    pub fn new<const N_SNARKS: usize>(_bytes: &[u8], _: &BatchData<N_SNARKS>) -> Self {
-        Self {
-            id: H256::default(), // should be keccak of bytes
-            blob_data_proof: Default::default(),
-        }
+    pub fn new<const N_SNARKS: usize>(_bytes: &[u8], _batch_data: &BatchData<N_SNARKS>) -> Self {
+        unimplemented!()
     }
 
     pub fn id(&self) -> H256 {
-        self.id
+        unimplemented!()
     }
 
-    pub fn challenge(&self) -> H256 {
-        self.blob_data_proof[0]
+    pub fn challenge_digest(&self) -> U256 {
+        unimplemented!()
     }
 
-    pub fn evaluation(&self) -> H256 {
-        self.blob_data_proof[1]
+    pub fn challenge(&self) -> Scalar {
+        unimplemented!()
+    }
+
+    pub fn evaluation(&self) -> Scalar {
+        unimplemented!()
+    }
+
+    pub fn blob_data_proof(&self) -> [H256; 2] {
+        unimplemented!()
     }
 }
 
