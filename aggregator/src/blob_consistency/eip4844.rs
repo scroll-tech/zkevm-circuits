@@ -28,7 +28,6 @@ use halo2_proofs::{
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;
-use serde::{Deserialize, Serialize};
 use snark_verifier_sdk::LIMBS;
 use std::sync::Arc;
 use zkevm_circuits::{table::U8Table, util::Challenges};
@@ -164,9 +163,8 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BlobConsistencyWitness {
-    #[serde(rename = "blob_versioned_hash")]
     id: H256,
     blob_data_proof: [H256; 2],
 }
