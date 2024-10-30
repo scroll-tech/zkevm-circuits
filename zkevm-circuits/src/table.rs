@@ -2649,7 +2649,7 @@ impl SigTable {
 
         // refactor to more uniform method to replace following two loops.
 
-        for (_offset, sign_data) in signatures_k1.iter().enumerate() {
+        for sign_data in signatures_k1.iter() {
             let msg_hash_rlc = evm_word.map(|challenge| {
                 rlc::value(
                     sign_data.msg_hash.to_bytes().iter().collect_vec(),
@@ -2681,7 +2681,7 @@ impl SigTable {
             });
         }
 
-        for (_offset, sign_data) in signatures_r1.iter().enumerate() {
+        for sign_data in signatures_r1.iter() {
             let msg_hash_rlc = evm_word.map(|challenge| {
                 rlc::value(
                     sign_data.msg_hash.to_bytes().iter().collect_vec(),

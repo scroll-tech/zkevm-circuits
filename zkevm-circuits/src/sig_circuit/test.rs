@@ -1,5 +1,5 @@
 use crate::{sig_circuit::SigCircuit, util::Field};
-use eth_types::sign_types::{sign, verify, SignData};
+use eth_types::sign_types::{sign, SignData};
 
 use halo2_proofs::{
     arithmetic::Field as HaloField,
@@ -242,6 +242,7 @@ fn p256_sign_verify() {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use sha3::{Digest, Keccak256};
+    use eth_types::sign_types::verify;
 
     let mut rng = XorShiftRng::seed_from_u64(10000);
 
@@ -256,7 +257,7 @@ fn p256_sign_verify() {
 
         let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
         let is_valid_r1 = verify(pk, r, s, msg_hash, None);
-        assert_eq!(is_valid_r1, true);
+        assert!(is_valid_r1);
 
         signatures.push(SignData {
             signature: (r, s, v),
