@@ -26,7 +26,7 @@ use crate::{
 };
 use eth_types::{
     self,
-    sign_types::{pk_bytes_le, pk_bytes_le_generic, pk_bytes_swap_endianness, SignData},
+    sign_types::{pk_bytes_le_generic, pk_bytes_swap_endianness, SignData},
 };
 use ff::PrimeField;
 use halo2_base::{
@@ -38,10 +38,7 @@ use halo2_base::{
 use halo2_ecc::{
     bigint::CRTInteger,
     ecc::EccChip,
-    fields::{
-        fp::{FpConfig, FpStrategy},
-        FieldChip,
-    },
+    fields::{fp::FpConfig, FieldChip},
 };
 use halo2_proofs::arithmetic::CurveAffine;
 
@@ -335,8 +332,8 @@ impl<F: Field> SigCircuit<F> {
     /// Return a new SigCircuit
     pub fn new(max_verify_k1: usize, max_verify_r1: usize) -> Self {
         Self {
-            max_verify_k1: max_verify_k1,
-            max_verify_r1: max_verify_r1,
+            max_verify_k1,
+            max_verify_r1,
             signatures_k1: Vec::new(),
             signatures_r1: Vec::new(),
             _marker: PhantomData,

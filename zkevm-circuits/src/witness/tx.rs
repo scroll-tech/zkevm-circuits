@@ -31,7 +31,7 @@ use ethers_core::{
 use gadgets::ToScalar;
 use halo2_proofs::{
     circuit::Value,
-    halo2curves::{group::ff::PrimeField, secp256k1, secp256r1},
+    halo2curves::{group::ff::PrimeField, secp256k1},
 };
 use num::Integer;
 use num_bigint::BigUint;

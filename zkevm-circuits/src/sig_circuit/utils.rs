@@ -8,7 +8,7 @@ use halo2_ecc::{
 use halo2_proofs::{
     circuit::Value,
     halo2curves::secp256k1::{Fp as Fp_K1, Fq as Fq_K1},
-    halo2curves::secp256r1::{Fp as Fp_R1, Fq as Fq_R1},
+    halo2curves::secp256r1::Fp as Fp_R1,
 };
 
 // Hard coded parameters.

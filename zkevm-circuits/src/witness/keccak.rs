@@ -8,10 +8,7 @@ use ethers_core::utils::keccak256;
 use ff::PrimeField;
 use halo2_base::utils::CurveAffineExt;
 use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::halo2curves::{
-    secp256k1::{self, Secp256k1Affine},
-    secp256r1::{self, Secp256r1Affine},
-};
+use halo2_proofs::halo2curves::secp256k1::{self, Secp256k1Affine};
 use itertools::Itertools;
 
 use super::{Block, BlockContexts, Transaction};

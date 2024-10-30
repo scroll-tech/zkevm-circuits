@@ -63,10 +63,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::{
-        secp256k1::{self, Secp256k1Affine},
-        secp256r1::{self, Secp256r1Affine},
-    },
+    halo2curves::secp256k1::{self, Secp256k1Affine},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };

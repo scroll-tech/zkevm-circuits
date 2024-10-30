@@ -1,6 +1,5 @@
 use crate::{sig_circuit::SigCircuit, util::Field};
 use eth_types::sign_types::{sign, verify, SignData};
-use ethers_core::utils::keccak256;
 
 use halo2_proofs::{
     arithmetic::Field as HaloField,
@@ -22,7 +21,7 @@ fn test_edge_cases() {
         sign_types::{biguint_to_32bytes_le, recover_pk2, SECP256K1_Q},
         word, ToBigEndian, ToLittleEndian, Word,
     };
-    use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField, secp256k1::Fq, secp256r1};
+    use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField, secp256k1::Fq};
     use num::{BigUint, Integer};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -243,6 +242,7 @@ fn p256_sign_verify() {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use sha3::{Digest, Keccak256};
+
     let mut rng = XorShiftRng::seed_from_u64(10000);
 
     // msg_hash == 0
@@ -256,7 +256,7 @@ fn p256_sign_verify() {
 
         let (r, s, v) = sign_r1_with_rng(&mut rng, sk, msg_hash);
         let is_valid_r1 = verify(pk, r, s, msg_hash, None);
-        println!("is_valid_r1 : {}", is_valid_r1);
+        assert_eq!(is_valid_r1, true);
 
         signatures.push(SignData {
             signature: (r, s, v),

@@ -2564,6 +2564,15 @@ pub struct SigTable {
     pub is_valid: Column<Advice>,
 }
 
+pub(crate) struct SigTableRow<F: Field> {
+    msg_hash_rlc: Value<F>,
+    sig_r_rlc: Value<F>,
+    sig_s_rlc: Value<F>,
+    sig_v: Value<F>,
+    recovered_addr: Value<F>,
+    is_valid: Value<F>,
+}
+
 impl SigTable {
     /// Construct the SigTable.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
@@ -2592,13 +2601,9 @@ impl SigTable {
                 let signatures_r1 = block.get_sign_data_p256(false, 0);
 
                 // connect signatures_r1 in following loop.
-                let signatures =
+                let signatures: Vec<SigTableRow<F>> =
                     Self::combine_signatures(&signatures_k1, &signatures_r1, challenges);
-                for (
-                    offset,
-                    (msg_hash_rlc, sig_r_rlc, sig_s_rlc, sig_v, recovered_addr, is_valid),
-                ) in signatures.iter().enumerate()
-                {
+                for (offset, sig_row) in signatures.iter().enumerate() {
                     region.assign_fixed(
                         || format!("sig table q_enable {offset}"),
                         self.q_enable,
@@ -2606,18 +2611,22 @@ impl SigTable {
                         || Value::known(F::one()),
                     )?;
                     for (column_name, column, value) in [
-                        ("msg_hash_rlc", self.msg_hash_rlc, msg_hash_rlc),
-                        ("sig_v", self.sig_v, sig_v),
-                        ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
-                        ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
-                        ("recovered_addr", self.recovered_addr, recovered_addr),
-                        ("is_valid", self.is_valid, is_valid),
+                        ("msg_hash_rlc", self.msg_hash_rlc, sig_row.msg_hash_rlc),
+                        ("sig_v", self.sig_v, sig_row.sig_v),
+                        ("sig_r_rlc", self.sig_r_rlc, sig_row.sig_r_rlc),
+                        ("sig_s_rlc", self.sig_s_rlc, sig_row.sig_s_rlc),
+                        (
+                            "recovered_addr",
+                            self.recovered_addr,
+                            sig_row.recovered_addr,
+                        ),
+                        ("is_valid", self.is_valid, sig_row.is_valid),
                     ] {
                         region.assign_advice(
                             || format!("sig table {column_name} {offset}"),
                             column,
                             offset,
-                            || *value,
+                            || value,
                         )?;
                     }
                 }
@@ -2630,17 +2639,17 @@ impl SigTable {
     }
 
     /// Combine secp256k1 signatures and secp256r1 signatures
-    pub fn combine_signatures<F: Field>(
-        signatures_k1: &Vec<SignData<secp256k1::Fq, Secp256k1Affine>>,
-        signatures_r1: &Vec<SignData<secp256r1::Fq, Secp256r1Affine>>,
+    pub(crate) fn combine_signatures<F: Field>(
+        signatures_k1: &[SignData<secp256k1::Fq, Secp256k1Affine>],
+        signatures_r1: &[SignData<secp256r1::Fq, Secp256r1Affine>],
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<(Value<F>, Value<F>, Value<F>, Value<F>, Value<F>, Value<F>)> {
-        let mut sig_table_items = vec![];
+    ) -> Vec<SigTableRow<F>> {
+        let mut sig_table_items: Vec<SigTableRow<F>> = vec![];
         let evm_word = challenges.evm_word();
 
         // refactor to more uniform method to replace following two loops.
 
-        for (offset, sign_data) in signatures_k1.iter().enumerate() {
+        for (_offset, sign_data) in signatures_k1.iter().enumerate() {
             let msg_hash_rlc = evm_word.map(|challenge| {
                 rlc::value(
                     sign_data.msg_hash.to_bytes().iter().collect_vec(),
@@ -2662,17 +2671,17 @@ impl SigTable {
             let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
             let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
             let is_valid = Value::known(F::from(!sign_data.get_addr().is_zero()));
-            sig_table_items.push((
+            sig_table_items.push(SigTableRow {
                 msg_hash_rlc,
                 sig_r_rlc,
                 sig_s_rlc,
                 sig_v,
                 recovered_addr,
                 is_valid,
-            ));
+            });
         }
 
-        for (offset, sign_data) in signatures_r1.iter().enumerate() {
+        for (_offset, sign_data) in signatures_r1.iter().enumerate() {
             let msg_hash_rlc = evm_word.map(|challenge| {
                 rlc::value(
                     sign_data.msg_hash.to_bytes().iter().collect_vec(),
@@ -2694,14 +2703,14 @@ impl SigTable {
             let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
             let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
             let is_valid = Value::known(F::from(!sign_data.get_addr().is_zero()));
-            sig_table_items.push((
+            sig_table_items.push(SigTableRow {
                 msg_hash_rlc,
                 sig_r_rlc,
                 sig_s_rlc,
                 sig_v,
                 recovered_addr,
                 is_valid,
-            ));
+            });
         }
 
         sig_table_items
