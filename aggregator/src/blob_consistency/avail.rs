@@ -1,4 +1,4 @@
-use super::{AssignedBlobDataExport};
+use super::AssignedBlobDataExport;
 use crate::{BatchData, RlcConfig};
 use eth_types::{H256, U256};
 use halo2_base::{gates::range::RangeConfig, AssignedValue, Context};
