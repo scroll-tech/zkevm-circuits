@@ -196,6 +196,8 @@ impl GasCost {
     pub const PRECOMPILE_MODEXP_MIN: Self = Self(200);
     /// Base gas cost for precompile call: BLAKE2F
     pub const PRECOMPILE_BLAKE2F: Self = Self(0);
+    /// Base gas cost for precompile call: P256VERIFY
+    pub const PRECOMPILE_P256VERIFY: Self = Self(3450);
     /// Gas cost per address in tx access list (EIP 2930)
     pub const ACCESS_LIST_PER_ADDRESS: Self = Self(2400);
     /// Gas cost per storage key in tx access list (EIP 2930)

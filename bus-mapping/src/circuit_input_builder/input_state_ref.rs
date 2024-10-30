@@ -1872,7 +1872,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 //   on top of the stack (step.stack.last())
                 // Therefore we postpone the oog handling to the implementor of callop.
                 if is_precompiled(&code_address) {
-                    let precompile_call: PrecompileCalls = code_address[19].into();
+                    let precompile_call: PrecompileCalls = code_address.into();
                     match precompile_call {
                         PrecompileCalls::Ripemd160 | PrecompileCalls::Blake2F => {
                             // Log the precompile address and gas left. Since this failure is mainly

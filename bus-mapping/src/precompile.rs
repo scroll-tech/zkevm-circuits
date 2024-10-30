@@ -12,7 +12,7 @@ pub(crate) fn execute_precompiled(
     gas: u64,
 ) -> (Vec<u8>, u64, bool) {
     #[cfg(feature = "scroll")]
-    let precompiles = Precompiles::bernoulli();
+    let precompiles = Precompiles::euclid();
     #[cfg(not(feature = "scroll"))]
     let precompiles = Precompiles::berlin();
 
@@ -62,6 +62,8 @@ pub enum PrecompileCalls {
     Bn128Pairing = 0x08,
     /// Compression function
     Blake2F = 0x09,
+    /// secp256r1 verify
+    P256Verify = 0x100,
 }
 
 impl Default for PrecompileCalls {
@@ -90,8 +92,14 @@ impl From<PrecompileCalls> for usize {
     }
 }
 
-impl From<u8> for PrecompileCalls {
-    fn from(value: u8) -> Self {
+impl From<Address> for PrecompileCalls {
+    fn from(value: Address) -> Self {
+        u64::from_be_bytes(value.0[12..].try_into().unwrap()).into()
+    }
+}
+
+impl From<u64> for PrecompileCalls {
+    fn from(value: u64) -> Self {
         match value {
             0x01 => Self::Ecrecover,
             0x02 => Self::Sha256,
@@ -102,6 +110,7 @@ impl From<u8> for PrecompileCalls {
             0x07 => Self::Bn128Mul,
             0x08 => Self::Bn128Pairing,
             0x09 => Self::Blake2F,
+            0x100 => Self::P256Verify,
             _ => unreachable!("precompile contracts only from 0x01 to 0x09"),
         }
     }
@@ -120,6 +129,7 @@ impl PrecompileCalls {
             Self::Bn128Mul => GasCost::PRECOMPILE_BN256MUL,
             Self::Bn128Pairing => GasCost::PRECOMPILE_BN256PAIRING,
             Self::Blake2F => GasCost::PRECOMPILE_BLAKE2F,
+            Self::P256Verify => GasCost::PRECOMPILE_P256VERIFY,
         }
     }
 

@@ -418,7 +418,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
 
-            let precompile_call: PrecompileCalls = call.address.0[19].into();
+            let precompile_call: PrecompileCalls = call.address.into();
             let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
                 &precompile_call.into(),
                 &state.tx.input,

@@ -235,6 +235,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
                 PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
                 PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+                PrecompileCalls::P256Verify => todo!("P256Verify"),
             },
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,

@@ -193,7 +193,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         )?;
 
         // required_gas
-        let precompile_call: PrecompileCalls = precompile_addr.to_fixed_bytes()[19].into();
+        let precompile_call: PrecompileCalls = precompile_addr.into();
         let required_gas = match precompile_call {
             PrecompileCalls::Bn128Pairing => {
                 precompile_call.base_gas_cost().as_u64()
