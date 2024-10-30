@@ -1197,6 +1197,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f55bf8e7b65898637379c1b74eb1551107c8294ed26d855ceb9fd1a09cfc9bc0"
 dependencies = [
  "const-oid",
+ "pem-rfc7468",
  "zeroize",
 ]
 
@@ -1350,6 +1351,7 @@ dependencies = [
  "ff",
  "generic-array",
  "group",
+ "pem-rfc7468",
  "pkcs8",
  "rand_core",
  "sec1",
@@ -2149,7 +2151,7 @@ dependencies = [
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#b236b88f2baa0f359cd30ffe1354644e7022c272"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -2164,7 +2166,7 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#817cace374a9f4b2eca682b1cc36f143255ea25f"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#b236b88f2baa0f359cd30ffe1354644e7022c272"
 dependencies = [
  "ff",
  "group",
@@ -3263,6 +3265,15 @@ checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest 0.10.7",
  "hmac",
+]
+
+[[package]]
+name = "pem-rfc7468"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88b39c9bfcfc231068454382784bb460aae594343fb030d46e9f50a645418412"
+dependencies = [
+ "base64ct",
 ]
 
 [[package]]
@@ -5686,6 +5697,7 @@ dependencies = [
  "mpt-zktrie",
  "num",
  "num-bigint",
+ "p256",
  "paste",
  "poseidon-circuit",
  "pretty_assertions",

@@ -72,6 +72,7 @@ where
         .gate()
         .or(ctx, Existing(r_is_zero), Existing(r_in_range));
     let s_is_zero = scalar_chip.is_soft_zero(ctx, s);
+
     let s_in_range = scalar_chip.is_soft_nonzero(ctx, s);
     let s_is_valid = base_chip
         .range()
@@ -108,7 +109,7 @@ where
     // =================================
     let u1_is_zero = scalar_chip.is_zero(ctx, &u1);
     let u1_prime = scalar_chip.select(ctx, &one, &u1, &u1_is_zero);
-    let u1_mul = fixed_base::scalar_multiply::<F, _, _>(
+    let u1_mul_affine = fixed_base::scalar_multiply::<F, _, GA>(
         base_chip,
         ctx,
         &GA::generator(),
@@ -116,13 +117,15 @@ where
         base_chip.limb_bits,
         fixed_window_bits,
     );
-    let u1_mul = ecc_chip.select(ctx, &point_at_infinity, &u1_mul, &u1_is_zero);
+
+    let u1_mul = ecc_chip.select(ctx, &point_at_infinity, &u1_mul_affine, &u1_is_zero);
 
     // compute u2 * pubkey
     let u2_prime = scalar_chip.select(ctx, &one, &u2, &s_is_zero);
     let pubkey_prime = ecc_chip.load_random_point::<GA>(ctx);
     let pubkey_prime = ecc_chip.select(ctx, &pubkey_prime, pubkey, &is_pubkey_zero);
-    let u2_mul = scalar_multiply::<F, _>(
+
+    let u2_mul_affine = scalar_multiply::<F, _, GA>(
         base_chip,
         ctx,
         &pubkey_prime,
@@ -130,12 +133,13 @@ where
         base_chip.limb_bits,
         var_window_bits,
     );
+
     let u2_is_zero =
         base_chip
             .range()
             .gate()
             .or(ctx, Existing(s_is_zero), Existing(is_pubkey_zero));
-    let u2_mul = ecc_chip.select(ctx, &point_at_infinity, &u2_mul, &u2_is_zero);
+    let u2_mul = ecc_chip.select(ctx, &point_at_infinity, &u2_mul_affine, &u2_is_zero);
 
     // =================================
     // case 2:
@@ -151,6 +155,7 @@ where
             .gate()
             .and(ctx, Existing(u1_is_zero), Existing(u2_is_zero));
     let u1_u2_x_eq = base_chip.is_equal(ctx, u1_mul.x(), u2_mul.x());
+
     let u1_u2_y_neg = {
         let u2_y_neg = base_chip.negate(ctx, u2_mul.y());
         base_chip.is_equal(ctx, u1_mul.y(), &u2_y_neg)
@@ -161,6 +166,7 @@ where
         Existing(u1_u2_x_eq),
         Existing(u1_u2_y_neg),
     );
+
     let sum_is_not_infinity = base_chip
         .gate()
         .not(ctx, QuantumCell::Existing(sum_is_infinity));
@@ -195,6 +201,7 @@ where
         let dx_13 = base_chip.sub_no_carry(ctx, u1_mul.x(), &x_3);
         let lambda_dx_13 = base_chip.mul_no_carry(ctx, &lambda, &dx_13);
         let y_3_no_carry = base_chip.sub_no_carry(ctx, &lambda_dx_13, u1_mul.y());
+
         let y_3 = base_chip.carry_mod(ctx, &y_3_no_carry);
 
         // edge cases
@@ -207,6 +214,9 @@ where
 
         (x_3, y_3)
     };
+
+    scalar_chip.enforce_less_than(ctx, &x_3);
+
     let equal_check = base_chip.is_equal(ctx, &x_3, r);
 
     // TODO: maybe the big_less_than is optional?
