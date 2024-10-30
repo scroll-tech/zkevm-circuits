@@ -238,11 +238,11 @@ fn sign_k1_verify() {
 fn p256_sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
     use crate::sig_circuit::utils::MAX_NUM_SIG_R1;
+    use eth_types::sign_types::verify;
     use halo2_proofs::halo2curves::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use sha3::{Digest, Keccak256};
-    use eth_types::sign_types::verify;
 
     let mut rng = XorShiftRng::seed_from_u64(10000);
 
