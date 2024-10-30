@@ -4956,6 +4956,7 @@ name = "trace-gen"
 version = "0.14.0"
 dependencies = [
  "eth-types",
+ "ethers-signers",
  "mock",
  "serde_json",
 ]

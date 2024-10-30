@@ -1,19 +1,35 @@
 use eth_types::l2_types::BlockTraceV2;
-use eth_types::{bytecode, word};
-use mock::test_ctx::helpers::*;
-use mock::TestContext;
+use eth_types::{bytecode, Bytecode};
+use ethers_signers::Signer;
+use mock::{eth, TestContext, MOCK_ACCOUNTS, MOCK_WALLETS};
 
 fn main() {
-    let code = bytecode! {
+    let mut attacker = vec![0x5b; 24576];
+    attacker[0] = 0xfe;
+    let attacker = Bytecode::from(attacker);
+    let caller = bytecode! {
         JUMPDEST
-        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000000"))
+        PUSH0
+        PUSH0
+        PUSH0
+        PUSH0
+        PUSH0
+        PUSH20(MOCK_ACCOUNTS[0])
+        PUSH0
+        CALL
         JUMP
     };
 
-    let ctx = TestContext::<2, 1>::new(
+    let ctx = TestContext::<3, 1>::new(
         None,
-        account_0_code_account_1_no_code(code),
-        tx_from_1_to_0,
+        |acc| {
+            acc[0].address(MOCK_ACCOUNTS[0]).code(attacker);
+            acc[1].address(MOCK_ACCOUNTS[1]).code(caller);
+            acc[2].address(MOCK_WALLETS[0].address()).balance(eth(10));
+        },
+        |mut tx, acc| {
+            tx[0].from(MOCK_WALLETS[0].clone()).to(acc[1].address);
+        },
         |block, _tx| block.number(0xcafe_u64),
     )
     .unwrap();

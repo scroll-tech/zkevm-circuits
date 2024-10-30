@@ -8,5 +8,6 @@ license.workspace = true
 
 [dependencies]
 eth-types = { path = "../eth-types", features = ["scroll"] }
+ethers-signers.workspace = true
 mock = { path = "../mock", features = ["scroll"] }
 serde_json.workspace = true
