@@ -628,3 +628,19 @@ fn test_decode_blob() {
         batch_bytes,
     );
 }
+
+use super::*;
+
+#[test]
+fn test_conversions() {
+    let scalar = Scalar::one();
+    let word = U256::one();
+    let mut digest = H256::zero();
+    digest.0[31] = 1;
+
+    assert_eq!(digest_from_word(word), digest);
+    assert_eq!(digest_from_scalar(scalar), digest);
+    assert_eq!(scalar_from_word(word), scalar);
+    assert_eq!(scalar_from_digest(digest), scalar);
+    assert_eq!(word_from_digest(digest), word);
+}

@@ -16,10 +16,11 @@ use crate::{
     aggregation::batch_data::N_DATA_BYTES_PER_COEFFICIENT, constants::N_BYTES_U256, BatchData,
     RlcConfig,
 };
-use eth_types::{ToBigEndian, H256, U256};
+use eth_types::{ToBigEndian, ToLittleEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
 use halo2_base::{gates::range::RangeConfig, Context};
 use halo2_ecc::bigint::CRTInteger;
+use halo2_proofs::halo2curves::bls12_381::Scalar;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
@@ -165,37 +166,66 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BlobConsistencyWitness {
-    id: H256,
-    blob_data_proof: [H256; 2],
+    blob_versioned_hash: H256,
+    challenge_digest: H256,
+    evaluation: Scalar,
 }
 
 impl BlobConsistencyWitness {
     pub fn new<const N_SNARKS: usize>(bytes: &[u8], batch_data: &BatchData<N_SNARKS>) -> Self {
         let coeffs = get_coefficients(bytes);
-        let versioned_hash = get_versioned_hash(&coeffs);
+        let blob_versioned_hash = get_versioned_hash(&coeffs);
         let point_evaluation_assignments =
-            PointEvaluationAssignments::new(&batch_data, bytes, versioned_hash);
-        let blob_data_proof = [
-            point_evaluation_assignments.challenge,
-            point_evaluation_assignments.evaluation,
-        ]
-        .map(|x| H256::from_slice(&x.to_be_bytes()));
-
+            PointEvaluationAssignments::new(&batch_data, bytes, blob_versioned_hash);
         Self {
-            id: versioned_hash,
-            blob_data_proof,
+            blob_versioned_hash,
+            challenge_digest: digest_from_word(point_evaluation_assignments.challenge_digest),
+            evaluation: scalar_from_word(point_evaluation_assignments.evaluation),
         }
     }
 
     pub fn id(&self) -> H256 {
-        self.id
+        self.blob_versioned_hash
     }
 
-    pub fn challenge(&self) -> H256 {
-        self.blob_data_proof[0]
+    pub fn challenge_digest(&self) -> H256 {
+        self.challenge_digest
     }
 
-    pub fn evaluation(&self) -> H256 {
-        self.blob_data_proof[1]
+    pub fn challenge(&self) -> Scalar {
+        scalar_from_digest(self.challenge_digest)
+    }
+
+    pub fn evaluation(&self) -> Scalar {
+        self.evaluation
+    }
+
+    pub fn blob_data_proof(&self) -> [H256; 2] {
+        [self.challenge(), self.evaluation].map(digest_from_scalar)
     }
 }
+
+fn digest_from_word(x: U256) -> H256 {
+    H256::from_slice(&x.to_be_bytes())
+}
+
+fn digest_from_scalar(x: Scalar) -> H256 {
+    let mut bytes = x.to_bytes();
+    bytes.reverse();
+    H256::from_slice(&bytes)
+}
+
+fn scalar_from_word(x: U256) -> Scalar {
+    let (_quotient, remainder) = x.div_mod(*BLS_MODULUS);
+    Scalar::from_bytes(&remainder.to_le_bytes()).expect("non-canonical bytes")
+}
+
+fn scalar_from_digest(x: H256) -> Scalar {
+    scalar_from_word(word_from_digest(x))
+}
+
+fn word_from_digest(x: H256) -> U256 {
+    U256::from_big_endian(&x.to_fixed_bytes())
+}
+
+// word_from scalar would not be used.

@@ -85,10 +85,7 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
             last_block_timestamp,
             data_hash: batch_data_hash.into(),
             blob_versioned_hash: blob_consistency_witness.id(),
-            blob_data_proof: [
-                blob_consistency_witness.challenge(),
-                blob_consistency_witness.evaluation(),
-            ],
+            blob_data_proof: blob_consistency_witness.blob_data_proof(),
         }
     }
 
@@ -282,8 +279,8 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
             current_batch_hash,
             hex::encode(batch_data_hash),
-            hex::encode(blob_consistency_witness.challenge().to_fixed_bytes()),
-            hex::encode(blob_consistency_witness.evaluation().to_fixed_bytes()),
+            hex::encode(blob_consistency_witness.challenge().to_bytes()),
+            hex::encode(blob_consistency_witness.evaluation().to_bytes()),
             blob_consistency_witness.id(),
         );
 

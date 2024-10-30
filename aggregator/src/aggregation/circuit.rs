@@ -1,4 +1,5 @@
 use ark_std::{end_timer, start_timer};
+use eth_types::U256;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -248,11 +249,13 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     let barycentric = config.blob_consistency_config.assign_barycentric(
                         &mut ctx,
                         &self.batch_hash.blob_bytes,
-                        self.batch_hash
-                            .blob_consistency_witness
-                            .challenge()
-                            .0
-                            .into(),
+                        U256::from_big_endian(
+                            &self
+                                .batch_hash
+                                .blob_consistency_witness
+                                .challenge()
+                                .to_bytes(),
+                        ),
                     );
 
                     ctx.print_stats(&["barycentric"]);
