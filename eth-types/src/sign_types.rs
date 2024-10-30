@@ -16,45 +16,108 @@ use ethers_core::{
 };
 use halo2curves::{
     ff::FromUniformBytes,
+    //group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
     group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
-    secp256k1::{Fp, Fq, Secp256k1Affine},
-    Coordinates, CurveAffine,
+
+    // secp256k1 curve
+    secp256k1::{Fp as Fp_K1, Fq as Fq_K1, Secp256k1Affine},
+    // p256 curve
+    secp256r1::{Fp as Fp_R1, Fq as Fq_R1, Secp256r1Affine},
+    Coordinates,
+    CurveAffine,
+    CurveAffineExt,
 };
 use num_bigint::BigUint;
 use sha3::digest::generic_array::GenericArray;
 use std::sync::LazyLock;
 use subtle::CtOption;
 
-/// Do a secp256k1 signature with a given randomness value.
-pub fn sign(randomness: Fq, sk: Fq, msg_hash: Fq) -> (Fq, Fq, u8) {
+/// Do a secp256k1 or secp256r1 signature with a given randomness value.
+/// FromUniformBytes<64> refers to https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256k1/fq.rs#L287
+/// and https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256r1/fq.rs#L283
+pub fn sign<
+    Fp: PrimeField<Repr = [u8; 32]>,
+    Fq: PrimeField + FromUniformBytes<64>,
+    Affine: CurveAffine<ScalarExt = Fq, Base = Fp> + std::ops::Mul<Fq> + CurveAffineExt,
+>(
+    randomness: Fq,
+    sk: Fq,
+    msg_hash: Fq,
+) -> (Fq, Fq, u8) {
     let randomness_inv = Option::<Fq>::from(randomness.invert()).expect("cannot invert randomness");
-    let generator = Secp256k1Affine::generator();
+    let generator = Affine::generator();
     let sig_point = generator * randomness;
-    let sig_v: bool = sig_point.to_affine().y.is_odd().into();
+    let sig_v: bool = sig_point.to_affine().into_coordinates().1.is_odd().into();
 
     let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
         .expect("point is the identity")
         .x();
 
     let mut x_bytes = [0u8; 64];
-    x_bytes[..32].copy_from_slice(&x.to_bytes());
+    x_bytes[..32].copy_from_slice(&x.to_repr());
 
-    let sig_r = Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+    // get x cordinate (E::Base) on E::Scalar
+    let sig_r = Fq::from_uniform_bytes(&x_bytes);
 
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
+
     (sig_r, sig_s, u8::from(sig_v))
+}
+
+/// Do a secp256k1 or secp256r1 signature verification with a given pub key.
+/// Refers to https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256k1/curve.rs
+/// and https://github.com/scroll-tech/halo2curves/blob/v0.1.0/src/secp256r1/curve.rs
+pub fn verify<
+    Fp: PrimeField<Repr = [u8; 32]>,
+    Fq: PrimeField + FromUniformBytes<64>,
+    Affine: CurveAffine<ScalarExt = Fq, Base = Fp> + std::ops::Mul<Fq> + CurveAffineExt,
+>(
+    pub_key: Affine,
+    r: Fq,
+    s: Fq,
+    msg_hash: Fq,
+    // if pubkey is provided rather than from recovered , v is not necessary.
+    _v: Option<bool>,
+) -> bool {
+    // Verify
+    let s_inv = s.invert().unwrap();
+    let u_1 = msg_hash * s_inv;
+    let u_2 = r * s_inv;
+
+    let g = Affine::generator();
+    let u1_affine = g * u_1;
+
+    let u2_affine = pub_key * u_2;
+
+    let r_point = (u1_affine + u2_affine).to_affine().coordinates().unwrap();
+    let x_candidate = r_point.x();
+    let r_candidate = mod_n(*x_candidate);
+
+    // v is used to recovery y, not use it for now.
+    r == r_candidate
+}
+
+// convert Fp to Fq
+fn mod_n<Fp: PrimeField<Repr = [u8; 32]>, Fq: PrimeField + FromUniformBytes<64>>(x: Fp) -> Fq {
+    let mut x_repr = [0u8; 32];
+    x_repr.copy_from_slice(x.to_repr().as_ref());
+    let mut x_bytes = [0u8; 64];
+    x_bytes[..32].copy_from_slice(&x_repr[..]);
+    Fq::from_uniform_bytes(&x_bytes)
 }
 
 /// Signature data required by the SignVerify Chip as input to verify a
 /// signature.
 #[derive(Clone, Debug)]
-pub struct SignData {
+pub struct SignData<Fq: PrimeField, Affine: CurveAffine> {
     /// Secp256k1 signature point (r, s, v)
     /// v must be 0 or 1
     pub signature: (Fq, Fq, u8),
-    /// Secp256k1 public key
-    pub pk: Secp256k1Affine,
+    /// Secp256k1 or Secp256r1 public key
+    ///
+    pub pk: Affine,
     /// Message being hashed before signing.
+    /// for Secp256r1(p256)verify precompile, msg bytes is unknown, only with msg_hash.
     pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: Fq,
@@ -95,7 +158,7 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
     (tx, sig)
 }
 
-impl SignData {
+impl SignData<Fq_K1, Secp256k1Affine> {
     /// Recover address of the signature
     pub fn get_addr(&self) -> Address {
         if self.pk.is_identity().into() {
@@ -106,7 +169,18 @@ impl SignData {
     }
 }
 
-static SIGN_DATA_DEFAULT: LazyLock<SignData> = LazyLock::new(|| {
+impl SignData<Fq_R1, Secp256r1Affine> {
+    /// Recover address of the signature
+    pub fn get_addr(&self) -> Address {
+        if self.pk.is_identity().into() {
+            return Address::zero();
+        }
+        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le_generic(&self.pk)));
+        Address::from_slice(&pk_hash[12..])
+    }
+}
+
+static SIGN_DATA_DEFAULT: LazyLock<SignData<Fq_K1, Secp256k1Affine>> = LazyLock::new(|| {
     let (tx_req, sig) = get_dummy_tx();
     let tx = Transaction {
         tx_type: TxType::PreEip155,
@@ -128,7 +202,30 @@ static SIGN_DATA_DEFAULT: LazyLock<SignData> = LazyLock::new(|| {
     sign_data
 });
 
-impl Default for SignData {
+static SIGN_DATA_DEFAULT_R1: LazyLock<SignData<Fq_R1, Secp256r1Affine>> = LazyLock::new(|| {
+    let sk = Fq_R1::one().double();
+    let pk = Secp256r1Affine::generator() * sk;
+    let pk = pk.to_affine();
+
+    let msg = [0u8; 32];
+    //let msg_hash = Fq_R1::one();
+
+    let msg_hash = keccak256(msg);
+    let msg_hash_fq = Fq_R1::from_bytes(&msg_hash).unwrap();
+
+    let signature = sign::<Fp_R1, Fq_R1, Secp256r1Affine>(Fq_R1::one(), sk, msg_hash_fq);
+
+    SignData {
+        signature,
+        pk,
+        msg: msg.into(),
+        //msg_hash,
+        msg_hash: msg_hash_fq,
+    }
+});
+
+// Default for secp256k1
+impl Default for SignData<Fq_K1, Secp256k1Affine> {
     // Hardcoded valid signature corresponding to a hardcoded private key and
     // message hash generated from "nothing up my sleeve" values to make the
     // ECDSA chip pass the constraints, to be use for padding signature
@@ -136,6 +233,18 @@ impl Default for SignData {
     // message hash and public key).
     fn default() -> Self {
         SIGN_DATA_DEFAULT.clone()
+    }
+}
+
+// Default for secp256r1
+impl Default for SignData<Fq_R1, Secp256r1Affine> {
+    // Hardcoded valid signature corresponding to a hardcoded private key and
+    // message hash generated from "nothing up my sleeve" values to make the
+    // ECDSA chip pass the constraints, to be use for padding signature
+    // verifications (where the constraints pass, but we don't care about the
+    // message hash and public key).
+    fn default() -> Self {
+        SIGN_DATA_DEFAULT_R1.clone()
     }
 }
 
@@ -179,11 +288,11 @@ pub fn recover_pk2(
     debug_assert_eq!(public_key[0], 0x04);
     let pk_le = pk_bytes_swap_endianness(&public_key[1..]);
     let x = ct_option_ok_or(
-        Fp::from_bytes(pk_le[..32].try_into().unwrap()),
+        Fp_K1::from_bytes(pk_le[..32].try_into().unwrap()),
         Error::Signature,
     )?;
     let y = ct_option_ok_or(
-        Fp::from_bytes(pk_le[32..].try_into().unwrap()),
+        Fp_K1::from_bytes(pk_le[32..].try_into().unwrap()),
         Error::Signature,
     )?;
     ct_option_ok_or(Secp256k1Affine::from_xy(x, y), Error::Signature)
@@ -192,7 +301,7 @@ pub fn recover_pk2(
 /// Secp256k1 Curve Scalar.  Reference: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
 /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
 pub static SECP256K1_Q: LazyLock<BigUint> =
-    LazyLock::new(|| BigUint::from_bytes_le(&(Fq::zero() - Fq::one()).to_repr()) + 1u64);
+    LazyLock::new(|| BigUint::from_bytes_le(&(Fq_K1::zero() - Fq_K1::one()).to_repr()) + 1u64);
 
 /// Helper function to convert a `CtOption` into an `Result`.  Similar to
 /// `Option::ok_or`.
@@ -211,6 +320,29 @@ pub fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
 
 /// Return the secp256k1 public key (x, y) coordinates in little endian bytes.
 pub fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
+    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
+    let mut pk_le = [0u8; 64];
+    pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());
+    pk_le[32..].copy_from_slice(&pk_coord.y().to_bytes());
+    pk_le
+}
+
+/// Return both secp256k1 and secp256r1 public key (x, y) coordinates in little endian bytes.
+pub fn pk_bytes_le_generic<
+    Fp: PrimeField<Repr = [u8; 32]>, // + GroupEncoding<Repr = [u8; 32]>, // 32 bytes for secp256k1 and secp256r1 curve
+    Affine: CurveAffine<Base = Fp>,
+>(
+    pk: &Affine,
+) -> [u8; 64] {
+    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
+    let mut pk_le = [0u8; 64];
+    pk_le[..32].copy_from_slice(&pk_coord.x().to_repr());
+    pk_le[32..].copy_from_slice(&pk_coord.y().to_repr());
+    pk_le
+}
+
+/// this helper should can be removed now.
+pub fn pk_bytes_le_p256(pk: &Secp256r1Affine) -> [u8; 64] {
     let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
     let mut pk_le = [0u8; 64];
     pk_le[..32].copy_from_slice(&pk_coord.x().to_bytes());

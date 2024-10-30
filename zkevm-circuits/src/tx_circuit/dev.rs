@@ -119,8 +119,11 @@ impl<F: Field> TxCircuitTester<F> {
     ) -> Self {
         TxCircuitTester::<F> {
             sig_circuit: SigCircuit {
-                max_verif: max_txs,
-                signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+                max_verify_k1: max_txs,
+                // tx circuit don't need r1 sigs, set max_verify_r1 = 0 here.
+                max_verify_r1: 0usize,
+                signatures_k1: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+                signatures_r1: vec![],
                 _marker: PhantomData,
             },
             tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, start_l1_queue_index, txs),
