@@ -354,7 +354,7 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 mod tests {
     use super::*;
     use crate::{
-        blob::{BatchData, KZG_TRUSTED_SETUP},
+        blob::BatchData,
         eip4844::{get_blob_bytes, get_coefficients},
         MAX_AGG_SNARKS,
     };
@@ -423,8 +423,12 @@ mod tests {
                 .collect::<Vec<_>>(),
         )
         .unwrap();
-        let (_proof, y) =
-            KzgProof::compute_kzg_proof(&blob, &to_be_bytes(z).into(), &KZG_TRUSTED_SETUP).unwrap();
+        let (_proof, y) = KzgProof::compute_kzg_proof(
+            &blob,
+            &to_be_bytes(z).into(),
+            c_kzg::ethereum_kzg_settings(),
+        )
+        .unwrap();
         from_canonical_be_bytes(*y)
     }
 
