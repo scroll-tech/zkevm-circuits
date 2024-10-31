@@ -14,6 +14,7 @@ mod ec_mul;
 mod ec_pairing;
 mod ecrecover;
 mod modexp;
+mod p256_verify;
 
 use ec_add::opt_data as opt_data_ec_add;
 use ec_mul::opt_data as opt_data_ec_mul;

@@ -303,6 +303,11 @@ pub fn recover_pk2(
 pub static SECP256K1_Q: LazyLock<BigUint> =
     LazyLock::new(|| BigUint::from_bytes_le(&(Fq_K1::zero() - Fq_K1::one()).to_repr()) + 1u64);
 
+/// Secp256r1 Curve Scalar.  Reference: Section 2.4.2 (parameter `n`) in "SEC 2: Recommended
+/// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
+pub static SECP256R1_Q: LazyLock<BigUint> =
+    LazyLock::new(|| BigUint::from_bytes_le(&(Fq_R1::zero() - Fq_R1::one()).to_repr()) + 1u64);
+
 /// Helper function to convert a `CtOption` into an `Result`.  Similar to
 /// `Option::ok_or`.
 pub fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
