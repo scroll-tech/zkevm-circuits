@@ -2,11 +2,11 @@ use eth_types::{
     sign_types::{biguint_to_32bytes_le, SignData, SECP256R1_Q},
     Bytes, ToBigEndian, ToLittleEndian,
 };
+use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::halo2curves::{
     group::{ff::PrimeField, prime::PrimeCurveAffine},
-    secp256r1::{Fq, Fp, Secp256r1Affine},
+    secp256r1::{Fp, Fq, Secp256r1Affine},
 };
-use halo2_proofs::arithmetic::CurveAffine;
 use num::{BigUint, Integer};
 
 use crate::{
@@ -39,7 +39,7 @@ pub(crate) fn opt_data(
         signature: (
             Fq::from_bytes(&aux_data.sig_r.to_le_bytes()).unwrap(),
             Fq::from_bytes(&aux_data.sig_s.to_le_bytes()).unwrap(),
-            // p256verify has no v field, set 0 
+            // p256verify has no v field, set 0
             0,
         ),
         pk: pk.unwrap(),

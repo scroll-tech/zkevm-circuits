@@ -30,7 +30,7 @@ impl From<PrecompileCalls> for ExecutionState {
             PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
             PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
             PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
-            PrecompileCalls::P256Verify => todo!("P256Verify"),
+            PrecompileCalls::P256Verify => ExecutionState::PrecompileP256Verify,
         }
     }
 }
@@ -141,6 +141,7 @@ pub enum ExecutionState {
     PrecompileBn256ScalarMul,
     PrecompileBn256Pairing,
     PrecompileBlake2f,
+    PrecompileP256Verify,
 }
 
 impl Default for ExecutionState {
