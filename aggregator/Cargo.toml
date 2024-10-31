@@ -49,3 +49,6 @@ default = ["revm-precompile/c-kzg", "halo2_proofs/circuit-params"]
 display = []
 print-trace = ["ark-std/print-trace"]
 da-avail = []
+
+[lints]
+workspace = true

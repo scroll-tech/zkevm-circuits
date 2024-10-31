@@ -37,3 +37,5 @@ scroll= ["bus-mapping/scroll", "eth-types/scroll", "mock/scroll", "zkevm-circuit
 fix-refund = ["bus-mapping/fix-refund"]
 rpc-legacy-tracer = ["bus-mapping/rpc-legacy-tracer"]
 retrace-tx = ["bus-mapping/retrace-tx"]
+[lints]
+workspace = true

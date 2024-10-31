@@ -4,21 +4,28 @@ use halo2_proofs::{
     plonk::{Circuit, VerifyingKey},
     SerdeFormat,
 };
+use serde::de::Deserialize;
 use snark_verifier::util::arithmetic::PrimeField;
 use snark_verifier_sdk::Snark;
+use std::io::BufReader;
 use std::{
     fs::File,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
 };
 
-pub fn from_json_file<'de, P: serde::Deserialize<'de>>(file_path: &str) -> anyhow::Result<P> {
-    if !Path::new(&file_path).exists() {
-        anyhow::bail!("File {file_path} doesn't exist");
+pub fn from_json_file<'de, P, T>(filename: P) -> anyhow::Result<T>
+where
+    P: AsRef<Path>,
+    T: Deserialize<'de>,
+{
+    let file_path = filename.as_ref();
+    if !file_path.exists() {
+        anyhow::bail!("File {:?} doesn't exist", file_path);
     }
 
     let fd = File::open(file_path)?;
-    let mut deserializer = serde_json::Deserializer::from_reader(fd);
+    let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(fd));
     deserializer.disable_recursion_limit();
     let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
 
@@ -53,7 +60,10 @@ pub fn serialize_instance(instance: &[Vec<Fr>]) -> Vec<u8> {
     serde_json::to_vec(&instances_for_serde).unwrap()
 }
 
-pub fn read_all(filename: &str) -> Vec<u8> {
+pub fn read_all<P>(filename: P) -> Vec<u8>
+where
+    P: AsRef<Path>,
+{
     let mut buf = vec![];
     let mut fd = std::fs::File::open(filename).unwrap();
     fd.read_to_end(&mut buf).unwrap();
@@ -76,7 +86,7 @@ pub fn try_to_read(dir: &str, filename: &str) -> Option<Vec<u8>> {
     path.push(filename);
 
     if path.exists() {
-        Some(read_all(&path.to_string_lossy()))
+        Some(read_all(path))
     } else {
         None
     }
@@ -102,7 +112,7 @@ pub fn serialize_vk(vk: &VerifyingKey<G1Affine>) -> Vec<u8> {
 
 pub fn deserialize_vk<C: Circuit<Fr, Params = ()>>(raw_vk: &[u8]) -> VerifyingKey<G1Affine> {
     VerifyingKey::<G1Affine>::read::<_, C>(&mut Cursor::new(raw_vk), SerdeFormat::Processed, ())
-        .unwrap()
+        .unwrap_or_else(|_| panic!("failed to deserialize vk with len {}", raw_vk.len()))
 }
 
 pub fn write_snark(file_path: &str, snark: &Snark) {

@@ -20,3 +20,6 @@ scroll = ["eth-types/scroll", "external-tracer/scroll"]
 enable-stack = ["eth-types/enable-stack", "external-tracer/enable-stack"]
 enable-memory = ["eth-types/enable-memory", "external-tracer/enable-memory"]
 enable-storage = ["eth-types/enable-storage", "external-tracer/enable-storage"]
+
+[lints]
+workspace = true

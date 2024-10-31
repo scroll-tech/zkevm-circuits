@@ -105,3 +105,6 @@ overflow-checks = true
 rpath = false
 lto = "thin"
 incremental = true
+
+[workspace.lints.clippy]
+doc_lazy_continuation = "allow"

@@ -74,3 +74,6 @@ enable-memory = ["bus-mapping/enable-memory"]
 enable-storage = ["bus-mapping/enable-storage"]
 dual-bytecode = []
 
+
+[lints]
+workspace = true

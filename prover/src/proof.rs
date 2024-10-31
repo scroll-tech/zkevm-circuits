@@ -9,7 +9,7 @@ use halo2_proofs::{
     plonk::{Circuit, ProvingKey, VerifyingKey},
 };
 use serde_derive::{Deserialize, Serialize};
-use snark_verifier_sdk::{verify_evm_proof, Snark};
+use snark_verifier_sdk::Snark;
 use std::{fs::File, path::PathBuf};
 
 mod batch;
@@ -71,7 +71,11 @@ impl Proof {
     }
 
     pub fn evm_verify(&self, deployment_code: Vec<u8>) -> bool {
-        verify_evm_proof(deployment_code, self.instances(), self.proof().to_vec())
+        let instances = self.instances();
+        let proof = self.proof().to_vec();
+        let calldata = snark_verifier::loader::evm::encode_calldata(&instances, &proof);
+        let result = crate::evm::deploy_and_call(deployment_code, calldata);
+        result.is_ok()
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {
@@ -115,7 +119,7 @@ pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
 
 pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {
     let file_path = dump_proof_path(dir, filename);
-    crate::io::from_json_file(&file_path)
+    crate::io::from_json_file(file_path)
 }
 
 fn dump_proof_path(dir: &str, filename: &str) -> String {

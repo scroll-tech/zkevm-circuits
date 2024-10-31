@@ -12,3 +12,6 @@ env_logger.workspace = true
 [features]
 default = []
 scroll = []
+
+[lints]
+workspace = true

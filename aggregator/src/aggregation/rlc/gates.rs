@@ -465,6 +465,8 @@ impl RlcConfig {
         a: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        #[allow(unused_imports)]
+        use halo2_proofs::arithmetic::Field;
         // constraints
         // - res + a * a_inv = 1
         // - res * a = 0
