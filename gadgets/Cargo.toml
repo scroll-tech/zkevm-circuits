@@ -17,3 +17,6 @@ rand.workspace = true
 
 [features]
 default = ["halo2_proofs/circuit-params"]
+
+[lints]
+workspace = true

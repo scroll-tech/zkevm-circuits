@@ -10,7 +10,6 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 // GasCost is used as type parameter
 #![feature(adt_const_params)]
-#![feature(lazy_cell)]
 #![deny(missing_docs)]
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.

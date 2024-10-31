@@ -1,4 +1,3 @@
-#![feature(lazy_cell)]
 //! Execute the bytecode from an empty state and run the EVM and State circuits
 
 use anyhow::{bail, Result};

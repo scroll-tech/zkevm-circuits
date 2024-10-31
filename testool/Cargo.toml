@@ -65,3 +65,6 @@ chunk-prove = ["prover/test", "parallel_syn", "scroll"]
 enable-stack = ["zkevm-circuits/enable-stack"]
 enable-memory = ["zkevm-circuits/enable-memory"]
 enable-storage = ["zkevm-circuits/enable-storage"]
+
+[lints]
+workspace = true

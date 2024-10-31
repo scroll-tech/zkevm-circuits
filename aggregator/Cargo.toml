@@ -47,3 +47,6 @@ csv = "1.1"
 default = ["revm-precompile/c-kzg", "halo2_proofs/circuit-params"]
 display = []
 print-trace = ["ark-std/print-trace"]
+
+[lints]
+workspace = true

@@ -29,3 +29,6 @@ default = []
 benches = []
 scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock/scroll", "zkevm-circuits/scroll"]
 print-trace = ["ark-std/print-trace"]
+
+[lints]
+workspace = true
