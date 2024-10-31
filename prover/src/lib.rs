@@ -1,4 +1,3 @@
-#![feature(lazy_cell)]
 
 /// Meaning of each circuit:
 ///   inner: first layer EVM super circuit
