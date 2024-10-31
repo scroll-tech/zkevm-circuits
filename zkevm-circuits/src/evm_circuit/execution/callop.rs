@@ -996,7 +996,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             output_rws,
             return_rws,
         ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
-            let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
+            let precompile_call: PrecompileCalls = precompile_addr.into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
                 min(input_len, cd_length.as_usize())
             } else {
@@ -1147,7 +1147,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         if is_precompile_call {
             self.precompile_gadget
-                .assign(region, offset, precompile_addr.0[19].into())?;
+                .assign(region, offset, precompile_addr.into())?;
         }
 
         Ok(())

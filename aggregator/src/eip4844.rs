@@ -2,7 +2,7 @@ use eth_types::{ToBigEndian, H256, U256};
 use ethers_core::k256::sha2::{Digest, Sha256};
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;
 
-use crate::blob::{BLOB_WIDTH, KZG_TRUSTED_SETUP, N_BLOB_BYTES, N_BYTES_U256};
+use crate::blob::{BLOB_WIDTH, N_BLOB_BYTES, N_BYTES_U256};
 
 /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
 pub(crate) fn get_coefficients(blob_bytes: &[u8]) -> [U256; BLOB_WIDTH] {
@@ -30,7 +30,7 @@ pub(crate) fn get_versioned_hash(coefficients: &[U256; BLOB_WIDTH]) -> H256 {
             .collect::<Vec<_>>(),
     )
     .expect("blob-coefficients to 4844 blob should succeed");
-    let c = c_kzg::KzgCommitment::blob_to_kzg_commitment(&blob, &KZG_TRUSTED_SETUP)
+    let c = c_kzg::KzgCommitment::blob_to_kzg_commitment(&blob, c_kzg::ethereum_kzg_settings())
         .expect("blob to kzg commitment should succeed");
     kzg_to_versioned_hash(&c)
 }

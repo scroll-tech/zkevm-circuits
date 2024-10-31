@@ -1019,7 +1019,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(is_precompiled)
             .unwrap_or_default()
         {
-            let precompile_call: PrecompileCalls = tx.callee_address.unwrap().0[19].into();
+            let precompile_call: PrecompileCalls = tx.callee_address.unwrap().into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
                 std::cmp::min(input_len, tx.call_data_length)
             } else {

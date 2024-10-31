@@ -287,7 +287,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 1. Call to precompiled.
             (false, true, _) => {
                 let code_address = code_address.unwrap();
-                let precompile_call: PrecompileCalls = code_address.0[19].into();
+                let precompile_call: PrecompileCalls = code_address.into();
 
                 // get the result of the precompile call.
                 // For failed call, it will cost all gas provided.

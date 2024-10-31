@@ -94,44 +94,51 @@ dependencies = [
 ]
 
 [[package]]
-name = "allocator-api2"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
-
-[[package]]
-name = "alloy-eips"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9431c99a3b3fe606ede4b3d4043bdfbcb780c45b8d8d226c3804e2b75cfbe68"
+name = "alloy-eip2930"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/alloy-eips?branch=v0.3.2#8d5fc83fc257b09510dc8d76561188218d9c0c32"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
- "c-kzg",
+ "serde",
+]
+
+[[package]]
+name = "alloy-eip7702"
+version = "0.3.2"
+source = "git+https://github.com/scroll-tech/alloy-eips?branch=v0.3.2#8d5fc83fc257b09510dc8d76561188218d9c0c32"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "derive_more 1.0.0",
  "k256",
- "once_cell",
  "serde",
 ]
 
 [[package]]
 name = "alloy-primitives"
-version = "0.7.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccb3ead547f4532bc8af961649942f0b9c16ee9226e26caa3f38420651cc0bf4"
+version = "0.8.10"
+source = "git+https://github.com/scroll-tech/alloy-core?branch=v0.8.10#66d76d8f7e17501ce13df584122887bee088c6bb"
 dependencies = [
  "alloy-rlp",
  "bytes",
  "cfg-if 1.0.0",
  "const-hex",
- "derive_more",
+ "derive_more 1.0.0",
+ "foldhash",
+ "hashbrown 0.15.0",
  "hex-literal",
+ "indexmap",
  "itoa",
  "k256",
  "keccak-asm",
+ "paste",
  "proptest",
  "rand",
  "ruint",
+ "rustc-hash 2.0.0",
  "serde",
+ "sha3 0.10.8",
  "tiny-keccak",
 ]
 
@@ -985,12 +992,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
-name = "convert_case"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
-
-[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1226,11 +1227,30 @@ version = "0.99.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f33878137e4dafd7fa914ad4e259e18a4e8e532b9617a2d0150262bf53abfce"
 dependencies = [
- "convert_case",
  "proc-macro2",
  "quote",
- "rustc_version 0.4.1",
  "syn 2.0.77",
+]
+
+[[package]]
+name = "derive_more"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.77",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -1854,6 +1874,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "foldhash"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f81ec6369c545a7d40e4589b5597581fa1c441fe1cce96dd1de43159910a36a2"
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2134,7 +2160,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rand_chacha",
- "rustc-hash",
+ "rustc-hash 1.1.0",
 ]
 
 [[package]]
@@ -2289,9 +2315,14 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+
+[[package]]
+name = "hashbrown"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e087f84d4f86bf4b218b927129862374b72199ae7d8657835f1e89000eea4fb"
 dependencies = [
- "ahash",
- "allocator-api2",
+ "foldhash",
 ]
 
 [[package]]
@@ -3433,7 +3464,7 @@ dependencies = [
 [[package]]
 name = "poseidon-base"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#6cc36ab9dfa153f554ff7b84305f39838366a8df"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#b978cee00aae1e0a1e79e0d74c4683b137f5ea2d"
 dependencies = [
  "bitvec",
  "halo2curves",
@@ -3444,7 +3475,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#6cc36ab9dfa153f554ff7b84305f39838366a8df"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#b978cee00aae1e0a1e79e0d74c4683b137f5ea2d"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -3818,14 +3849,15 @@ dependencies = [
 
 [[package]]
 name = "revm-precompile"
-version = "9.2.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#5e215742c4d9d771f73d74fcba39628b1a2e3452"
+version = "14.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v49#a8438521f63b5c259bb395b30db59f24a9922e64"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
  "cfg-if 1.0.0",
  "k256",
  "once_cell",
+ "p256",
  "revm-primitives",
  "ripemd",
  "secp256k1 0.29.1",
@@ -3835,22 +3867,20 @@ dependencies = [
 
 [[package]]
 name = "revm-primitives"
-version = "7.1.0"
-source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v40#5e215742c4d9d771f73d74fcba39628b1a2e3452"
+version = "13.0.0"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-evm-executor/v49#a8438521f63b5c259bb395b30db59f24a9922e64"
 dependencies = [
- "alloy-eips",
+ "alloy-eip2930",
+ "alloy-eip7702",
  "alloy-primitives",
  "auto_impl",
  "bitflags 2.6.0",
  "bitvec",
  "c-kzg",
  "cfg-if 1.0.0",
- "derive_more",
  "dyn-clone",
  "enumn",
- "hashbrown 0.14.5",
  "hex",
- "once_cell",
  "serde",
 ]
 
@@ -3986,6 +4016,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
+name = "rustc-hash"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
+
+[[package]]
 name = "rustc-hex"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4112,7 +4148,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eca070c12893629e2cc820a9761bedf6ce1dcddc9852984d1dc734b8bd9bd024"
 dependencies = [
  "cfg-if 1.0.0",
- "derive_more",
+ "derive_more 0.99.18",
  "parity-scale-codec",
  "scale-info-derive",
 ]
@@ -4450,7 +4486,7 @@ dependencies = [
  "rand",
  "revm",
  "rlp",
- "rustc-hash",
+ "rustc-hash 1.1.0",
  "serde",
  "sha3 0.10.8",
 ]
