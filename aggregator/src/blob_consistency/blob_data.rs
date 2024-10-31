@@ -287,6 +287,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         ))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn assign_internal_checks(
         &self,
         region: &mut Region<Fr>,

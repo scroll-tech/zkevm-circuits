@@ -273,7 +273,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
         let current_batch_hash = batch_header.batch_hash();
-        let blob_consistency_witness = BlobConsistencyWitness::new(&blob_bytes, &batch_data);
+        let blob_consistency_witness = BlobConsistencyWitness::new(blob_bytes, &batch_data);
 
         log::info!(
             "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",

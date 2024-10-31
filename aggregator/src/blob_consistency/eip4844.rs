@@ -176,7 +176,7 @@ impl BlobConsistencyWitness {
         let coeffs = get_coefficients(bytes);
         let blob_versioned_hash = get_versioned_hash(&coeffs);
         let point_evaluation_assignments =
-            PointEvaluationAssignments::new(&batch_data, bytes, blob_versioned_hash);
+            PointEvaluationAssignments::new(batch_data, bytes, blob_versioned_hash);
         Self {
             blob_versioned_hash,
             challenge_digest: digest_from_word(point_evaluation_assignments.challenge_digest),
