@@ -30,7 +30,11 @@ use crate::{
 // secp256r1 Fq
 static FQ_MODULUS: LazyLock<U256> =
     LazyLock::new(|| word!("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"));
-  
+
+// secp256r1 Fp
+static FP_MODULUS: LazyLock<U256> =
+    LazyLock::new(|| word!("0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff"));
+
 #[derive(Clone, Debug)]
 pub struct P256VerifyGadget<F> {
     input_bytes_rlc: Cell<F>,
@@ -44,11 +48,15 @@ pub struct P256VerifyGadget<F> {
     sig_r_keccak_rlc: Cell<F>,
     sig_s_keccak_rlc: Cell<F>,
     // recovered_addr_keccak_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    pubkey_x_keccak_rlc: Cell<F>,
+    pubkey_y_keccak_rlc: Cell<F>,
 
     msg_hash_raw: Word<F>,
     msg_hash: Word<F>,
     fq_modulus: Word<F>,
     msg_hash_mod: ModGadget<F, true>,
+
+    fp_modulus: Word<F>,
 
     sig_r: Word<F>,
     sig_r_canonical: LtWordGadget<F>,
@@ -85,17 +93,19 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             msg_hash_keccak_rlc,
             sig_r_keccak_rlc,
             sig_s_keccak_rlc,
-            recovered_addr_keccak_rlc,
+            //recovered_addr_keccak_rlc,
         ) = (
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
-            cb.query_keccak_rlc(),
+            //cb.query_keccak_rlc(),
         );
 
         let msg_hash_raw = cb.query_word_rlc();
         let msg_hash = cb.query_word_rlc();
         let fq_modulus = cb.query_word_rlc();
+        let fp_modulus = cb.query_word_rlc();
+
         let msg_hash_mod = ModGadget::construct(cb, [&msg_hash_raw, &fq_modulus, &msg_hash]);
 
         let sig_r = cb.query_word_rlc();
@@ -104,6 +114,11 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         let sig_s_canonical = LtWordGadget::construct(cb, &sig_s, &fq_modulus);
         let r_s_canonical = and::expr([sig_r_canonical.expr(), sig_s_canonical.expr()]);
 
+        let pk_x = cb.query_word_rlc();
+        let pk_y = cb.query_word_rlc();
+        let pk_x_canonical = LtWordGadget::construct(cb, &pk_x, &fp_modulus);
+        let pk_y_canonical = LtWordGadget::construct(cb, &pk_y, &fp_modulus);
+        
         cb.require_equal(
             "msg hash cells assigned incorrectly",
             msg_hash_keccak_rlc.expr(),
@@ -148,6 +163,11 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             "Secp256r1::Fq modulus assigned correctly",
             fq_modulus.expr(),
             cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
+        );
+        cb.require_equal(
+            "Secp256r1::Fp modulus assigned correctly",
+            fp_modulus.expr(),
+            cb.word_rlc::<N_BYTES_WORD>(FP_MODULUS.to_le_bytes().map(|b| b.expr())),
         );
 
         let [is_success, callee_address, is_root, call_data_offset, call_data_length, return_data_offset, return_data_length] =
@@ -241,17 +261,13 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 + (sig_r_keccak_rlc.expr() * r_pow_32)
                 + sig_s_keccak_rlc.expr(),
         );
-        // RLC of output bytes always equals RLC of the recovered address.
-        cb.require_equal(
-            "output bytes (RLC) = recovered address",
-            output_bytes_rlc.expr(),
-            recovered_addr_keccak_rlc.expr(),
-        );
-        // If the address was not recovered, RLC(address) == RLC(output) == 0.
-        cb.condition(not::expr(recovered.expr()), |cb| {
-            cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
-        });
-
+        // TODO: constrain output first byte is bool .
+        // cb.require_equal(
+        //     "output bytes (RLC) = recovered address",
+        //     output_bytes_rlc.expr(),
+        //     recovered_addr_keccak_rlc.expr(),
+        // );
+        
         let restore_context = super::gen_restore_context(
             cb,
             is_root.expr(),
@@ -285,6 +301,10 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             sig_s,
             sig_s_canonical,
 
+            pk_x,
+            pk_x_canonical,
+            pk_y,
+            pk_y_canonical,
             is_success,
             callee_address,
             is_root,
@@ -305,7 +325,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        if let Some(PrecompileAuxData::Ecrecover(aux_data)) = &step.aux_data {
+        if let Some(PrecompileAuxData::P256Verify(aux_data)) = &step.aux_data {
             self.input_bytes_rlc.assign(
                 region,
                 offset,
@@ -330,9 +350,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(aux_data.return_bytes.iter().rev(), r)),
             )?;
-            let recovered = !aux_data.recovered_addr.is_zero();
-            self.recovered
-                .assign(region, offset, Value::known(F::from(recovered as u64)))?;
+            // check is_valid of sig ?
             self.msg_hash_keccak_rlc.assign(
                 region,
                 offset,
@@ -341,14 +359,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.msg_hash.to_le_bytes(), r)),
             )?;
-            self.sig_v_keccak_rlc.assign(
-                region,
-                offset,
-                region
-                    .challenges()
-                    .keccak_input()
-                    .map(|r| rlc::value(&aux_data.sig_v.to_le_bytes(), r)),
-            )?;
+    
             self.sig_r_keccak_rlc.assign(
                 region,
                 offset,
@@ -377,6 +388,8 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 .assign(region, offset, Some(remainder.to_le_bytes()))?;
             self.fq_modulus
                 .assign(region, offset, Some(FQ_MODULUS.to_le_bytes()))?;
+            self.fp_modulus
+                .assign(region, offset, Some(FP_MODULUS.to_le_bytes()))?;
             self.msg_hash_mod.assign(
                 region,
                 offset,
