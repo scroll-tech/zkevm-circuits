@@ -27,7 +27,7 @@ use crate::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 
-// secp256r1 Fp
+// secp256r1 Fq
 static FQ_MODULUS: LazyLock<U256> =
     LazyLock::new(|| word!("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"));
   
@@ -82,13 +82,11 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             cb.query_cell_phase2(),
         );
         let (
-            recovered,
             msg_hash_keccak_rlc,
             sig_r_keccak_rlc,
             sig_s_keccak_rlc,
             recovered_addr_keccak_rlc,
         ) = (
-            cb.query_bool(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -173,12 +171,12 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         // lookup to the sign_verify table:
         //
         // || msg_hash | v | r | s | recovered_addr | recovered ||
-        cb.condition(
-            and::expr([r_s_canonical.expr(), sig_v_valid.expr()]),
+        cb.condition(r_s_canonical.expr(),
             |cb| {
                 cb.sig_table_lookup(
                     msg_hash.expr(),
-                    sig_v.cells[0].expr() - 27.expr(),
+                    // v set zero
+                    0.expr(),
                     sig_r.expr(),
                     sig_s.expr(),
                     select::expr(
@@ -190,6 +188,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 );
             },
         );
+        // TODO: check x, y is canonical
         cb.condition(not::expr(r_s_canonical.expr()), |cb| {
             cb.require_zero(
                 "recovered == false if r or s not canonical",
@@ -209,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let required_input_len = 128.expr();
+        let required_input_len = 160.expr();
         let pad_right = LtGadget::construct(cb, call_data_length.expr(), required_input_len.expr());
         let padding = cb.condition(pad_right.expr(), |cb| {
             PaddingGadget::construct(

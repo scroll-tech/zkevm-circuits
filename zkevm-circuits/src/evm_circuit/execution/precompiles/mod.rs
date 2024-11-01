@@ -40,6 +40,9 @@ pub use identity::IdentityGadget;
 mod sha256;
 pub use sha256::SHA256Gadget;
 
+mod p256_verify;
+pub use p256_verify::P256VerifyGadget;
+
 /// build RestoreContextGadget with consideration for root calling
 /// MUST be called after all rw has completed since we use `rw_counter_offset``
 pub fn gen_restore_context<F: Field>(
