@@ -9,8 +9,6 @@ use std::{
 extern "C" {
     fn CreateTrace(str: *const c_char) -> *const c_char;
     fn FreeString(str: *const c_char);
-    #[cfg(feature = "scroll")]
-    fn CreateL2Trace(str: *const c_char) -> *const c_char;
 }
 
 /// Creates the l2 trace
@@ -20,7 +18,7 @@ pub fn l2trace(config: &str) -> Result<String, Error> {
     let c_config = CString::new(config).expect("invalid config");
 
     // Generate the trace externally
-    let result = unsafe { CreateL2Trace(c_config.as_ptr()) };
+    let result = unsafe { CreateTrace(c_config.as_ptr()) };
 
     // Convert the returned string to something we can use in Rust again.
     // Also make sure the returned data is copied to rust managed memory.
