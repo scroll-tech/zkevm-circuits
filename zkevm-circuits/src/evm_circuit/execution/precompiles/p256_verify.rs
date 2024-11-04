@@ -67,6 +67,7 @@ pub struct P256VerifyGadget<F> {
     pk_x_canonical: LtWordGadget<F>,
     pk_y: Word<F>,
     pk_y_canonical: LtWordGadget<F>,
+    is_valid: Cell<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -90,11 +91,13 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             cb.query_cell_phase2(),
         );
         let (
+            is_valid,
             msg_hash_keccak_rlc,
             sig_r_keccak_rlc,
             sig_s_keccak_rlc,
             //recovered_addr_keccak_rlc,
         ) = (
+            cb.query_bool(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -119,6 +122,8 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         let pk_x_canonical = LtWordGadget::construct(cb, &pk_x, &fp_modulus);
         let pk_y_canonical = LtWordGadget::construct(cb, &pk_y, &fp_modulus);
         
+        let x_y_canonical = and::expr([pk_x_canonical.expr(), pk_y_canonical.expr()]);
+
         cb.require_equal(
             "msg hash cells assigned incorrectly",
             msg_hash_keccak_rlc.expr(),
@@ -199,20 +204,25 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                     0.expr(),
                     sig_r.expr(),
                     sig_s.expr(),
-                    select::expr(
-                        recovered.expr(),
-                        from_bytes::expr(&recovered_addr_keccak_rlc.cells),
-                        0.expr(),
-                    ),
-                    recovered.expr(),
+                    // recovered addr set to 0.
+                    0.expr(),
+                    is_valid.expr(),
                 );
             },
         );
-        // TODO: check x, y is canonical
+        // check r, s is canonical
         cb.condition(not::expr(r_s_canonical.expr()), |cb| {
             cb.require_zero(
-                "recovered == false if r or s not canonical",
-                recovered.expr(),
+                "is_valid == false if r or s not canonical",
+                is_valid.expr(),
+            );
+        });
+
+        // check x, y is canonical
+        cb.condition(not::expr(x_y_canonical.expr()), |cb| {
+            cb.require_zero(
+                "is_valid == false if x or y not canonical",
+                is_valid.expr(),
             );
         });
         // cb.condition(not::expr(recovered.expr()), |cb| {
@@ -283,13 +293,10 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
 
             pad_right,
             padding,
-
-            recovered,
             msg_hash_keccak_rlc,
-            sig_v_keccak_rlc,
             sig_r_keccak_rlc,
             sig_s_keccak_rlc,
-            recovered_addr_keccak_rlc,
+            //recovered_addr_keccak_rlc,
 
             msg_hash_raw,
             msg_hash,
@@ -380,6 +387,8 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 (&self.msg_hash_raw, aux_data.msg_hash),
                 (&self.sig_r, aux_data.sig_r),
                 (&self.sig_s, aux_data.sig_s),
+                (&self.pk_x, aux_data.pubkey_x),
+                (&self.pk_y, aux_data.pubkey_y),
             ] {
                 word_rlc.assign(region, offset, Some(value.to_le_bytes()))?;
             }
@@ -402,6 +411,9 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 .assign(region, offset, aux_data.sig_r, *FQ_MODULUS)?;
             self.sig_s_canonical
                 .assign(region, offset, aux_data.sig_s, *FQ_MODULUS)?;
+            // assign pk_x_canonical, pk_y_canonical
+            self.pk_x_canonical.assign(region, offset, aux_data.pubkey_x, *FP_MODULUS)?;
+            self.pk_y_canonical.assign(region, offset, aux_data.pubkey_y, *FP_MODULUS)?;
             // self.recovered_addr_keccak_rlc.assign(
             //     region,
             //     offset,
@@ -416,7 +428,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             self.padding.assign(
                 region,
                 offset,
-                PrecompileCalls::Ecrecover,
+                PrecompileCalls::P256Verify,
                 region
                     .challenges()
                     .keccak_input()
@@ -425,7 +437,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 region.challenges().keccak_input(),
             )?;
         } else {
-            log::error!("unexpected aux_data {:?} for ecrecover", step.aux_data);
+            log::error!("unexpected aux_data {:?} for p256verify", step.aux_data);
             return Err(Error::Synthesis);
         }
 
