@@ -97,6 +97,26 @@ pub fn verify<
     r == r_candidate
 }
 
+/// verify r1 signature from bytes representation.
+pub fn verify_r1_bytes(
+    pub_key: (&[u8; 32], &[u8; 32]),
+    r: &[u8; 32],
+    s: &[u8; 32],
+    msg_hash: &[u8; 32],
+    // if pubkey is provided rather than from recovered , v is not necessary.
+    _v: Option<bool>,
+) -> bool {
+    // Verify
+    let x = Fp_R1::from_bytes(pub_key.0);
+    let y = Fp_R1::from_bytes(pub_key.1);
+    let pk = Secp256r1Affine::from_xy(x.unwrap(), y.unwrap()).unwrap();
+    let r = Fq_R1::from_bytes(r).unwrap();
+    let s = Fq_R1::from_bytes(s).unwrap();
+    let msg_hash = Fq_R1::from_bytes(msg_hash).unwrap();
+
+    verify(pk, r, s, msg_hash, None)
+}
+
 // convert Fp to Fq
 fn mod_n<Fp: PrimeField<Repr = [u8; 32]>, Fq: PrimeField + FromUniformBytes<64>>(x: Fp) -> Fq {
     let mut x_repr = [0u8; 32];

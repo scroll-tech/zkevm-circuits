@@ -216,7 +216,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use precompiles::{
     BasePrecompileGadget, EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget,
-    IdentityGadget, ModExpGadget, SHA256Gadget, P256VerifyGadget,
+    IdentityGadget, ModExpGadget, P256VerifyGadget, SHA256Gadget,
 };
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;

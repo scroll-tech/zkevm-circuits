@@ -1,6 +1,6 @@
 use crate::util::Field;
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{evm_types::GasCost, word, ToLittleEndian, U256};
+use eth_types::{evm_types::GasCost, sign_types::verify_r1_bytes, word, ToLittleEndian, U256};
 use gadgets::util::{and, not, or, select, sum, Expr};
 use gadgets::ToScalar;
 use halo2_proofs::{
@@ -49,7 +49,6 @@ pub struct P256VerifyGadget<F> {
     sig_s_keccak_rlc: Cell<F>,
     // pubkey_x_keccak_rlc: Cell<F>,
     // pubkey_y_keccak_rlc: Cell<F>,
-
     msg_hash_raw: Word<F>,
     msg_hash: Word<F>,
     fq_modulus: Word<F>,
@@ -120,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         let pk_y = cb.query_word_rlc();
         let pk_x_canonical = LtWordGadget::construct(cb, &pk_x, &fp_modulus);
         let pk_y_canonical = LtWordGadget::construct(cb, &pk_y, &fp_modulus);
-        
+
         let x_y_canonical = and::expr([pk_x_canonical.expr(), pk_y_canonical.expr()]);
 
         cb.require_equal(
@@ -195,34 +194,26 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         // lookup to the sign_verify table:
         //
         // || msg_hash | v(0) | r | s | recovered_addr(0) | is_valid ||
-        cb.condition(r_s_canonical.expr(),
-            |cb| {
-                cb.sig_table_lookup(
-                    msg_hash.expr(),
-                    // v set to zero
-                    0.expr(),
-                    sig_r.expr(),
-                    sig_s.expr(),
-                    // recovered addr set to 0.
-                    0.expr(),
-                    is_valid.expr(),
-                );
-            },
-        );
-        // check r, s is canonical
-        cb.condition(not::expr(r_s_canonical.expr()), |cb| {
-            cb.require_zero(
-                "is_valid == false if r or s not canonical",
+        cb.condition(r_s_canonical.expr(), |cb| {
+            cb.sig_table_lookup(
+                msg_hash.expr(),
+                // v set to zero
+                0.expr(),
+                sig_r.expr(),
+                sig_s.expr(),
+                // recovered addr set to 0.
+                0.expr(),
                 is_valid.expr(),
             );
+        });
+        // check r, s is canonical
+        cb.condition(not::expr(r_s_canonical.expr()), |cb| {
+            cb.require_zero("is_valid == false if r or s not canonical", is_valid.expr());
         });
 
         // check x, y is canonical
         cb.condition(not::expr(x_y_canonical.expr()), |cb| {
-            cb.require_zero(
-                "is_valid == false if x or y not canonical",
-                is_valid.expr(),
-            );
+            cb.require_zero("is_valid == false if x or y not canonical", is_valid.expr());
         });
         // cb.condition(not::expr(recovered.expr()), |cb| {
         //     cb.require_zero(
@@ -270,13 +261,9 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 + (sig_r_keccak_rlc.expr() * r_pow_32)
                 + sig_s_keccak_rlc.expr(),
         );
-        // TODO: constrain output first byte is bool .
-        // cb.require_equal(
-        //     "output bytes (RLC) = recovered address",
-        //     output_bytes_rlc.expr(),
-        //     recovered_addr_keccak_rlc.expr(),
-        // );
-        
+        // constrain output first byte is bool .
+        cb.require_boolean("output first byte is bool", output_bytes_rlc.expr());
+
         let restore_context = super::gen_restore_context(
             cb,
             is_root.expr(),
@@ -297,7 +284,6 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             sig_r_keccak_rlc,
             sig_s_keccak_rlc,
             //recovered_addr_keccak_rlc,
-
             msg_hash_raw,
             msg_hash,
             fq_modulus,
@@ -359,7 +345,6 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(aux_data.return_bytes.iter().rev(), r)),
             )?;
-            // check is_valid of sig ?
             self.msg_hash_keccak_rlc.assign(
                 region,
                 offset,
@@ -368,7 +353,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.msg_hash.to_le_bytes(), r)),
             )?;
-    
+
             self.sig_r_keccak_rlc.assign(
                 region,
                 offset,
@@ -414,8 +399,23 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             self.sig_s_canonical
                 .assign(region, offset, aux_data.sig_s, *FQ_MODULUS)?;
             // assign pk_x_canonical, pk_y_canonical
-            self.pk_x_canonical.assign(region, offset, aux_data.pubkey_x, *FP_MODULUS)?;
-            self.pk_y_canonical.assign(region, offset, aux_data.pubkey_y, *FP_MODULUS)?;
+            self.pk_x_canonical
+                .assign(region, offset, aux_data.pubkey_x, *FP_MODULUS)?;
+            self.pk_y_canonical
+                .assign(region, offset, aux_data.pubkey_y, *FP_MODULUS)?;
+            // TODO: assign is_valid correctly
+            let pub_key_bytes = (
+                &aux_data.pubkey_x.to_le_bytes(),
+                &aux_data.pubkey_y.to_le_bytes(),
+            );
+            let r_bytes = aux_data.sig_r.to_le_bytes();
+            let s_bytes = aux_data.sig_s.to_le_bytes();
+            let msg_hash_bytes = aux_data.msg_hash.to_le_bytes();
+
+            let is_sig_valid =
+                verify_r1_bytes(pub_key_bytes, &r_bytes, &s_bytes, &msg_hash_bytes, None);
+            self.is_valid
+                .assign(region, offset, Value::known(F::from(is_sig_valid)))?;
             // self.recovered_addr_keccak_rlc.assign(
             //     region,
             //     offset,
