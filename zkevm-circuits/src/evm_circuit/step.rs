@@ -179,6 +179,7 @@ impl ExecutionState {
                 | Self::PrecompileBlake2f
                 | Self::ErrorOutOfGasPrecompile
                 | Self::ErrorPrecompileFailed
+                | Self::PrecompileP256Verify
         )
     }
 
@@ -193,6 +194,7 @@ impl ExecutionState {
             Self::PrecompileBn256ScalarMul => PrecompileCalls::Bn128Mul,
             Self::PrecompileBn256Pairing => PrecompileCalls::Bn128Pairing,
             Self::PrecompileBlake2f => PrecompileCalls::Blake2F,
+            Self::PrecompileP256Verify => PrecompileCalls::P256Verify,
             _ => return GasCost(0),
         })
         .base_gas_cost()
