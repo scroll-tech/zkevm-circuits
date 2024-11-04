@@ -1,10 +1,15 @@
-use crate::utils::{load_params, param_path_for_degree};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
 use halo2_proofs::{
-    halo2curves::bn256::{Bn256, G1Affine},
+    halo2curves::bn256::G1Affine,
     plonk::ProvingKey,
     poly::{commitment::Params, kzg::commitment::ParamsKZG},
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use crate::{
+    utils::{load_params, param_path_for_degree},
+    ParamsMap,
+};
 
 mod aggregation;
 mod chunk;
@@ -18,20 +23,20 @@ mod utils;
 #[derive(Debug)]
 pub struct Prover<'params> {
     // degree -> params (use BTreeMap to find proper degree for params downsize)
-    pub params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>,
+    pub params_map: &'params ParamsMap,
     // Cached id -> pk
     pk_map: HashMap<String, ProvingKey<G1Affine>>,
 }
 
 impl<'params> Prover<'params> {
-    pub fn from_params_map(params_map: &'params BTreeMap<u32, ParamsKZG<Bn256>>) -> Self {
+    pub fn from_params_map(params_map: &'params ParamsMap) -> Self {
         Self {
             params_map,
             pk_map: HashMap::new(),
         }
     }
 
-    pub fn load_params_map(params_dir: &str, degrees: &[u32]) -> BTreeMap<u32, ParamsKZG<Bn256>> {
+    pub fn load_params_map(params_dir: &str, degrees: &[u32]) -> ParamsMap {
         let degrees = BTreeSet::from_iter(degrees);
         let max_degree = **degrees.last().unwrap();
 

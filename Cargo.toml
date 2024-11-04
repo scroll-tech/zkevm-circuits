@@ -56,8 +56,8 @@ serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_stacker = "0.1"
 sha3 = "0.10"
-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "v0.1" }
-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "v0.1", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "feat/hybrid-snark-agg" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "feat/hybrid-snark-agg", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
 strum = "0.25"
 strum_macros = "0.25"
 subtle = "2.4"

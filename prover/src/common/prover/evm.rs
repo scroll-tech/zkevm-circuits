@@ -1,9 +1,3 @@
-use super::Prover;
-use crate::{
-    config::layer_config_path,
-    utils::{gen_rng, read_env_var},
-    EvmProof,
-};
 use aggregator::CompressionCircuit;
 use anyhow::{anyhow, Result};
 use halo2_proofs::halo2curves::bn256::Fr;
@@ -11,7 +5,13 @@ use rand::Rng;
 use snark_verifier_sdk::{gen_evm_proof_shplonk, CircuitExt, Snark};
 use std::env;
 
-impl<'params> Prover<'params> {
+use crate::{
+    config::layer_config_path,
+    utils::{gen_evm_verifier, gen_rng, read_env_var},
+    EvmProof,
+};
+
+impl<'params> super::Prover<'params> {
     pub fn load_or_gen_comp_evm_proof(
         &mut self,
         name: &str,
@@ -68,7 +68,7 @@ impl<'params> Prover<'params> {
         let evm_proof = EvmProof::new(proof, &instances, num_instance, Some(pk))?;
 
         if read_env_var("SCROLL_PROVER_DUMP_YUL", false) {
-            crate::evm::gen_evm_verifier::<C>(params, pk.get_vk(), &evm_proof, output_dir);
+            gen_evm_verifier::<C>(params, pk.get_vk(), &evm_proof, output_dir)?;
         }
 
         Ok(evm_proof)

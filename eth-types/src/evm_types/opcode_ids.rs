@@ -1247,13 +1247,10 @@ impl FromStr for OpcodeId {
             #[cfg(not(feature = "scroll"))]
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
-            "opcode 0x48 not defined" => OpcodeId::BASEFEE,
             "BASEFEE" => OpcodeId::BASEFEE,
             "BLOBHASH" => OpcodeId::INVALID(0x49),
             "BLOBBASEFEE" => OpcodeId::INVALID(0x4a),
-            "opcode 0x5c not defined" => OpcodeId::TLOAD,
             "TLOAD" => OpcodeId::TLOAD,
-            "opcode 0x5d not defined" => OpcodeId::TSTORE,
             "TSTORE" => OpcodeId::TSTORE,
             _ => {
                 // Parse an invalid opcode value as reported by geth

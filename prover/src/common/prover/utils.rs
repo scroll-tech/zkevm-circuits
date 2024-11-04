@@ -1,5 +1,3 @@
-use super::Prover;
-use crate::io::serialize_vk;
 use anyhow::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -9,7 +7,9 @@ use halo2_proofs::{
 use rand::Rng;
 use snark_verifier_sdk::{gen_snark_shplonk, CircuitExt, Snark};
 
-impl<'params> Prover<'params> {
+use crate::utils::serialize_vk;
+
+impl<'params> super::Prover<'params> {
     pub fn gen_snark<C: CircuitExt<Fr>>(
         &mut self,
         id: &str,

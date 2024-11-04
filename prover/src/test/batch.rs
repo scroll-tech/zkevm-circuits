@@ -1,22 +1,17 @@
-use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
+use std::sync::{LazyLock, Mutex};
 
 use crate::{
     aggregator::{Prover, Verifier},
-    config::{LayerId, AGG_DEGREES},
+    config::{LayerId, BATCH_PROVER_DEGREES},
     consts::DEPLOYMENT_CODE_FILENAME,
-    io::force_to_read,
     types::BundleProvingTask,
-    utils::read_env_var,
-    BatchProvingTask,
-};
-use std::{
-    collections::BTreeMap,
-    sync::{LazyLock, Mutex},
+    utils::{force_to_read, read_env_var},
+    BatchProvingTask, ParamsMap,
 };
 
-static PARAMS_MAP: LazyLock<BTreeMap<u32, ParamsKZG<Bn256>>> = LazyLock::new(|| {
+static PARAMS_MAP: LazyLock<ParamsMap> = LazyLock::new(|| {
     let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
-    crate::common::Prover::load_params_map(&params_dir, &AGG_DEGREES)
+    crate::common::Prover::load_params_map(&params_dir, &BATCH_PROVER_DEGREES)
 });
 
 static BATCH_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
@@ -55,7 +50,7 @@ pub fn batch_prove(test: &str, batch: BatchProvingTask) {
         verifier
     };
     let verified = verifier.verify_batch_proof(&proof);
-    assert!(verified, "{test}: failed to verify batch proof");
+    assert!(verified.is_ok(), "{test}: failed to verify batch proof");
 
     log::info!("{test}: batch-prove END");
 }
@@ -88,8 +83,8 @@ pub fn bundle_prove(test: &str, bundle: BundleProvingTask) {
         verifier
     };
 
-    let verified = verifier.verify_bundle_proof(proof);
-    assert!(verified, "{test}: failed to verify bundle proof");
+    let verified = verifier.verify_bundle_proof(&proof);
+    assert!(verified.is_ok(), "{test}: failed to verify bundle proof");
 
     log::info!("{test}: bundle-prove END");
 }
