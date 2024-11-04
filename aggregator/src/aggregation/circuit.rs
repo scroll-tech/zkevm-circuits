@@ -311,6 +311,12 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     log::info!("populating constants OK");
 
                     // Commitments to the preprocessed polynomials.
+                    //
+                    // check_1: halo2-route
+                    // check_2: sp1-route
+                    //
+                    // OR(check_1, check_2) == 1
+                    let mut route_check = Vec::with_capacity(N_SNARKS);
                     for preprocessed_polys in preprocessed_poly_sets.iter() {
                         let mut preprocessed_check_1 =
                             config.flex_gate().load_constant(&mut ctx, Fr::ONE);
@@ -336,6 +342,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                                 Existing(check_2),
                             );
                         }
+                        route_check.push(preprocessed_check_1);
                         let preprocessed_check = config.flex_gate().or(
                             &mut ctx,
                             Existing(preprocessed_check_1),
@@ -347,27 +354,26 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     }
 
                     // Transcript initial state.
-                    for transcript_init_state in transcript_init_states {
+                    //
+                    // If the SNARK belongs to halo2-route, the initial state is the halo2-initial
+                    // state. Otherwise sp1-initial state.
+                    for (transcript_init_state, &route) in
+                        transcript_init_states.iter().zip_eq(route_check.iter())
+                    {
                         let transcript_init_state = transcript_init_state
                             .expect("SNARK should have an initial state for transcript");
-                        let transcript_check_1 = config.flex_gate().is_equal(
+                        let init_state_expected = config.flex_gate().select(
                             &mut ctx,
-                            Existing(transcript_init_state),
                             Existing(transcript_init_state_halo2),
+                            Existing(transcript_init_state_sp1),
+                            Existing(route),
                         );
-                        let transcript_check_2 = config.flex_gate().is_equal(
+                        GateInstructions::assert_equal(
+                            config.flex_gate(),
                             &mut ctx,
                             Existing(transcript_init_state),
-                            Existing(transcript_init_state_sp1),
+                            Existing(init_state_expected),
                         );
-                        let transcript_check = config.flex_gate().or(
-                            &mut ctx,
-                            Existing(transcript_check_1),
-                            Existing(transcript_check_2),
-                        );
-                        config
-                            .flex_gate()
-                            .assert_is_const(&mut ctx, &transcript_check, Fr::ONE);
                     }
 
                     ctx.print_stats(&["protocol check"]);
