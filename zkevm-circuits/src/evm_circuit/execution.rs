@@ -678,6 +678,7 @@ impl<F: Field> ExecutionConfig<F> {
             precompile_bn128mul_gadget: configure_gadget!(),
             precompile_bn128pairing_gadget: configure_gadget!(),
             precompile_blake2f_gadget: configure_gadget!(),
+            precompile_p256verify_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,

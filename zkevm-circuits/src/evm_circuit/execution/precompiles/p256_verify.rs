@@ -47,9 +47,8 @@ pub struct P256VerifyGadget<F> {
     msg_hash_keccak_rlc: Cell<F>,
     sig_r_keccak_rlc: Cell<F>,
     sig_s_keccak_rlc: Cell<F>,
-    // recovered_addr_keccak_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
-    pubkey_x_keccak_rlc: Cell<F>,
-    pubkey_y_keccak_rlc: Cell<F>,
+    // pubkey_x_keccak_rlc: Cell<F>,
+    // pubkey_y_keccak_rlc: Cell<F>,
 
     msg_hash_raw: Word<F>,
     msg_hash: Word<F>,
@@ -80,7 +79,7 @@ pub struct P256VerifyGadget<F> {
 }
 
 impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
-    const EXECUTION_STATE: ExecutionState = ExecutionState::PRECOMPILE_P256VERIFY;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileP256Verify;
 
     const NAME: &'static str = "P256VERIFY";
 
@@ -189,18 +188,18 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
 
         let gas_cost = select::expr(
             is_success.expr(),
-            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+            GasCost::PRECOMPILE_P256VERIFY.expr(),
             cb.curr.state.gas_left.expr(),
         );
 
         // lookup to the sign_verify table:
         //
-        // || msg_hash | v | r | s | recovered_addr | recovered ||
+        // || msg_hash | v(0) | r | s | recovered_addr(0) | is_valid ||
         cb.condition(r_s_canonical.expr(),
             |cb| {
                 cb.sig_table_lookup(
                     msg_hash.expr(),
-                    // v set zero
+                    // v set to zero
                     0.expr(),
                     sig_r.expr(),
                     sig_s.expr(),
@@ -267,7 +266,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             "input bytes (RLC) = [msg_hash | sig_v_rlc | sig_r | sig_s]",
             padding.padded_rlc(),
             (msg_hash_keccak_rlc.expr() * r_pow_96)
-                + (sig_v_keccak_rlc.expr() * r_pow_64)
+                + (0.expr() * r_pow_64)
                 + (sig_r_keccak_rlc.expr() * r_pow_32)
                 + sig_s_keccak_rlc.expr(),
         );
@@ -283,7 +282,8 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             is_root.expr(),
             is_success.expr(),
             gas_cost.expr(),
-            select::expr(recovered.expr(), 0x20.expr(), 0x00.expr()), // ReturnDataLength
+            // ReturnDataLength
+            select::expr(is_valid.expr(), 0x20.expr(), 0x00.expr()),
         );
 
         Self {
@@ -302,6 +302,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             msg_hash,
             fq_modulus,
             msg_hash_mod,
+            fp_modulus,
 
             sig_r,
             sig_r_canonical,
@@ -312,6 +313,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
             pk_x_canonical,
             pk_y,
             pk_y_canonical,
+            is_valid,
             is_success,
             callee_address,
             is_root,
