@@ -216,7 +216,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use precompiles::{
     BasePrecompileGadget, EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget,
-    IdentityGadget, ModExpGadget, SHA256Gadget,
+    IdentityGadget, ModExpGadget, P256VerifyGadget, SHA256Gadget,
 };
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
@@ -381,6 +381,7 @@ pub(crate) struct ExecutionConfig<F> {
     precompile_bn128mul_gadget: Box<EcMulGadget<F>>,
     precompile_bn128pairing_gadget: Box<EcPairingGadget<F>>,
     precompile_blake2f_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBlake2f }>>,
+    precompile_p256verify_gadget: Box<P256VerifyGadget<F>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -677,6 +678,7 @@ impl<F: Field> ExecutionConfig<F> {
             precompile_bn128mul_gadget: configure_gadget!(),
             precompile_bn128pairing_gadget: configure_gadget!(),
             precompile_blake2f_gadget: configure_gadget!(),
+            precompile_p256verify_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1745,6 +1747,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::PrecompileBlake2f => {
                 assign_exec_step!(self.precompile_blake2f_gadget)
+            }
+            ExecutionState::PrecompileP256Verify => {
+                assign_exec_step!(self.precompile_p256verify_gadget)
             }
         }
 

@@ -785,6 +785,7 @@ impl<F: Field> SigCircuit<F> {
 
         // address is the random linear combination of the public key
         // it is fine to use a phase 1 gate here
+        // TODO: for p256verify no address field is needed, check if need to change to zero ?
         let address = ecdsa_chip.range.gate.inner_product(
             ctx,
             powers_of_256_cells[..20].to_vec(),

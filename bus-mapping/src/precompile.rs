@@ -111,10 +111,25 @@ impl From<u64> for PrecompileCalls {
             0x08 => Self::Bn128Pairing,
             0x09 => Self::Blake2F,
             0x100 => Self::P256Verify,
-            _ => unreachable!("precompile contracts only from 0x01 to 0x09"),
+            _ => unreachable!("precompile contracts only from 0x01 to 0x100"),
         }
     }
 }
+
+/// size limit of modexp
+pub const MODEXP_SIZE_LIMIT: usize = 32;
+/// size of input limit
+pub const MODEXP_INPUT_LIMIT: usize = 192;
+
+/// size of Bn128_Mul input limit
+pub const BN128MUL_INPUT_LIMIT: usize = 96;
+/// size of Bn128Add input limit
+pub const BN128ADD_INPUT_LIMIT: usize = 128;
+
+/// size of p256Verify input limit
+pub const P256VERIFY_INPUT_LIMIT: usize = 160;
+/// size of Ecrecover input limit
+pub const ECRECOVER_INPUT_LIMIT: usize = 128;
 
 impl PrecompileCalls {
     /// Get the base gas cost for the precompile call.
@@ -141,9 +156,11 @@ impl PrecompileCalls {
     /// Maximum length of input bytes considered for the precompile call.
     pub fn input_len(&self) -> Option<usize> {
         match self {
-            Self::Ecrecover | Self::Bn128Add => Some(128),
-            Self::Bn128Mul => Some(96),
+            Self::Ecrecover => Some(ECRECOVER_INPUT_LIMIT),
+            Self::Bn128Add => Some(BN128ADD_INPUT_LIMIT),
+            Self::Bn128Mul => Some(BN128MUL_INPUT_LIMIT),
             Self::Modexp => Some(MODEXP_INPUT_LIMIT),
+            Self::P256Verify => Some(P256VERIFY_INPUT_LIMIT),
             _ => None,
         }
     }
@@ -174,7 +191,7 @@ impl EcrecoverAuxData {
     /// Create a new instance of ecrecover auxiliary data.
     pub fn new(input: &[u8], output: &[u8], return_bytes: &[u8]) -> Self {
         let mut resized_input = input.to_vec();
-        resized_input.resize(128, 0u8);
+        resized_input.resize(ECRECOVER_INPUT_LIMIT, 0u8);
         let mut resized_output = output.to_vec();
         resized_output.resize(32, 0u8);
 
@@ -206,10 +223,52 @@ impl EcrecoverAuxData {
     }
 }
 
-/// size limit of modexp
-pub const MODEXP_SIZE_LIMIT: usize = 32;
-/// size of input limit
-pub const MODEXP_INPUT_LIMIT: usize = 192;
+/// Auxiliary data for P256Verify
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct P256VerifyAuxData {
+    /// mas hash of the message being signed, can be any hash algorithm result.
+    pub msg_hash: Word,
+    /// r-component of signature.
+    pub sig_r: Word,
+    /// s-component of signature.
+    pub sig_s: Word,
+    /// x-component of public key.
+    pub pubkey_x: Word,
+    /// y-component of public key.
+    pub pubkey_y: Word,
+    /// Input bytes to the P256Verify call.
+    pub input_bytes: Vec<u8>,
+    /// Output bytes from the P256Verify call.
+    pub output_bytes: Vec<u8>,
+    /// Bytes returned to the caller from the P256Verify call.
+    pub return_bytes: Vec<u8>,
+}
+
+impl P256VerifyAuxData {
+    /// Create a new instance of p256Verify auxiliary data.
+    pub fn new(input: &[u8], output: &[u8], return_bytes: &[u8]) -> Self {
+        let mut resized_input = input.to_vec();
+        resized_input.resize(P256VERIFY_INPUT_LIMIT, 0u8);
+        let mut resized_output = output.to_vec();
+        resized_output.resize(32, 0u8);
+
+        // assert that output bytes is 32 bytes.
+        assert!(resized_output[0x01..0x20].iter().all(|&b| b == 0));
+        // assert first byte is bool
+        assert!(resized_output[0x01] == 1u8 || resized_output[0x01] == 0);
+
+        Self {
+            msg_hash: Word::from_big_endian(&resized_input[0x00..0x20]),
+            sig_r: Word::from_big_endian(&resized_input[0x20..0x40]),
+            sig_s: Word::from_big_endian(&resized_input[0x40..0x60]),
+            pubkey_x: Word::from_big_endian(&resized_input[0x60..0x80]),
+            pubkey_y: Word::from_big_endian(&resized_input[0x80..0xa0]),
+            input_bytes: input.to_vec(),
+            output_bytes: output.to_vec(),
+            return_bytes: return_bytes.to_vec(),
+        }
+    }
+}
 
 /// Auxiliary data for Modexp
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -336,10 +395,10 @@ pub struct EcAddAuxData {
 }
 
 impl EcAddAuxData {
-    /// Create a new instance of ecrecover auxiliary data.
+    /// Create a new instance of EcAddAux auxiliary data.
     pub fn new(input: &[u8], output: &[u8], return_bytes: &[u8]) -> Self {
         let mut resized_input = input.to_vec();
-        resized_input.resize(128, 0u8);
+        resized_input.resize(BN128ADD_INPUT_LIMIT, 0u8);
         let mut resized_output = output.to_vec();
         resized_output.resize(64, 0u8);
 
@@ -384,7 +443,7 @@ impl EcMulAuxData {
     /// Create a new instance of EcMul auxiliary data.
     pub fn new(input: &[u8], output: &[u8], return_bytes: &[u8]) -> Self {
         let mut resized_input = input.to_vec();
-        resized_input.resize(96, 0u8);
+        resized_input.resize(BN128MUL_INPUT_LIMIT, 0u8);
         let mut resized_output = output.to_vec();
         resized_output.resize(64, 0u8);
 
@@ -457,6 +516,8 @@ pub enum PrecompileAuxData {
     EcMul(EcMulAuxData),
     /// EcPairing.
     EcPairing(Box<Result<EcPairingAuxData, EcPairingError>>),
+    /// p256Verify
+    P256Verify(P256VerifyAuxData),
 }
 
 impl Default for PrecompileAuxData {

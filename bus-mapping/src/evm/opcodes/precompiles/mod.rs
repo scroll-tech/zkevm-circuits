@@ -14,12 +14,14 @@ mod ec_mul;
 mod ec_pairing;
 mod ecrecover;
 mod modexp;
+mod p256_verify;
 
 use ec_add::opt_data as opt_data_ec_add;
 use ec_mul::opt_data as opt_data_ec_mul;
 use ec_pairing::opt_data as opt_data_ec_pairing;
 use ecrecover::opt_data as opt_data_ecrecover;
 use modexp::opt_data as opt_data_modexp;
+use p256_verify::opt_data as opt_data_p256verify;
 
 pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
@@ -91,6 +93,7 @@ pub fn gen_ops(
                 return_bytes: return_bytes.to_vec(),
             }),
         ),
+        PrecompileCalls::P256Verify => opt_data_p256verify(input_bytes, output_bytes, return_bytes),
         _ => {
             log::warn!("precompile {:?} unsupported in circuits", precompile);
             (
