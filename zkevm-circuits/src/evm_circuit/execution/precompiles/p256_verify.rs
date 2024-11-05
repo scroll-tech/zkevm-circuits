@@ -215,12 +215,6 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         cb.condition(not::expr(x_y_canonical.expr()), |cb| {
             cb.require_zero("is_valid == false if x or y not canonical", is_valid.expr());
         });
-        // cb.condition(not::expr(recovered.expr()), |cb| {
-        //     cb.require_zero(
-        //         "address == 0 if address could not be recovered",
-        //         recovered_addr_keccak_rlc.expr(),
-        //     );
-        // });
 
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
@@ -403,7 +397,7 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
                 .assign(region, offset, aux_data.pubkey_x, *FP_MODULUS)?;
             self.pk_y_canonical
                 .assign(region, offset, aux_data.pubkey_y, *FP_MODULUS)?;
-            // TODO: assign is_valid correctly
+            // assign is_valid
             let pub_key_bytes = (
                 &aux_data.pubkey_x.to_le_bytes(),
                 &aux_data.pubkey_y.to_le_bytes(),
@@ -478,4 +472,243 @@ impl<F: Field> ExecutionGadget<F> for P256VerifyGadget<F> {
         self.restore_context
             .assign(region, offset, block, call, step, 7)
     }
+}
+
+#[cfg(test)]
+mod test {
+    use bus_mapping::{
+        evm::{OpcodeId, PrecompileCallArgs},
+        precompile::PrecompileCalls,
+    };
+    use eth_types::{bytecode, word, ToWord};
+    use mock::TestContext;
+    use rayon::{iter::ParallelIterator, prelude::IntoParallelRefIterator};
+    use std::sync::LazyLock;
+
+    use crate::test_util::CircuitTestBuilder;
+
+    static TEST_VECTOR: LazyLock<Vec<PrecompileCallArgs>> = LazyLock::new(|| {
+        vec![
+            PrecompileCallArgs {
+                name: "p256verify (padded bytes)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // TODO: add x, y
+                    // signature s from 0x60
+                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                    PUSH1(0x40)
+                    MSTORE
+                },
+                // copy 101 bytes from memory addr 0. This should be sufficient to recover an
+                // address, but the signature is invalid (ecrecover does not care about this
+                // though)
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x65.into(),
+                // return 32 bytes and write from memory addr 128
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "p256verify (valid sig)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // x, y  from 0x20
+                    PUSH1(28)
+                    PUSH1(0x20)
+                    MSTORE
+                    // signature r from 0x40
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                    PUSH1(0x40)
+                    MSTORE
+                    // signature s from 0x60
+                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                // copy 128 bytes from memory addr 0. Address is recovered and the signature is
+                // valid.
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x80.into(),
+                // return 32 bytes and write from memory addr 128
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "p256verify (valid sig, extra input bytes)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // signature v from 0x20
+                    PUSH1(28)
+                    PUSH1(0x20)
+                    MSTORE
+                    // signature r from 0x40
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                    PUSH1(0x40)
+                    MSTORE
+                    // signature s from 0x60
+                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                // copy 133 bytes from memory addr 0. Address is recovered and the signature is
+                // valid. The 5 bytes after the first 128 bytes are ignored.
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x85.into(),
+                // return 32 bytes and write from memory addr 128
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "p256verify (overflowing msg_hash)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // x,y from 0x20
+                    PUSH1(28)
+                    PUSH1(0x20)
+                    MSTORE
+                    // signature r from 0x40
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                    PUSH1(0x40)
+                    MSTORE
+                    // signature s from 0x60
+                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x80.into(),
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecrecover (overflowing sig_r)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // x, y from 0x20
+                    PUSH1(28)
+                    PUSH1(0x20)
+                    MSTORE
+                    // signature r from 0x40
+                    PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                    PUSH1(0x40)
+                    MSTORE
+                    // signature s from 0x60
+                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x80.into(),
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "p256verify (overflowing sig_s)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // x,y from 0x20
+                    PUSH1(28)
+                    PUSH1(0x20)
+                    MSTORE
+                    // signature r from 0x40
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                    PUSH1(0x40)
+                    MSTORE
+                    // signature s from 0x60
+                    PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x80.into(),
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+
+            PrecompileCallArgs {
+                name: "p256verify (overflowing x)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // x,y from 0x20
+                    PUSH1(28)
+                    PUSH1(0x20)
+                    MSTORE
+                    // signature r from 0x40
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                    PUSH1(0x40)
+                    MSTORE
+                    // signature s from 0x60
+                    PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x80.into(),
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "p256verify (overflowing y)",
+                setup_code: bytecode! {
+                    // msg hash from 0x00
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                    PUSH1(0x00)
+                    MSTORE
+                    // x,y from 0x20
+                    PUSH1(28)
+                    PUSH1(0x20)
+                    MSTORE
+                    // signature r from 0x40
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                    PUSH1(0x40)
+                    MSTORE
+                    // signature s from 0x60
+                    PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x80.into(),
+                ret_offset: 0x80.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::P256Verify.address().to_word(),
+                ..Default::default()
+            },
+        ]
+    });
 }
