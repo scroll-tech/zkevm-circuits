@@ -1,6 +1,6 @@
 use crate::{
-    aggregation::rlc::POWS_OF_256, aggregation::util::constrain_crt_equals_bytes,
-    blob_consistency::BLOB_WIDTH, constants::N_BYTES_U256, BatchHash, ChunkInfo, RlcConfig,
+    aggregation::util::constrain_crt_equals_bytes, blob_consistency::BLOB_WIDTH,
+    constants::N_BYTES_U256, BatchHash, ChunkInfo, RlcConfig,
 };
 use eth_types::{H256, U256};
 use ethers_core::utils::keccak256;
@@ -579,6 +579,14 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
             region.constrain_equal(four.cell(), four_cell)?;
             four
         };
+        let two_fifty_six = {
+            let two_fifty_six =
+                rlc_config.load_private(region, &Fr::from(256), &mut rlc_config_offset)?;
+            let two_fifty_six_cell = rlc_config.four_cell(two_fifty_six.cell().region_index);
+            region.constrain_equal(two_fifty_six.cell(), two_fifty_six_cell)?;
+            two_fifty_six
+        };
+
         let fixed_chunk_indices = {
             let mut fixed_chunk_indices = vec![one.clone()];
             for i in 2..=N_SNARKS {
@@ -594,22 +602,6 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         };
         let two = fixed_chunk_indices.get(1).expect("N_SNARKS >= 2");
         let n_snarks = fixed_chunk_indices.last().expect("N_SNARKS >= 2");
-        let pows_of_256 = {
-            let mut pows_of_256 = vec![one.clone()];
-            for (exponent, pow_of_256) in (1..=POWS_OF_256).zip_eq(
-                std::iter::successors(Some(Fr::from(256)), |n| Some(n * Fr::from(256)))
-                    .take(POWS_OF_256),
-            ) {
-                let pow_cell =
-                    rlc_config.load_private(region, &pow_of_256, &mut rlc_config_offset)?;
-                let fixed_pow_cell = rlc_config
-                    .pow_of_two_hundred_and_fifty_six_cell(pow_cell.cell().region_index, exponent);
-                region.constrain_equal(pow_cell.cell(), fixed_pow_cell)?;
-                pows_of_256.push(pow_cell);
-            }
-            pows_of_256
-        };
-        let two_fifty_six = pows_of_256[1].clone();
 
         // read randomness challenges for RLC computations.
         let r_keccak =
