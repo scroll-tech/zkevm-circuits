@@ -31,7 +31,7 @@ test-benches: ## Compiles the benchmarks
 test-all: fmt doc clippy test-doc test-benches test ## Run all the CI checks locally (in your actual toolchain)
 
 test-da-avail: ## Run light tests
-	@cargo test --release --workspace --exclude integration-tests --exclude circuit-benchmarks --features da-avail batch_circuit
+	@cargo test --release --workspace --exclude integration-tests --exclude circuit-benchmarks --features da-avail avail
 
 super_bench: ## Run Super Circuit benchmarks
 	@cargo test --profile bench bench_super_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture

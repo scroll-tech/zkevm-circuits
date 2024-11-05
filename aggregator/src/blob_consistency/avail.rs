@@ -1,12 +1,15 @@
-use super::AssignedBlobDataExport;
+#[cfg(test)]
+mod tests;
+
+use super::{AssignedBlobDataExport, BlobDataConfig};
 use crate::{BatchData, RlcConfig};
 use eth_types::{H256, U256};
+use ethers_core::utils::keccak256;
 use halo2_base::{gates::range::RangeConfig, AssignedValue, Context};
 use halo2_ecc::bigint::CRTInteger;
-use halo2_proofs::halo2curves::bls12_381::Scalar;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
-    halo2curves::bn256::Fr,
+    halo2curves::{bls12_381::Scalar, bn256::Fr},
     plonk::{ConstraintSystem, Error, Expression},
 };
 use snark_verifier_sdk::LIMBS;
@@ -15,16 +18,20 @@ use zkevm_circuits::{table::U8Table, util::Challenges};
 pub const BLOB_WIDTH: usize = 4096;
 
 #[derive(Debug, Clone)]
-pub struct BlobConsistencyConfig<const N_SNARKS: usize> {}
+pub struct BlobConsistencyConfig<const N_SNARKS: usize> {
+    data: BlobDataConfig<N_SNARKS>,
+}
 
 impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
     pub fn construct(
-        _meta: &mut ConstraintSystem<Fr>,
-        _challenges: &Challenges<Expression<Fr>>,
-        _u8_table: U8Table,
+        meta: &mut ConstraintSystem<Fr>,
+        challenges: &Challenges<Expression<Fr>>,
+        u8_table: U8Table,
         _: RangeConfig<Fr>,
     ) -> Self {
-        unimplemented!()
+        Self {
+            data: BlobDataConfig::configure(meta, challenges, u8_table),
+        }
     }
 
     pub fn assign_barycentric(
@@ -33,17 +40,42 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         _bytes: &[u8],
         _challenge: U256,
     ) -> AssignedBarycentricEvaluationConfig {
-        unimplemented!()
+        AssignedBarycentricEvaluationConfig::default()
     }
 
     pub fn assign_blob_data(
         &self,
-        _layouter: &mut impl Layouter<Fr>,
-        _challenge_value: Challenges<Value<Fr>>,
-        _rlc_config: &RlcConfig,
-        _blob_bytes: &[u8],
+        layouter: &mut impl Layouter<Fr>,
+        challenge_value: Challenges<Value<Fr>>,
+        rlc_config: &RlcConfig,
+        blob_bytes: &[u8],
     ) -> Result<AssignedBlobDataExport, Error> {
-        unimplemented!()
+        let export = self
+            .data
+            .assign(layouter, challenge_value, rlc_config, blob_bytes);
+
+        // rlc_config.lookup_keccak_rlcs(
+        //     region: &mut Region<Fr>,
+        //     input_rlcs: &AssignedCell<Fr, Fr>,
+        //     output_rlcs: &AssignedCell<Fr, Fr>,
+        //     data_len: &export.cooked_len,
+        //     offset: &mut usize,
+        // )
+
+        export
+
+        // region: &mut Region<Fr>,
+        // input_rlcs: &AssignedCell<Fr, Fr>,
+        // output_rlcs: &AssignedCell<Fr, Fr>,
+        // data_len: &AssignedCell<Fr, Fr>,
+        // offset: &mut usize,
+
+        // config.rlc_config.mul(
+        //     &mut region,
+        //     &blob_data_exports.bytes_rlc,
+        //     &disable_encoding,
+        //     &mut rlc_config_offset,
+        // )?,
     }
 
     pub fn link(
@@ -51,40 +83,40 @@ impl<const N_SNARKS: usize> BlobConsistencyConfig<N_SNARKS> {
         _blob_crts_limbs: &[[AssignedCell<Fr, Fr>; LIMBS]],
         _barycentric_crts: &[CRTInteger<Fr>],
     ) -> Result<(), Error> {
-        unimplemented!()
+        Ok(())
     }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BlobConsistencyWitness {
     blob_versioned_hash: H256,
-    challenge_digest: H256,
-    evaluation: Scalar,
 }
 
 impl BlobConsistencyWitness {
-    pub fn new<const N_SNARKS: usize>(_bytes: &[u8], _batch_data: &BatchData<N_SNARKS>) -> Self {
-        unimplemented!()
+    pub fn new<const N_SNARKS: usize>(bytes: &[u8], _batch_data: &BatchData<N_SNARKS>) -> Self {
+        Self {
+            blob_versioned_hash: keccak256(bytes).into(),
+        }
     }
 
     pub fn id(&self) -> H256 {
-        unimplemented!()
+        self.blob_versioned_hash
     }
 
     pub fn challenge_digest(&self) -> U256 {
-        unimplemented!()
+        Default::default()
     }
 
     pub fn challenge(&self) -> Scalar {
-        unimplemented!()
+        Default::default()
     }
 
     pub fn evaluation(&self) -> Scalar {
-        unimplemented!()
+        Default::default()
     }
 
     pub fn blob_data_proof(&self) -> [H256; 2] {
-        unimplemented!()
+        Default::default()
     }
 }
 

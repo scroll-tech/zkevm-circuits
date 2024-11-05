@@ -384,3 +384,18 @@ fn blob_crts_limbs(
         .try_into()
         .unwrap()
 }
+
+#[cfg(test)]
+/// Get the blob data bytes that will be populated in BlobDataConfig.
+pub fn get_blob_bytes(batch_bytes: &[u8]) -> Vec<u8> {
+    let mut blob_bytes = crate::witgen::zstd_encode(batch_bytes);
+
+    // Whether we encode batch -> blob or not.
+    let enable_encoding = blob_bytes.len() < batch_bytes.len();
+    if !enable_encoding {
+        blob_bytes = batch_bytes.to_vec();
+    }
+    blob_bytes.insert(0, enable_encoding as u8);
+
+    blob_bytes
+}
