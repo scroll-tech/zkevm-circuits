@@ -1,6 +1,6 @@
 use crate::{
-    aggregation::rlc::POWS_OF_256, blob_consistency::BLOB_WIDTH, constants::N_BYTES_U256,
-    BatchHash, ChunkInfo, RlcConfig,
+    aggregation::rlc::POWS_OF_256, aggregation::util::constrain_crt_equals_bytes,
+    blob_consistency::BLOB_WIDTH, constants::N_BYTES_U256, BatchHash, ChunkInfo, RlcConfig,
 };
 use eth_types::{H256, U256};
 use ethers_core::utils::keccak256;
@@ -401,7 +401,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
         batch_data: &BatchData<N_SNARKS>,
         versioned_hash: H256,
-        barycentric_assignments: &[CRTInteger<Fr>],
+        challenge_digest: &CRTInteger<Fr>,
     ) -> Result<AssignedBatchDataExport, Error> {
         self.load_range_tables(layouter)?;
 
@@ -418,7 +418,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
                     challenge_value,
                     rlc_config,
                     chunks_are_padding,
-                    barycentric_assignments,
+                    challenge_digest,
                     &assigned_rows,
                 )
             },
@@ -550,7 +550,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         // The chunks_are_padding assigned cells are exports from the conditional constraints in
         // `core.rs`. Since these are already constrained, we can just use them as is.
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
-        barycentric_assignments: &[CRTInteger<Fr>],
+        assigned_challenge_digest: &CRTInteger<Fr>,
         assigned_rows: &[AssignedBatchDataConfig],
     ) -> Result<AssignedBatchDataExport, Error> {
         let n_rows_metadata = BatchData::<N_SNARKS>::n_rows_metadata();
@@ -996,40 +996,12 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         ////////////////////////////////////////////////////////////////////////////////
         //////////////////////////// CHALLENGE DIGEST CHECK ////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////
-
-        assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 1);
-        let challenge_digest_crt = barycentric_assignments
-            .get(BLOB_WIDTH)
-            .expect("challenge digest CRT");
-        let challenge_digest_limb1 = rlc_config.inner_product(
+        constrain_crt_equals_bytes(
             region,
-            &challenge_digest[0..11],
-            &pows_of_256,
+            rlc_config,
+            assigned_challenge_digest,
+            &challenge_digest,
             &mut rlc_config_offset,
-        )?;
-        let challenge_digest_limb2 = rlc_config.inner_product(
-            region,
-            &challenge_digest[11..22],
-            &pows_of_256,
-            &mut rlc_config_offset,
-        )?;
-        let challenge_digest_limb3 = rlc_config.inner_product(
-            region,
-            &challenge_digest[22..32],
-            &pows_of_256[0..10],
-            &mut rlc_config_offset,
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb1.cell(),
-            challenge_digest_crt.truncation.limbs[0].cell(),
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb2.cell(),
-            challenge_digest_crt.truncation.limbs[1].cell(),
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb3.cell(),
-            challenge_digest_crt.truncation.limbs[2].cell(),
         )?;
 
         Ok(export)

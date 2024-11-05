@@ -394,7 +394,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
         // blob data config
         {
-            let barycentric_assignments = &barycentric.barycentric_assignments;
             let challenge_le = &barycentric.z_le;
             let evaluation_le = &barycentric.y_le;
 
@@ -410,7 +409,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
             BlobConsistencyConfig::<N_SNARKS>::link(
                 &mut layouter,
                 &blob_data_exports.blob_crts_limbs,
-                barycentric_assignments,
+                barycentric.blob_crts(),
             )?;
 
             let batch_data_exports = config.batch_data_config.assign(
@@ -420,7 +419,7 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                 &assigned_batch_hash.chunks_are_padding,
                 &batch_data,
                 self.batch_hash.blob_consistency_witness.id(),
-                barycentric_assignments,
+                barycentric.challenge_digest(),
             )?;
 
             // conditionally encode those bytes. By default we use a worked example.
