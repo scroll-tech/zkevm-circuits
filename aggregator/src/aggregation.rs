@@ -54,7 +54,6 @@ impl From<&Protocol<G1Affine>> for FixedProtocol {
             preprocessed: protocol.preprocessed.clone(),
             init_state: protocol
                 .transcript_initial_state
-                .clone()
                 .expect("protocol transcript init state None"),
         }
     }

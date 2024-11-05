@@ -644,7 +644,7 @@ pub fn run_test(
             eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
             prover::test::chunk_prove(
                 &test_id,
-                prover::ChunkProvingTask::from(vec![_scroll_trace]),
+                prover::ChunkProvingTask::new(vec![_scroll_trace], prover::ChunkKind::Halo2),
             );
         }
 

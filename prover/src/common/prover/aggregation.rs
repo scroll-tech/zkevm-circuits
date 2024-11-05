@@ -12,6 +12,7 @@ use snark_verifier_sdk::Snark;
 use std::env;
 
 impl<'params> Prover<'params> {
+    #[allow(clippy::too_many_arguments)]
     pub fn gen_agg_snark<const N_SNARKS: usize>(
         &mut self,
         id: &str,
@@ -42,6 +43,7 @@ impl<'params> Prover<'params> {
         self.gen_snark(id, degree, &mut rng, circuit, "gen_agg_snark")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn load_or_gen_agg_snark<const N_SNARKS: usize>(
         &mut self,
         name: &str,
