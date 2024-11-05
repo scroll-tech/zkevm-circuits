@@ -225,13 +225,10 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     let loader: Rc<Halo2Loader<G1Affine, EccChip<Fr, FpConfig<Fr, Fq>>>> =
                         Halo2Loader::new(ecc_chip, ctx);
 
-                    //
                     // extract the assigned values for
                     // - instances which are the public inputs of each chunk (prefixed with 12
                     //   instances from previous accumulators)
                     // - new accumulator
-                    //
-                    log::debug!("aggregation: chunk aggregation");
                     let (
                         assigned_aggregation_instances,
                         acc,
@@ -269,29 +266,21 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     // fixed set of values expected.
                     //
                     // First we load the constants.
-                    log::info!("populating constants");
                     let mut preprocessed_polys_halo2 = Vec::with_capacity(7);
                     let mut preprocessed_polys_sp1 = Vec::with_capacity(7);
-                    for (i, &preprocessed_poly) in
-                        self.halo2_protocol.preprocessed.iter().enumerate()
-                    {
-                        log::debug!("load const {i}");
+                    for &preprocessed_poly in self.halo2_protocol.preprocessed.iter() {
                         preprocessed_polys_halo2.push(
                             config
                                 .ecc_chip()
                                 .assign_constant_point(&mut ctx, preprocessed_poly),
                         );
-                        log::debug!("load const {i} OK");
                     }
-                    for (i, &preprocessed_poly) in self.sp1_protocol.preprocessed.iter().enumerate()
-                    {
-                        log::debug!("load const (sp1) {i}");
+                    for &preprocessed_poly in self.sp1_protocol.preprocessed.iter() {
                         preprocessed_polys_sp1.push(
                             config
                                 .ecc_chip()
                                 .assign_constant_point(&mut ctx, preprocessed_poly),
                         );
-                        log::debug!("load const (sp1) {i} OK");
                     }
                     let transcript_init_state_halo2 = config
                         .ecc_chip()
@@ -300,7 +289,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         .gate()
                         .assign_constant(&mut ctx, self.halo2_protocol.init_state)
                         .expect("IntegerInstructions::assign_constant infallible");
-                    log::debug!("load transcript OK");
                     let transcript_init_state_sp1 = config
                         .ecc_chip()
                         .field_chip()
@@ -308,7 +296,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                         .gate()
                         .assign_constant(&mut ctx, self.sp1_protocol.init_state)
                         .expect("IntegerInstructions::assign_constant infallible");
-                    log::info!("populating constants OK");
 
                     // Commitments to the preprocessed polynomials.
                     //
@@ -378,7 +365,6 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
 
                     ctx.print_stats(&["protocol check"]);
 
-                    log::debug!("batching: assigning barycentric");
                     let barycentric = config.blob_consistency_config.assign_barycentric(
                         &mut ctx,
                         &self.batch_hash.blob_bytes,
