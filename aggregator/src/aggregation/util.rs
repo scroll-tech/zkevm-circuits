@@ -68,14 +68,9 @@ pub fn constrain_crt_equals_bytes(
         rlc_config_offset,
     )?;
 
-    for (limb_from_bytes, crt_limb) in [limb_from_bytes_lo, limb_from_bytes_mid, limb_from_bytes_hi]
+    [limb_from_bytes_lo, limb_from_bytes_mid, limb_from_bytes_hi]
         .iter()
         .zip_eq(crt.limbs())
-    {
-        region.constrain_equal(limb_from_bytes.cell(), crt_limb.cell())?
-    }
-
-    Ok(())
-
-    // This can just be a collect....
+        .map(|(a, b)| region.constrain_equal(a.cell(), b.cell()))
+        .collect()
 }
