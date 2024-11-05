@@ -1,9 +1,11 @@
 use ethers_core::utils::keccak256;
+use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
-    halo2curves::bn256::Fr,
+    halo2curves::{bn256::Fr, group::ff::PrimeField},
     plonk::Error,
 };
+use itertools::Itertools;
 use zkevm_circuits::util::Challenges;
 
 // TODO: remove MAX_AGG_SNARKS and make this generic over N_SNARKS
@@ -546,5 +548,43 @@ impl RlcConfig {
         *offset += 3;
 
         Ok(())
+    }
+
+    pub fn constrain_crt_equals_bytes(
+        &self,
+        region: &mut Region<Fr>,
+        crt: &CRTInteger<Fr>,
+        bytes: &[AssignedCell<Fr, Fr>],
+        offset: &mut usize,
+    ) -> Result<(), Error> {
+        let mut powers_of_256 = vec![];
+        for i in 0..11 {
+            let assigned_cell =
+                self.load_private(region, &Fr::from_u128(256u128.pow(i)), offset)?;
+            let region_index = assigned_cell.cell().region_index;
+            let fixed_cell = if i == 0 {
+                self.one_cell(region_index)
+            } else {
+                self.pow_of_two_hundred_and_fifty_six_cell(
+                    region_index,
+                    usize::try_from(i).unwrap(),
+                )
+            };
+            region.constrain_equal(fixed_cell, assigned_cell.cell())?;
+            powers_of_256.push(assigned_cell);
+        }
+
+        let limb_from_bytes_lo =
+            self.inner_product(region, &bytes[0..11], &powers_of_256, offset)?;
+        let limb_from_bytes_mid =
+            self.inner_product(region, &bytes[11..22], &powers_of_256, offset)?;
+        let limb_from_bytes_hi =
+            self.inner_product(region, &bytes[22..32], &powers_of_256[0..10], offset)?;
+
+        [limb_from_bytes_lo, limb_from_bytes_mid, limb_from_bytes_hi]
+            .iter()
+            .zip_eq(crt.limbs())
+            .map(|(a, b)| region.constrain_equal(a.cell(), b.cell()))
+            .collect()
     }
 }

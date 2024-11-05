@@ -1,6 +1,5 @@
 use crate::{
-    aggregation::util::constrain_crt_equals_bytes, blob_consistency::BLOB_WIDTH,
-    constants::N_BYTES_U256, BatchHash, ChunkInfo, RlcConfig,
+    blob_consistency::BLOB_WIDTH, constants::N_BYTES_U256, BatchHash, ChunkInfo, RlcConfig,
 };
 use eth_types::{H256, U256};
 use ethers_core::utils::keccak256;
@@ -988,9 +987,8 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         ////////////////////////////////////////////////////////////////////////////////
         //////////////////////////// CHALLENGE DIGEST CHECK ////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////
-        constrain_crt_equals_bytes(
+        rlc_config.constrain_crt_equals_bytes(
             region,
-            rlc_config,
             assigned_challenge_digest,
             &challenge_digest,
             &mut rlc_config_offset,
