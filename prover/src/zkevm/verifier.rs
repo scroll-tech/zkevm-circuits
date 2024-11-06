@@ -48,10 +48,9 @@ impl<'params> Verifier<'params> {
         // [`LAYER2_CONFIG_PATH`].
         env::set_var("COMPRESSION_CONFIG", &*LAYER2_CONFIG_PATH);
 
-        let params = params_map.get(&*LAYER2_DEGREE).expect(&format!(
-            "KZG params don't contain degree={:?}",
-            LAYER2_DEGREE
-        ));
+        let params = params_map
+            .get(&*LAYER2_DEGREE)
+            .unwrap_or_else(|| panic!("KZG params don't contain degree={:?}", LAYER2_DEGREE));
 
         Self {
             inner: common::Verifier::from_params(params, &raw_vk),

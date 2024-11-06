@@ -122,7 +122,7 @@ impl<'params> Prover<'params> {
                 &chunk_info_reconstructed,
                 chunk_info_provided,
             )
-            .map_err(|e| ChunkProverError::Custom(e))?;
+            .map_err(ChunkProverError::Custom)?;
         }
 
         // Generate the final Layer-2 SNARK.

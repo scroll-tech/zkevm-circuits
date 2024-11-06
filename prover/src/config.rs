@@ -163,11 +163,7 @@ impl LayerId {
     ///
     /// Every SNARK layer on top of the [`innermost layer`][LayerId::Inner] has an accumulator.
     pub fn accumulator(&self) -> bool {
-        if let Self::Inner = self {
-            false
-        } else {
-            true
-        }
+        !matches!(self, Self::Inner)
     }
 }
 

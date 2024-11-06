@@ -118,7 +118,7 @@ pub fn try_read<P: AsRef<Path>>(path: P) -> Option<Vec<u8>> {
 ///
 /// Panics if any i/o error encountered.
 pub fn force_read<P: AsRef<Path> + std::fmt::Debug>(path: P) -> Vec<u8> {
-    self::read(path.as_ref()).expect(&format!("no file found! path={path:?}"))
+    self::read(path.as_ref()).unwrap_or_else(|_| panic!("no file found! path={path:?}"))
 }
 
 /// Wrapper functionality to write bytes to a file.

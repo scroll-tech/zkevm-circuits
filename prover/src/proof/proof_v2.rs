@@ -91,19 +91,19 @@ impl<Inner: Proof + serde::de::DeserializeOwned> ProofV2<Inner> {
     /// Read and deserialize the proof.
     pub fn from_json<P: AsRef<Path>>(dir: P, suffix: &str) -> Result<Self, ProverError> {
         let path = Self::path_proof(dir, suffix);
-        Ok(read_json_deep(path)?)
+        read_json_deep(path)
     }
 
     /// Serialize the proof and other peripheral data, before dumping in the provided directory.
     pub fn dump<P: AsRef<Path>>(&self, dir: P, suffix: &str) -> Result<(), ProverError> {
         // Dump the verifying key.
-        write(Self::path_vk(&dir, &suffix), &self.vk)?;
+        write(Self::path_vk(&dir, suffix), &self.vk)?;
 
         // Dump the proof itself.
-        write_json(Self::path_proof(&dir, &suffix), &self)?;
+        write_json(Self::path_proof(&dir, suffix), &self)?;
 
         // Dump any other data for the inner data.
-        self.inner.dump(&dir, &suffix)?;
+        self.inner.dump(&dir, suffix)?;
 
         Ok(())
     }
@@ -210,7 +210,7 @@ impl BundleProofV2 {
         }
 
         Ok(Self {
-            inner: BundleProofV2Metadata::default(),
+            inner: BundleProofV2Metadata,
             proof: proof.to_vec(),
             instances: instances.to_vec(),
             vk: vk.to_vec(),
@@ -275,7 +275,7 @@ impl Proof for ChunkProofV2Metadata {
     }
 
     fn dump<P: AsRef<Path>>(&self, dir: P, suffix: &str) -> Result<(), ProverError> {
-        write(Self::path_protocol(&dir, &suffix), &self.protocol)?;
+        write(Self::path_protocol(&dir, suffix), &self.protocol)?;
 
         Ok(())
     }
@@ -310,7 +310,7 @@ impl Proof for BatchProofV2Metadata {
     }
 
     fn dump<P: AsRef<Path>>(&self, dir: P, suffix: &str) -> Result<(), ProverError> {
-        write(Self::path_protocol(&dir, &suffix), &self.protocol)?;
+        write(Self::path_protocol(&dir, suffix), &self.protocol)?;
 
         Ok(())
     }

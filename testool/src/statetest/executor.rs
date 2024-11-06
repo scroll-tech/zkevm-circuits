@@ -637,15 +637,12 @@ pub fn run_test(
         #[cfg(feature = "inner-prove")]
         {
             eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
-            prover::test::inner_prove(&test_id, &witness_block);
+            prover::inner_prove(&test_id, &witness_block);
         }
         #[cfg(feature = "chunk-prove")]
         {
             eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
-            prover::test::chunk_prove(
-                &test_id,
-                prover::ChunkProvingTask::new(vec![_scroll_trace], prover::ChunkKind::Halo2),
-            );
+            prover::chunk_prove(&test_id, prover::ChunkProvingTask::new(vec![_scroll_trace]));
         }
 
         #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
