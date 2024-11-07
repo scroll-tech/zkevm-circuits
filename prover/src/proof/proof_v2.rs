@@ -223,8 +223,7 @@ impl BundleProofV2 {
     /// [ public_input_bytes | accumulator_bytes | proof ]
     pub fn calldata(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.instances[ACCUMULATOR_BYTES..].iter())
-            .chain(self.instances[0..ACCUMULATOR_BYTES].iter())
+            .chain(self.instances.iter())
             .chain(self.proof.iter())
             .cloned()
             .collect::<Vec<_>>()
@@ -347,12 +346,34 @@ impl Proof for BundleProofV2Metadata {
 mod tests {
     use tempdir::TempDir;
 
-    use crate::{read_json, BundleProofV2, EvmProof};
+    use crate::{deploy_and_call, read, read_json, BundleProofV2, EvmProof};
 
     #[test]
-    fn serde_bundle_proof() -> anyhow::Result<()> {
+    fn bundle_proof_backwards_compat() -> anyhow::Result<()> {
         // Read [`EvmProof`] from test data.
         let evm_proof = read_json::<_, EvmProof>("test_data/evm-proof.json")?;
+
+        // Build bundle proofs.
+        let bundle_proof_v2 = BundleProofV2::new_from_raw(
+            &evm_proof.proof.proof,
+            &evm_proof.proof.instances,
+            &evm_proof.proof.vk,
+        )?;
+        let bundle_proof = crate::BundleProof::from(evm_proof.proof);
+
+        assert_eq!(bundle_proof.calldata(), bundle_proof_v2.calldata());
+
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_proof() -> anyhow::Result<()> {
+        // Create a tmp test directory.
+        let dir = TempDir::new("proof_v2")?;
+
+        // Read [`EvmProof`] from test data.
+        let evm_proof = read_json::<_, EvmProof>("test_data/evm-proof.json")?;
+        let verifier = read("test_data/evm-verifier.bin")?;
 
         // Build bundle proof v2.
         let bundle_proof = BundleProofV2::new_from_raw(
@@ -361,11 +382,12 @@ mod tests {
             &evm_proof.proof.vk,
         )?;
 
-        // Dump the bundle proof v2 into a tmp dir.
-        let dir = TempDir::new("proof_v2")?;
+        // Dump the bundle proof v2.
         bundle_proof.dump(&dir, "suffix")?;
-        dir.close()?;
 
-        Ok(())
+        // Verify the bundle proof v2 with EVM verifier contract.
+        assert!(deploy_and_call(verifier, bundle_proof.calldata()).is_ok());
+
+        Ok(dir.close()?)
     }
 }
