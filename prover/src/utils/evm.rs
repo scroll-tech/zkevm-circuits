@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -24,12 +24,15 @@ pub fn gen_evm_verifier<C: CircuitExt<Fr>>(
     evm_proof: &EvmProof,
     output_dir: Option<&str>,
 ) -> Result<(), ProverError> {
+    // YUL contract code will be dumped to the following path.
+    let yul_path = output_dir.map(|dir| PathBuf::from(dir).join("evm_verifier.yul"));
+
     // Generate deployment code and dump YUL file.
     let deployment_code = snark_verifier_sdk::gen_evm_verifier::<C, Kzg<Bn256, Bdfg21>>(
         params,
         vk,
         evm_proof.num_instance.clone(),
-        None,
+        yul_path.as_deref(),
     );
 
     // Write the contract binary if an output directory was specified.
