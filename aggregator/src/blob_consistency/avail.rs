@@ -98,3 +98,8 @@ pub struct AssignedBarycentricEvaluationConfig {
     /// 32 Assigned cells representing the LE-bytes of evaluation y.
     pub(crate) y_le: Vec<AssignedValue<Fr>>,
 }
+
+/// Get the blob data bytes that will be populated in BlobDataConfig.
+pub fn get_blob_bytes(_batch_bytes: &[u8]) -> Vec<u8> {
+    unimplemented!("trick for linting");
+}

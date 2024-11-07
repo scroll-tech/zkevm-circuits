@@ -11,7 +11,7 @@ mod verifier;
 pub use verifier::Verifier;
 
 /// Re-export some types from the [`aggregator`] crate.
-pub use aggregator::{BatchData, BatchHash, BatchHeader, MAX_AGG_SNARKS};
+pub use aggregator::{get_blob_bytes, BatchData, BatchHash, BatchHeader, MAX_AGG_SNARKS};
 
 /// Alias for convenience.
 pub type BatchProver<'a> = Prover<'a>;

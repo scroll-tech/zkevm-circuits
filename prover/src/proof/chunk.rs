@@ -12,7 +12,7 @@ use crate::{utils::read_json_deep, zkevm::SubCircuitRowUsage};
 use super::{dump_as_json, dump_data, dump_vk, InnerProof};
 
 /// The innermost SNARK belongs to the following variants.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum ChunkKind {
     /// halo2-based SuperCircuit.
     Halo2,

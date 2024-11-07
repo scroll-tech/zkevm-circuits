@@ -16,7 +16,7 @@ use crate::{
     types::BundleProvingTask,
     utils::{force_to_read, try_to_read},
     BatchProofV2, BatchProofV2Metadata, BatchProvingTask, BundleProofV2, ChunkKind, ChunkProof,
-    ParamsMap, ProverError,
+    ChunkProofV2, ParamsMap, ProverError,
 };
 
 /// Prover capable of generating [`BatchProof`] and [`BundleProof`].
@@ -197,8 +197,8 @@ impl<'params> Prover<'params> {
         let bundle_snarks = bundle
             .batch_proofs
             .iter()
-            .map(|proof| proof.into())
-            .collect::<Vec<_>>();
+            .map(Snark::try_from)
+            .collect::<Result<Vec<Snark>, _>>()?;
 
         // Load from disk or generate a layer-5 Recursive Circuit SNARK.
         let layer5_snark = self
@@ -266,11 +266,16 @@ impl<'params> Prover<'params> {
         self.check_protocol_of_chunks(&batch.chunk_proofs)?;
 
         // Split chunk info and snarks from the batch proving task.
-        let (mut chunk_infos, mut layer2_snarks): (Vec<_>, Vec<_>) = batch
+        let mut chunk_infos = batch
             .chunk_proofs
             .iter()
-            .map(|proof| (proof.chunk_info.clone(), proof.to_snark()))
-            .unzip();
+            .map(|proof| proof.inner.chunk_info().clone())
+            .collect::<Vec<_>>();
+        let mut layer2_snarks = batch
+            .chunk_proofs
+            .iter()
+            .map(Snark::try_from)
+            .collect::<Result<Vec<Snark>, ProverError>>()?;
 
         // Pad the SNARKs with the last SNARK until we have MAX_AGG_SNARKS number of SNARKs.
         if num_chunks < MAX_AGG_SNARKS {
@@ -372,15 +377,15 @@ impl<'params> Prover<'params> {
     /// Sanity check: validate that the SNARK [`protocol`][snark_verifier::Protocol] for the SNARKs
     /// being aggregated by the [`BatchCircuit`][aggregator::BatchCircuit] match the expected SNARK
     /// protocols conditional to the chunk proof generation route utilised, i.e. halo2 or sp1.
-    fn check_protocol_of_chunks(&self, chunk_proofs: &[ChunkProof]) -> Result<(), ProverError> {
+    fn check_protocol_of_chunks(&self, chunk_proofs: &[ChunkProofV2]) -> Result<(), ProverError> {
         for (i, proof) in chunk_proofs.iter().enumerate() {
-            let expected = match proof.chunk_kind {
+            let expected = match proof.inner.chunk_kind() {
                 ChunkKind::Halo2 => &self.halo2_protocol,
                 ChunkKind::Sp1 => &self.sp1_protocol,
             };
-            if proof.protocol.ne(expected) {
+            if proof.inner.protocol().ne(expected) {
                 let expected_digest = format!("{:x}", Sha256::digest(expected));
-                let found_digest = format!("{:x}", Sha256::digest(&proof.protocol));
+                let found_digest = format!("{:x}", Sha256::digest(proof.inner.protocol()));
                 log::error!(
                     "BatchProver: SNARK protocol mismatch! index={}, expected={}, found={}",
                     i,

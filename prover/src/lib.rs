@@ -39,8 +39,8 @@
 
 mod aggregator;
 pub use aggregator::{
-    check_chunk_hashes, BatchData, BatchHash, BatchHeader, BatchProver, BatchProverError,
-    BatchVerifier, RecursionTask, MAX_AGG_SNARKS,
+    check_chunk_hashes, get_blob_bytes, BatchData, BatchHash, BatchHeader, BatchProver,
+    BatchProverError, BatchVerifier, RecursionTask, MAX_AGG_SNARKS,
 };
 
 mod common;
@@ -68,7 +68,11 @@ mod utils;
 pub use utils::*;
 
 mod zkevm;
-pub use zkevm::{ChunkProver, ChunkProverError, ChunkVerifier, CircuitCapacityChecker};
+pub use zkevm::{
+    circuit::calculate_row_usage_of_witness_block, circuit::chunk_trace_to_witness_block,
+    ChunkProver, ChunkProverError, ChunkVerifier, CircuitCapacityChecker, RowUsage,
+    SubCircuitRowUsage,
+};
 
 /// Re-export the eth-types crate.
 pub use eth_types;

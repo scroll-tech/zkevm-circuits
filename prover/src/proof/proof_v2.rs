@@ -265,6 +265,18 @@ impl ChunkProofV2Metadata {
             row_usage,
         })
     }
+    /// Get the chunk info embedded
+    pub fn chunk_info(&self) -> &ChunkInfo {
+        &self.chunk_info
+    }
+    /// Get the chunk kind
+    pub fn chunk_kind(&self) -> ChunkKind {
+        self.chunk_kind
+    }
+    /// Get the chunk protocol
+    pub fn protocol(&self) -> &Vec<u8> {
+        &self.protocol
+    }
 }
 
 impl Proof for ChunkProofV2Metadata {
