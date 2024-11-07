@@ -342,3 +342,30 @@ impl Proof for BundleProofV2Metadata {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tempdir::TempDir;
+
+    use crate::{read_json, BundleProofV2, EvmProof};
+
+    #[test]
+    fn serde_bundle_proof() -> anyhow::Result<()> {
+        // Read [`EvmProof`] from test data.
+        let evm_proof = read_json::<_, EvmProof>("test_data/evm-proof.json")?;
+
+        // Build bundle proof v2.
+        let bundle_proof = BundleProofV2::new_from_raw(
+            &evm_proof.proof.proof,
+            &evm_proof.proof.instances,
+            &evm_proof.proof.vk,
+        )?;
+
+        // Dump the bundle proof v2 into a tmp dir.
+        let dir = TempDir::new("proof_v2")?;
+        bundle_proof.dump(&dir, "suffix")?;
+        dir.close()?;
+
+        Ok(())
+    }
+}

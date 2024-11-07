@@ -38,6 +38,9 @@ thiserror = "1.0"
 sha2 ="0.10.2"
 revm = { version = "17.1.0", default-features = false, features = ["std"] }
 
+[dev-dependencies]
+tempdir = "0.3"
+
 [features]
 default = ["scroll"]
 parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn"]
