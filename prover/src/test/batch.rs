@@ -1,11 +1,14 @@
-use std::sync::{LazyLock, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{LazyLock, Mutex},
+};
 
 use crate::{
     aggregator::{Prover, Verifier},
     config::{LayerId, BATCH_PROVER_DEGREES},
     consts::DEPLOYMENT_CODE_FILENAME,
     types::BundleProvingTask,
-    utils::{force_to_read, read_env_var},
+    utils::{force_read, read_env_var},
     BatchProvingTask, ParamsMap,
 };
 
@@ -37,7 +40,8 @@ pub fn batch_prove(test: &str, batch: BatchProvingTask) {
 
         let params = prover.prover_impl.params(LayerId::Layer4.degree());
 
-        let deployment_code = force_to_read(&assets_dir, &DEPLOYMENT_CODE_FILENAME);
+        let path = PathBuf::from(assets_dir).join(DEPLOYMENT_CODE_FILENAME.clone());
+        let deployment_code = force_read(&path);
 
         let pk = prover
             .prover_impl
@@ -70,7 +74,8 @@ pub fn bundle_prove(test: &str, bundle: BundleProvingTask) {
 
         let params = prover.prover_impl.params(LayerId::Layer4.degree());
 
-        let deployment_code = force_to_read(&assets_dir, &DEPLOYMENT_CODE_FILENAME);
+        let path = PathBuf::from(assets_dir).join(DEPLOYMENT_CODE_FILENAME.clone());
+        let deployment_code = force_read(&path);
 
         let pk = prover
             .prover_impl

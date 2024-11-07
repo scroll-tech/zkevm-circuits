@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use aggregator::ChunkInfo;
 use halo2_proofs::{halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG};
@@ -10,7 +10,7 @@ use crate::{
     consts::CHUNK_VK_FILENAME,
     proof::compare_chunk_info,
     types::ChunkProvingTask,
-    utils::try_to_read,
+    utils::try_read,
     zkevm::{
         circuit::{calculate_row_usage_of_witness_block, chunk_trace_to_witness_block},
         ChunkProverError, ChunkVerifier, RowUsage,
@@ -41,7 +41,8 @@ impl<'params> Prover<'params> {
         assets_dir: &str,
     ) -> Self {
         // Try to read the verifying key from disk, but don't panic if not found.
-        let raw_vk = try_to_read(assets_dir, &CHUNK_VK_FILENAME);
+        let path = PathBuf::from(assets_dir).join(CHUNK_VK_FILENAME.clone());
+        let raw_vk = try_read(&path);
 
         // Build the inner prover.
         let prover_impl = common::Prover::from_params_map(params_map);

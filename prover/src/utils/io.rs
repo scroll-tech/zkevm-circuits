@@ -45,21 +45,6 @@ pub fn serialize_instance(instance: &[Vec<Fr>]) -> Vec<u8> {
     serde_json::to_vec(&instances_for_serde).unwrap()
 }
 
-pub fn try_to_read(dir: &str, filename: &str) -> Option<Vec<u8>> {
-    let mut path = PathBuf::from(dir);
-    path.push(filename);
-
-    if path.exists() {
-        self::read(&path).ok()
-    } else {
-        None
-    }
-}
-
-pub fn force_to_read(dir: &str, filename: &str) -> Vec<u8> {
-    try_to_read(dir, filename).unwrap_or_else(|| panic!("File {filename} must exist in {dir}"))
-}
-
 pub fn write_file(folder: &mut PathBuf, filename: &str, buf: &[u8]) {
     folder.push(filename);
     let mut fd = std::fs::File::create(folder.as_path()).unwrap();

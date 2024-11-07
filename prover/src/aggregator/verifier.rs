@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::PathBuf};
 
 use aggregator::CompressionCircuit;
 use halo2_proofs::{
@@ -11,7 +11,7 @@ use crate::{
     common,
     config::{LAYER4_CONFIG_PATH, LAYER4_DEGREE},
     consts::{batch_vk_filename, DEPLOYMENT_CODE_FILENAME},
-    utils::{deploy_and_call, force_to_read, try_to_read},
+    utils::{deploy_and_call, force_read, try_read},
     BatchProofV2, BatchProverError, BundleProofV2, ParamsMap, ProverError,
 };
 
@@ -49,10 +49,12 @@ impl<'params> Verifier<'params> {
     /// Panics if the verifying key is not found in the assets directory.
     pub fn from_params_and_assets(params_map: &'params ParamsMap, assets_dir: &str) -> Self {
         // Read verifying key in the assets directory.
-        let raw_vk = force_to_read(assets_dir, &batch_vk_filename());
+        let path = PathBuf::from(assets_dir).join(batch_vk_filename());
+        let raw_vk = force_read(&path);
 
         // Try to read the bytecode to deploy the verifier contract.
-        let deployment_code = try_to_read(assets_dir, &DEPLOYMENT_CODE_FILENAME);
+        let path = PathBuf::from(assets_dir).join(DEPLOYMENT_CODE_FILENAME.clone());
+        let deployment_code = try_read(&path);
 
         // The Layer-4 compressioe circuit is configured with the shape as per
         // [`LAYER4_CONFIG_PATH`].

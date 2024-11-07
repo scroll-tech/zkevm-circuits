@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::PathBuf};
 
 use aggregator::{decode_bytes, BatchData, BatchHash, BatchHeader, ChunkInfo, MAX_AGG_SNARKS};
 use eth_types::H256;
@@ -14,7 +14,7 @@ use crate::{
         FD_SP1_CHUNK_PROTOCOL,
     },
     types::BundleProvingTask,
-    utils::{force_to_read, try_to_read},
+    utils::{force_read, try_read},
     BatchProofV2, BatchProofV2Metadata, BatchProvingTask, BundleProofV2, ChunkKind, ChunkProof,
     ChunkProofV2, ParamsMap, ProverError,
 };
@@ -68,12 +68,14 @@ impl<'params> Prover<'params> {
         // The SNARK protocols for both variants of the Layer-2 SNARK must be available in the
         // assets directory before setting up the batch prover. The SNARK protocols are
         // specifically for the halo2-route and sp1-route of generating chunk proofs.
-        let halo2_protocol = force_to_read(assets_dir, &FD_HALO2_CHUNK_PROTOCOL);
-        let sp1_protocol = force_to_read(assets_dir, &FD_SP1_CHUNK_PROTOCOL);
+        let halo2_protocol =
+            force_read(PathBuf::from(assets_dir).join(FD_HALO2_CHUNK_PROTOCOL.clone()));
+        let sp1_protocol =
+            force_read(PathBuf::from(assets_dir).join(FD_SP1_CHUNK_PROTOCOL.clone()));
 
         // Try to read the verifying key for both Layer-4 and Layer-6 compression circuits.
-        let raw_vk_batch = try_to_read(assets_dir, &BATCH_VK_FILENAME);
-        let raw_vk_bundle = try_to_read(assets_dir, &BUNDLE_VK_FILENAME);
+        let raw_vk_batch = try_read(PathBuf::from(assets_dir).join(BATCH_VK_FILENAME.clone()));
+        let raw_vk_bundle = try_read(PathBuf::from(assets_dir).join(BUNDLE_VK_FILENAME.clone()));
 
         if raw_vk_batch.is_none() {
             log::warn!(

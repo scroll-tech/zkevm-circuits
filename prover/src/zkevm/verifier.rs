@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::PathBuf};
 
 use aggregator::CompressionCircuit;
 use halo2_proofs::{
@@ -11,7 +11,7 @@ use crate::{
     common,
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
     consts::chunk_vk_filename,
-    utils::force_to_read,
+    utils::force_read,
     ChunkProofV2, ChunkProverError, ParamsMap, ProverError,
 };
 
@@ -42,7 +42,8 @@ impl<'params> Verifier<'params> {
     /// Panics if the verifying key cannot be located in the given assets directory.
     pub fn from_params_and_assets(params_map: &'params ParamsMap, assets_dir: &str) -> Self {
         // Read the verifying key or panic.
-        let raw_vk = force_to_read(assets_dir, &chunk_vk_filename());
+        let path = PathBuf::from(assets_dir).join(chunk_vk_filename());
+        let raw_vk = force_read(&path);
 
         // The Layer-2 compression circuit is configured with the shape as per
         // [`LAYER2_CONFIG_PATH`].
