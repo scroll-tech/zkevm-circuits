@@ -584,7 +584,6 @@ impl RlcConfig {
         [limb_from_bytes_lo, limb_from_bytes_mid, limb_from_bytes_hi]
             .iter()
             .zip_eq(crt.limbs())
-            .map(|(a, b)| region.constrain_equal(a.cell(), b.cell()))
-            .collect()
+            .try_for_each(|(a, b)| region.constrain_equal(a.cell(), b.cell()))
     }
 }
