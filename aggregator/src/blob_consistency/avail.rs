@@ -98,3 +98,13 @@ pub struct AssignedBarycentricEvaluationConfig {
     /// 32 Assigned cells representing the LE-bytes of evaluation y.
     pub(crate) y_le: Vec<AssignedValue<Fr>>,
 }
+
+impl AssignedBarycentricEvaluationConfig {
+    pub fn blob_crts(&self) -> &[CRTInteger<Fr>] {
+        &self.barycentric_assignments[0..BLOB_WIDTH]
+    }
+
+    pub fn challenge_digest(&self) -> &CRTInteger<Fr> {
+        &self.barycentric_assignments[BLOB_WIDTH]
+    }
+}
