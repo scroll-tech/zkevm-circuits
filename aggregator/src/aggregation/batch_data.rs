@@ -581,7 +581,8 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         let two_fifty_six = {
             let two_fifty_six =
                 rlc_config.load_private(region, &Fr::from(256), &mut rlc_config_offset)?;
-            let two_fifty_six_cell = rlc_config.four_cell(two_fifty_six.cell().region_index);
+            let two_fifty_six_cell = rlc_config
+                .pow_of_two_hundred_and_fifty_six_cell(two_fifty_six.cell().region_index, 1);
             region.constrain_equal(two_fifty_six.cell(), two_fifty_six_cell)?;
             two_fifty_six
         };
