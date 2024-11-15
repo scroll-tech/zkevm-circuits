@@ -1,5 +1,4 @@
-use super::circuit::{calculate_row_usage_of_witness_block, finalize_builder};
-use bus_mapping::circuit_input_builder::{self, CircuitInputBuilder};
+use bus_mapping::circuit_input_builder::{Blocks, CircuitInputBuilder};
 use eth_types::{
     l2_types::BlockTrace,
     state_db::{CodeDB, StateDB},
@@ -14,7 +13,13 @@ use zkevm_circuits::{
     super_circuit::params::{get_sub_circuit_limit_and_confidence, get_super_circuit_params},
 };
 
-pub use super::SubCircuitRowUsage;
+use super::circuit::{calculate_row_usage_of_witness_block, finalize_builder};
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SubCircuitRowUsage {
+    pub name: String,
+    pub row_number: usize,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RowUsage {
@@ -130,10 +135,7 @@ impl CircuitCapacityChecker {
             self.acc_row_usage.clone()
         }
     }
-    pub fn estimate_circuit_capacity(
-        &mut self,
-        trace: BlockTrace,
-    ) -> Result<RowUsage, anyhow::Error> {
+    pub fn estimate_circuit_capacity(&mut self, trace: BlockTrace) -> anyhow::Result<RowUsage> {
         let (mut estimate_builder, codedb_prev) =
             if let Some((code_db, sdb, mpt_state)) = self.builder_ctx.take() {
                 // here we create a new builder for another (sealed) witness block
@@ -141,8 +143,7 @@ impl CircuitCapacityChecker {
                 // the previous one and do not use zktrie state,
                 // notice the prev_root in current builder may be not invalid (since the state has
                 // changed but we may not update it in light mode)
-                let mut builder_block =
-                    circuit_input_builder::Blocks::init(trace.chain_id, get_super_circuit_params());
+                let mut builder_block = Blocks::init(trace.chain_id, get_super_circuit_params());
                 builder_block.start_l1_queue_index = trace.start_l1_queue_index;
                 builder_block.prev_state_root = mpt_state
                     .as_ref()

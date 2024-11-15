@@ -107,4 +107,8 @@ impl AssignedBarycentricEvaluationConfig {
     pub fn challenge_digest(&self) -> &CRTInteger<Fr> {
         &self.barycentric_assignments[BLOB_WIDTH]
     }
+
+/// Get the blob data bytes that will be populated in BlobDataConfig.
+pub fn get_blob_bytes(_batch_bytes: &[u8]) -> Vec<u8> {
+    unimplemented!("trick for linting");
 }

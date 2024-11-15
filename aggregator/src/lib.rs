@@ -27,6 +27,7 @@ mod tests;
 pub use self::core::extract_proof_and_instances_with_pairing_check;
 pub use aggregation::*;
 pub use batch::{BatchHash, BatchHeader};
+pub use blob_consistency::get_blob_bytes;
 pub use chunk::ChunkInfo;
 pub use compression::*;
 pub use constants::MAX_AGG_SNARKS;

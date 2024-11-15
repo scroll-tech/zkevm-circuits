@@ -1,8 +1,11 @@
-#![allow(deprecated)]
-use crate::{
-    types::BlockTraceJsonRpcResult,
-    zkevm::circuit::{block_traces_to_witness_block, print_chunk_stats},
+use std::{
+    fs::{self, metadata, File},
+    io::{BufReader, Read},
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Once,
 };
+
 use anyhow::{bail, Result};
 use chrono::Utc;
 use eth_types::l2_types::BlockTrace;
@@ -19,18 +22,20 @@ use log4rs::{
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::fmt::Debug;
-use std::{
-    fs::{self, metadata, File},
-    io::{BufReader, Read},
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Once,
-};
 use zkevm_circuits::evm_circuit::witness::Block;
+
+use crate::types::BlockTraceJsonRpcResult;
+
+mod evm;
+pub use evm::*;
+
+mod io;
+pub use io::*;
 
 pub static LOGGER: Once = Once::new();
 
 pub const DEFAULT_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytesUnchecked;
+
 pub const GIT_VERSION: &str = git_version!(args = ["--abbrev=7", "--always"]);
 
 pub const PARAMS_G2_SECRET_POWER: &str = "(Fq2 { c0: 0x17944351223333f260ddc3b4af45191b856689eda9eab5cbcddbbe570ce860d2, c1: 0x186282957db913abd99f91db59fe69922e95040603ef44c0bd7aa3adeef8f5ac }, Fq2 { c0: 0x297772d34bc9aa8ae56162486363ffe417b02dc7e8c207fc2cc20203e67a02ad, c1: 0x298adc7396bd3865cbf6d6df91bae406694e6d2215baa893bdeadb63052895f4 })";
@@ -125,14 +130,6 @@ pub fn metric_of_witness_block(block: &Block) -> ChunkMetric {
         num_tx: block.txs.len(),
         num_step: block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>(),
     }
-}
-
-pub fn chunk_trace_to_witness_block(chunk_trace: Vec<BlockTrace>) -> Result<Block> {
-    if chunk_trace.is_empty() {
-        bail!("Empty chunk trace");
-    }
-    print_chunk_stats(&chunk_trace);
-    block_traces_to_witness_block(chunk_trace)
 }
 
 // Return the output dir.

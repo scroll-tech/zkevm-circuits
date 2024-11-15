@@ -1,43 +1,60 @@
-use crate::{
-    io::{deserialize_fr, deserialize_vk, serialize_fr, serialize_vk, write_file},
-    types::base64,
-    utils::short_git_version,
-};
+use std::{fs::File, path::Path};
+
 use anyhow::Result;
+use eth_types::base64;
 use halo2_proofs::{
     halo2curves::bn256::{Fr, G1Affine},
     plonk::{Circuit, ProvingKey, VerifyingKey},
 };
 use serde_derive::{Deserialize, Serialize};
 use snark_verifier_sdk::Snark;
-use std::{fs::File, path::PathBuf};
+
+use crate::utils::{
+    deploy_and_call, deserialize_fr, deserialize_vk, serialize_fr, serialize_vk, short_git_version,
+    write,
+};
 
 mod batch;
-mod bundle;
-mod chunk;
-mod evm;
-
 pub use batch::BatchProof;
+
+mod bundle;
 pub use bundle::BundleProof;
-pub use chunk::{compare_chunk_info, ChunkProof};
+
+mod chunk;
+pub use chunk::{compare_chunk_info, ChunkKind, ChunkProof};
+
+mod evm;
 pub use evm::EvmProof;
 
+mod proof_v2;
+pub use proof_v2::*;
+
+/// Proof extracted from [`Snark`].
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Proof {
+pub struct InnerProof {
+    /// The raw bytes of the proof in the [`Snark`].
+    ///
+    /// Serialized using base64 format in order to not bloat the JSON-encoded proof dump.
     #[serde(with = "base64")]
-    proof: Vec<u8>,
+    pub proof: Vec<u8>,
+    /// The public values, aka instances of this [`Snark`].
     #[serde(with = "base64")]
-    instances: Vec<u8>,
+    pub instances: Vec<u8>,
+    /// The raw bytes of the [`VerifyingKey`] of the [`Circuit`] used to generate the [`Snark`].
     #[serde(with = "base64")]
-    vk: Vec<u8>,
-    pub git_version: Option<String>,
+    pub vk: Vec<u8>,
+    /// The git ref of the codebase.
+    ///
+    /// Generally useful for debug reasons to know the exact commit using which this proof was
+    /// generated.
+    pub git_version: String,
 }
 
-impl Proof {
+impl InnerProof {
     pub fn new(proof: Vec<u8>, instances: &[Vec<Fr>], pk: Option<&ProvingKey<G1Affine>>) -> Self {
         let instances = serialize_instances(instances);
         let vk = pk.map_or_else(Vec::new, |pk| serialize_vk(pk.get_vk()));
-        let git_version = Some(short_git_version());
+        let git_version = short_git_version();
 
         Self {
             proof,
@@ -47,16 +64,12 @@ impl Proof {
         }
     }
 
-    pub fn from_json_file(dir: &str, filename: &str) -> Result<Self> {
-        from_json_file(dir, filename)
-    }
-
     pub fn from_snark(snark: Snark, vk: Vec<u8>) -> Self {
         let proof = snark.proof;
         let instances = serialize_instances(&snark.instances);
-        let git_version = Some(short_git_version());
+        let git_version = short_git_version();
 
-        Proof {
+        Self {
             proof,
             instances,
             vk,
@@ -65,17 +78,17 @@ impl Proof {
     }
 
     pub fn dump(&self, dir: &str, filename: &str) -> Result<()> {
-        dump_vk(dir, filename, &self.vk);
+        dump_vk(dir, filename, &self.vk)?;
+        dump_as_json(dir, filename, &self)?;
 
-        dump_as_json(dir, filename, &self)
+        Ok(())
     }
 
     pub fn evm_verify(&self, deployment_code: Vec<u8>) -> bool {
         let instances = self.instances();
         let proof = self.proof().to_vec();
         let calldata = snark_verifier::loader::evm::encode_calldata(&instances, &proof);
-        let result = crate::evm::deploy_and_call(deployment_code, calldata);
-        result.is_ok()
+        deploy_and_call(deployment_code, calldata).is_ok()
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {
@@ -101,25 +114,20 @@ impl Proof {
     }
 }
 
-pub fn dump_as_json<P: serde::Serialize>(dir: &str, filename: &str, proof: &P) -> Result<()> {
-    // Write full proof as json.
+pub fn dump_as_json<T: serde::Serialize>(dir: &str, filename: &str, proof: &T) -> Result<()> {
     let mut fd = File::create(dump_proof_path(dir, filename))?;
     serde_json::to_writer(&mut fd, proof)?;
 
     Ok(())
 }
 
-pub fn dump_data(dir: &str, filename: &str, data: &[u8]) {
-    write_file(&mut PathBuf::from(dir), filename, data);
+pub fn dump_data(dir: &str, filename: &str, data: &[u8]) -> Result<()> {
+    let path = Path::new(dir).join(filename);
+    Ok(write(&path, data)?)
 }
 
-pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) {
-    dump_data(dir, &format!("vk_{filename}.vkey"), raw_vk);
-}
-
-pub fn from_json_file<'de, P: serde::Deserialize<'de>>(dir: &str, filename: &str) -> Result<P> {
-    let file_path = dump_proof_path(dir, filename);
-    crate::io::from_json_file(file_path)
+pub fn dump_vk(dir: &str, filename: &str, raw_vk: &[u8]) -> Result<()> {
+    dump_data(dir, &format!("vk_{filename}.vkey"), raw_vk)
 }
 
 fn dump_proof_path(dir: &str, filename: &str) -> String {

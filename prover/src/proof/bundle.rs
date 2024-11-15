@@ -1,7 +1,9 @@
-use super::{dump_as_json, dump_data, dump_vk, serialize_instance};
-use crate::{utils::short_git_version, Proof};
 use anyhow::Result;
 use serde_derive::{Deserialize, Serialize};
+
+use crate::utils::short_git_version;
+
+use super::{dump_as_json, dump_data, dump_vk, serialize_instance, InnerProof};
 
 // 3 limbs per field element, 4 field elements
 const ACC_LEN: usize = 12;
@@ -15,7 +17,6 @@ const ACC_LEN: usize = 12;
 // - chain id
 // - (hi, lo) pending withdraw root
 // - bundle count
-
 const PI_LEN: usize = 13;
 
 const ACC_BYTES: usize = ACC_LEN * 32;
@@ -24,11 +25,11 @@ const PI_BYTES: usize = PI_LEN * 32;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BundleProof {
     #[serde(flatten)]
-    on_chain_proof: Proof,
+    on_chain_proof: InnerProof,
 }
 
-impl From<Proof> for BundleProof {
-    fn from(proof: Proof) -> Self {
+impl From<InnerProof> for BundleProof {
+    fn from(proof: InnerProof) -> Self {
         let instances = proof.instances();
         assert_eq!(instances.len(), 1);
         assert_eq!(instances[0].len(), ACC_LEN + PI_LEN);
@@ -46,7 +47,7 @@ impl From<Proof> for BundleProof {
         let instances = serialize_instance(&instances[0][ACC_LEN..]);
 
         Self {
-            on_chain_proof: Proof {
+            on_chain_proof: InnerProof {
                 proof,
                 instances,
                 vk,
@@ -76,21 +77,23 @@ impl BundleProof {
             dir,
             &format!("pi_{filename}.data"),
             &self.on_chain_proof.instances,
-        );
+        )?;
         dump_data(
             dir,
             &format!("proof_{filename}.data"),
             &self.on_chain_proof.proof,
-        );
+        )?;
 
-        dump_vk(dir, &filename, &self.on_chain_proof.vk);
+        dump_vk(dir, &filename, &self.on_chain_proof.vk)?;
 
-        dump_as_json(dir, &filename, &self)
+        dump_as_json(dir, &filename, &self)?;
+
+        Ok(())
     }
 
     // Recover a `Proof` which follows halo2 semantic of "proof" and "instance",
     // where "accumulators" are instance instead of proof, not like "onchain proof".
-    pub fn proof_to_verify(self) -> Proof {
+    pub fn proof_to_verify(self) -> InnerProof {
         // raw.proof is accumulator + proof
         assert!(self.on_chain_proof.proof.len() > ACC_BYTES);
         // raw.instances is PI
@@ -103,9 +106,9 @@ impl BundleProof {
         instances.extend(self.on_chain_proof.instances);
 
         let vk = self.on_chain_proof.vk;
-        let git_version = Some(short_git_version());
+        let git_version = short_git_version();
 
-        Proof {
+        InnerProof {
             proof,
             instances,
             vk,

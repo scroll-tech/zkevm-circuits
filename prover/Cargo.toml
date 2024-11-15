@@ -34,8 +34,12 @@ serde.workspace = true
 serde_derive = "1.0"
 serde_json = { workspace = true, features = ["unbounded_depth"] }
 serde_stacker.workspace = true
+thiserror = "1.0"
 sha2 ="0.10.2"
 revm = { version = "17.1.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tempdir = "0.3"
 
 [features]
 default = ["scroll"]

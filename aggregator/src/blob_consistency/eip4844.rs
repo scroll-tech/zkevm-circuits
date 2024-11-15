@@ -84,7 +84,6 @@ fn kzg_to_versioned_hash(commitment: &c_kzg::KzgCommitment) -> H256 {
     H256::from_slice(&res[..])
 }
 
-#[cfg(test)]
 /// Get the blob data bytes that will be populated in BlobDataConfig.
 pub fn get_blob_bytes(batch_bytes: &[u8]) -> Vec<u8> {
     let mut blob_bytes = crate::witgen::zstd_encode(batch_bytes);

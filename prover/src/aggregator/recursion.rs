@@ -1,6 +1,5 @@
-use halo2_proofs::halo2curves::bn256::Fr;
-
 use aggregator::{BatchCircuit, StateTransition};
+use halo2_proofs::halo2curves::bn256::Fr;
 use snark_verifier_sdk::Snark;
 
 /// 4 fields for 2 hashes (Hi, Lo)
@@ -19,10 +18,7 @@ const NUM_INIT_INSTANCES: usize = ST_INSTANCE;
 
 #[derive(Clone, Debug)]
 pub struct RecursionTask<'a, const N_SNARK: usize> {
-    /// The [`snarks`][snark] from the [`BatchCircuit`][batch_circuit].
-    ///
-    /// [snark]: snark_verifier_sdk::Snark
-    /// [batch_circuit]: aggregator::BatchCircuit
+    /// The [`snarks`][Snark] from the [`BatchCircuit`][aggregator::BatchCircuit].
     snarks: &'a [Snark],
 }
 
