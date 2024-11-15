@@ -16,11 +16,13 @@ use crate::{
     BatchData, ChunkInfo,
 };
 
+type TestBatchCircuit = BatchCircuit<2, MAX_AGG_SNARKS>;
+
 #[test]
 #[ignore = "dbg: insufficient number of advice columns"]
 fn batch_circuit_raw() {
     let k = 21;
-    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_batch_circuit_skip_encoding();
+    let circuit: TestBatchCircuit = build_batch_circuit_skip_encoding();
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -30,7 +32,7 @@ fn batch_circuit_raw() {
 #[ignore = "dbg: insufficient number of advice columns"]
 fn batch_circuit_encode() {
     let k = 21;
-    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
+    let circuit: TestBatchCircuit = build_new_batch_circuit(2, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -41,7 +43,7 @@ fn batch_circuit_encode() {
 fn test_2_snark_batch_circuit() {
     let k = 21;
 
-    let circuit: BatchCircuit<2> = build_new_batch_circuit(1, k);
+    let circuit: BatchCircuit<2, 2> = build_new_batch_circuit(1, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -52,7 +54,7 @@ fn test_2_snark_batch_circuit() {
 fn test_14_snark_batch_circuit() {
     let k = 21;
 
-    let circuit: BatchCircuit<14> = build_new_batch_circuit(12, k);
+    let circuit: BatchCircuit<2, 14> = build_new_batch_circuit(12, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -68,7 +70,7 @@ fn test_batch_circuit_all_possible_num_snarks() {
     for i in 1..=MAX_AGG_SNARKS {
         println!("{i} real chunks and {} padded chunks", MAX_AGG_SNARKS - i);
         // This set up requires one round of keccak for chunk's data hash
-        let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(i, k);
+        let circuit: TestBatchCircuit = build_new_batch_circuit(i, k);
         let instance = circuit.instances();
         let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         mock_prover.assert_satisfied_par();
@@ -89,7 +91,7 @@ fn test_batch_circuit_full() {
     fs::create_dir(path).unwrap();
 
     // This set up requires one round of keccak for chunk's data hash
-    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(2, k);
+    let circuit: TestBatchCircuit = build_new_batch_circuit(2, k);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
@@ -106,7 +108,7 @@ fn test_batch_circuit_full() {
         .expect("Snark generated successfully");
     log::trace!("finished snark generation for circuit");
 
-    assert!(verify_snark_shplonk::<BatchCircuit<MAX_AGG_SNARKS>>(
+    assert!(verify_snark_shplonk::<TestBatchCircuit>(
         &param,
         snark,
         pk.get_vk()
@@ -114,12 +116,12 @@ fn test_batch_circuit_full() {
     log::trace!("finished verification for circuit");
 
     // This set up requires two rounds of keccak for chunk's data hash
-    let circuit: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(5, k);
+    let circuit: TestBatchCircuit = build_new_batch_circuit(5, k);
     let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>)
         .expect("Snark generated successfully");
     log::trace!("finished snark generation for circuit");
 
-    assert!(verify_snark_shplonk::<BatchCircuit<MAX_AGG_SNARKS>>(
+    assert!(verify_snark_shplonk::<TestBatchCircuit>(
         &param,
         snark,
         pk.get_vk()
@@ -132,11 +134,11 @@ fn test_batch_circuit_full() {
 fn test_batch_circuit_variadic() {
     let k = 20;
 
-    let circuit1: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(5, k);
+    let circuit1: TestBatchCircuit = build_new_batch_circuit(5, k);
     let instance1 = circuit1.instances();
     let prover1 = MockProver::<Fr>::run(k, &circuit1, instance1).unwrap();
 
-    let circuit2: BatchCircuit<MAX_AGG_SNARKS> = build_new_batch_circuit(10, k);
+    let circuit2: TestBatchCircuit = build_new_batch_circuit(10, k);
     let instance2 = circuit2.instances();
     let prover2 = MockProver::<Fr>::run(k, &circuit2, instance2).unwrap();
 
@@ -147,7 +149,7 @@ fn test_batch_circuit_variadic() {
 fn build_new_batch_circuit<const N_SNARKS: usize>(
     num_real_chunks: usize,
     _k: u32,
-) -> BatchCircuit<N_SNARKS> {
+) -> BatchCircuit<2, N_SNARKS> {
     // inner circuit: Mock circuit
     let k0 = 8;
     #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -228,14 +230,13 @@ fn build_new_batch_circuit<const N_SNARKS: usize>(
         [real_snarks, padded_snarks].concat().as_ref(),
         rng,
         batch_hash,
-        &snark_protocol,
-        &snark_protocol,
+        [&snark_protocol, &snark_protocol],
     )
     .unwrap()
 }
 
 /// Build a batch circuit where blob == batch, i.e. no encoding.
-fn build_batch_circuit_skip_encoding<const N_SNARKS: usize>() -> BatchCircuit<N_SNARKS> {
+fn build_batch_circuit_skip_encoding<const N_SNARKS: usize>() -> BatchCircuit<2, N_SNARKS> {
     let k0 = 8;
     #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
     pub struct ChunkProof {
@@ -309,8 +310,7 @@ fn build_batch_circuit_skip_encoding<const N_SNARKS: usize>() -> BatchCircuit<N_
         [real_snarks, padded_snarks].concat().as_ref(),
         rng,
         batch_hash,
-        &snark_protocol,
-        &snark_protocol,
+        [&snark_protocol, &snark_protocol],
     )
     .unwrap()
 }

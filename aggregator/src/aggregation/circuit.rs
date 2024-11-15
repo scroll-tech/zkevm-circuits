@@ -1,4 +1,5 @@
 use ark_std::{end_timer, start_timer};
+use halo2_ecc::{bigint::CRTInteger, ecc::EcPoint};
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -43,7 +44,7 @@ use crate::{
 
 /// Batch circuit, the chunk aggregation routine below recursion circuit
 #[derive(Clone)]
-pub struct BatchCircuit<const N_SNARKS: usize> {
+pub struct BatchCircuit<const N_PROTOCOL: usize, const N_SNARKS: usize> {
     pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of N_SNARKS
@@ -63,20 +64,17 @@ pub struct BatchCircuit<const N_SNARKS: usize> {
     // the chunks in this batch are also padded already
     pub batch_hash: BatchHash<N_SNARKS>,
 
-    /// The SNARK protocol from the halo2-based inner circuit route.
-    pub halo2_protocol: FixedProtocol,
-    /// The SNARK protocol from the sp1-based inner circuit route.
-    pub sp1_protocol: FixedProtocol,
+    /// The SNARK protocols allowed
+    pub protocols: [FixedProtocol; N_PROTOCOL],
 }
 
-impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
+impl<const N_PROTOCOLS: usize, const N_SNARKS: usize> BatchCircuit<N_PROTOCOLS, N_SNARKS> {
     pub fn new<P: Into<FixedProtocol>>(
         params: &ParamsKZG<Bn256>,
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
         batch_hash: BatchHash<N_SNARKS>,
-        halo2_protocol: P,
-        sp1_protocol: P,
+        protocols: [P; N_PROTOCOLS],
     ) -> Result<Self, snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
@@ -134,8 +132,7 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
             flattened_instances,
             as_proof: Value::known(as_proof),
             batch_hash,
-            halo2_protocol: halo2_protocol.into(),
-            sp1_protocol: sp1_protocol.into(),
+            protocols: protocols.map(|x| x.into()),
         })
     }
 
@@ -144,7 +141,9 @@ impl<const N_SNARKS: usize> BatchCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
+impl<const N_PROTOCOLS: usize, const N_SNARKS: usize> Circuit<Fr>
+    for BatchCircuit<N_PROTOCOLS, N_SNARKS>
+{
     type Config = (BatchCircuitConfig<N_SNARKS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     type Params = ();
@@ -267,68 +266,62 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     //
                     // First we load the constants.
                     log::info!("populating constants");
-                    let mut preprocessed_polys_halo2 = Vec::with_capacity(7);
-                    let mut preprocessed_polys_sp1 = Vec::with_capacity(7);
-                    for &preprocessed_poly in self.halo2_protocol.preprocessed.iter() {
-                        preprocessed_polys_halo2.push(
+                    let mut preprocessed_polys_array: Vec<Vec<EcPoint<Fr, CRTInteger<Fr>>>> =
+                        (0..N_PROTOCOLS).map(|_| Vec::with_capacity(7)).collect();
+                    for idx in 0..preprocessed_polys_array.len() {
+                        for &preprocessed_poly in self.protocols[idx].preprocessed.iter() {
+                            preprocessed_polys_array[idx].push(
+                                config
+                                    .ecc_chip()
+                                    .assign_constant_point(&mut ctx, preprocessed_poly),
+                            );
+                        }
+                    }
+
+                    let transcript_init_state_of_protocols: Vec<_> = (0..N_PROTOCOLS)
+                        .map(|idx| {
                             config
                                 .ecc_chip()
-                                .assign_constant_point(&mut ctx, preprocessed_poly),
-                        );
-                    }
-                    for &preprocessed_poly in self.sp1_protocol.preprocessed.iter() {
-                        preprocessed_polys_sp1.push(
-                            config
-                                .ecc_chip()
-                                .assign_constant_point(&mut ctx, preprocessed_poly),
-                        );
-                    }
-                    let transcript_init_state_halo2 = config
-                        .ecc_chip()
-                        .field_chip()
-                        .range()
-                        .gate()
-                        .assign_constant(&mut ctx, self.halo2_protocol.init_state)
-                        .expect("IntegerInstructions::assign_constant infallible");
-                    let transcript_init_state_sp1 = config
-                        .ecc_chip()
-                        .field_chip()
-                        .range()
-                        .gate()
-                        .assign_constant(&mut ctx, self.sp1_protocol.init_state)
-                        .expect("IntegerInstructions::assign_constant infallible");
+                                .field_chip()
+                                .range()
+                                .gate()
+                                .assign_constant(&mut ctx, self.protocols[idx].init_state)
+                                .expect("IntegerInstructions::assign_constant infallible")
+                        })
+                        .collect();
 
                     // Commitments to the preprocessed polynomials.
                     for preprocessed_polys in preprocessed_poly_sets.iter() {
-                        let mut preprocessed_check_1 =
-                            config.flex_gate().load_constant(&mut ctx, Fr::ONE);
-                        let mut preprocessed_check_2 =
-                            config.flex_gate().load_constant(&mut ctx, Fr::ONE);
-                        for ((commitment, comm_halo2), comm_sp1) in preprocessed_polys
-                            .iter()
-                            .zip_eq(preprocessed_polys_halo2.iter())
-                            .zip_eq(preprocessed_polys_sp1.iter())
-                        {
-                            let check_1 =
-                                config.ecc_chip().is_equal(&mut ctx, commitment, comm_halo2);
-                            let check_2 =
-                                config.ecc_chip().is_equal(&mut ctx, commitment, comm_sp1);
-                            preprocessed_check_1 = config.flex_gate().and(
-                                &mut ctx,
-                                Existing(preprocessed_check_1),
-                                Existing(check_1),
-                            );
-                            preprocessed_check_2 = config.flex_gate().and(
-                                &mut ctx,
-                                Existing(preprocessed_check_2),
-                                Existing(check_2),
-                            );
+                        let mut preprocessed_checks: Vec<_> = (0..N_PROTOCOLS)
+                            .map(|_| config.flex_gate().load_constant(&mut ctx, Fr::ONE))
+                            .collect();
+                        for (idx, commitment) in preprocessed_polys.iter().enumerate() {
+                            for p_idx in 0..N_PROTOCOLS {
+                                let check = config.ecc_chip().is_equal(
+                                    &mut ctx,
+                                    commitment,
+                                    &preprocessed_polys_array[p_idx][idx],
+                                );
+
+                                preprocessed_checks[N_PROTOCOLS] = config.flex_gate().and(
+                                    &mut ctx,
+                                    Existing(preprocessed_checks[N_PROTOCOLS]),
+                                    Existing(check),
+                                );
+                            }
                         }
-                        let preprocessed_check = config.flex_gate().or(
-                            &mut ctx,
-                            Existing(preprocessed_check_1),
-                            Existing(preprocessed_check_2),
-                        );
+
+                        // FIXME: add FlexGate::or_many inside halo2-base?
+                        let preprocessed_check = match N_PROTOCOLS {
+                            1 => preprocessed_checks[0],
+                            2 => config.flex_gate().or(
+                                &mut ctx,
+                                Existing(preprocessed_checks[0]),
+                                Existing(preprocessed_checks[1]),
+                            ),
+                            _ => unimplemented!(),
+                        };
+
                         config
                             .flex_gate()
                             .assert_is_const(&mut ctx, &preprocessed_check, Fr::ONE);
@@ -338,21 +331,26 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
                     for transcript_init_state in transcript_init_states {
                         let transcript_init_state = transcript_init_state
                             .expect("SNARK should have an initial state for transcript");
-                        let transcript_check_1 = config.flex_gate().is_equal(
-                            &mut ctx,
-                            Existing(transcript_init_state),
-                            Existing(transcript_init_state_halo2),
-                        );
-                        let transcript_check_2 = config.flex_gate().is_equal(
-                            &mut ctx,
-                            Existing(transcript_init_state),
-                            Existing(transcript_init_state_sp1),
-                        );
-                        let transcript_check = config.flex_gate().or(
-                            &mut ctx,
-                            Existing(transcript_check_1),
-                            Existing(transcript_check_2),
-                        );
+                        let transcript_checks: Vec<_> = (0..N_PROTOCOLS)
+                            .map(|idx| {
+                                config.flex_gate().is_equal(
+                                    &mut ctx,
+                                    Existing(transcript_init_state),
+                                    Existing(transcript_init_state_of_protocols[idx]),
+                                )
+                            })
+                            .collect();
+
+                        // FIXME: ditto
+                        let transcript_check = match N_PROTOCOLS {
+                            1 => transcript_checks[0],
+                            2 => config.flex_gate().or(
+                                &mut ctx,
+                                Existing(transcript_checks[0]),
+                                Existing(transcript_checks[1]),
+                            ),
+                            _ => unimplemented!(),
+                        };
                         config
                             .flex_gate()
                             .assert_is_const(&mut ctx, &transcript_check, Fr::ONE);
@@ -777,7 +775,9 @@ impl<const N_SNARKS: usize> Circuit<Fr> for BatchCircuit<N_SNARKS> {
     }
 }
 
-impl<const N_SNARKS: usize> CircuitExt<Fr> for BatchCircuit<N_SNARKS> {
+impl<const N_PROTOCOL: usize, const N_SNARKS: usize> CircuitExt<Fr>
+    for BatchCircuit<N_PROTOCOL, N_SNARKS>
+{
     fn num_instance(&self) -> Vec<usize> {
         // - 12 elements from accumulator
         // - parent_state_root (2 elements, split hi_lo)
