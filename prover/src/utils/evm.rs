@@ -6,7 +6,7 @@ use halo2_proofs::{
     poly::kzg::commitment::ParamsKZG,
 };
 use revm::{
-    primitives::{self, Env, ExecutionResult, Output, SpecId, TxEnv, TxKind},
+    primitives::{self, Env, ExecutionResult, Output, TxEnv, TxKind},
     Evm, Handler, InMemoryDB,
 };
 
@@ -94,9 +94,9 @@ pub fn deploy_and_call(deployment_code: Vec<u8>, calldata: Vec<u8>) -> Result<u6
         ..Default::default()
     };
     let mut evm = Evm::builder()
-        .with_spec_id(SpecId::CANCUN)
         .with_db(&mut db)
-        .with_env(env)
+        .with_env(env.clone())
+        .with_handler(Handler::mainnet::<primitives::CancunSpec>())
         .build();
     let result = evm.transact_commit().unwrap();
     match result {
