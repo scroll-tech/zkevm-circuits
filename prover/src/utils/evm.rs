@@ -6,8 +6,8 @@ use halo2_proofs::{
     poly::kzg::commitment::ParamsKZG,
 };
 use revm::{
-    primitives::{Env, ExecutionResult, Output, SpecId, TxEnv, TxKind},
-    Evm, InMemoryDB,
+    primitives::{self, Env, ExecutionResult, Output, SpecId, TxEnv, TxKind},
+    Evm, Handler, InMemoryDB,
 };
 
 use snark_verifier::pcs::kzg::{Bdfg21, Kzg};
@@ -63,9 +63,9 @@ pub fn deploy_and_call(deployment_code: Vec<u8>, calldata: Vec<u8>) -> Result<u6
     };
     let mut db = InMemoryDB::default();
     let mut evm = Evm::builder()
-        .with_spec_id(SpecId::CANCUN)
         .with_db(&mut db)
         .with_env(env.clone())
+        .with_handler(Handler::mainnet::<primitives::CancunSpec>())
         .build();
     let result = evm.transact_commit().unwrap();
     let contract = match result {
