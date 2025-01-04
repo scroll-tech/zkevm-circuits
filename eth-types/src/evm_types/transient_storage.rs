@@ -47,7 +47,7 @@ impl TransientStorage {
         TransientStorage(HashMap::new())
     }
 
-    /// Generate an new instance of EVM transient storage given a `HashMap<Word, Word>`.
+    /// Generate a new instance of EVM transient storage given a `HashMap<Word, Word>`.
     pub fn new(map: HashMap<Word, Word>) -> Self {
         Self::from(map)
     }
