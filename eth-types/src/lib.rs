@@ -533,14 +533,14 @@ impl Serialize for GethExecError {
             GethExecError::StackUnderflow {
                 stack_len,
                 required,
-            } => &format!("stack underflow ({stack_len} <=> {required})"),
+            } => format!("stack underflow ({stack_len} <=> {required})"),
             GethExecError::StackOverflow { stack_len, limit } => {
-                &format!("stack limit reached {stack_len} ({limit})")
+                format!("stack limit reached {stack_len} ({limit})")
             }
-            GethExecError::InvalidOpcode(op) => &format!("invalid opcode: {op}"),
-            _ => self.error(),
+            GethExecError::InvalidOpcode(op) => format!("invalid opcode: {op}"),
+            _ => self.error().to_string(),
         };
-        serializer.serialize_str(e)
+        serializer.serialize_str(&e)
     }
 }
 
