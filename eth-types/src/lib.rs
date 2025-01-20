@@ -529,7 +529,18 @@ impl Serialize for GethExecError {
         S: serde::Serializer,
     {
         // We serialize the error as a string constant.
-        serializer.serialize_str(self.error())
+        let e = match self {
+            GethExecError::StackUnderflow {
+                stack_len,
+                required,
+            } => &format!("stack underflow ({stack_len} <=> {required})"),
+            GethExecError::StackOverflow { stack_len, limit } => {
+                &format!("stack limit reached {stack_len} ({limit})")
+            }
+            GethExecError::InvalidOpcode(op) => &format!("invalid opcode: {op}"),
+            _ => self.error(),
+        };
+        serializer.serialize_str(e)
     }
 }
 
