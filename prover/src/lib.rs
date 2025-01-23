@@ -27,6 +27,7 @@ pub use aggregator::{check_chunk_hashes, BatchData, BatchHash, BatchHeader, MAX_
 pub use common::{ChunkInfo, CompressionCircuit};
 pub use eth_types;
 pub use eth_types::l2_types::BlockTrace;
+pub use evm::deploy_and_call;
 pub use proof::{BatchProof, BundleProof, ChunkProof, EvmProof, Proof};
 pub use snark_verifier_sdk::{CircuitExt, Snark};
 pub use types::{BatchProvingTask, BundleProvingTask, ChunkProvingTask, WitnessBlock};
