@@ -205,13 +205,13 @@ This can correspond to the topological configuration change on the whole path in
 
 #### PathType::ExtensionNew
 
-`PathType::ExtensionNew` refers to the situation that the new path extends the old path in its toplogical configuration.
+`PathType::ExtensionNew` refers to the situation that the new path extends the old path in its topological configuration.
 
 This can correspond to the extended part of the path in insert to append, insert to fill operations.
 
 #### PathType::ExtensionOld
 
-`PathType::ExtensionOld` refers to the situation that the old path extends the new path in its toplogical configuration.
+`PathType::ExtensionOld` refers to the situation that the old path extends the new path in its topological configuration.
 
 This can correspond to the extended part of the path in delete from append, delete from fill operations.
 
