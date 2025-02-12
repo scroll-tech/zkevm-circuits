@@ -1,4 +1,3 @@
-use crate::io::deserialize_vk;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::VerifyingKey,
@@ -6,6 +5,8 @@ use halo2_proofs::{
 };
 use snark_verifier_sdk::{verify_snark_shplonk, CircuitExt, Snark};
 use std::marker::PhantomData;
+
+use crate::utils::deserialize_vk;
 
 mod evm;
 mod utils;

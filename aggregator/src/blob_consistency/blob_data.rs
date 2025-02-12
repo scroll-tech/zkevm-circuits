@@ -1,5 +1,12 @@
+use crate::{
+    aggregation::{
+        batch_data::{N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
+        POWS_OF_256,
+    },
+    blob_consistency::BLOB_WIDTH,
+    RlcConfig,
+};
 use gadgets::util::Expr;
-use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::Fr,
@@ -7,13 +14,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use snark_verifier_sdk::{BITS, LIMBS};
 use zkevm_circuits::{table::U8Table, util::Challenges};
-
-use crate::{
-    aggregation::rlc::POWS_OF_256,
-    blob::{BLOB_WIDTH, N_BLOB_BYTES, N_DATA_BYTES_PER_COEFFICIENT},
-    RlcConfig,
-};
 
 /// Blob is represented by 4096 BLS12-381 scalar field elements, where each element is represented
 /// by 32 bytes. The scalar field element is required to be in the canonical form, i.e. its value
@@ -50,6 +52,7 @@ pub struct AssignedBlobDataExport {
     pub bytes_rlc: AssignedCell<Fr, Fr>,
     pub bytes_len: AssignedCell<Fr, Fr>,
     pub cooked_len: AssignedCell<Fr, Fr>,
+    pub blob_crts_limbs: [[AssignedCell<Fr, Fr>; LIMBS]; BLOB_WIDTH],
 }
 
 impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
@@ -154,7 +157,6 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         challenge_value: Challenges<Value<Fr>>,
         rlc_config: &RlcConfig,
         blob_bytes: &[u8],
-        barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
         let (assigned_bytes, bytes_rlc, bytes_len, enable_encoding_bool) = layouter.assign_region(
             || "BlobData bytes",
@@ -162,16 +164,10 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         )?;
         let enable_encoding = assigned_bytes[0].clone();
 
-        let cooked_len = layouter.assign_region(
+        let (cooked_len, blob_crts_limbs) = layouter.assign_region(
             || "BlobData internal checks",
             |mut region| {
-                self.assign_internal_checks(
-                    &mut region,
-                    rlc_config,
-                    barycentric_assignments,
-                    &assigned_bytes,
-                    &bytes_len,
-                )
+                self.assign_internal_checks(&mut region, rlc_config, &assigned_bytes, &bytes_len)
             },
         )?;
 
@@ -181,6 +177,7 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
             bytes_rlc,
             bytes_len,
             cooked_len,
+            blob_crts_limbs,
         })
     }
 
@@ -290,14 +287,20 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         ))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn assign_internal_checks(
         &self,
         region: &mut Region<Fr>,
         rlc_config: &RlcConfig,
-        barycentric_assignments: &[CRTInteger<Fr>],
         assigned_bytes: &[AssignedCell<Fr, Fr>],
         bytes_len: &AssignedCell<Fr, Fr>,
-    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+    ) -> Result<
+        (
+            AssignedCell<Fr, Fr>,
+            [[AssignedCell<Fr, Fr>; LIMBS]; BLOB_WIDTH],
+        ),
+        Error,
+    > {
         rlc_config.init(region)?;
         let mut rlc_config_offset = 0;
 
@@ -328,51 +331,56 @@ impl<const N_SNARKS: usize> BlobDataConfig<N_SNARKS> {
         // form of the batch.
         rlc_config.enforce_binary(region, &assigned_bytes[0], &mut rlc_config_offset)?;
 
-        ////////////////////////////////////////////////////////////////////////////////
-        //////////////////////////////////// LINKING ///////////////////////////////////
-        ////////////////////////////////////////////////////////////////////////////////
-
-        assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 1);
-        let blob_crts = barycentric_assignments
-            .iter()
-            .take(BLOB_WIDTH)
-            .collect::<Vec<_>>();
-        let mut blob_fields: Vec<Vec<AssignedCell<Fr, Fr>>> = Vec::with_capacity(BLOB_WIDTH);
-        for chunk in assigned_bytes.chunks_exact(N_DATA_BYTES_PER_COEFFICIENT) {
-            // blob bytes are supposed to be deserialised in big-endianness. However, we
-            // have the export from BarycentricConfig in little-endian bytes.
-            blob_fields.push(chunk.iter().rev().cloned().collect());
-        }
-
-        for (blob_crt, blob_field) in blob_crts.iter().zip_eq(blob_fields.iter()) {
-            let limb1 = rlc_config.inner_product(
-                region,
-                &blob_field[0..11],
-                &pows_of_256,
-                &mut rlc_config_offset,
-            )?;
-            let limb2 = rlc_config.inner_product(
-                region,
-                &blob_field[11..22],
-                &pows_of_256,
-                &mut rlc_config_offset,
-            )?;
-            let limb3 = rlc_config.inner_product(
-                region,
-                &blob_field[22..31],
-                &pows_of_256[0..9],
-                &mut rlc_config_offset,
-            )?;
-            region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell())?;
-            region.constrain_equal(limb2.cell(), blob_crt.truncation.limbs[1].cell())?;
-            region.constrain_equal(limb3.cell(), blob_crt.truncation.limbs[2].cell())?;
-        }
+        // Compute 88 bit limbs so we can later check to equality to the inputs in the barycentric
+        // evaluation circuit.
+        let blob_crts_limbs = blob_crts_limbs(
+            region,
+            rlc_config,
+            assigned_bytes,
+            &pows_of_256,
+            &mut rlc_config_offset,
+        );
 
         // The zstd decoder (DecoderConfig) exports an encoded length that is 1 more than the
         // actual number of bytes in encoded data. Accordingly we "cook" the actual len(bytes) here
         // by adding +1 to it before exporting.
         let cooked_bytes_len = rlc_config.add(region, bytes_len, &one, &mut rlc_config_offset)?;
 
-        Ok(cooked_bytes_len)
+        Ok((cooked_bytes_len, blob_crts_limbs))
     }
+}
+
+fn blob_crts_limbs(
+    region: &mut Region<Fr>,
+    rlc_config: &RlcConfig,
+    bytes: &[AssignedCell<Fr, Fr>],
+    powers_of_256: &[AssignedCell<Fr, Fr>],
+    offset: &mut usize,
+) -> [[AssignedCell<Fr, Fr>; LIMBS]; BLOB_WIDTH] {
+    bytes
+        .chunks_exact(N_DATA_BYTES_PER_COEFFICIENT)
+        .map(|coefficient_bytes| {
+            coefficient_bytes
+                .iter()
+                .rev() // reverse bytes to match endianness of crt limbs
+                .chunks(BITS / 8)
+                .into_iter()
+                .map(|chunk_bytes| {
+                    let chunk_bytes = chunk_bytes.into_iter().cloned().collect_vec();
+                    rlc_config
+                        .inner_product(
+                            region,
+                            &chunk_bytes,
+                            &powers_of_256[..chunk_bytes.len()],
+                            offset,
+                        )
+                        .unwrap()
+                })
+                .collect_vec()
+                .try_into()
+                .unwrap()
+        })
+        .collect_vec()
+        .try_into()
+        .unwrap()
 }

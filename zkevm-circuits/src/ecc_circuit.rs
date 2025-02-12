@@ -650,7 +650,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcMul Inputs Assigned:");
         log_context_cursor!(ctx);
 
-        let point_r_got = ecc_chip.scalar_mult(
+        let point_r_got = ecc_chip.scalar_mult::<G1Affine>(
             ctx,
             &point_p,
             &scalar_s.scalar.limbs().to_vec(),

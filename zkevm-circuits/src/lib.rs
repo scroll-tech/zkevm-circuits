@@ -3,7 +3,6 @@
 // We should try not to use incomplete_features unless it is really really needed and cannot be
 // avoided like `adt_const_params` used by DummyGadget
 #![allow(incomplete_features)]
-#![allow(clippy::doc_lazy_continuation)]
 // Needed by DummyGadget in evm circuit
 #![feature(adt_const_params)]
 #![feature(trait_alias)]

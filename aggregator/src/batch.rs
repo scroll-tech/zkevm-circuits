@@ -1,16 +1,12 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use eth_types::{ToBigEndian, H256};
+use eth_types::H256;
 use ethers_core::utils::keccak256;
 use gadgets::{util::split_h256, Field};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    blob::{BatchData, PointEvaluationAssignments},
-    chunk::ChunkInfo,
-    eip4844::{get_coefficients, get_versioned_hash},
-};
+use crate::{aggregation::BatchData, blob_consistency::BlobConsistencyWitness, chunk::ChunkInfo};
 
 /// Batch header provides additional fields from the context (within recursion)
 /// for constructing the preimage of the batch hash.
@@ -79,11 +75,7 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
         let batch_data_hash = keccak256(batch_data_hash_preimage);
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, &chunks_with_padding);
-        let coeffs = get_coefficients(blob_bytes);
-        let blob_versioned_hash = get_versioned_hash(&coeffs);
-        let point_evaluation_assignments =
-            PointEvaluationAssignments::new(&batch_data, blob_bytes, blob_versioned_hash);
-
+        let blob_consistency_witness = BlobConsistencyWitness::new(blob_bytes, &batch_data);
         Self {
             version,
             batch_index,
@@ -92,11 +84,8 @@ impl<const N_SNARKS: usize> BatchHeader<N_SNARKS> {
             parent_batch_hash,
             last_block_timestamp,
             data_hash: batch_data_hash.into(),
-            blob_versioned_hash,
-            blob_data_proof: [
-                H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
-                H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
-            ],
+            blob_versioned_hash: blob_consistency_witness.id(),
+            blob_data_proof: blob_consistency_witness.blob_data_proof(),
         }
     }
 
@@ -163,14 +152,12 @@ pub struct BatchHash<const N_SNARKS: usize> {
     pub(crate) current_batch_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
-    /// 4844 point evaluation check related assignments.
-    pub(crate) point_evaluation_assignments: PointEvaluationAssignments,
-    /// The 4844 versioned hash for the blob.
-    pub(crate) versioned_hash: H256,
     /// The context batch header
     pub(crate) batch_header: BatchHeader<N_SNARKS>,
     /// The blob bytes (may be encoded batch bytes, or may be raw batch bytes).
     pub(crate) blob_bytes: Vec<u8>,
+    /// Witness data to prove that the blob used as advice in the circuit matches the blob from the data availability layer.
+    pub blob_consistency_witness: BlobConsistencyWitness,
 }
 
 impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
@@ -285,36 +272,16 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         );
 
         let batch_data = BatchData::<N_SNARKS>::new(number_of_valid_chunks, chunks_with_padding);
-        let coeffs = get_coefficients(blob_bytes);
-        let versioned_hash = get_versioned_hash(&coeffs);
-        let point_evaluation_assignments =
-            PointEvaluationAssignments::new(&batch_data, blob_bytes, versioned_hash);
-
-        assert_eq!(
-            batch_header.blob_data_proof[0],
-            H256::from_slice(&point_evaluation_assignments.challenge.to_be_bytes()),
-            "Expect provided BatchHeader's blob_data_proof field 0 to be correct"
-        );
-        assert_eq!(
-            batch_header.blob_data_proof[1],
-            H256::from_slice(&point_evaluation_assignments.evaluation.to_be_bytes()),
-            "Expect provided BatchHeader's blob_data_proof field 1 to be correct"
-        );
-
-        assert_eq!(
-            batch_header.blob_versioned_hash, versioned_hash,
-            "Expect provided BatchHeader's blob_versioned_hash field to be correct"
-        );
-
         let current_batch_hash = batch_header.batch_hash();
+        let blob_consistency_witness = BlobConsistencyWitness::new(blob_bytes, &batch_data);
 
         log::info!(
             "batch hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
             current_batch_hash,
             hex::encode(batch_data_hash),
-            hex::encode(point_evaluation_assignments.challenge.to_be_bytes()),
-            hex::encode(point_evaluation_assignments.evaluation.to_be_bytes()),
-            versioned_hash,
+            hex::encode(blob_consistency_witness.challenge().to_bytes()),
+            hex::encode(blob_consistency_witness.evaluation().to_bytes()),
+            blob_consistency_witness.id(),
         );
 
         Self {
@@ -326,16 +293,10 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
             data_hash: batch_data_hash.into(),
             current_batch_hash,
             number_of_valid_chunks,
-            point_evaluation_assignments,
-            versioned_hash,
             batch_header,
             blob_bytes: blob_bytes.to_vec(),
+            blob_consistency_witness,
         }
-    }
-
-    /// Return the blob polynomial and its evaluation at challenge
-    pub fn point_evaluation_assignments(&self) -> PointEvaluationAssignments {
-        self.point_evaluation_assignments.clone()
     }
 
     /// Extract all the hash inputs that will ever be used.
@@ -373,19 +334,17 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
                 .to_be_bytes()
                 .as_ref(),
             self.data_hash.as_bytes(),
-            self.versioned_hash.as_bytes(),
+            self.batch_header.blob_versioned_hash.as_bytes(),
             self.batch_header.parent_batch_hash.as_bytes(),
             self.batch_header
                 .last_block_timestamp
                 .to_be_bytes()
                 .as_ref(),
-            self.point_evaluation_assignments
-                .challenge
-                .to_be_bytes()
+            self.batch_header.blob_data_proof[0]
+                .to_fixed_bytes()
                 .as_ref(),
-            self.point_evaluation_assignments
-                .evaluation
-                .to_be_bytes()
+            self.batch_header.blob_data_proof[1]
+                .to_fixed_bytes()
                 .as_ref(),
         ]
         .concat();
@@ -423,7 +382,7 @@ impl<const N_SNARKS: usize> BatchHash<N_SNARKS> {
         // - preimage for each chunk's flattened L2 signed tx data
         // - preimage for the challenge digest
         let batch_data = BatchData::from(self);
-        let dynamic_preimages = batch_data.preimages(self.versioned_hash);
+        let dynamic_preimages = batch_data.preimages(self.batch_header.blob_versioned_hash);
         for dynamic_preimage in dynamic_preimages {
             res.push(dynamic_preimage);
         }

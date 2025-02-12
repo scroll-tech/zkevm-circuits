@@ -136,7 +136,7 @@ impl Transaction {
     }
 
     /// Sign data
-    pub fn sign_data(&self) -> Result<SignData, Error> {
+    pub fn sign_data(&self) -> Result<SignData<secp256k1::Fq, secp256k1::Secp256k1Affine>, Error> {
         if self.r.is_zero() && self.s.is_zero() && self.v == 0 {
             return Ok(SignData::default());
         }

@@ -13,6 +13,7 @@ sha3.workspace = true
 array-init = "2.0.0"
 bus-mapping = { path = "../bus-mapping", default-features=false }
 either = "1.9"
+p256 = "0.13.2"
 eth-types = { path = "../eth-types" }
 ff.workspace = true
 gadgets = { path = "../gadgets" }
@@ -73,3 +74,6 @@ enable-memory = ["bus-mapping/enable-memory"]
 enable-storage = ["bus-mapping/enable-storage"]
 dual-bytecode = []
 
+
+[lints]
+workspace = true

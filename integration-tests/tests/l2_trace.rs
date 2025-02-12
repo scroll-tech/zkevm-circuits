@@ -26,7 +26,7 @@ fn test_circuit_input_builder_l2block(block_trace: BlockTrace) {
         ..Default::default()
     };
 
-    let mut builder = CircuitInputBuilder::new_from_l2_trace(params, block_trace, false)
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(params, block_trace)
         .expect("could not handle block tx");
 
     builder

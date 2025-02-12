@@ -100,7 +100,7 @@ fn test_super_circuit<
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
-    let mut builder = CircuitInputBuilder::new_from_l2_trace(circuits_params, l2_trace, false)
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(circuits_params, l2_trace)
         .expect("could not handle block tx");
 
     builder

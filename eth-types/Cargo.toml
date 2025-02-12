@@ -39,3 +39,6 @@ scroll = ["revm-precompile/scroll", "revm-primitives/scroll"]
 enable-stack = []
 enable-memory = []
 enable-storage = []
+
+[lints]
+workspace = true

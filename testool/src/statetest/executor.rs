@@ -159,7 +159,7 @@ fn check_post(
     Ok(())
 }
 
-fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
+pub fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     let tx_type = st.tx_type();
     let tx = st.build_tx();
 
@@ -315,9 +315,8 @@ fn trace_config_to_witness_block_l2(
     };
 
     eth_types::constants::set_scroll_block_constants_with_trace(&block_trace);
-    let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace.clone(), false)
-            .expect("could not handle block tx");
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace.clone())
+        .expect("could not handle block tx");
     builder
         .finalize_building()
         .expect("could not finalize building block");
@@ -638,15 +637,12 @@ pub fn run_test(
         #[cfg(feature = "inner-prove")]
         {
             eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
-            prover::test::inner_prove(&test_id, &witness_block);
+            prover::inner_prove(&test_id, &witness_block);
         }
         #[cfg(feature = "chunk-prove")]
         {
             eth_types::constants::set_env_coinbase(&st.env.current_coinbase);
-            prover::test::chunk_prove(
-                &test_id,
-                prover::ChunkProvingTask::from(vec![_scroll_trace]),
-            );
+            prover::chunk_prove(&test_id, prover::ChunkProvingTask::new(vec![_scroll_trace]));
         }
 
         #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]

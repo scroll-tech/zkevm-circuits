@@ -5438,6 +5438,53 @@ impl<const L: usize, const R: usize> DecoderConfig<L, R> {
     }
 }
 
+/// Given the blob's bytes, take into account the first byte, i.e. enable_encoding? and either spit
+/// out the raw bytes or zstd decode them.
+pub fn decode_bytes(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    let enable_encoding = bytes[0].eq(&1);
+
+    // If not encoded, spit out the rest of the bytes, as it is.
+    if !enable_encoding {
+        return Ok(bytes[1..].to_vec());
+    }
+
+    // The bytes following the first byte represent the zstd-encoded bytes.
+    let mut encoded_bytes = bytes[1..].to_vec();
+    let mut encoded_len = encoded_bytes.len();
+    let mut decoded_bytes = Vec::with_capacity(5 * 4096 * 32);
+    loop {
+        let mut decoder = zstd_encoder::zstd::stream::read::Decoder::new(encoded_bytes.as_slice())?;
+        decoder.include_magicbytes(false)?;
+        decoder.window_log_max(30)?;
+
+        decoded_bytes.clear();
+
+        if std::io::copy(&mut decoder, &mut decoded_bytes).is_ok() {
+            break;
+        }
+
+        // The error above means we need to truncate the suffix 0-byte.
+        encoded_len -= 1;
+        encoded_bytes.truncate(encoded_len);
+    }
+
+    Ok(decoded_bytes)
+}
+
+/// The inverse of decode_bytes.
+pub fn encode_bytes(batch_bytes: &[u8]) -> Vec<u8> {
+    let mut blob_bytes = crate::witgen::zstd_encode(batch_bytes);
+
+    // Whether we encode batch -> blob or not.
+    let enable_encoding = blob_bytes.len() < batch_bytes.len();
+    if !enable_encoding {
+        blob_bytes = batch_bytes.to_vec();
+    }
+    blob_bytes.insert(0, enable_encoding as u8);
+
+    blob_bytes
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{

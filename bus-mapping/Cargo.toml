@@ -57,3 +57,6 @@ rpc-legacy-tracer = []
 # and must be rebuild
 fix-refund = ["rpc-legacy-tracer"]
 retrace-tx = ["scroll", "external-tracer"]
+
+[lints]
+workspace = true
