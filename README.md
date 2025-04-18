@@ -1,3 +1,5 @@
+# Update 2025 April:  We migrated to a zkVM based solution <https://github.com/scroll-tech/zkvm-prover>
+
 # Circuits for zkEVM
 
 This is the zkEVM circuits used in Scroll Mainnet. It was forked from PSE zkevm-circuits and added a lot of new features later:
