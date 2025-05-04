@@ -99,6 +99,16 @@ pub struct AssignedBarycentricEvaluationConfig {
     pub(crate) y_le: Vec<AssignedValue<Fr>>,
 }
 
+impl AssignedBarycentricEvaluationConfig {
+    pub fn blob_crts(&self) -> &[CRTInteger<Fr>] {
+        &self.barycentric_assignments[0..BLOB_WIDTH]
+    }
+
+    pub fn challenge_digest(&self) -> &CRTInteger<Fr> {
+        &self.barycentric_assignments[BLOB_WIDTH]
+    }
+}
+
 /// Get the blob data bytes that will be populated in BlobDataConfig.
 pub fn get_blob_bytes(_batch_bytes: &[u8]) -> Vec<u8> {
     unimplemented!("trick for linting");

@@ -55,11 +55,21 @@ pub struct BarycentricEvaluationConfig {
 pub struct AssignedBarycentricEvaluationConfig {
     /// CRTIntegers for the BLOB_WIDTH number of blob polynomial coefficients, followed by a
     /// CRTInteger for the challenge digest.
-    pub(crate) barycentric_assignments: Vec<CRTInteger<Fr>>,
+    barycentric_assignments: Vec<CRTInteger<Fr>>,
     /// 32 Assigned cells representing the LE-bytes of challenge z.
     pub(crate) z_le: Vec<AssignedValue<Fr>>,
     /// 32 Assigned cells representing the LE-bytes of evaluation y.
     pub(crate) y_le: Vec<AssignedValue<Fr>>,
+}
+
+impl AssignedBarycentricEvaluationConfig {
+    pub fn blob_crts(&self) -> &[CRTInteger<Fr>] {
+        &self.barycentric_assignments[0..BLOB_WIDTH]
+    }
+
+    pub fn challenge_digest(&self) -> &CRTInteger<Fr> {
+        &self.barycentric_assignments[BLOB_WIDTH]
+    }
 }
 
 impl BarycentricEvaluationConfig {

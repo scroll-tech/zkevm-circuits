@@ -199,7 +199,7 @@ impl Circuit<Fr> for BlobCircuit {
                     challenge_values,
                     &config.rlc,
                     &chunks_are_padding,
-                    &barycentric_assignments.barycentric_assignments,
+                    barycentric_assignments.challenge_digest(),
                     &assigned_rows,
                 )?;
 

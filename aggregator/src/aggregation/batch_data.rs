@@ -1,6 +1,5 @@
 use crate::{
-    aggregation::rlc::POWS_OF_256, blob_consistency::BLOB_WIDTH, constants::N_BYTES_U256,
-    BatchHash, ChunkInfo, RlcConfig,
+    blob_consistency::BLOB_WIDTH, constants::N_BYTES_U256, BatchHash, ChunkInfo, RlcConfig,
 };
 use eth_types::{H256, U256};
 use ethers_core::utils::keccak256;
@@ -401,7 +400,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
         batch_data: &BatchData<N_SNARKS>,
         versioned_hash: H256,
-        barycentric_assignments: &[CRTInteger<Fr>],
+        challenge_digest: &CRTInteger<Fr>,
     ) -> Result<AssignedBatchDataExport, Error> {
         self.load_range_tables(layouter)?;
 
@@ -418,7 +417,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
                     challenge_value,
                     rlc_config,
                     chunks_are_padding,
-                    barycentric_assignments,
+                    challenge_digest,
                     &assigned_rows,
                 )
             },
@@ -550,7 +549,7 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         // The chunks_are_padding assigned cells are exports from the conditional constraints in
         // `core.rs`. Since these are already constrained, we can just use them as is.
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
-        barycentric_assignments: &[CRTInteger<Fr>],
+        assigned_challenge_digest: &CRTInteger<Fr>,
         assigned_rows: &[AssignedBatchDataConfig],
     ) -> Result<AssignedBatchDataExport, Error> {
         let n_rows_metadata = BatchData::<N_SNARKS>::n_rows_metadata();
@@ -579,6 +578,15 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
             region.constrain_equal(four.cell(), four_cell)?;
             four
         };
+        let two_fifty_six = {
+            let two_fifty_six =
+                rlc_config.load_private(region, &Fr::from(256), &mut rlc_config_offset)?;
+            let two_fifty_six_cell = rlc_config
+                .pow_of_two_hundred_and_fifty_six_cell(two_fifty_six.cell().region_index, 1);
+            region.constrain_equal(two_fifty_six.cell(), two_fifty_six_cell)?;
+            two_fifty_six
+        };
+
         let fixed_chunk_indices = {
             let mut fixed_chunk_indices = vec![one.clone()];
             for i in 2..=N_SNARKS {
@@ -594,22 +602,6 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         };
         let two = fixed_chunk_indices.get(1).expect("N_SNARKS >= 2");
         let n_snarks = fixed_chunk_indices.last().expect("N_SNARKS >= 2");
-        let pows_of_256 = {
-            let mut pows_of_256 = vec![one.clone()];
-            for (exponent, pow_of_256) in (1..=POWS_OF_256).zip_eq(
-                std::iter::successors(Some(Fr::from(256)), |n| Some(n * Fr::from(256)))
-                    .take(POWS_OF_256),
-            ) {
-                let pow_cell =
-                    rlc_config.load_private(region, &pow_of_256, &mut rlc_config_offset)?;
-                let fixed_pow_cell = rlc_config
-                    .pow_of_two_hundred_and_fifty_six_cell(pow_cell.cell().region_index, exponent);
-                region.constrain_equal(pow_cell.cell(), fixed_pow_cell)?;
-                pows_of_256.push(pow_cell);
-            }
-            pows_of_256
-        };
-        let two_fifty_six = pows_of_256[1].clone();
 
         // read randomness challenges for RLC computations.
         let r_keccak =
@@ -996,40 +988,11 @@ impl<const N_SNARKS: usize> BatchDataConfig<N_SNARKS> {
         ////////////////////////////////////////////////////////////////////////////////
         //////////////////////////// CHALLENGE DIGEST CHECK ////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////
-
-        assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 1);
-        let challenge_digest_crt = barycentric_assignments
-            .get(BLOB_WIDTH)
-            .expect("challenge digest CRT");
-        let challenge_digest_limb1 = rlc_config.inner_product(
+        rlc_config.constrain_crt_equals_bytes(
             region,
-            &challenge_digest[0..11],
-            &pows_of_256,
+            assigned_challenge_digest,
+            &challenge_digest,
             &mut rlc_config_offset,
-        )?;
-        let challenge_digest_limb2 = rlc_config.inner_product(
-            region,
-            &challenge_digest[11..22],
-            &pows_of_256,
-            &mut rlc_config_offset,
-        )?;
-        let challenge_digest_limb3 = rlc_config.inner_product(
-            region,
-            &challenge_digest[22..32],
-            &pows_of_256[0..10],
-            &mut rlc_config_offset,
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb1.cell(),
-            challenge_digest_crt.truncation.limbs[0].cell(),
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb2.cell(),
-            challenge_digest_crt.truncation.limbs[1].cell(),
-        )?;
-        region.constrain_equal(
-            challenge_digest_limb3.cell(),
-            challenge_digest_crt.truncation.limbs[2].cell(),
         )?;
 
         Ok(export)
