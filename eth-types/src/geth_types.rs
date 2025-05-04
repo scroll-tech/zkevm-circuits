@@ -389,7 +389,7 @@ impl Transaction {
     }
 }
 
-/// GethData is a type that contains all the information of a Ethereum block
+/// GethData is a type that contains all the information of an Ethereum block
 #[derive(Default, Debug, Clone)]
 pub struct GethData {
     /// chain id

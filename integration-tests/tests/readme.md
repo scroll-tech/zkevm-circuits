@@ -2,7 +2,7 @@
 
 ## Mainnet
 
-Testings in `mainnet.rs` enable accessing a RPC node with debug API, and test any block or single transaction from the node. Trace and block witness would be rebuilt from the input data (block or tx) and then being mocking proven by a specified circuit.
+Testings in `mainnet.rs` enable accessing an RPC node with debug API, and test any block or single transaction from the node. Trace and block witness would be rebuilt from the input data (block or tx) and then being mocking proven by a specified circuit.
 
 The running parameters are specified by environment variables:
 

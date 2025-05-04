@@ -95,7 +95,7 @@ macro_rules! compression_layer_snark {
 
 #[macro_export]
 macro_rules! compression_layer_evm {
-    // generate a evm proof and verify it for compression layer
+    // generate an evm proof and verify it for compression layer
     ($previous_snark: ident, $param: ident, $degree: ident, $path: ident,$layer_index: expr) => {{
         let timer = start_timer!(|| format!("gen layer {} snark", $layer_index));
 
