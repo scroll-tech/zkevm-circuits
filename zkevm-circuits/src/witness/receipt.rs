@@ -1,13 +1,11 @@
 use ethers_core::{
     types::{Bloom, Log},
-    utils::rlp::{Encodable, RlpStream},
+    utils::rlp::{Encodable, RlpStream, TinyRlp},
 };
 
 /// EVM log's receipt.
 #[derive(Clone, Debug, Default)]
 pub struct Receipt {
-    /// Denotes the ID of the tx.
-    pub id: usize,
     /// Denotes whether or not the tx was executed successfully.
     pub status: u8,
     /// Denotes the cumulative gas used by the tx execution.
@@ -23,13 +21,9 @@ impl Encodable for Receipt {
         s.begin_list(4);
         s.append(&self.status);
         s.append(&self.cumulative_gas_used);
-        s.append(&self.bloom);
-        s.begin_list(self.logs.len());
-        for log in self.logs.iter() {
-            s.begin_list(3);
-            s.append(&log.address);
-            s.append_list(&log.topics);
-            s.append(&log.data.0);
-        }
+        // Encode bloom filter using TinyRlp to reduce code size
+        s.append(&TinyRlp(&self.bloom.0));
+        // Use TinyRlp to encode logs to reduce code size
+        s.append_list(&self.logs.iter().map(|log| TinyRlp(log)).collect::<Vec<_>>());
     }
 }
