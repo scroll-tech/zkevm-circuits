@@ -154,7 +154,7 @@ impl Bytecode {
         self
     }
 
-    /// Generate the diassembly
+    /// Generate the disassembly
     pub fn disasm(&self) -> String {
         let mut asm = String::new();
         for op in self.iter() {
