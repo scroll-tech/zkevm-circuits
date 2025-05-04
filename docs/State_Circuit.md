@@ -71,7 +71,7 @@ State Circuit aims to prove that the `rw_table` is formed correctly. This result
 
 ### Circuit Layout
 
-State Circuit is configured as a  constraint system through various smaller gadgets and chips, where each gadget or chip may consist of Halo2 columns (fixed or advice) or even smaller gadgets or chips. Due to this reason, although we can think of the State Circuit layout in a geometric way as horizontally aligned regions of columns belonging to each of its sub-configurations, it may be better to think in a hierarchical way (tree-like structure). In the below, we describe this hierarchy through the configuration of State Circuit, where each sub-configuration at its smallest gratuity of bifurcation lands in some column of the circuit layout (one can click the interior nodes of the hierarchy tree below to expand/contract the next level):
+State Circuit is configured as a  constraint system through various smaller gadgets and chips, where each gadget or chip may consist of Halo2 columns (fixed or advice) or even smaller gadgets or chips. Due to this reason, although we can think of the State Circuit layout in a geometric way as horizontally aligned regions of columns belonging to each of its sub-configurations, it may be better to think in a hierarchical way (tree-like structure). In the below, we describe this hierarchy through the configuration of State Circuit, where each sub-configuration at its smallest granularity of bifurcation lands in some column of the circuit layout (one can click the interior nodes of the hierarchy tree below to expand/contract the next level):
 
 ```markmap
 # State Circuit Configuration
@@ -176,9 +176,9 @@ SubConfigurations --> ConstraintSystem
 We illustrate the `Queries` data structure as below:
 - `Queries`
     - `selector`: this is the `selector` from State Circuit's configuration
-    - `rw_table`: `RwRableQueries`, this follows from `rw_table` and adds some previous data. It includes the following items: `rw_counter`, `prev_rw_counter`, `is_write`, `tag`, `id`, `prev_id`, `address`, `prev_address`, `field_tag`, `storage_key`, `value`, `value_prev`
+    - `rw_table`: `RwTableQueries`, this follows from `rw_table` and adds some previous data. It includes the following items: `rw_counter`, `prev_rw_counter`, `is_write`, `tag`, `id`, `prev_id`, `address`, `prev_address`, `field_tag`, `storage_key`, `value`, `value_prev`
     - `mpt_update_table`: `MptUpdateTableQueries`, this is the same as in MPT table. It includes the following items: `address`, `storage_key`, `proof_type`, `new_root`, `old_root`, `new_value`, `old_value`
-    - `lexicographic_ordering_selector`: this is the selector column for the `lexigoragphic_ordering` chip
+    - `lexicographic_ordering_selector`: this is the selector column for the `lexicoragphic_ordering` chip
     - `rw_counter`: `MpiQueries`, this is the query for `multiple_precision_integer` chip. It contains the limbs with number = `N_LIMBS_RW_COUNTER` and the previous limbs
     - `tag_bits`: the 4-bit representation for the `tag` column in `rw_table` 
     - `id`: `MpiQueries`, limbs and previous limbs for `id` with number = `N_LIMBS_ID`
@@ -236,7 +236,7 @@ This chip helps to check a list of values are all 0. This is applied to check wh
 
 ### Constraints
 
-Since there is a large number of misallenous constraints in the State Circuit, here we'll only take one example to give the reader an impression of the style of constraints in State Circuit. 
+Since there is a large number of miscellaneous constraints in the State Circuit, here we'll only take one example to give the reader an impression of the style of constraints in State Circuit. 
 
 We discuss <b>account constraints</b>, which are established in the `ConstraintBuilder`. 
 
