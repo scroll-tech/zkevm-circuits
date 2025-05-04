@@ -10,13 +10,13 @@ pub type ZkTrie = ZktrieT<UpdateDb>;
 pub mod builder;
 pub use builder::{AccountData, StorageData};
 
-use std::{fmt, rc::Rc};
+use std::{fmt, sync::Arc};
 
 /// represent a storage state being applied in specified block
 #[derive(Clone)]
 pub struct ZktrieState {
     /// The underlying db
-    pub zk_db: Rc<ZkMemoryDb>,
+    pub zk_db: Arc<ZkMemoryDb>,
     /// Trie root
     pub trie_root: ZkTrieHash,
     addr_cache: HashSet<Address>,
@@ -52,7 +52,7 @@ impl ZktrieState {
         builder::init_hash_scheme();
 
         Self {
-            zk_db: Rc::new(ZkMemoryDb::new()),
+            zk_db: Arc::new(ZkMemoryDb::new()),
             trie_root: state_root.0,
             addr_cache: HashSet::new(),
             storage_cache: HashSet::new(),
@@ -61,7 +61,7 @@ impl ZktrieState {
 
     /// expose writable db, has to be used when no trie is created
     pub fn expose_db(&mut self) -> &mut ZkMemoryDb {
-        Rc::get_mut(&mut self.zk_db).expect("no extra reference")
+        Arc::get_mut(&mut self.zk_db).expect("no extra reference")
     }
 
     /// apply the updates in Zktries into underlying db
@@ -206,7 +206,7 @@ impl ZktrieState {
                     .flat_map(|(_, _, bytes)| bytes),
             )
             .chain(additional_proofs);
-        let zk_db = Rc::get_mut(&mut self.zk_db).expect("no extra reference");
+        let zk_db = Arc::get_mut(&mut self.zk_db).expect("no extra reference");
         for bytes in proofs {
             zk_db.add_node_data(bytes).unwrap();
         }
@@ -233,7 +233,7 @@ impl ZktrieState {
     }
 
     /// get the inner zk memory db
-    pub fn into_inner(self) -> Rc<ZkMemoryDb> {
+    pub fn into_inner(self) -> Arc<ZkMemoryDb> {
         self.zk_db
     }
 }

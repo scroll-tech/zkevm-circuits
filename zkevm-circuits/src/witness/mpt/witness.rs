@@ -11,7 +11,7 @@ use mpt_zktrie::{
     extend_address_to_h256, state::StorageData, AccountData, BytesArray, CanRead, TrieProof,
     ZkMemoryDb, ZkTrie, ZkTrieNode, ZktrieState, SECURE_HASH_DOMAIN,
 };
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use num_bigint::BigUint;
 use std::{
@@ -40,7 +40,7 @@ fn to_smt_account(acc: AccountData) -> SMTAccount {
 pub struct WitnessGenerator {
     trie: ZkTrie,
     storages_cache: HashMap<Address, ZkTrie>,
-    ref_db: Rc<ZkMemoryDb>,
+    ref_db: Arc<ZkMemoryDb>,
 }
 
 impl From<&ZktrieState> for WitnessGenerator {
