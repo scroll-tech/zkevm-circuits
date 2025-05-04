@@ -45,7 +45,7 @@ The Sig Circuit aims at proving the correctness of SigTable. This mainly include
     - `msg_hash_cells`: byte cells for `msg_hash`;
     - `pk_cells`: byte cells for the EC coordinates of public key;
     - `address`: RLC of `pk_hash` last 20 bytes;
-    - `is_address_zero`: check if address is zero;
+    - `is_address_zero`: check if the address is zero;
     - `r_cells`, `s_cells`: byte cells for signatures `r` and `s`.
 
 During the process of sign data decomposition, checks of CRT integer decomposition into limbs of size `[88,88,80]` are done for `msg_hash` and public key's EC coordinates. 
